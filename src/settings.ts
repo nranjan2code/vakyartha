@@ -7,13 +7,14 @@ import { $, api, ask, el, engine, prefs } from "./core.ts";
 import { choose, current, labelOf, listModels, loadProviders, modelOptions, parseChoice, type ProviderInfo, providers } from "./models.ts";
 import { applyAppearance, appearance, MODES, SIZES, THEMES } from "./theme.ts";
 import { addOwnPage, integrationPage, marketplace } from "./integrations-page.ts";
+import { disposeFinops, finopsPage } from "./finops-page.ts";
 import { group, pill, plainField, row, secretField, segmented, select, type Setting, title, toggle } from "./ui.ts";
 
 interface ChannelInfo { id: string; label: string; enabled: boolean; provider?: string; model?: string; ready: boolean; secrets: string[]; needs: string[]; state: string; detail: string }
 interface PlanInfo { generation: string; tier: string; examples: boolean; authoring?: string; maxSteps: number; reasons: string[] }
 interface Info { version: string; node: string; platform: string; dataDir: string; logFile: string; keys: string }
 
-type Section = "models" | "providers" | "integrations" | "integrations:add" | `integration:${string}` | "channel:telegram" | "channel:slack" | "channel:discord" | "appearance" | "chats" | "general" | "about";
+type Section = "models" | "providers" | "integrations" | "integrations:add" | `integration:${string}` | "channel:telegram" | "channel:slack" | "channel:discord" | "appearance" | "chats" | "finops" | "general" | "about";
 
 /** Channels whose listeners are not built yet: shown so the place is known, marked as coming. */
 const COMING: Record<string, string> = {
@@ -30,6 +31,7 @@ const NAV: [Section, string, boolean?][] = [
   ["channel:discord", "Discord", true],
   ["appearance", "Appearance"],
   ["chats", "Chats"],
+  ["finops", "FinOps"],
   ["general", "General"],
   ["about", "About"],
 ];
@@ -39,6 +41,7 @@ const content = () => $<HTMLElement>("settings-content");
 let section: Section = (prefs.get("settings:section") as Section | null) ?? "models";
 let settings: Setting[] = [];
 let timer: ReturnType<typeof setInterval> | undefined;
+window.addEventListener("vak:finops-refresh", () => { if (settingsOpen() && section === "finops") void show("finops"); });
 
 export function settingsOpen(): boolean {
   return !page().hidden;
@@ -51,6 +54,7 @@ export async function openSettings(to?: Section, arg?: string): Promise<void> {
 }
 
 export function closeSettings(): void {
+  disposeFinops();
   clearInterval(timer);
   page().hidden = true;
   document.body.classList.remove("in-settings");
@@ -75,6 +79,7 @@ function nav(): void {
 }
 
 async function show(to: Section, arg?: string): Promise<void> {
+  disposeFinops();
   clearInterval(timer);
   section = to;
   prefs.set("settings:section", to);
@@ -91,6 +96,7 @@ async function show(to: Section, arg?: string): Promise<void> {
     "channel:discord": () => comingPage("discord", "Discord"),
     appearance: appearancePage,
     chats: chatsPage,
+    finops: finopsPage,
     general: generalPage,
     about: aboutPage,
   };

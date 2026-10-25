@@ -304,3 +304,28 @@ kbd { font: 0.8rem ui-monospace, SFMono-Regular, Menlo, monospace; min-width: 34
 .approval.settled .tile { width: 24px !important; height: 24px !important; }
 .approval-result { font-size: 0.82rem; color: var(--muted); }
 .approval.settled.allow .approval-result { color: var(--ok); }
+
+/* FinOps belongs to the app; these charts never enter a model's projection surface. */
+.finops { --finops-2: light-dark(#a65b18, #e9a466); --finops-3: light-dark(#237946, #83c69c); --finops-4: light-dark(#a24788, #d79ec9); --finops-5: light-dark(#7359b5, #b4a0e9); --finops-6: light-dark(#237f86, #86c9ce); min-width: 0; }
+.finops-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: 12px 0; }
+.finops-controls label { display: flex; flex: 1 1 140px; flex-direction: column; gap: 4px; font-size: .85rem; }
+.finops input[type="number"] { width: 100%; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
+.finops-pricing { margin: 16px 0 24px; }
+.finops-pricing > summary { cursor: pointer; }
+.finops-pricing > select { width: 100%; }
+.finops-pricing > .muted { margin-left: 12px; }
+.finops-plots { display: grid; gap: 24px; }
+.finops-plots figure { margin: 0; min-width: 0; }
+.finops-plots figcaption { font-weight: 600; }
+.finops-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .8rem; margin: 6px 0; }
+.finops-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.finops-legend i { display: inline-block; width: 10px; height: 10px; }
+.finops-plots svg { width: 100%; display: block; }
+.finops-plots svg text { fill: var(--fg); font: 12px ui-sans-serif, system-ui, sans-serif; }
+.finops-hit { cursor: pointer; }
+.finops-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 24px 0 12px; }
+.finops-picker select { flex: 1; min-width: 0; }
+.finops-table { border-collapse: collapse; width: 100%; font-size: .85rem; margin-bottom: 20px; table-layout: fixed; }
+.finops-table th, .finops-table td { border-bottom: 1px solid var(--border); padding: 8px 4px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.finops-table th { width: 38%; font-weight: 500; }
+.finops-table td { font-variant-numeric: tabular-nums; }

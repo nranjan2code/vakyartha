@@ -11,6 +11,7 @@ import { createHost, json, readJson } from "@vak/host";
 import { hardenNetwork, loadEnvFile, ProfileCache, providersFromEnv } from "@vak/providers";
 import { Channels, CHANNELS } from "./channels.ts";
 import { Integrations } from "./integrations.ts";
+import { Finops } from "./finops.ts";
 import { fileSecrets, keychainStore, Settings, SettingsError } from "./settings.ts";
 
 export interface AppServerOptions {
@@ -144,6 +145,7 @@ When the user asks for examples or you lack real data, use realistic sample data
 When you receive a "[ui action]" message, the user interacted with your UI: respond to it, usually by updating that surface (vak_update) or rendering a confirmation.`;
 
   const profiles = new ProfileCache(opts.profilesPath ?? path.join(dataDir, "models.json"));
+  const finops = new Finops(dataDir, log);
   const channels = new Channels({
     env: process.env,
     providers: () => providersFromEnv(),
@@ -157,8 +159,11 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
   // Created after the host (it asks the host for approvals); the host reads it per turn.
   let integrations: Integrations | undefined;
   const host = createHost({
-    tools: ({ session }) => integrations?.toolsFor(session) ?? [],
-    providers: () => providersFromEnv(),
+    tools: ({ session }) => {
+      finops.session(session);
+      return integrations?.toolsFor(session) ?? [];
+    },
+    providers: () => finops.providers(providersFromEnv()),
     profiles,
     instructions: INSTRUCTIONS,
     transcripts: opts.transcriptsDir ?? path.join(dataDir, "transcripts"),
@@ -168,11 +173,21 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     origins: ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420", "http://127.0.0.1:1420"],
     // Outside agents get a link to watch what they projected (only when this server serves the UI).
     viewerUrl: opts.uiDir ? (session) => `http://127.0.0.1:${listening}/?session=${encodeURIComponent(session)}` : undefined,
-    routes: async (req, res, url) => (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || infoRoute(req, res, url),
+    routes: async (req, res, url) => (await finopsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || infoRoute(req, res, url),
     log,
   });
 
   integrations = new Integrations({ dataDir, secrets: settings.secrets, log, approve: host.approve, npm: opts.npm });
+
+  async function finopsRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+    if (url.pathname !== "/api/finops") return false;
+    if (req.method === "GET") json(res, 200, finops.view());
+    else if (req.method === "PUT") {
+      try { finops.setRate(await readJson(req)); json(res, 200, finops.view()); }
+      catch (err) { json(res, 400, { error: (err as Error).message }); }
+    } else json(res, 405, { error: "method not allowed" });
+    return true;
+  }
 
   async function integrationsRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     const p = url.pathname;
@@ -207,6 +222,10 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
 
   const server = createServer(async (req, res) => {
     try {
+      if (req.method === "POST" && new URL(req.url ?? "/", "http://localhost").pathname === "/api/chat") {
+        await finops.chat(async () => { await host.handle(req, res); });
+        return;
+      }
       if (await host.handle(req, res)) return;
       if (opts.uiDir && req.method === "GET") return await serveUi(opts.uiDir, req, res);
       res.writeHead(404).end("not found");
