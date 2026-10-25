@@ -21,7 +21,7 @@
             New chat
           </button>
         </div>
-        <div class="side-pages"><button type="button" class="quiet" id="open-artifacts" aria-current="false"></button><button type="button" class="quiet" id="open-tasks" aria-expanded="false" aria-controls="task-list">Tasks</button><section id="task-list" hidden aria-label="Tasks"><button type="button" class="ghost small" id="new-task">New task</button><div id="task-items"></div></section></div>
+        <div class="side-pages"><button type="button" class="quiet" id="open-artifacts" aria-current="false"></button><button type="button" class="quiet" id="open-schedule" aria-current="false"></button></div>
         <nav id="chats" class="chats" aria-label="Recent chats"></nav>
         <div class="side-foot">
           <button type="button" class="quiet" id="open-settings" title="Settings (⌘,)">
@@ -72,6 +72,7 @@
         <pre id="canvas-text-content" class="canvas-text-content" tabindex="0" aria-label="Canvas as text" hidden></pre>
       </aside>
       </div>
+      <section id="schedule-page" class="schedule-page" aria-label="Schedule" hidden></section>
       <section id="artifacts-page" class="artifacts-page" aria-label="Artifacts" hidden></section>
     </div>
 
@@ -91,18 +92,26 @@
       </div>
     </div>
 
-    <dialog id="task-create" class="sheet task-create" aria-labelledby="task-create-title">
-      <form id="task-create-form">
-        <h2 id="task-create-title">New task</h2>
-        <p id="task-create-model" class="hint"></p>
-        <label>What should be done?<textarea id="task-goal" rows="3" required maxlength="8000" placeholder="Describe the outcome and the information to use"></textarea></label>
-        <label>When is it complete?<textarea id="task-criteria" rows="2" required maxlength="4000" placeholder="What will you check in the result?"></textarea></label>
-        <fieldset><legend>Capabilities</legend><p class="hint">Free choices and servers you have configured. Model usage may have a separate cost.</p><div id="task-capabilities"></div></fieldset>
-        <div class="task-controls"><button type="button" class="link" id="task-manage-integrations">Manage integrations</button><button type="button" class="link" id="task-change-model">Change model</button></div>
-        <p id="task-create-limits" class="hint"></p><p id="task-create-error" role="alert" class="error"></p>
-        <div class="actions"><button type="button" class="ghost" id="task-create-cancel">Cancel</button><button type="submit" class="primary" id="task-create-start">Start task</button></div>
+    <div id="schedule-parking" hidden>
+      <div id="schedule-compose" class="schedule-compose" hidden>
+      <form id="task-create-form" class="schedule-form">
+        <div class="schedule-form-main">
+          <section class="schedule-section"><div class="schedule-step">01 / THE OUTCOME</div><h2>What would you like done?</h2>
+            <label for="task-goal">Instructions</label><textarea id="task-goal" rows="4" required maxlength="8000" placeholder="Describe the work, the information to use, and the result you want."></textarea>
+            <label for="task-criteria">What will a good result look like?</label><textarea id="task-criteria" rows="2" required maxlength="4000" placeholder="A clear finish line helps you review the result."></textarea>
+          </section>
+          <section class="schedule-section"><div class="schedule-step">02 / THE TIMING</div><h2>When should it begin?</h2>
+            <label for="schedule-timing">Run</label><select id="schedule-timing"><option value="now">Now</option><option value="once">Once, at a chosen time</option></select>
+            <div id="schedule-date-field" hidden><label for="schedule-at">Date and time on this computer</label><input type="datetime-local" id="schedule-at"><small id="schedule-timezone"></small></div>
+            <p id="schedule-time-preview" class="schedule-time-preview" role="status"></p>
+            <p class="hint">Keep the app running and your computer awake. A missed time is held for review. This schedule runs once.</p>
+          </section>
+          <section class="schedule-section"><div class="schedule-step">03 / THE ACCESS</div><h2>Choose its capabilities</h2><p class="hint">Only selected, ready tools are available. Your integration permissions still apply.</p><div id="task-capabilities" class="schedule-capabilities"></div><button type="button" class="link" id="task-manage-integrations">Manage integrations</button></section>
+        </div>
+        <aside class="schedule-form-aside"><section class="schedule-section"><h2>Ready when you are</h2><div class="schedule-model-label">MODEL</div><p id="task-create-model"></p><button type="button" class="link" id="task-change-model">Choose model</button><hr><p id="task-create-limits" class="hint"></p><p class="hint">Results wait for your review. You can keep interacting with every form, table and surface.</p><p class="hint">Model usage may have a separate cost.</p><p id="task-create-error" role="alert" class="error"></p><button type="submit" class="primary" id="task-create-start">Start now</button><button type="button" class="ghost" id="task-create-cancel">Back to Schedule</button></section></aside>
       </form>
-    </dialog>
+      </div>
+    </div>
     <dialog id="ask" class="sheet small">
       <form method="dialog">
         <p id="ask-text"></p>

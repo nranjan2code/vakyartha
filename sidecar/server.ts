@@ -208,7 +208,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
       json(res, 200, integrations!.view().filter((i) => freeCapabilities.has(i.entry.id) || i.entry.trust === "custom").map((i) => ({ id: i.entry.id, name: i.entry.name, summary: i.entry.summary, ready: i.enabled && i.status === "ready", free: freeCapabilities.has(i.entry.id), access: i.entry.access })));
       return true;
     }
-    const m = /^\/api\/tasks(?:\/([\w-]+)(?:\/(input|cancel|complete|approve))?)?$/.exec(p);
+    const m = /^\/api\/tasks(?:\/([\w-]+)(?:\/(input|cancel|complete|approve|schedule))?)?$/.exec(p);
     if (!m) return false;
     try {
       const [, id, operation] = m;
@@ -218,7 +218,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
       else if (id && !operation && req.method === "DELETE") { await tasks!.remove(id, await readJson(req)); json(res, 200, { ok: true }); }
       else if (id && operation && req.method === "POST") {
         const body = await readJson(req);
-        const result = operation === "input" ? await tasks!.input(id, body) : operation === "cancel" ? await tasks!.cancel(id) : operation === "complete" ? await tasks!.complete(id) : await tasks!.answer(id, String(body.approval), body.decision);
+        const result = operation === "input" ? await tasks!.input(id, body) : operation === "cancel" ? await tasks!.cancel(id) : operation === "complete" ? await tasks!.complete(id) : operation === "schedule" ? await tasks!.changeSchedule(id, body) : await tasks!.answer(id, String(body.approval), body.decision);
         json(res, 200, result);
       } else json(res, 405, { error: "method not allowed" });
     } catch (err) { json(res, 400, { error: (err as Error).message }); }

@@ -41,7 +41,8 @@ const artifacts = new ArtifactsPage(async (id, surface) => {
   canvas.open(surface, true);
 }, newChat, toggleSidebar);
 let running: AbortController | undefined;
-const tasksPanel = new TasksPanel(() => session, (id) => openChat(id));
+const tasksPanel = new TasksPanel(() => session, (id) => openChat(id), () => artifacts.close(), toggleSidebar);
+document.getElementById("open-artifacts")!.addEventListener("click", () => tasksPanel.page.close(), { capture: true });
 const drafts = new Drafts(localStorage, (message) => tasksPanel.error(message));
 document.addEventListener("vak-change", (e) => {
   const detail = (e as CustomEvent<{ surface: string; path: string; value: unknown }>).detail;
@@ -52,7 +53,11 @@ window.addEventListener("vak:task-deleted", (e) => {
   const id: unknown = (e as CustomEvent<unknown>).detail;
   if (typeof id !== "string") return;
   drafts.clear(id);
-  if (session === id) newChat();
+  if (session === id) {
+    const scheduleVisible = tasksPanel.page.visible();
+    newChat();
+    if (scheduleVisible) void tasksPanel.page.openPage();
+  }
   void loadChats();
 });
 function loadSnapshot(snapshot: SurfaceSnapshot): void {
@@ -189,6 +194,7 @@ function clearThread(): void {
 }
 
 function newChat(): void {
+  tasksPanel.page.close();
   artifacts.close();
   clearThread();
   session = crypto.randomUUID();
@@ -203,6 +209,7 @@ function newChat(): void {
 
 /** Redraw a saved conversation from its timeline and final surfaces. */
 async function openChat(id: string, keepLibrary = false): Promise<void> {
+  tasksPanel.page.close();
   if (!keepLibrary) artifacts.close();
   clearThread();
   session = id;
@@ -495,6 +502,10 @@ $<HTMLButtonElement>("collapse").addEventListener("click", toggleSidebar);
 $<HTMLButtonElement>("expand").addEventListener("click", toggleSidebar);
 
 function toggleSidebar(): void {
+  if (tasksPanel.page.visible() && innerWidth <= 720) {
+    document.body.classList.toggle("schedule-show-sidebar");
+    return;
+  }
   if (document.body.classList.contains("in-artifacts") && matchMedia("(max-width: 720px)").matches) {
     document.body.classList.toggle("artifacts-show-sidebar");
     return;
@@ -505,7 +516,7 @@ function toggleSidebar(): void {
 document.body.classList.toggle("collapsed", prefs.get("collapsed") === "true");
 document.addEventListener("keydown", (e) => {
   if (e.defaultPrevented) return;
-  if (e.key === "Escape" && running && !settingsOpen() && !document.body.classList.contains("in-artifacts")) return running.abort();
+  if (e.key === "Escape" && running && !settingsOpen() && !document.body.classList.contains("in-artifacts") && !tasksPanel.page.visible()) return running.abort();
   if (!(e.metaKey || e.ctrlKey)) return;
   const actions: Record<string, () => void> = {
     n: () => (closeSettings(), newChat()),

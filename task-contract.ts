@@ -1,4 +1,6 @@
-export type TaskState = "queued" | "running" | "needs_input" | "needs_approval" | "interrupted" | "completed" | "failed" | "cancelled";
+import { parseSchedule, type OnceSchedule } from "./schedule.ts";
+
+export type TaskState = "scheduled" | "paused" | "queued" | "running" | "needs_input" | "needs_approval" | "interrupted" | "completed" | "failed" | "cancelled";
 export type TaskInput = { id: string } & (
   | { kind: "message"; message: string; action?: never; revision?: never }
   | { kind: "action"; message?: never; action: { surface: string; source: string; data: Record<string, unknown> }; revision: number }
@@ -34,10 +36,12 @@ export interface TaskView {
   activity: TaskActivity[];
   operations: { id: string; tool: string; state: "started" | "returned" | "failed" | "uncertain" | "reviewed" }[];
   accepted: string[];
+  schedule?: OnceSchedule;
 }
-export type TaskSummary = Pick<TaskView, "id" | "session" | "goal" | "state" | "updated" | "revision" | "note">;
+export type TaskSummary = Pick<TaskView, "id" | "session" | "goal" | "state" | "updated" | "revision" | "note" | "schedule">;
 export const TASK_LIMITS = { rounds: 12, tools: 24, activeMs: 300_000, outputTokens: 4096, pending: 8, approvalMs: 300_000 } as const;
 export const TASK_LABELS: Record<TaskState, string> = {
+  scheduled: "Upcoming", paused: "Paused",
   queued: "Queued", running: "Working", needs_input: "Review result", needs_approval: "Needs approval",
   interrupted: "Interrupted", completed: "Completed", failed: "Could not finish", cancelled: "Cancelled",
 };
@@ -84,6 +88,8 @@ export function parseTaskView(value: unknown): TaskView {
     return { id: taskString(op.id, 120), tool: taskString(op.tool, 240), state: op.state };
   });
   const approval = raw.approval === undefined ? undefined : taskObject(raw.approval);
+  const schedule = raw.schedule === undefined ? undefined : parseSchedule(raw.schedule);
+  if ((raw.state === "scheduled" && schedule?.status !== "armed") || (raw.state === "paused" && schedule?.status !== "paused")) throw new Error("Schedule state does not match its trigger");
   const note = typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "";
   return {
     version: 1, revision: integer(raw.revision ?? 0, Number.MAX_SAFE_INTEGER), id, session, goal: taskString(raw.goal, 8000), criteria: taskString(raw.criteria, 4000), provider: taskString(raw.provider, 120), model: taskString(raw.model, 240),
@@ -91,6 +97,7 @@ export function parseTaskView(value: unknown): TaskView {
     confirmedFree: array(raw.confirmedFree ?? [], 16).map((v) => taskString(v, 120)),
     pending: array(raw.pending, TASK_LIMITS.pending).map(parseTaskInput), accepted: array(raw.accepted, 256).map((v) => taskString(v, 120)), operations,
     activity: array(raw.activity, 100).map((v) => { const a = taskObject(v); return { at: taskString(a.at, 40), text: taskString(a.text, 1000) }; }),
+    ...(schedule ? { schedule } : {}),
     ...(approval ? { approval: { id: taskString(approval.id, 120), server: taskString(approval.server, 120), tool: taskString(approval.tool, 240), title: taskString(approval.title, 1000), args: approval.args, expires: taskString(approval.expires, 40), capabilityRevision: integer(approval.capabilityRevision ?? 0, Number.MAX_SAFE_INTEGER) } } : {}),
   };
 }
@@ -101,6 +108,6 @@ export function parseTaskSummaries(value: unknown): TaskSummary[] {
     if (!isState(raw.state)) throw new Error("Invalid task state");
     const id = taskString(raw.id, 120), session = taskString(raw.session, 120);
     if (!/^[\w-]+$/.test(id) || id !== session) throw new Error("Invalid task identity");
-    return { id, session, revision: integer(raw.revision, Number.MAX_SAFE_INTEGER), goal: taskString(raw.goal, 120), state: raw.state, updated: taskString(raw.updated, 40), note: typeof raw.note === "string" ? raw.note : "" };
+    return { id, session, revision: integer(raw.revision, Number.MAX_SAFE_INTEGER), goal: taskString(raw.goal, 120), state: raw.state, updated: taskString(raw.updated, 40), note: typeof raw.note === "string" ? raw.note : "", ...(raw.schedule === undefined ? {} : { schedule: parseSchedule(raw.schedule) }) };
   });
 }

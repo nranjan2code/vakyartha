@@ -28,7 +28,7 @@ The site describes where Vakyartha is going. Here is what this repository does t
 | Connected tools and services | **Works.** A curated integrations catalog (Web pages, Time, Files, Memory, Brave Search, Tavily, GitHub, Notion, Context7), each pinned, with per-tool policies and approvals. |
 | In your everyday chat | **Telegram works**, answered from the menu bar while the window is closed. Slack and Discord are listed as coming. |
 | Spending limits and usage | **Usage works:** Settings → FinOps charts tokens, context and estimated cost per turn. Spending limits are not built yet. |
-| Agent tasks | **First slice works:** manual tasks, bounded background runs, review, continuation and guarded deletion reuse the interactive canvas. Scheduling, task chains and long-term run history are not built yet. |
+| Agent tasks | **First slice works:** Schedule provides full-page setup, lifecycle views, immediate and one-time future runs, review, continuation and guarded deletion. Results reuse the interactive canvas. Repeating schedules, task chains and long-term run history are not built yet. |
 | Pick up the thread (commitments) | Not yet. |
 | Vakyartha and seven companions | Not yet. |
 | Headless & Cloud, scheduled routines | Not yet. `npm run web` serves the same app on loopback for development only. |

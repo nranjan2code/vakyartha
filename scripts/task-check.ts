@@ -37,16 +37,24 @@ const setup = `
  const task=async()=>await(await fetch('/api/tasks/'+window.qaTask)).json();
 `;
 const steps = [
+  `document.documentElement.dataset.mode=innerWidth>720?'light':'dark';document.getElementById('settings-back').click();document.getElementById('open-schedule').click();
+   await wait(()=>document.getElementById('schedule-title')?.textContent==='Schedule');
+   check(document.querySelector('#open-schedule svg'),'missing calendar icon');
+   check(document.getElementById('workspace').hidden,'workspace visible under Schedule');
+   check(!document.querySelector('#task-create'),'old creation modal remains');
+   check(document.querySelectorAll('.schedule-template').length===3 || document.querySelector('.schedule-card'),'missing overview');
+   check(document.documentElement.scrollWidth<=innerWidth,'Schedule overview overflow');
+   return 'Schedule overview and icon';`,
   `document.getElementById('settings-back').click();
    const p=document.getElementById('model-pick'),v=JSON.stringify(['compatible','scripted']);p.add(new Option('Scripted',v));p.value=v;p.dispatchEvent(new Event('change'));
-   document.getElementById('open-tasks').click();document.getElementById('new-task').click();
-   await wait(()=>document.getElementById('task-create').open);
+   document.getElementById('open-schedule').click();document.getElementById('create-schedule').click();
+   await wait(()=>!document.getElementById('schedule-compose').hidden&&!document.getElementById('task-create-start').disabled);check(!document.querySelector('dialog[open]'),'creation should be a page');
    document.getElementById('task-goal').value='Create two independent forms and a table';document.getElementById('task-criteria').value='All three stay interactive';
    const oldIds=(await(await fetch('/api/tasks')).json()).map(t=>t.id);
    document.getElementById('task-create-form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
    await wait(async()=>{const list=await(await fetch('/api/tasks')).json();window.qaTask=list.find(t=>!oldIds.includes(t.id))?.id;return Boolean(window.qaTask)});
    await wait(async()=>(await task()).state==='needs_input');
-   await wait(()=>document.querySelectorAll('vak-surface').length===3);flush();
+   await wait(()=>document.querySelector('#schedule-page .schedule-detail-actions'));Array.from(document.querySelectorAll('#schedule-page button')).find(b=>b.textContent==='Open workspace').click();await wait(()=>document.querySelectorAll('vak-surface').length===3);flush();
    await wait(()=>!document.getElementById('task-bar').hidden);
    check(document.getElementById('canvas-pick').options.length===3,'missing task surfaces');
    check((await task()).state==='needs_input','task should require review');return 'task setup and three live surfaces';`,
@@ -66,13 +74,13 @@ const steps = [
    document.getElementById('open-artifacts').click();await wait(()=>document.querySelector('.artifact-card[data-session="'+window.qaTask+'"]'));
    document.querySelector('.artifact-card[data-session="'+window.qaTask+'"][data-surface="first"]').click();await new Promise(r=>setTimeout(r,100));flush();
    check(document.querySelector('#canvas-content vak-surface')===window.qaFirst,'library duplicated live form');
-   document.getElementById('new-chat').click();document.querySelector('.task-link[data-task="'+window.qaTask+'"]').click();await wait(()=>document.querySelectorAll('vak-surface').length===3);flush();
+   document.getElementById('new-chat').click();document.getElementById('open-schedule').click();await wait(()=>document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]'));document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]').click();await wait(()=>document.querySelector('#schedule-page .schedule-detail-actions'));Array.from(document.querySelectorAll('#schedule-page button')).find(b=>b.textContent==='Open workspace').click();await wait(()=>document.querySelectorAll('vak-surface').length===3);flush();
    check(pick('first').shadowRoot.querySelector('input').value==='Alice','navigation lost first draft');
    check(pick('second').shadowRoot.querySelector('input').value==='Bob','navigation lost second draft');return 'library identity and draft restoration across navigation';`,
   `const a=pick('first');a.shadowRoot.querySelector('button').click();
    await wait(async()=>(await task()).runs===2);document.getElementById('new-chat').click();
    await wait(async()=>(await task()).state==='needs_input');
-   document.querySelector('.task-link[data-task="'+window.qaTask+'"]').click();await wait(()=>document.querySelectorAll('vak-surface').length===3);flush();
+   document.getElementById('open-schedule').click();await wait(()=>document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]'));document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]').click();await wait(()=>document.querySelector('#schedule-page .schedule-detail-actions'));Array.from(document.querySelectorAll('#schedule-page button')).find(b=>b.textContent==='Open workspace').click();await wait(()=>document.querySelectorAll('vak-surface').length===3);flush();
    check(pick('second').shadowRoot.querySelector('input').value==='Bob','background update lost unrelated draft');
    const view=await(await fetch('/api/sessions/'+window.qaTask)).json();
    check(view.timeline.filter(e=>e.kind==='action').length===1,'action not delivered exactly once');
@@ -85,6 +93,24 @@ const steps = [
    await wait(async()=>(await task()).runs===3);await wait(async()=>(await task()).state==='needs_input');
    await new Promise(r=>setTimeout(r,2200));flush();check(pick('second')===b,'status refresh recreated an interactive surface');
    check(document.documentElement.scrollWidth<=innerWidth,'page overflow');return 'reviewed completion and interactive continuation';`,
+  `document.getElementById('open-schedule').click();document.getElementById('create-schedule').click();
+   await wait(()=>!document.getElementById('schedule-compose').hidden&&!document.getElementById('task-create-start').disabled);
+   document.getElementById('task-goal').value='Future review';document.getElementById('task-criteria').value='An explicit reviewed result';
+   const timing=document.getElementById('schedule-timing');timing.value='once';timing.dispatchEvent(new Event('change'));
+   const d=new Date(Date.now()+3600000);document.getElementById('schedule-at').value=new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+   const before=(await(await fetch('/api/tasks')).json()).map(t=>t.id);
+   document.getElementById('task-create-form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
+   await wait(async()=>{const all=await(await fetch('/api/tasks')).json();window.qaScheduled=all.find(t=>!before.includes(t.id))?.id;return Boolean(window.qaScheduled)});
+   await wait(()=>document.querySelector('#schedule-page .schedule-badge.scheduled'));
+   check((await(await fetch('/api/tasks/'+window.qaScheduled)).json()).runs===0,'scheduled work ran early');
+   Array.from(document.querySelectorAll('#schedule-page button')).find(b=>b.textContent==='Pause').click();
+   await wait(()=>document.querySelector('#schedule-page .schedule-badge.paused'));
+   check(document.querySelector('.schedule-reschedule'),'rescheduling controls missing');
+   document.querySelector('.schedule-delete').click();await wait(()=>document.getElementById('ask').open);document.getElementById('ask-ok').click();
+   await wait(()=>document.getElementById('schedule-title')?.textContent==='Schedule');
+   check(!(await(await fetch('/api/tasks')).json()).some(t=>t.id===window.qaScheduled),'paused schedule not deleted');
+   check(document.documentElement.scrollWidth<=innerWidth,'schedule detail overflow');
+   return 'one-time setup, paused lifecycle and guarded deletion';`,
 ];
 try {
   const bin = path.join(out, "webkit-check");

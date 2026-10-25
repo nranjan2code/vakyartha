@@ -65,3 +65,15 @@ Date: 2026-10-25. Status: accepted for the first slice.
 Deleting a task is an explicit user operation with its current revision. Running, queued and approval-waiting work must first be cancelled and settle. Deletion must reject stale state, block concurrent new inputs and require additional acknowledgement before removing uncertain-effect recovery records.
 
 Remove only that task's journal, canonical conversation, raw transcript and local drafts. Do not recursively remove data directories, delete external effects or cascade through shared memory, integrations, credentials or other tasks. Shared integration logs and numeric usage records are retained and disclosed. If any removal fails, show the failure and retain enough identity for an idempotent retry. Full shared-log retention and future chain dependency handling remain separate requirements.
+
+## ADR-007 — Schedule workspace and one-time triggers
+
+Date: 2026-10-26. Status: implemented first timing slice.
+
+Schedule is a permanent sidebar destination with its own overview, full-page composer and lifecycle detail page. Search, status filters, sort, starter ideas, activity and permission requests live here. Results open in the existing conversation/canvas, retaining interactive multi-surface ownership. Page navigation does not cancel work or duplicate the live surfaces. Settings remains the authority for global model and integration configuration; unsaved setup values survive a visit there.
+
+Support immediate execution and a one-time future instant. Store the UTC instant, displayed time zone, armed/paused/dispatched status and missed-run policy as a typed optional trigger on the existing task journal. No new process, native relay or scheduling package is introduced. A bounded wakeup dispatches through the existing queue; it does no model work while waiting. Pause/resume, Run now and time changes require the current task revision. Only pending upcoming/paused work can change timing.
+
+A one-time trigger is not a repeating schedule. On startup, past due work pauses for explicit review. While running, a delay greater than one minute also pauses instead of silently executing stale instructions. Future instants survive restart; queued/in-flight work interrupted by shutdown is still held for review. Cancellation/deletion disarms future work. The local date/time input resolves to an explicit instant shown before saving; changing the computer's time zone does not change that stored instant.
+
+Repeating wall-clock rules, event triggers, chains, lifetime budgets and sustained long-term run history remain separate gates. Do not display nonfunctional recurrence controls. The local app and computer must remain available; this slice neither wakes the computer nor runs in the cloud.

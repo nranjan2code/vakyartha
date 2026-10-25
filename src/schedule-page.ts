@@ -1,0 +1,268 @@
+import { TASK_LABELS, TASK_LIMITS, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../task-contract.ts";
+import { scheduleLabel } from "../schedule.ts";
+import { $, api, ask, el } from "./core.ts";
+import { icon } from "./icons.ts";
+import { current } from "./models.ts";
+import { openSettings } from "./settings.ts";
+
+interface Capability { id: string; name: string; summary: string; ready: boolean; free: boolean; access: string[] }
+type Filter = "all" | "upcoming" | "attention" | "active" | "history";
+type View = { kind: "list" } | { kind: "create" } | { kind: "detail"; id: string };
+const ATTENTION = new Set(["needs_input", "needs_approval", "interrupted", "failed"]);
+const TEMPLATES = [
+  { title: "Research brief", glyph: "book", description: "Compare sources and turn a question into a clear, cited brief.", goal: "Research this topic using the public sources I provide. Compare the evidence and prepare an interactive brief with source links and missing information clearly labelled.", criteria: "A cited brief with a comparison, source dates and any gaps clearly shown." },
+  { title: "Workspace review", glyph: "folder", description: "Review files in a folder you choose and surface what needs attention.", goal: "Review the readable files in the folder I authorize. Summarize the important changes and show an interactive table of items needing attention. Ask before changing files.", criteria: "A traceable summary and a usable table, with unsupported files and uncertainties listed." },
+  { title: "Plan the next step", glyph: "form", description: "Turn a goal into a plan you can review and refine.", goal: "Help me plan this goal. Collect missing information with an interactive form, then create a practical checklist and a separate plan I can refine.", criteria: "A usable input form and an actionable plan. No external action without approval." },
+] as const;
+
+function capabilities(value: unknown): Capability[] {
+  if (!Array.isArray(value) || value.length > 32) throw new Error("Invalid capability list");
+  return value.map((item: unknown) => {
+    const raw = taskObject(item);
+    if (!Array.isArray(raw.access) || raw.access.length > 32) throw new Error("Invalid capability access");
+    return { id: taskString(raw.id, 120), name: taskString(raw.name, 240), summary: taskString(raw.summary, 2000), ready: raw.ready === true, free: raw.free === true, access: raw.access.map((v: unknown) => taskString(v, 2000)) };
+  });
+}
+const date = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+const button = (label: string, action: () => void, primary = false) => {
+  const b = el("button", { type: "button", className: primary ? "primary" : "ghost", textContent: label });
+  b.addEventListener("click", action); return b;
+};
+
+/** Schedule chrome references live workspaces; it never mounts or copies their surfaces. */
+export class SchedulePage {
+  private page = $("schedule-page");
+  private view: View = { kind: "list" };
+  private summaries: TaskSummary[] = [];
+  private filter: Filter = "all";
+  private query = "";
+  private tab: "yours" | "templates" = "yours";
+  private sort: "recent" | "next" = "recent";
+  private key = "";
+  private request = 0;
+  private detail?: TaskView;
+  private busy = false;
+  private creationBusy = false;
+  private formReady = false;
+  private formShown = false;
+  private formGeneration = 0;
+  private navigate: (id: string) => Promise<void>;
+  private refresh: () => Promise<void>;
+  private remove: (task: TaskView) => Promise<void>;
+  private beforeOpen: () => void;
+  private toggleSidebar: () => void;
+
+  constructor(options: { navigate(id: string): Promise<void>; refresh(): Promise<void>; remove(task: TaskView): Promise<void>; beforeOpen(): void; toggleSidebar(): void }) {
+    this.navigate = options.navigate; this.refresh = options.refresh; this.remove = options.remove; this.beforeOpen = options.beforeOpen; this.toggleSidebar = options.toggleSidebar;
+    window.addEventListener("vak:settings-closed", () => {
+      if (this.visible() && this.view.kind === "create") void this.create();
+    });
+    $("open-schedule").append(icon("calendar", 18), "Schedule");
+    $("open-schedule").addEventListener("click", () => void this.openPage());
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || this.page.hidden || !$("settings").hidden || document.querySelector("dialog[open]") || event.defaultPrevented || this.creationBusy) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
+      event.preventDefault();
+      if (this.view.kind === "list") this.close(true); else this.list();
+    });
+  }
+
+  visible(): boolean { return !this.page.hidden; }
+  async openPage(): Promise<void> {
+    this.beforeOpen(); this.page.hidden = false; $("workspace").hidden = true;
+    document.body.classList.add("in-schedule"); $("open-schedule").setAttribute("aria-current", "page");
+    this.list(); await this.refresh();
+  }
+  close(focus = false): void {
+    if (this.page.hidden) return;
+    this.request++; this.page.hidden = true; $("workspace").hidden = false;
+    document.body.classList.remove("in-schedule", "schedule-show-sidebar");
+    $("open-schedule").setAttribute("aria-current", "false");
+    if (focus) $("open-schedule").focus();
+  }
+  update(summaries: TaskSummary[]): void {
+    this.summaries = summaries;
+    if (this.page.hidden || this.view.kind === "create") return;
+    if (this.view.kind === "list") this.drawList();
+    else if (this.detail?.revision !== summaries.find((t) => t.id === this.detail?.id)?.revision) void this.showDetail(this.view.id, false);
+  }
+  error(message: string): void {
+    if (!this.visible()) return;
+    let notice = this.page.querySelector<HTMLElement>(".schedule-error");
+    if (!notice) { notice = el("p", { className: "schedule-error", role: "alert" }); this.page.prepend(notice); }
+    notice.textContent = message;
+  }
+  private shell(title: string, subtitle: string, back: () => void): HTMLElement {
+    this.parkComposer();
+    const sidebar = button("", this.toggleSidebar); sidebar.className = "icon-btn schedule-sidebar"; sidebar.setAttribute("aria-label", "Show sidebar"); sidebar.append(icon("sidebar"));
+    const top = el("div", { className: "schedule-top", "data-tauri-drag-region": "" }, sidebar, button(this.view.kind === "list" ? "Back to conversation" : "Back to Schedule", back));
+    const body = el("div", { className: "schedule-body" }, el("header", { className: "schedule-intro" }, el("div", { className: "schedule-eyebrow" }, icon("calendar", 16), "WORKSPACE"), el("h1", { id: "schedule-title", tabIndex: -1, textContent: title }), el("p", { textContent: subtitle })));
+    this.page.replaceChildren(top, body); return body;
+  }
+  private list(): void {
+    this.request++; this.view = { kind: "list" }; this.key = "";
+    const body = this.shell("Schedule", "Your upcoming work, progress, and results in one place.", () => this.close(true));
+    const tabs = el("div", { className: "schedule-tabs", role: "group", "aria-label": "Schedule views" });
+    for (const [id, label] of [["yours", "Yours"], ["templates", "Ideas to start"]] as const) {
+      const b = button(label, () => { this.tab = id; this.key = ""; this.drawList(); }); b.dataset.tab = id; tabs.append(b);
+    }
+    const create = button("Create schedule", () => void this.create(), true); create.id = "create-schedule"; create.prepend(icon("plus", 16));
+    body.append(el("div", { className: "schedule-toolbar" }, tabs, create));
+    const search = el("input", { type: "search", placeholder: "Search your work", value: this.query, "aria-label": "Search schedules" });
+    search.addEventListener("input", () => { this.query = search.value; this.key = ""; this.drawList(); });
+    const sort = el("select", { "aria-label": "Sort schedules" }, new Option("Recently updated", "recent"), new Option("Next scheduled", "next")); sort.value = this.sort;
+    sort.addEventListener("change", () => { this.sort = sort.value === "next" ? "next" : "recent"; this.key = ""; this.drawList(); });
+    body.append(el("div", { id: "schedule-search-row", className: "schedule-search-row" }, el("div", { className: "artifact-search" }, icon("search", 17), search), sort));
+    const filters = el("div", { id: "schedule-filters", className: "schedule-filters", role: "group", "aria-label": "Filter by lifecycle" });
+    for (const [id, label] of [["all", "All work"], ["upcoming", "Upcoming"], ["attention", "Needs attention"], ["active", "In progress"], ["history", "History"]] as const) {
+      const b = button(label, () => { this.filter = id; this.key = ""; this.drawList(); }); b.dataset.filter = id; filters.append(b);
+    }
+    body.append(filters, el("div", { id: "schedule-count", className: "schedule-count", role: "status" }), el("div", { id: "schedule-results" }), el("p", { className: "schedule-availability" }, icon("shield", 15), "Runs on this computer. Keep the app running and your computer awake. Missed times are held for review."));
+    this.drawList(); $("schedule-title").focus();
+  }
+  private drawList(): void {
+    if (this.view.kind !== "list") return;
+    const key = JSON.stringify([this.summaries, this.filter, this.query, this.tab, this.sort]); if (key === this.key) return; this.key = key;
+    for (const b of this.page.querySelectorAll<HTMLButtonElement>("[data-tab]")) b.setAttribute("aria-pressed", String(b.dataset.tab === this.tab));
+    for (const b of this.page.querySelectorAll<HTMLButtonElement>("[data-filter]")) b.setAttribute("aria-pressed", String(b.dataset.filter === this.filter));
+    $("schedule-search-row").hidden = $("schedule-filters").hidden = this.tab === "templates" || !this.summaries.length;
+    const results = $("schedule-results"); results.replaceChildren();
+    if (this.tab === "templates") { $("schedule-count").textContent = "Start with an idea, then choose the inputs, access and time."; results.append(this.templates()); return; }
+    const shown = this.summaries.filter((t) => (!this.query.trim() || `${t.goal} ${t.note}`.toLocaleLowerCase().includes(this.query.trim().toLocaleLowerCase())) && (this.filter === "all" || this.filter === "upcoming" && ["scheduled", "paused"].includes(t.state) || this.filter === "attention" && ATTENTION.has(t.state) || this.filter === "active" && ["queued", "running"].includes(t.state) || this.filter === "history" && ["completed", "cancelled"].includes(t.state)));
+    shown.sort((a, b) => this.sort === "next" ? (a.state === "scheduled" ? Date.parse(a.schedule!.at) : Infinity) - (b.state === "scheduled" ? Date.parse(b.schedule!.at) : Infinity) || b.updated.localeCompare(a.updated) : b.updated.localeCompare(a.updated));
+    $("schedule-count").textContent = shown.length ? `${shown.length} ${shown.length === 1 ? "item" : "items"}` : "";
+    if (shown.length) results.append(el("div", { className: "schedule-grid" }, ...shown.map((t) => this.card(t))));
+    else if (this.summaries.length) results.append(el("div", { className: "schedule-empty" }, icon("search", 34), el("h2", { textContent: "Nothing matches just yet" }), el("p", { textContent: "Try another search or lifecycle filter." }), button("Clear filters", () => { this.query = ""; this.filter = "all"; this.list(); })));
+    else results.append(el("div", { className: "schedule-empty" }, el("div", { className: "schedule-empty-icon" }, icon("calendar", 44)), el("h2", { textContent: "Nothing scheduled yet" }), el("p", { textContent: "Start now or choose a time. Follow the work here, then open the result when it is ready." }), button("Create your first schedule", () => void this.create(), true)), el("section", { className: "schedule-inspiration" }, el("h2", { textContent: "What would you like to make time for?" }), this.templates()));
+  }
+  private card(t: TaskSummary): HTMLElement {
+    const b = button("", () => void this.showDetail(t.id)); b.className = "schedule-card"; b.dataset.task = t.id;
+    b.append(el("div", { className: "schedule-card-top" }, el("span", { className: "schedule-card-icon" }, icon(t.schedule ? "calendar" : "form", 21)), this.badge(t.state)), el("h2", { textContent: t.goal }), el("p", { textContent: t.note }), el("div", { className: "schedule-card-footer" }, icon("clock", 15), el("span", { textContent: t.schedule ? scheduleLabel(t.schedule) : `Updated ${date(t.updated)}` }), icon("arrow", 16)));
+    return b;
+  }
+  private badge(state: TaskView["state"]): HTMLElement { return el("span", { className: `schedule-badge ${state}` }, el("span", { className: "schedule-dot" }), TASK_LABELS[state]); }
+  private templates(): HTMLElement {
+    return el("div", { className: "schedule-templates" }, ...TEMPLATES.map((t) => {
+      const b = button("", () => void this.create(t)); b.className = "schedule-template";
+      b.append(el("span", { className: "schedule-card-icon" }, icon(t.glyph, 21)), el("span", {}, el("strong", { textContent: t.title }), el("span", { textContent: t.description }), el("small", {}, "Make it yours ", icon("arrow", 13)))); return b;
+    }));
+  }
+
+  private async showDetail(id: string, focus = true): Promise<void> {
+    if (this.busy || this.page.hidden) return;
+    if (!focus && this.page.contains(document.activeElement) && document.activeElement instanceof HTMLInputElement) return;
+    const request = ++this.request;
+    try {
+      const task = parseTaskView(await api<unknown>(`/api/tasks/${encodeURIComponent(id)}`));
+      if (request !== this.request || this.page.hidden) return;
+      this.detail = task; this.view = { kind: "detail", id };
+      const body = this.shell(task.goal.length > 160 ? task.goal.slice(0, 157) + "…" : task.goal, "The full picture, from the first instruction to the result.", () => this.list());
+      body.querySelector(".schedule-eyebrow")!.textContent = "SCHEDULE / OVERVIEW";
+      const actions = el("div", { className: "schedule-detail-actions" }, this.badge(task.state), button("Open workspace", () => { this.close(); void this.navigate(id).catch((err: unknown) => this.error(String(err))); }, true));
+      const change = (operation: "pause" | "resume" | "run") => void this.mutate(task, "schedule", { operation, revision: task.revision });
+      if (task.state === "scheduled" || task.state === "paused") {
+        actions.append(button("Run now", () => change("run")), button(task.state === "paused" ? "Resume" : "Pause", () => change(task.state === "paused" ? "resume" : "pause")));
+      }
+      if (["queued", "running", "needs_approval"].includes(task.state)) actions.append(button("Cancel run", () => void this.mutate(task, "cancel", {})));
+      if (task.state === "needs_input") actions.append(button("Accept result", async () => { if (await ask(`Does the result meet these criteria?\n\n${task.criteria}`, "Accept result")) await this.mutate(task, "complete", {}); }));
+      body.append(actions, el("p", { className: "schedule-status-note", role: "status", textContent: task.note }));
+      const layout = el("div", { className: "schedule-detail-grid" });
+      const main = el("div", {}, this.section("Instructions", el("p", { className: "schedule-instructions", textContent: task.goal })), this.section("The finish line", el("p", { textContent: task.criteria })), this.section("Activity", task.activity.length ? el("ol", { className: "schedule-timeline" }, ...task.activity.slice(-24).reverse().map((a) => el("li", {}, el("time", { dateTime: a.at, textContent: date(a.at) }), el("span", { textContent: a.text })))) : el("p", { className: "hint", textContent: "Your first run will appear here. No model work happens while waiting for a scheduled time." })));
+      const facts = el("dl", { className: "schedule-facts" });
+      for (const [label, value] of [["When", scheduleLabel(task.schedule)], ["Timing", task.schedule ? `Once · ${task.schedule.status === "dispatched" ? "Dispatched" : task.schedule.status === "paused" ? "Paused" : "Upcoming"}` : "Started manually"], ["Model", task.model], ["Capabilities", task.integrations.join(", ") || "None selected"], ["Runs", String(task.runs)], ["Created", date(task.created)]]) facts.append(el("dt", { textContent: label }), el("dd", { textContent: value }));
+      const aside = el("aside", {}, this.section("At a glance", facts), this.section("Your control", el("p", { textContent: "Each run is bounded. Changes follow your integration permissions, and results wait for your review." }), button("Manage integrations", () => void openSettings("integrations"))));
+      if (task.state === "scheduled" || task.state === "paused") {
+        const value = new Date(task.schedule!.at); const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+        const when = el("input", { type: "datetime-local", value: local, required: true, "aria-label": "New schedule time" });
+        const form = el("form", { className: "schedule-reschedule" }, el("label", {}, "New time on this computer", when), el("small", { textContent: Intl.DateTimeFormat().resolvedOptions().timeZone }), el("button", { type: "submit", className: "ghost", textContent: "Save time" }));
+        form.addEventListener("submit", (event) => { event.preventDefault(); if (!when.value || !Number.isFinite(new Date(when.value).getTime())) return; void this.mutate(task, "schedule", { operation: "reschedule", revision: task.revision, schedule: { kind: "once", at: new Date(when.value).toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, status: "armed", missed: "review" } }); });
+        aside.append(this.section("Change the time", form));
+      }
+      if (task.approval) {
+        const approval = task.approval;
+        main.prepend(this.section("Your approval is needed", el("strong", { textContent: `${approval.server}: ${approval.title}` }), el("pre", { className: "approval-args", textContent: JSON.stringify(approval.args, null, 2) }), el("div", { className: "task-controls" }, button("Deny", () => void this.mutate(task, "approve", { approval: approval.id, decision: "deny" })), button("Allow once", () => void this.mutate(task, "approve", { approval: approval.id, decision: "allow" }), true))));
+      }
+      const remove = button("Delete…", async () => {
+        this.busy = true;
+        try { await this.remove(task); if (!this.summaries.some((s) => s.id === task.id)) this.list(); }
+        finally { this.busy = false; }
+      }); remove.className = "schedule-delete"; remove.disabled = ["queued", "running", "needs_approval"].includes(task.state);
+      aside.append(el("div", { className: "schedule-danger" }, remove, el("small", { textContent: remove.disabled ? "Cancel active work and let it stop before deleting." : "Deletion is scoped and requires confirmation. External changes are kept." })));
+      layout.append(main, aside); body.append(layout);
+      if (focus) $("schedule-title").focus();
+    } catch (err) { if (request === this.request) this.error((err as Error).message); }
+  }
+  private section(title: string, ...children: HTMLElement[]): HTMLElement { return el("section", { className: "schedule-section" }, el("h2", { textContent: title }), ...children); }
+  private async mutate(task: TaskView, operation: "schedule" | "cancel" | "complete" | "approve", body: object): Promise<void> {
+    if (this.busy) return; this.busy = true;
+    try { await api(`/api/tasks/${encodeURIComponent(task.id)}/${operation}`, { method: "POST", body: JSON.stringify(body) }); }
+    catch (err) { this.error((err as Error).message); return; }
+    finally { this.busy = false; }
+    await this.refresh(); await this.showDetail(task.id, false);
+  }
+
+  private async create(template?: typeof TEMPLATES[number]): Promise<void> {
+    this.request++; this.view = { kind: "create" };
+    const form = $("schedule-compose"); this.formShown = true;
+    const body = this.shell("Create a schedule", "Choose what to do, when to begin, and which tools it can use.", () => this.list());
+    form.hidden = false; body.append(form);
+    $("task-create-cancel").onclick = () => this.list();
+    $("task-create-model").textContent = current.model || "Choose a model before saving";
+    $("task-manage-integrations").onclick = () => void openSettings("integrations");
+    $("task-change-model").onclick = () => void openSettings("models");
+    if (template) { $<HTMLTextAreaElement>("task-goal").value = template.goal; $<HTMLTextAreaElement>("task-criteria").value = template.criteria; }
+    this.updateTiming();
+    $("schedule-timing").onchange = () => this.updateTiming();
+    $("schedule-at").oninput = () => this.updateTiming();
+    const generation = ++this.formGeneration;
+    $<HTMLFormElement>("task-create-form").onsubmit = (event) => { event.preventDefault(); void this.save(); };
+    $<HTMLButtonElement>("task-create-start").disabled = true;
+    const choices = $("task-capabilities");
+    // Retain explicit choices when returning from settings; newly available tools start unchecked.
+    const selected = new Set([...choices.querySelectorAll<HTMLInputElement>("input:checked")].map((c) => c.value));
+    try {
+      const list = capabilities(await api<unknown>("/api/task-capabilities"));
+      if (generation !== this.formGeneration) return;
+      choices.replaceChildren(...list.map((c) => {
+        const checkbox = el("input", { type: "checkbox", name: "capability", value: c.id, disabled: !c.ready, checked: c.ready && (selected.has(c.id) || !this.formReady && c.id === "time"), "data-free": String(c.free) });
+        return el("label", { className: `schedule-capability${c.ready ? "" : " unavailable"}` }, checkbox, el("span", {}, el("strong", { textContent: c.name }), el("small", { textContent: c.ready ? c.summary : "Set up in Integrations" }), el("small", { textContent: c.free ? "No service fee" : "Your server · cost and trust require review" })));
+      })); this.formReady = true;
+    } catch (err) { $("task-create-error").textContent = (err as Error).message; }
+    finally { if (generation === this.formGeneration) $<HTMLButtonElement>("task-create-start").disabled = false; }
+    $("task-goal").focus();
+  }
+  private updateTiming(): void {
+    const later = $<HTMLSelectElement>("schedule-timing").value === "once";
+    $("schedule-date-field").hidden = !later;
+    $<HTMLInputElement>("schedule-at").required = later;
+    $("schedule-timezone").textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const at = new Date($<HTMLInputElement>("schedule-at").value);
+    $("schedule-time-preview").textContent = later && Number.isFinite(at.getTime()) ? `Will run once: ${date(at.toISOString())} · ${Intl.DateTimeFormat().resolvedOptions().timeZone}` : later ? "Choose a future date and time." : "Starts as soon as the execution slot is free.";
+    $("task-create-start").textContent = later ? "Save schedule" : "Start now";
+    $("task-create-limits").textContent = `${TASK_LIMITS.rounds} model rounds · ${TASK_LIMITS.tools} tool calls · ${TASK_LIMITS.activeMs / 60000} active minutes per run`;
+  }
+  private async save(): Promise<void> {
+    if (this.creationBusy) return;
+    const error = $("task-create-error"); error.textContent = "";
+    if (!current.model) { error.textContent = "Choose a model to run this work."; return; }
+    const later = $<HTMLSelectElement>("schedule-timing").value === "once";
+    const at = new Date($<HTMLInputElement>("schedule-at").value);
+    if (later && (!Number.isFinite(at.getTime()) || at.getTime() <= Date.now())) { error.textContent = "Choose a future date and time."; return; }
+    this.creationBusy = true; $<HTMLButtonElement>("task-create-start").disabled = true;
+    try {
+      const chosen = [...$("task-capabilities").querySelectorAll<HTMLInputElement>("input:checked")];
+      const confirmedFree = chosen.filter((c) => c.dataset.free !== "true").map((c) => c.value);
+      if (confirmedFree.length && !(await ask("You selected a server you configured. Continue only after checking its source, permissions and that there are no service fees for this work.", "I checked; continue"))) return;
+      const task = parseTaskView(await api<unknown>("/api/tasks", { method: "POST", body: JSON.stringify({ goal: $<HTMLTextAreaElement>("task-goal").value, criteria: $<HTMLTextAreaElement>("task-criteria").value, provider: current.provider, model: current.model, integrations: chosen.map((c) => c.value), confirmedFree, ...(later ? { schedule: { kind: "once", at: at.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, status: "armed", missed: "review" } } : {}) }) }));
+      $<HTMLFormElement>("task-create-form").reset(); this.formReady = false;
+      await this.refresh(); await this.showDetail(task.id);
+    } catch (err) { error.textContent = (err as Error).message; }
+    finally { this.creationBusy = false; $<HTMLButtonElement>("task-create-start").disabled = false; }
+  }
+
+  /** Park the composer before changing page content so its unsaved inputs survive navigation. */
+  parkComposer(): void {
+    if (!this.formShown) return;
+    const composer = $("schedule-compose"); composer.hidden = true; $("schedule-parking").append(composer);
+  }
+}

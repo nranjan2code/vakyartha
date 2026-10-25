@@ -32,7 +32,7 @@ const NAV: [Section, string, boolean?][] = [
   ["channel:discord", "Discord", true],
   ["appearance", "Appearance"],
   ["chats", "Chats"],
-  ["tasks", "Tasks"],
+  ["tasks", "Schedule"],
   ["finops", "FinOps"],
   ["general", "General"],
   ["about", "About"],
@@ -99,7 +99,8 @@ async function show(to: Section, arg?: string): Promise<void> {
     appearance: appearancePage,
     chats: chatsPage,
     tasks: async () => [
-      ...title("Tasks", "Give work a clear goal and completion criteria. Every surface remains interactive; completion requires your review."),
+      ...title("Schedule", "Plan work for now or a chosen time. Every surface remains interactive; completion requires your review."),
+      group("Timing", row("One-time schedules", "Save a future date and time, pause or resume, or run now from Schedule. Missed times are held for review. Repeating schedules are not enabled yet.", el("span"))),
       group("Execution", row("Availability", "Work continues while you switch views or hide the window. Keep the app running and the computer awake. Interrupted work requires review before continuation.", el("span")), row("Per-run limits", `${TASK_LIMITS.rounds} model rounds, ${TASK_LIMITS.tools} tool calls and ${TASK_LIMITS.activeMs / 60000} active minutes. Approval waiting has its own five-minute expiry.`, el("span"))),
       group("Access and results", row("Capabilities", "Select ready, free capabilities per task. Configure access in Integrations; no capability is installed or enabled automatically.", el("button", { type: "button", className: "ghost small", textContent: "Open Integrations", onclick: () => void show("integrations") })), row("Review", "A generated interface does not prove that an external action happened. Check the criteria and any operation receipts before marking a task complete.", el("span"))),
     ],

@@ -6,6 +6,7 @@ import type { AgentEvent } from "@vak/core";
 import type { HostRunOptions, HostTurn, SessionView } from "@vak/host";
 import type { AgentTool } from "@vak/providers";
 import { TASK_LIMITS, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView } from "../task-contract.ts";
+import { parseSchedule, SCHEDULE_GRACE_MS } from "../schedule.ts";
 
 interface Dependencies {
   dir: string;
@@ -36,6 +37,8 @@ export class Tasks {
   private readonly deciding = new Set<string>();
   private readonly deleting = new Set<string>();
   private readonly deps: Dependencies;
+  private wake?: ReturnType<typeof setTimeout>;
+  private checking?: Promise<void>;
 
   private constructor(deps: Dependencies) { this.deps = deps; }
 
@@ -55,10 +58,13 @@ export class Tasks {
       }
       owner.tasks.set(t.id, t);
     }
+    // Past triggers are held for review after restart, never silently replayed.
+    await owner.checkSchedules(true);
+    owner.planWake();
     return owner;
   }
 
-  list(): TaskSummary[] { return [...this.tasks.values()].map(({ id, session, goal, state, updated, revision, note }) => ({ id, session, goal: goal.slice(0, 120), state, updated, revision, note })).sort((a, b) => b.updated.localeCompare(a.updated)); }
+  list(): TaskSummary[] { return [...this.tasks.values()].map(({ id, session, goal, state, updated, revision, note, schedule }) => ({ id, session, goal: goal.slice(0, 120), state, updated, revision, note, ...(schedule ? { schedule: structuredClone(schedule) } : {}) })).sort((a, b) => b.updated.localeCompare(a.updated)); }
   get(id: string): TaskView { const t = this.tasks.get(id); if (!t) throw new Error("Task not found"); return this.copy(t); }
   owns(session: string): boolean { return this.tasks.has(session); }
   inTask(): boolean { return Boolean(this.scope.getStore()); }
@@ -100,11 +106,15 @@ export class Tasks {
     const integrations = [...new Set(body.integrations as string[])];
     const confirmedFree = Array.isArray(body.confirmedFree) && body.confirmedFree.length <= 16 && body.confirmedFree.every(identifier) ? [...new Set(body.confirmedFree as string[])] : [];
     this.deps.ready(provider, model, integrations, confirmedFree);
+    const schedule = body.schedule === undefined ? undefined : parseSchedule(body.schedule);
+    if (schedule && (schedule.status !== "armed" || Date.parse(schedule.at) <= Date.now())) throw new Error("Choose a future date and time");
     const id = randomUUID(), at = new Date().toISOString();
     const t: TaskView = { version: 1, revision: 0, id, session: id, goal, criteria, provider, model, integrations, confirmedFree, state: "queued", created: at, updated: at, note: "Waiting to start", runs: 0, pending: [{ id: randomUUID(), kind: "message", message: goal }], activity: [], operations: [], accepted: [] };
+    if (schedule) { t.schedule = schedule; t.state = "scheduled"; t.note = "Will run once at the selected time while this app is running and the computer is awake."; }
     await this.persist(t);
     this.tasks.set(id, t);
     this.pump();
+    this.planWake();
     return this.copy(t);
   }
 
@@ -112,6 +122,7 @@ export class Tasks {
     const body = taskObject(value), input = parseTaskInput(value);
     const t = this.tasks.get(id); if (!t) throw new Error("Task not found");
     if (this.deleting.has(id)) throw new Error("Task is being deleted");
+    if (t.state === "scheduled" || t.state === "paused") throw new Error("Use Run now or change the schedule before adding inputs");
     if (!identifier(body.id)) throw new Error("Input identity required");
     if (t.pending.some((p) => p.id === body.id) || t.accepted.includes(body.id as string)) return this.copy(t);
     if (t.accepted.length >= 256 || t.runs >= 32) throw new Error("Task continuation limit reached; start a new task");
@@ -134,8 +145,10 @@ export class Tasks {
     t.state = "cancelled";
     t.note = "Stopped new work. Operations already sent may still have effects.";
     t.pending = [];
+    if (t.schedule?.status === "armed") t.schedule.status = "paused";
     if (this.execution?.task.id === id) this.execution.ctrl.abort();
     await this.persist(t);
+    this.planWake();
     return this.copy(t);
   }
 
@@ -168,7 +181,59 @@ export class Tasks {
       await this.deps.remove(id);
       await rm(path.join(this.deps.dir, `${id}.json`), { force: true });
       this.tasks.delete(id);
+      this.planWake();
     } finally { this.deleting.delete(id); }
+  }
+
+  async changeSchedule(id: string, value: unknown): Promise<TaskView> {
+    const t = this.tasks.get(id); if (!t) throw new Error("Schedule not found");
+    const body = taskObject(value);
+    if (this.closed || this.deleting.has(id) || this.execution?.task.id === id) throw new Error("Wait for active work to finish");
+    if (body.revision !== t.revision) throw new Error("This schedule changed. Refresh and try again.");
+    if (t.state !== "scheduled" && t.state !== "paused") throw new Error("Only upcoming or paused work can be rescheduled");
+    if (!t.schedule || !t.pending.length) throw new Error("No pending scheduled run");
+    if (body.operation === "pause") {
+      t.schedule.status = "paused"; t.state = "paused"; t.note = "Paused. Resume, change the time or run when you are ready.";
+    } else if (body.operation === "resume" || body.operation === "reschedule") {
+      const schedule = body.operation === "resume" ? t.schedule : parseSchedule(body.schedule);
+      if (Date.parse(schedule.at) <= Date.now()) throw new Error("That time has passed. Choose a new time or Run now.");
+      this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
+      t.schedule = { ...schedule, status: "armed" }; t.state = "scheduled"; t.note = "Waiting for the selected time";
+    } else if (body.operation === "run") {
+      this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
+      t.schedule.status = "dispatched"; t.state = "queued"; t.note = "Waiting to run";
+    } else throw new Error("Unknown schedule operation");
+    this.activity(t, `Schedule ${body.operation}`);
+    await this.persist(t); this.pump(); this.planWake();
+    return this.copy(t);
+  }
+
+  private planWake(): void {
+    clearTimeout(this.wake);
+    if (this.closed) return;
+    const times = [...this.tasks.values()].filter((t) => t.state === "scheduled" && !this.deleting.has(t.id)).map((t) => Date.parse(t.schedule!.at));
+    if (!times.length) return;
+    // Bounded wakeups also notice clock changes and sleep without a busy polling loop.
+    this.wake = setTimeout(() => {
+      this.checking = this.checkSchedules().catch((err: unknown) => this.deps.warn(`Schedule check failed: ${String(err)}`)).finally(() => { this.checking = undefined; this.planWake(); });
+    }, Math.max(25, Math.min(30_000, Math.min(...times) - Date.now())));
+    this.wake.unref();
+  }
+
+  private async checkSchedules(startup = false): Promise<void> {
+    for (const t of this.tasks.values()) {
+      if (this.closed || t.state !== "scheduled" || this.deleting.has(t.id) || !t.schedule || Date.parse(t.schedule.at) > Date.now()) continue;
+      if (startup || Date.now() - Date.parse(t.schedule.at) > SCHEDULE_GRACE_MS) {
+        t.state = "paused"; t.schedule.status = "paused";
+        t.note = "The scheduled time was missed. Review the inputs, then choose Run now or a new time.";
+        this.activity(t, "Missed scheduled time; held for review");
+      } else {
+        t.state = "queued"; t.schedule.status = "dispatched"; t.note = "Scheduled time reached; waiting for the execution slot";
+        this.activity(t, "Scheduled run queued");
+      }
+      await this.persist(t);
+    }
+    this.pump();
   }
 
   private pump(): void {
@@ -298,8 +363,10 @@ export class Tasks {
 
   async close(): Promise<void> {
     this.closed = true;
+    clearTimeout(this.wake);
     this.execution?.ctrl.abort(new Error("Application stopped; review before continuing"));
     await this.active;
+    await this.checking;
     await Promise.all(this.writes.values());
   }
 }

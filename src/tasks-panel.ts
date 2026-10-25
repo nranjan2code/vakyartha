@@ -1,18 +1,8 @@
-import { TASK_LABELS, TASK_LIMITS, parseTaskSummaries, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../task-contract.ts";
+import { TASK_LABELS, parseTaskSummaries, parseTaskView, type TaskSummary, type TaskView } from "../task-contract.ts";
 import { $, api, ask, el } from "./core.ts";
-import { current } from "./models.ts";
-import { openSettings } from "./settings.ts";
+import { SchedulePage } from "./schedule-page.ts";
 
-interface Capability { id: string; name: string; summary: string; ready: boolean; free: boolean; access: string[] }
 type Command = { kind: "cancel" } | { kind: "complete" } | { kind: "approve"; approval: string; decision: "allow" | "deny" };
-function parseCapabilities(value: unknown): Capability[] {
-  if (!Array.isArray(value) || value.length > 32) throw new Error("Invalid capability list");
-  return value.map((item: unknown) => {
-    const raw = taskObject(item);
-    if (!Array.isArray(raw.access) || raw.access.length > 32) throw new Error("Invalid capability access");
-    return { id: taskString(raw.id, 120), name: taskString(raw.name, 240), summary: taskString(raw.summary, 2000), ready: raw.ready === true, free: raw.free === true, access: raw.access.map((v: unknown) => taskString(v, 2000)) };
-  });
-}
 
 /** Task controls use the existing conversation and canvas; no surface copies live here. */
 export class TasksPanel {
@@ -22,19 +12,13 @@ export class TasksPanel {
   private open: (session: string) => Promise<void>;
   private loading = false;
   private drawn = "";
-  private listDrawn = "";
+  readonly page: SchedulePage;
 
-  constructor(session: () => string, open: (session: string) => Promise<void>) {
+  constructor(session: () => string, open: (session: string) => Promise<void>, beforeOpen: () => void, toggleSidebar: () => void) {
     this.session = session; this.open = open;
-    $("open-tasks").addEventListener("click", () => {
-      $("task-list").hidden = !$("task-list").hidden;
-      $("open-tasks").setAttribute("aria-expanded", String(!$("task-list").hidden));
-      void this.refresh();
-    });
-    $("new-task").addEventListener("click", () => void this.create());
-    $("task-create-cancel").addEventListener("click", () => $<HTMLDialogElement>("task-create").close());
+    this.page = new SchedulePage({ navigate: open, refresh: () => this.refresh(), remove: (t) => this.remove(t), beforeOpen, toggleSidebar });
     setInterval(() => {
-      if (!$("task-list").hidden || this.owns(this.session())) void this.refresh();
+      if (this.page.visible() || this.owns(this.session())) void this.refresh();
     }, 2000);
   }
 
@@ -45,17 +29,7 @@ export class TasksPanel {
     this.loading = true;
     try {
       this.summaries = parseTaskSummaries(await api<unknown>("/api/tasks"));
-      const list = $("task-items");
-      const listKey = `${this.session()}:${JSON.stringify(this.summaries)}`;
-      if (listKey !== this.listDrawn) {
-        this.listDrawn = listKey;
-        list.replaceChildren(...this.summaries.map((t) => {
-          const button = el("button", { type: "button", className: "task-link", "data-task": t.id, "aria-current": String(t.session === this.session()) }, el("span", { textContent: t.goal }), el("small", { textContent: TASK_LABELS[t.state] }));
-          button.addEventListener("click", () => void this.open(t.session).catch((err) => this.error((err as Error).message)));
-          return button;
-        }));
-        if (!this.summaries.length) list.append(el("p", { className: "hint", textContent: "Give a task a goal and a clear finish line. Its interfaces stay interactive as work progresses." }));
-      }
+      this.page.update(this.summaries);
       const summary = this.summaries.find((t) => t.session === this.session());
       if (!summary) this.selected = undefined;
       else if (this.selected?.id !== summary.id || this.selected.revision !== summary.revision) {
@@ -99,20 +73,8 @@ export class TasksPanel {
       const cancel = el("button", { type: "button", className: "ghost small", textContent: "Cancel task" });
       cancel.addEventListener("click", () => void this.command({ kind: "cancel" })); controls.append(cancel);
     }
-    const remove = el("button", { type: "button", className: "ghost small", textContent: "Delete task", disabled: ["queued", "running", "needs_approval"].includes(t.state), title: "Stop active work before deleting its record" });
-    remove.addEventListener("click", async () => {
-      if (!(await ask(`Delete “${t.goal.slice(0, 120)}”? This removes its conversation, drafts and raw diagnostic transcript. External changes, shared memory, integrations, credentials, integration logs and numeric usage records are kept.`, "Delete task"))) return;
-      let confirmUncertain = false;
-      if (t.operations.some((op) => op.state === "uncertain" || op.state === "started")) {
-        confirmUncertain = await ask("Some external effects are uncertain. Deleting this task removes the recovery record, but cannot undo those effects. Review the affected service or files before proceeding.", "Delete recovery record");
-        if (!confirmUncertain) return;
-      }
-      try {
-        await api(`/api/tasks/${encodeURIComponent(t.id)}`, { method: "DELETE", body: JSON.stringify({ revision: t.revision, confirmUncertain }) });
-        window.dispatchEvent(new CustomEvent("vak:task-deleted", { detail: t.id }));
-        await this.refresh();
-      } catch (err) { this.error((err as Error).message); }
-    });
+    const remove = el("button", { type: "button", className: "ghost small", textContent: "Delete…", disabled: ["queued", "running", "needs_approval"].includes(t.state), title: "Stop active work before deleting its record" });
+    remove.addEventListener("click", () => void this.remove(t));
     controls.append(remove);
     bar.replaceChildren(el("div", { className: "task-heading" }, status, controls), el("p", { className: "task-note", textContent: t.note }), details);
     if (t.approval) {
@@ -127,6 +89,7 @@ export class TasksPanel {
   }
 
   error(message: string): void {
+    this.page.error(message);
     $("task-error").textContent = message;
     $("task-error").hidden = false;
   }
@@ -153,36 +116,17 @@ export class TasksPanel {
     await this.refresh();
   }
 
-  private async create(): Promise<void> {
-    if (!current.model) return void openSettings("models");
-    const dialog = $<HTMLDialogElement>("task-create"), form = $<HTMLFormElement>("task-create-form");
-    const error = $("task-create-error"); error.textContent = "";
-    $("task-create-model").textContent = `Model: ${current.model}. Task work runs while this app and computer remain running.`;
-    const capabilities = $("task-capabilities"); capabilities.replaceChildren();
+  private async remove(t: TaskView): Promise<void> {
+    if (!(await ask(`Delete “${t.goal.slice(0, 120)}”? This removes its conversation, drafts and raw diagnostic transcript. External changes, shared memory, integrations, credentials, integration logs and numeric usage records are kept.`, "Delete"))) return;
+    let confirmUncertain = false;
+    if (t.operations.some((op) => op.state === "uncertain" || op.state === "started")) {
+      confirmUncertain = await ask("Some external effects are uncertain. Deleting removes the recovery record, but cannot undo those effects. Review the affected service or files first.", "Delete recovery record");
+      if (!confirmUncertain) return;
+    }
     try {
-      const list = parseCapabilities(await api<unknown>("/api/task-capabilities"));
-      for (const c of list) {
-        const checkbox = el("input", { type: "checkbox", value: c.id, name: "capability", disabled: !c.ready, checked: c.id === "time" && c.ready, "data-free": String(c.free) });
-        capabilities.append(el("label", { className: "task-capability" }, checkbox, el("span", {}, el("strong", { textContent: c.name }), el("small", { textContent: c.ready ? `${c.summary}${c.free ? " · No service fee" : " · Your server: trust and cost not verified"}` : "Set up in Integrations before selecting" }), el("small", { textContent: c.access.join(" · ") }))));
-      }
-    } catch (err) { error.textContent = (err as Error).message; }
-    const goSettings = (section: "integrations" | "models") => () => { dialog.close(); void openSettings(section); };
-    $("task-manage-integrations").onclick = goSettings("integrations");
-    $("task-change-model").onclick = goSettings("models");
-    $("task-create-limits").textContent = `Per run: ${TASK_LIMITS.rounds} model rounds, ${TASK_LIMITS.tools} tool calls, ${TASK_LIMITS.activeMs / 60000} active minutes. Results require your review. Tool access is limited to your selection and integration policies.`;
-    form.onsubmit = async (event) => {
-      event.preventDefault();
-      const button = $<HTMLButtonElement>("task-create-start"); button.disabled = true;
-      try {
-        const chosen = [...capabilities.querySelectorAll<HTMLInputElement>("input:checked")];
-        const confirmedFree = chosen.filter((c) => c.dataset.free !== "true").map((c) => c.value);
-        if (confirmedFree.length && !(await ask("You selected a server you configured. Its publisher, execution permissions and service costs have not been verified by the app. Continue only after checking that it is trusted and has no service fees for this task.", "I checked; continue"))) return;
-        const t = parseTaskView(await api<unknown>("/api/tasks", { method: "POST", body: JSON.stringify({ goal: $<HTMLTextAreaElement>("task-goal").value, criteria: $<HTMLTextAreaElement>("task-criteria").value, provider: current.provider, model: current.model, integrations: chosen.map((c) => c.value), confirmedFree }) }));
-        dialog.close(); form.reset(); $("task-list").hidden = false;
-        await this.refresh(); await this.open(t.session);
-      } catch (err) { error.textContent = (err as Error).message; }
-      finally { button.disabled = false; }
-    };
-    dialog.showModal(); $<HTMLTextAreaElement>("task-goal").focus();
+      await api(`/api/tasks/${encodeURIComponent(t.id)}`, { method: "DELETE", body: JSON.stringify({ revision: t.revision, confirmUncertain }) });
+      window.dispatchEvent(new CustomEvent("vak:task-deleted", { detail: t.id }));
+      await this.refresh();
+    } catch (err) { this.error((err as Error).message); }
   }
 }

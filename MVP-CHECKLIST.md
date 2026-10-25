@@ -10,7 +10,7 @@ Check an implementation item only after its acceptance behavior is verified. App
 - [x] D2. Create this tracker with ownership and acceptance gates.
 - [x] D3. Independent design review completed; findings incorporated into spec sections 3, 4, 6 and 9 and the gates below. See evidence log.
 - [ ] D4. Confirm initial audience, three outcome scenarios and supported inputs.
-- [ ] D5. Review a concrete workspace design: task entry, conversation, compact activity, existing canvas, multiple surface selection, narrow layout and keyboard flow.
+- [x] D5. Review a concrete workspace design: Schedule overview, full-page setup/detail, conversation, activity, existing multi-surface canvas and narrow layout. Evidence: `scripts/task-check.ts` wide/light and narrow/dark snapshots; full accessibility and installed-window review remain P2.8/P4.11 gates.
 - [x] D6. Set run limits, draft/update conflict rules and recovery/deletion expectations.
 - [x] D7. Prove the public-API composition for one canonical session/surface store, detached execution and durable action ownership. Review each proposed framework gap and record the smallest needed change or that no change is needed. No repeated chat requests or volatile inbox may be passed off as durable execution.
 - [ ] D8. Assign runtime/data ownership before coding. Prefer no new IPC; justify any native boundary with a concrete benefit, define its narrow contract, and measure message count, payload/serialization cost and UI responsiveness. Establish a regression budget and one persistence writer per entity.
@@ -18,6 +18,7 @@ Check an implementation item only after its acceptance behavior is verified. App
 - [x] D10. Record capability plugin architecture and runtime/ownership decisions — `ADR.md`. Reuse the existing MCP store; memory and reusable context are selectable integrations, while task recovery remains local.
 - [ ] D11. Verify free capability choices, setup/access requirements and failure behavior. Add catalog entries only for concrete missing capabilities; no automatic installation or activation.
 - [x] D12. Record typed contracts, scoped deletion, task/run lifetime, shared dispatch and chain semantics — ADR-004–006. Scheduling and chain execution remain unimplemented gates.
+- [x] D13. Schedule workspace and one-time triggers — ADR-007, `schedule.ts`, `src/schedule-page.ts`, `test/schedule.test.ts` and expanded task smoke. Recurring/event/chain triggers remain unimplemented.
 
 ## Existing foundations to retain
 
@@ -113,7 +114,7 @@ Owners: Vakyartha end-to-end; Projection verifies any changed framework contract
 
 ## Later — not required for MVP completion
 
-These boxes track future candidates only. Do not start them simply because they appear here.
+These boxes track future candidates only. Do not start them simply because they appear here. One-time clock triggers are now implemented; repeating/event triggers remain below.
 
 - [ ] L1. Reusable, reviewed skills with validation and permission boundaries.
 - [ ] L2. User-controlled memory/context across tasks through selectable MCP integrations, with inspect, edit and delete capabilities where supported; no parallel built-in knowledge database.

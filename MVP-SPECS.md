@@ -200,6 +200,8 @@ The initial slice supports manually created tasks, one executing run, persisted 
 
 This is not the complete MVP. An approval wait currently occupies the execution slot. Task history is not yet segmented for sustained long-term operation, and conservative journal/continuation guards apply. Calendar/event triggers, chains, automatic evidence-based outcome verification, cumulative spend controls and complete shared-log retention remain open. Free/local capability choices reuse the existing catalog; configured custom servers require explicit cost/trust review. No additional server is installed automatically.
 
+The next timing slice adds the Schedule page with a full-page composer and lifecycle overview/details. Immediate and one-time future runs use the same queue. Timing records persist an instant, display time zone and armed/paused/dispatched status. Upcoming work can pause, resume, change time or run now; controls require the current revision. Past due triggers on startup, or those delayed over a minute during operation, pause for review. Repeating schedules and event/chain triggers are still not supported. See ADR-007.
+
 Local field drafts persist in UI storage, with explicit resolution of conflicting incoming values. Task deletion removes its journal, conversation, raw transcript and local drafts; shared integration logs, numeric usage records, credentials, memory and external files remain. Deletion requires stopped execution, a current revision and additional acknowledgement of uncertain effects.
 
 ## 9. Design review
