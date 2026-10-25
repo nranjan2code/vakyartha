@@ -1,16 +1,45 @@
-# Vakyartha
+<p align="center"><img src="public/icon.svg" width="96" alt="Vakyartha"></p>
 
-**Ask any model, get an interface.**
+<h1 align="center">Vakyartha</h1>
 
-Vakyartha is a desktop app (macOS first) whose answers are interfaces: cards, dashboards, tables, charts, forms and buttons you can use, not just read. Chats are saved, artifacts open in a canvas beside the conversation, and a menu-bar mode keeps channels like Telegram answering while the window is closed. Local models first (Ollama `qwen3.5:4b-mlx`); hosted providers work too.
+<p align="center"><b>Ask. Then go live your day.</b><br>
+An AI helper that stays with the work: everyday jobs, unfinished plans, and what comes next.</p>
 
-Built on the **[Projection framework](https://github.com/nranjan2code/Projection)** (`@vak/*`): the engine that parses, repairs and projects model-written interfaces. Vakyartha draws the framework in as a pinned git submodule; the framework knows nothing about the app.
+<p align="center"><a href="https://vakyartha.com">vakyartha.com</a> · <a href="#get-started">Get started</a> · <a href="#where-the-rebuild-stands">Where the rebuild stands</a> · <a href="#your-control">Your control</a> · <a href="#develop">Develop</a> · <a href="LICENSE">MIT license</a></p>
 
-[Install from source](#install-from-source) · [Develop](#develop) · [How it fits together](#how-it-fits-together) · [Data](#data) · [Docs](#documentation) · [MIT license](LICENSE)
+---
 
-## Install from source
+From *Vākyārtha*, the meaning of a sentence. You bring an idea in your own words; Vakyartha helps carry its meaning into useful work, from the first thought to the next step.
 
-You need **macOS**, **Node.js 24+**, npm, **Rust** (stable) and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). For local models, run [Ollama](https://ollama.com) with `qwen3.5:4b-mlx` (or any installed model).
+1. **Bring what you have.** A rough idea, a document, a spreadsheet. Start with what you want to get done.
+2. **Make something useful.** Answers come back as interfaces you can use, not just read: cards, tables, charts, dashboards, forms and buttons, opened in a canvas beside the conversation.
+3. **Keep your say.** You choose which tools and services it can reach, approve what writes or goes online, and see what every turn cost.
+
+This repository is the **rebuild** of the app described on [vakyartha.com](https://vakyartha.com): a desktop app (macOS first) with a local model as the primary target (Ollama `qwen3.5:4b-mlx`) and hosted providers when you want them. It is built on the **[Projection framework](https://github.com/nranjan2code/Projection)** (`@vak/*`), the engine that parses, repairs and projects model-written interfaces, pinned here as a git submodule.
+
+## Where the rebuild stands
+
+The site describes where Vakyartha is going. Here is what this repository does today.
+
+| On vakyartha.com | In this rebuild |
+|---|---|
+| Ask, and get something you can use | **Works.** Answers project as live surfaces; chats are saved; an **Artifacts** library gathers every surface across chats and reopens it in the canvas. |
+| Your choice of models | **Works.** Local models through Ollama; 11 hosted providers with keys in the macOS Keychain. |
+| Connected tools and services | **Works.** A curated integrations catalog (Web pages, Time, Files, Memory, Brave Search, GitHub, Notion, Context7), each pinned, with per-tool policies and approvals. |
+| In your everyday chat | **Telegram works**, answered from the menu bar while the window is closed. Slack and Discord are listed as coming. |
+| Spending limits and usage | **Usage works:** Settings → FinOps charts tokens, context and estimated cost per turn. Spending limits are not built yet. |
+| Pick up the thread (commitments) | Not yet. |
+| Vakyartha and seven companions | Not yet. |
+| Headless & Cloud, scheduled routines | Not yet. `npm run web` serves the same app on loopback for development only. |
+| Voice, email and calendar | Not yet. |
+| macOS and Linux | macOS only so far. |
+| `vak setup`, `vak doctor`, `vak serve` | Those belong to the [earlier codebase](https://github.com/nranjan2code/code) the site still links to; the rebuild installs from source as below. |
+
+## Get started
+
+Open source under MIT; build it from source. A one-click download is not available yet.
+
+You need **macOS**, **Node.js 24+**, npm, **Rust** (stable) and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). For a free local model, run [Ollama](https://ollama.com) with `qwen3.5:4b-mlx` (or any installed model). Hosted AI services may charge for use.
 
 ```bash
 git clone --recurse-submodules https://github.com/nranjan2code/vakyartha.git
@@ -25,7 +54,17 @@ Then install the bundle (quit a running copy first: `osascript -e 'quit app "Vak
 ditto src-tauri/target/release/bundle/macos/Vakyartha.app /Applications/Vakyartha.app
 ```
 
-Builds are not code-signed or notarized yet: install only what you built yourself. The full release procedure is in [RELEASING.md](RELEASING.md).
+Builds are not code-signed or notarized yet: install only what you built yourself. Add hosted provider keys in **Settings → Providers**. The release procedure is in [RELEASING.md](RELEASING.md).
+
+## Your control
+
+- **You choose the access.** Apart from the built-in clock (Time), integrations stay off until you turn them on; each declares what it can reach, and the Files server is limited to the folders you pick.
+- **Actions follow your rules.** Anything that writes, deletes or reaches the internet asks first; each tool's policy can be allowed, ask or blocked. Model text, tool output and fetched pages are treated as data, never as instructions.
+- **Servers are pinned.** Each integration is a fixed version published at least 14 days earlier, installed without install scripts, and given only the environment variables it declares.
+- **Your work stays on your Mac.** Chats, artifacts and usage records live in the app's data folder; keys live in the Keychain. Requests go only to the providers and services you connect, and a local model keeps them on your machine.
+- **You can follow the outcome.** Every tool call is logged to `logs/tools.jsonl`; the engine window is token-protected.
+
+Details: [SECURITY.md](SECURITY.md).
 
 ## Develop
 
@@ -33,47 +72,40 @@ Builds are not code-signed or notarized yet: install only what you built yoursel
 npm run desktop          # dev window: Vite on :1420 + Tauri; the engine runs from source
 npm run web              # the same app in a browser on http://127.0.0.1:5178 (builds dist/ first)
 npm test                 # app tests
+npm run test:framework   # Projection's tests against the pinned framework
 npm run typecheck
 ```
 
-Hosted provider keys go in **Settings → Providers** (Keychain), or in a local `.env` for development (see [`.env.example`](.env.example)). Changes to the engine itself belong in [Projection](https://github.com/nranjan2code/Projection); [RELEASING.md](RELEASING.md) explains how to pull them in.
+For development, provider keys can also go in a local `.env` (see [`.env.example`](.env.example)). Changes to the engine belong in [Projection](https://github.com/nranjan2code/Projection), never in `framework/`; [RELEASING.md](RELEASING.md) explains how to pull them in. Working rules: [AGENTS.md](AGENTS.md).
 
-## How it fits together
+### How it fits together
 
 | Part | Where | What |
 |---|---|---|
-| Framework | `framework/` (submodule) | Projection: engine, catalog, projectors, providers, `@vak/host`, MCP client, Telegram runner |
-| Shell | `src-tauri/src/lib.rs` | starts the engine, hands the window its address and token (`backend`), tray, close-to-background, single instance, launch at login, graceful stop |
-| Engine | `sidecar/main.ts` → `sidecar/server.ts` | `@vak/host` + settings, channels, integrations, client-log and info routes; token-protected for the window, open (loopback only) for `npm run web` |
-| Settings store | `sidecar/settings.ts` | provider and channel keys in the macOS Keychain (elsewhere a 0600 file); plain values in `settings.env` |
-| Integrations | `sidecar/integrations.ts` | the app's MCP catalog (which servers, pinned versions); installing and running them is Projection's `Integrations` |
-| FinOps | `sidecar/finops.ts`, `src/finops-page.ts`, `finops.ts` | app-owned usage ledger, model rates, per-turn cost/context/output charts and CSV export; see [FINOPS.md](FINOPS.md) |
+| Framework | `framework/` (submodule) | Projection: engine, catalog, projectors, providers, `@vak/host`, MCP client and `Integrations`, Telegram runner |
+| Shell | `src-tauri/src/lib.rs` | starts the engine, hands the window its address and token, tray, close-to-background, single instance, launch at login, graceful stop |
+| Engine | `sidecar/main.ts` → `sidecar/server.ts` | `@vak/host` plus settings, channels, integrations, client-log and info routes; token-protected for the window, loopback-only for `npm run web` |
+| Settings store | `sidecar/settings.ts` | provider and channel keys in the Keychain; plain values in `settings.env` |
+| Integrations | `sidecar/integrations.ts` | the app's catalog (which servers, pinned versions); installing and running them is Projection's `Integrations` |
+| FinOps | `sidecar/finops.ts`, `src/finops-page.ts` | local usage ledger, model rates, per-turn charts and CSV export ([FINOPS.md](FINOPS.md)) |
 | Channels | `sidecar/channels.ts` | Telegram (`runTelegram`); Slack and Discord slots |
-| UI | `src/` | `main.ts` (chats, thread, composer, approvals), `settings.ts` + `integrations-page.ts` (Settings), `models.ts`, `theme.ts`, `menu.ts` (right-click), `icons.ts`, `ui.ts` |
-| Release packaging | `scripts/bundle-sidecar.ts`, `src-tauri/tauri.release.conf.json`, `scripts/version.ts` | the engine as one module, the Node binary, npm; one version everywhere |
+| UI | `src/` | chats, thread, composer, approvals, canvas and Artifacts ([CANVAS.md](CANVAS.md)), Settings, themes, right-click menus |
+| Release | `scripts/bundle-sidecar.ts`, `src-tauri/tauri.release.conf.json`, `scripts/version.ts` | the engine as one module with Node and npm; one version everywhere |
 
-## Data
+### Data
 
 | | Dev (`npm run desktop`) | Installed app | Browser (`npm run web`) |
 |---|---|---|---|
 | Folder | `.vak/desktop/` | `~/Library/Application Support/com.nranjan2code.vakyartha/` | `.vak/web/` |
 | Keys | Keychain `com.nranjan2code.vakyartha.dev` + `.env` | Keychain `com.nranjan2code.vakyartha` | Keychain `com.nranjan2code.vakyartha.web` + `.env` |
 
-Each folder holds `sessions/`, `integrations/` (one folder per installed server), `integrations.json`, `channels.json`, `settings.env`, `logs/engine.log` (engine and UI errors) and `logs/tools.jsonl` (every tool call).
+Each folder holds `sessions/`, `integrations/`, `integrations.json`, `channels.json`, `settings.env`, `logs/engine.log` (engine and UI errors) and `logs/tools.jsonl` (every tool call).
 
-## Canvas and Artifacts
+### Debugging
 
-**Artifacts** in the sidebar opens a library of surfaces from saved chats. Search by artifact or chat, filter by type, sort, and browse more than the initial 24 cards. Opening an item returns to its chat and shows it in the canvas. The chat shows compact artifact cards; full content appears only in the canvas, which keeps forms live and offers Preview/Text, Copy, Markdown download, resizing and full/split views. Shortcuts: ⌘B sidebar, ⌘⌥B canvas, ⌘⇧F full/split, ⌘⇧B cycle layouts. Details: [CANVAS.md](CANVAS.md).
-
-## FinOps
-
-**Settings → FinOps** charts duration, context composition, repeated context, generated output, provider token/cache usage and estimated API cost, with turn details, chat filters, editable model rates and CSV export. Telemetry is numeric and local. Details and limits: [FINOPS.md](FINOPS.md).
-
-## Debugging
-
-- **Engine log:** Settings → About → Engine log, or `logs/engine.log` in the data folder. UI errors land there as `[ui error]`.
-- **The window is WebKit, not Chromium.** Check layout with `scripts/webkit-check.swift` (off-screen WKWebView; usage in its header) and `node scripts/canvas-check.ts` after `npm run build`.
-- **Probe the real window** (debug builds only): `VAK_DEBUG_JS=/path/probe.js npm run desktop` runs that script in the window 4 s after start.
+- **Engine log:** Settings → About → Engine log, or `logs/engine.log` in the data folder.
+- **The window is WebKit, not Chromium.** Check layout with `scripts/webkit-check.swift` and `node scripts/canvas-check.ts` after `npm run build`.
+- **Probe the real window** (debug builds): `VAK_DEBUG_JS=/path/probe.js npm run desktop`.
 - **Inspector:** Option-right-click in a dev build.
 
 ## Documentation
@@ -81,8 +113,8 @@ Each folder holds `sessions/`, `integrations/` (one folder per installed server)
 - [SPECS.md](SPECS.md): what the app is, its framework dependency and identity.
 - [RELEASING.md](RELEASING.md): releasing the app and updating Projection.
 - [AGENTS.md](AGENTS.md) and [HANDOVER.md](HANDOVER.md): working rules and where work stands.
-- [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
-- The framework: [Projection](https://github.com/nranjan2code/Projection) (its SPECS, SECURITY and CHANGELOG).
+- [SECURITY.md](SECURITY.md), [CANVAS.md](CANVAS.md), [FINOPS.md](FINOPS.md) and [CHANGELOG.md](CHANGELOG.md).
+- The framework: [Projection](https://github.com/nranjan2code/Projection).
 
 ## Contributions and license
 
