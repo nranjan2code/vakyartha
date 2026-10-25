@@ -8,6 +8,19 @@ export function parseTaskSpending(value: unknown): TaskSpending {
   if (raw.kind === "ceiling" && typeof raw.usd === "number" && Number.isFinite(raw.usd) && raw.usd > 0) return { kind: "ceiling", usd: raw.usd };
   throw new Error("Choose a spending policy and acknowledge any model API charges");
 }
+export interface TaskLimits { runs: number; modelRequests: number; toolCalls: number; activeMs: number }
+export interface TaskBudget { modelRequests: number; toolCalls: number; activeMs: number }
+export const TASK_BUDGET_DEFAULTS: TaskLimits = { runs: 32, modelRequests: 96, toolCalls: 96, activeMs: 1_800_000 };
+export const TASK_BUDGET_MAX: TaskLimits = { runs: 32, modelRequests: 384, toolCalls: 768, activeMs: 9_600_000 };
+export function parseTaskLimits(value: unknown): TaskLimits {
+  const raw = taskObject(value);
+  const limit = (key: keyof TaskLimits, minimum = 1): number => {
+    const n = integer(raw[key], TASK_BUDGET_MAX[key]);
+    if (n < minimum) throw new Error("Task limits must be finite and within the supported range");
+    return n;
+  };
+  return { runs: limit("runs"), modelRequests: limit("modelRequests"), toolCalls: limit("toolCalls", 0), activeMs: limit("activeMs", 1000) };
+}
 export type TaskState = "scheduled" | "paused" | "queued" | "running" | "needs_input" | "needs_approval" | "interrupted" | "completed" | "failed" | "cancelled";
 export type TaskInput = { id: string } & (
   | { kind: "message"; message: string; action?: never; revision?: never }
@@ -35,14 +48,16 @@ export interface TaskRun {
   ended?: string;
   recovered?: string;
   activeMs: number;
+  chargedMs: number;
   toolCalls: number;
+  modelRequests: number;
   stop?: string;
   note: string;
   review?: ResultReview;
 }
 export const TASK_RUN_LABELS: Record<TaskRunState, string> = { running: "In progress", review: "Ready for review", accepted: "Accepted", failed: "Could not finish", cancelled: "Cancelled", interrupted: "Interrupted" };
 export interface TaskView {
-  version: 4;
+  version: 5;
   revision: number;
   id: string;
   session: string;
@@ -53,6 +68,8 @@ export interface TaskView {
   integrations: string[];
   confirmedFree: string[];
   spending: TaskSpending;
+  limits: TaskLimits;
+  budget: TaskBudget;
   state: TaskState;
   created: string;
   updated: string;
@@ -105,7 +122,7 @@ export function parseTaskInput(value: unknown): TaskInput {
 }
 export function parseTaskView(value: unknown): TaskView {
   const raw = taskObject(value);
-  if (raw.version !== 4 || !isState(raw.state)) throw new Error("Unsupported task journal version or state");
+  if (raw.version !== 5 || !isState(raw.state)) throw new Error("Unsupported task journal version or state");
   const id = taskString(raw.id, 120), session = taskString(raw.session, 120);
   if (!/^[\w-]+$/.test(id) || session !== id) throw new Error("Invalid task identity");
   const created = taskString(raw.created, 40), updated = taskString(raw.updated, 40);
@@ -126,13 +143,16 @@ export function parseTaskView(value: unknown): TaskView {
   if (runHistory.length !== runs || runHistory.some((run, i) => run.sequence !== i + 1)) throw new Error("Run history must account for every run");
   if (runHistory.some((r, i) => r.state === "running" && i !== runHistory.length - 1)) throw new Error("Only the latest run may be in progress");
   if (operations.some((op) => op.runId !== undefined && !identities.has(op.runId))) throw new Error("Operation references an unknown run");
+  const limits = parseTaskLimits(raw.limits), used = taskObject(raw.budget);
+  const budget: TaskBudget = { modelRequests: integer(used.modelRequests, limits.modelRequests), toolCalls: integer(used.toolCalls, limits.toolCalls), activeMs: integer(used.activeMs, limits.activeMs) };
+  if (runs > limits.runs || runHistory.reduce((n, run) => n + run.modelRequests, 0) !== budget.modelRequests || runHistory.reduce((n, run) => n + run.toolCalls, 0) !== budget.toolCalls || runHistory.reduce((n, run) => n + run.chargedMs, 0) !== budget.activeMs) throw new Error("Task budget does not match its run records");
   const approval = raw.approval === undefined ? undefined : taskObject(raw.approval);
   const schedule = raw.schedule === undefined ? undefined : parseSchedule(raw.schedule);
   if ((raw.state === "scheduled" && schedule?.status !== "armed") || (raw.state === "paused" && schedule?.status !== "paused")) throw new Error("Schedule state does not match its trigger");
   const note = typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "";
   return {
-    version: 4, revision: integer(raw.revision, Number.MAX_SAFE_INTEGER), id, session, goal: taskString(raw.goal, 8000), criteria: taskString(raw.criteria, 4000), provider: taskString(raw.provider, 120), model: taskString(raw.model, 240),
-    integrations: array(raw.integrations, 16).map((v) => taskString(v, 120)), state: raw.state, created, updated, note, runs, runHistory,
+    version: 5, revision: integer(raw.revision, Number.MAX_SAFE_INTEGER), id, session, goal: taskString(raw.goal, 8000), criteria: taskString(raw.criteria, 4000), provider: taskString(raw.provider, 120), model: taskString(raw.model, 240),
+    integrations: array(raw.integrations, 16).map((v) => taskString(v, 120)), state: raw.state, created, updated, note, runs, runHistory, limits, budget,
     spending: parseTaskSpending(raw.spending), confirmedFree: array(raw.confirmedFree, 16).map((v) => taskString(v, 120)),
     pending: array(raw.pending, TASK_LIMITS.pending).map(parseTaskInput), accepted: array(raw.accepted, 256).map((v) => taskString(v, 120)), operations,
     activity: array(raw.activity, 100).map((v) => { const a = taskObject(v); return { at: taskString(a.at, 40), text: taskString(a.text, 1000) }; }),
@@ -164,9 +184,10 @@ function parseTaskRun(value: unknown): TaskRun {
   if (sequence < 1) throw new Error("Invalid run sequence");
   const started = timestamp(raw.started), ended = raw.ended === undefined ? undefined : timestamp(raw.ended), recovered = raw.recovered === undefined ? undefined : timestamp(raw.recovered);
   if ((raw.state === "running" && (ended || recovered)) || (["review", "accepted", "failed", "cancelled"].includes(raw.state) && !ended) || (raw.state !== "interrupted" && recovered) || (ended && Date.parse(ended) < Date.parse(started))) throw new Error("Run timestamps do not match its state");
+  if (integer(raw.activeMs, TASK_LIMITS.activeMs) > integer(raw.chargedMs, TASK_LIMITS.activeMs)) throw new Error("Recorded active time exceeds its budget charge");
   const review = raw.review === undefined ? undefined : parseResultReview(raw.review);
   if ((raw.state === "accepted") !== Boolean(review) || (review && review.runId !== raw.id)) throw new Error("Acceptance requires a matching user review");
-  return { ...(review ? { review } : {}), id: taskString(raw.id, 120), sequence, inputId: taskString(raw.inputId, 120), inputKind: raw.inputKind, state: raw.state as TaskRunState, started, activeMs: integer(raw.activeMs, TASK_LIMITS.activeMs), toolCalls: integer(raw.toolCalls, TASK_LIMITS.tools), note: typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "", ...(ended ? { ended } : {}), ...(recovered ? { recovered } : {}), ...(raw.stop === undefined ? {} : { stop: taskString(raw.stop, 120) }) };
+  return { ...(review ? { review } : {}), id: taskString(raw.id, 120), sequence, inputId: taskString(raw.inputId, 120), inputKind: raw.inputKind, state: raw.state as TaskRunState, started, activeMs: integer(raw.activeMs, TASK_LIMITS.activeMs), chargedMs: integer(raw.chargedMs, TASK_LIMITS.activeMs), toolCalls: integer(raw.toolCalls, TASK_LIMITS.tools), modelRequests: integer(raw.modelRequests, TASK_LIMITS.rounds), note: typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "", ...(ended ? { ended } : {}), ...(recovered ? { recovered } : {}), ...(raw.stop === undefined ? {} : { stop: taskString(raw.stop, 120) }) };
 }
 
 

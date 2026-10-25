@@ -1,5 +1,5 @@
 import { parseRunUsage } from "../finops.ts";
-import { TASK_LABELS, TASK_RUN_LABELS, TASK_LIMITS, parseReviewSnapshot, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../task-contract.ts";
+import { TASK_LABELS, TASK_RUN_LABELS, TASK_LIMITS, TASK_BUDGET_DEFAULTS, TASK_BUDGET_MAX, parseTaskLimits, parseReviewSnapshot, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../task-contract.ts";
 import { scheduleLabel } from "../schedule.ts";
 import { $, api, ask, el } from "./core.ts";
 import { icon } from "./icons.ts";
@@ -215,7 +215,7 @@ export class SchedulePage {
       for (const run of [...task.runHistory].reverse()) {
         const timing = run.ended ? `Finished ${date(run.ended)}` : run.recovered ? `Recovery recorded ${date(run.recovered)} · end time unknown` : "In progress";
         const item = el("details", { className: "schedule-run" }, el("summary", {}, el("span", { className: "schedule-run-sequence", textContent: String(run.sequence).padStart(2, "0") }), el("span", {}, el("strong", { textContent: run.inputKind === "action" ? "Surface interaction" : run.sequence === 1 ? "Initial run" : "Continuation" }), el("small", { textContent: date(run.started) })), el("span", { className: `schedule-badge ${run.state === "review" ? "needs_input" : run.state === "accepted" ? "completed" : run.state}`, textContent: TASK_RUN_LABELS[run.state] })));
-        item.append(el("p", { textContent: run.note }), el("p", { className: "hint", textContent: `${timing} · ${run.state === "running" || run.recovered ? "Active time incomplete" : `${(run.activeMs / 1000).toFixed(1)}s active`} · ${run.toolCalls} tool ${run.toolCalls === 1 ? "call" : "calls"}${run.stop ? ` · Stop: ${run.stop}` : ""}` }), el("code", { className: "schedule-run-id", textContent: `Run ${run.id} · Input ${run.inputId}` }));
+        item.append(el("p", { textContent: run.note }), el("p", { className: "hint", textContent: `${run.modelRequests} model requests reserved · ${(run.chargedMs / 1000).toFixed(1)}s charged to the task budget` }), el("p", { className: "hint", textContent: `${timing} · ${run.state === "running" || run.recovered ? "Active time incomplete" : `${(run.activeMs / 1000).toFixed(1)}s active`} · ${run.toolCalls} tool ${run.toolCalls === 1 ? "call" : "calls"}${run.stop ? ` · Stop: ${run.stop}` : ""}` }), el("code", { className: "schedule-run-id", textContent: `Run ${run.id} · Input ${run.inputId}` }));
         if (run.review) item.append(el("p", { className: "hint", textContent: `Reviewed by you ${date(run.review.at)} · ${run.review.surfaces.length} saved surfaces · versions recorded` }), el("blockquote", { textContent: run.review.note }));
         const usage = el("p", { className: "hint", role: "status" });
         const loadUsage = button("Show usage", async () => {
@@ -235,7 +235,7 @@ export class SchedulePage {
       history.append(el("p", { className: "hint", textContent: "Runs share the live workspace. This history records execution; earlier surface versions are not snapshotted." }));
       main.append(this.section("Run history", history));
       const facts = el("dl", { className: "schedule-facts" });
-      for (const [label, value] of [["Spending", task.spending.kind === "local_only" ? "Local provider only" : task.spending.kind === "api_allowed" ? "Model API charges allowed · no monetary ceiling" : `Required ceiling $${task.spending.usd}`], ["When", scheduleLabel(task.schedule)], ["Timing", task.schedule ? `Once · ${task.schedule.status === "dispatched" ? "Dispatched" : task.schedule.status === "paused" ? "Paused" : "Upcoming"}` : "Started manually"], ["Model", task.model], ["Capabilities", task.integrations.join(", ") || "None selected"], ["Runs", String(task.runs)], ["Created", date(task.created)]]) facts.append(el("dt", { textContent: label }), el("dd", { textContent: value }));
+      for (const [label, value] of [["Task budget", `${task.runs} / ${task.limits.runs} runs · ${task.budget.modelRequests} / ${task.limits.modelRequests} model requests · ${task.budget.toolCalls} / ${task.limits.toolCalls} tool attempts`], ["Time charged", `${(task.budget.activeMs / 60000).toFixed(2)} / ${task.limits.activeMs / 60000} active minutes (includes unfinished reservations)`], ["Spending", task.spending.kind === "local_only" ? "Local provider only" : task.spending.kind === "api_allowed" ? "Model API charges allowed · no monetary ceiling" : `Required ceiling $${task.spending.usd}`], ["When", scheduleLabel(task.schedule)], ["Timing", task.schedule ? `Once · ${task.schedule.status === "dispatched" ? "Dispatched" : task.schedule.status === "paused" ? "Paused" : "Upcoming"}` : "Started manually"], ["Model", task.model], ["Capabilities", task.integrations.join(", ") || "None selected"], ["Runs", String(task.runs)], ["Created", date(task.created)]]) facts.append(el("dt", { textContent: label }), el("dd", { textContent: value }));
       const aside = el("aside", {}, this.section("At a glance", facts), this.section("Your control", el("p", { textContent: "Each run is bounded. Changes follow your integration permissions, and results wait for your review." }), button("Manage integrations", () => void openSettings("integrations"))));
       if (task.state === "scheduled" || task.state === "paused") {
         const value = new Date(task.schedule!.at); const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
@@ -279,6 +279,10 @@ export class SchedulePage {
     if (template) { $<HTMLTextAreaElement>("task-goal").value = template.goal; $<HTMLTextAreaElement>("task-criteria").value = template.criteria; }
     this.updateTiming();
     this.updateSpending();
+    for (const [id, field, divisor] of [["task-budget-runs", "runs", 1], ["task-budget-model", "modelRequests", 1], ["task-budget-tools", "toolCalls", 1], ["task-budget-minutes", "activeMs", 60000]] as const) {
+      const input = $<HTMLInputElement>(id); input.max = String(TASK_BUDGET_MAX[field] / divisor);
+      if (!input.value) input.value = String(TASK_BUDGET_DEFAULTS[field] / divisor);
+    }
     $("task-spending").onchange = () => { $<HTMLInputElement>("task-spending-ack").checked = false; this.updateSpending(); };
     $("schedule-timing").onchange = () => this.updateTiming();
     $("schedule-at").oninput = () => this.updateTiming();
@@ -313,10 +317,10 @@ export class SchedulePage {
     const at = new Date($<HTMLInputElement>("schedule-at").value);
     $("schedule-time-preview").textContent = later && Number.isFinite(at.getTime()) ? `Will run once: ${date(at.toISOString())} · ${Intl.DateTimeFormat().resolvedOptions().timeZone}` : later ? "Choose a future date and time." : "Starts as soon as the execution slot is free.";
     $("task-create-start").textContent = later ? "Save schedule" : "Start now";
-    $("task-create-limits").textContent = `${TASK_LIMITS.rounds} model rounds · ${TASK_LIMITS.tools} tool calls · ${TASK_LIMITS.activeMs / 60000} active minutes per run`;
+    $("task-create-limits").textContent = `${TASK_LIMITS.rounds} model requests · ${TASK_LIMITS.tools} tool calls · ${TASK_LIMITS.activeMs / 60000} active minutes per run`;
   }
   private async save(): Promise<void> {
-    if (this.creationBusy) return;
+    if (this.creationBusy || !$<HTMLFormElement>("task-create-form").reportValidity()) return;
     const error = $("task-create-error"); error.textContent = "";
     if (!current.model) { error.textContent = "Choose a model to run this work."; return; }
     const later = $<HTMLSelectElement>("schedule-timing").value === "once";
@@ -324,10 +328,11 @@ export class SchedulePage {
     if (later && (!Number.isFinite(at.getTime()) || at.getTime() <= Date.now())) { error.textContent = "Choose a future date and time."; return; }
     this.creationBusy = true; $<HTMLButtonElement>("task-create-start").disabled = true;
     try {
+      const limits = parseTaskLimits({ runs: Number($<HTMLInputElement>("task-budget-runs").value), modelRequests: Number($<HTMLInputElement>("task-budget-model").value), toolCalls: Number($<HTMLInputElement>("task-budget-tools").value), activeMs: Number($<HTMLInputElement>("task-budget-minutes").value) * 60000 });
       const chosen = [...$("task-capabilities").querySelectorAll<HTMLInputElement>("input:checked")];
       const confirmedFree = chosen.filter((c) => c.dataset.free !== "true").map((c) => c.value);
       if (confirmedFree.length && !(await ask("You selected a server you configured. Continue only after checking its source, permissions and that there are no service fees for this work.", "I checked; continue"))) return;
-      const task = parseTaskView(await api<unknown>("/api/tasks", { method: "POST", body: JSON.stringify({ goal: $<HTMLTextAreaElement>("task-goal").value, criteria: $<HTMLTextAreaElement>("task-criteria").value, provider: current.provider, model: current.model, spending: $<HTMLSelectElement>("task-spending").value === "api_allowed" ? { kind: "api_allowed", acknowledged: $<HTMLInputElement>("task-spending-ack").checked } : { kind: "local_only" }, integrations: chosen.map((c) => c.value), confirmedFree, ...(later ? { schedule: { kind: "once", at: at.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, status: "armed", missed: "review" } } : {}) }) }));
+      const task = parseTaskView(await api<unknown>("/api/tasks", { method: "POST", body: JSON.stringify({ goal: $<HTMLTextAreaElement>("task-goal").value, criteria: $<HTMLTextAreaElement>("task-criteria").value, provider: current.provider, model: current.model, limits, spending: $<HTMLSelectElement>("task-spending").value === "api_allowed" ? { kind: "api_allowed", acknowledged: $<HTMLInputElement>("task-spending-ack").checked } : { kind: "local_only" }, integrations: chosen.map((c) => c.value), confirmedFree, ...(later ? { schedule: { kind: "once", at: at.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, status: "armed", missed: "review" } } : {}) }) }));
       $<HTMLFormElement>("task-create-form").reset(); this.formReady = false;
       await this.refresh(); await this.showDetail(task.id);
     } catch (err) { error.textContent = (err as Error).message; }

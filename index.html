@@ -110,6 +110,9 @@
           <section class="schedule-section"><div class="schedule-step">04 / SPENDING</div><h2>Set the model spending policy</h2>
             <label for="task-spending">Model access</label><select id="task-spending"><option value="local_only">Local provider only</option><option value="api_allowed">Allow model API charges</option></select>
             <label id="task-spending-ack-row" class="schedule-spending-ack" hidden><input type="checkbox" id="task-spending-ack"><span>I allow model API charges for the selected model without an enforced monetary ceiling.</span></label>
+            <details class="schedule-budget"><summary>Limits across all runs</summary><p class="hint">Continuations share these limits. Approval waits do not use active time. After an unexpected stop, an unfinished time reservation stays charged. These are execution limits, not a dollar ceiling.</p>
+              <div class="schedule-budget-grid"><label>Runs<input id="task-budget-runs" type="number" min="1" step="1" required></label><label>Model requests<input id="task-budget-model" type="number" min="1" step="1" required></label><label>Tool attempts<input id="task-budget-tools" type="number" min="0" step="1" required></label><label>Active minutes<input id="task-budget-minutes" type="number" min="1" step="1" required></label></div>
+            </details>
             <p class="hint">Strict monetary ceilings are not supported yet. Local services may have their own upstream or operating costs. Tool/server charges, compute and hosting are separate.</p>
           </section>
         </div>

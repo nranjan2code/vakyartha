@@ -172,11 +172,19 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     providers: () => {
       // Bind admission checks and provider construction to the same configuration.
       const env = { ...process.env };
-      return finops.providers(providersFromEnv(env).map((entry) => ({ ...entry, make: (options) => {
+      const entries = providersFromEnv(env).map((entry) => ({ ...entry, make: (options: Parameters<typeof entry.make>[0]) => {
         const spending = tasks?.providerSpending(entry.id);
         if (spending) checkTaskSpending(entry, spending, env);
         return entry.make(options);
-      } })));
+      } }));
+      // Refused requests never reach either the provider or its usage observer.
+      return finops.providers(entries).map((entry) => ({ ...entry, make: (options) => {
+        const provider = entry.make(options);
+        return { ...provider, async *stream(request) {
+          await tasks?.beforeModelRequest(entry.id, request.model);
+          yield* provider.stream(tasks?.inTask() ? { ...request, maxTokens: Math.min(request.maxTokens ?? 4096, 4096) } : request);
+        } };
+      } }));
     },
     profiles,
     instructions: INSTRUCTIONS,

@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Task budgets:** configurable limits across all runs for requests, tool attempts and active time. Reservations persist before work, survive restart and count retries. Crash recovery keeps unfinished time charged; approval waits do not use active time. Setup and task/run details show the limits and counters. Task schema is v5, with no compatibility migration or automatic data deletion.
+
 - **Spending policy:** tasks default to a local provider on loopback. Model API charges require explicit acknowledgement; changing models clears it. Strict monetary ceilings are rejected before execution because they cannot yet be enforced. Policies are rechecked at dispatch and provider construction. Task schema is v4, without migration or automatic data deletion.
 
 - **Result review:** full-page evidence review replaces one-click completion. Record what you checked against the criteria; changed results require a fresh review. Accepted runs retain review notes and saved surface-version references. This records user acceptance, not automatic verification. Task schema is now v3, with no compatibility migration or automatic data deletion.

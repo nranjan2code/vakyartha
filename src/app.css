@@ -595,3 +595,9 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 .schedule-form .schedule-spending-ack { display: flex; align-items: flex-start; gap: 12px; font-weight: 400; }
 .schedule-spending-ack input { flex: none; margin-top: 5px; }
 .schedule-form .schedule-spending-ack[hidden] { display: none; }
+
+.schedule-budget { margin-top: 24px; }
+.schedule-budget summary { cursor: pointer; font-size: .85rem; font-weight: 550; }
+.schedule-budget-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
+.schedule-budget-grid input { display: block; width: 100%; }
+@media (max-width: 720px) { .schedule-budget-grid { grid-template-columns: 1fr; } }

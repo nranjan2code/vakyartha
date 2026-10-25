@@ -75,16 +75,16 @@ Owner: Vakyartha. Reuse framework rendering and actions. Acceptance: M5 and M8.
 
 Owner: Vakyartha for policies and records; general enforcement gaps through D7. Acceptance: M6–M7.
 
-- [ ] P3.1. Enforce finite elapsed-time, model-call, tool-call and retry limits with understandable stop reasons.
+- [x] P3.1. Enforce finite active-time, model-request, tool-attempt and retry limits with understandable stop reasons. ADR-013: per-run guards plus persisted cumulative reservations, monotonic deadline checks, and no reset across continuations/restart. `test/task-budget.test.ts` covers limits, retries, effects, waits and recovery; task WebKit smoke exercises a shared three-request/three-run budget. In-flight effects still follow cooperative cancellation/reconciliation rules.
 - [x] P3.2. Attribute usage to tasks/runs; identify unknown costs and prevent silent paid-model switching. Dispatcher-owned IDs reach the numeric ledger, Schedule summaries, FinOps work filters/details and CSV. HTTP tests reject forged attribution; concurrent-run isolation and unknown/missing costs are covered. Runs retain their explicit model, with no fallback. Tool/server charges are unmeasured and explicitly excluded; ceilings remain P3.3.
-- [x] P3.3. Define behavior when a required monetary ceiling cannot be conservatively enforced. ADR-012: reject strict-ceiling requests before admission; local-only is default, external model API charges require acknowledgement, and operating/tool costs remain explicitly separate. `test/task-spending.test.ts`, HTTP admission tests and WebKit acknowledgement checks. Cumulative/monetary budget enforcement remains open.
+- [x] P3.3. Define behavior when a required monetary ceiling cannot be conservatively enforced. ADR-012: reject strict-ceiling requests before admission; local-only is default, external model API charges require acknowledgement, and operating/tool costs remain explicitly separate. `test/task-spending.test.ts`, HTTP admission tests and WebKit acknowledgement checks. Cumulative execution budgets are now implemented (ADR-013); actual monetary enforcement remains open.
 - [ ] P3.4. Checkpoint safely, expose failed saves and recover interrupted tasks without blindly repeating writes.
 - [ ] P3.5. Store necessary drafts/content separately from numeric telemetry and credentials; apply retention controls.
 - [ ] P3.6. Delete task-owned records, drafts and applicable diagnostics; retain shared/external data only according to the explained scope.
 - [ ] P3.7. Show completion, failure, input and approval attention without unchanged repeat notifications.
 - [ ] P3.8. Detect unavailable models/tools, lost authorization and unsupported inputs with actionable next steps.
 - [x] P3.9. Keep native supervision/platform/file operations in Rust where justified; do not add native relays for task commands, surface streaming or field edits. Core task behavior remains available through the shared app server without the native window.
-- [ ] P3.10. Segment task identity, per-run history and trigger state before sustained long-term operation; replace temporary lifetime journal guards with retention and durable deduplication policies. First typed per-run metadata records are implemented (ADR-009); long-term retention/deduplication remains open.
+- [ ] P3.10. Segment task identity, per-run history and trigger state before sustained long-term operation; replace temporary lifetime journal guards with retention and durable deduplication policies. First typed per-run metadata records are implemented (ADR-009); Cumulative execution limits are now implemented; long-term retention/deduplication remains open.
 - [ ] P3.11. Add trigger admission and dependency-aware result handoffs through the same dispatcher; define missed runs, time zones, pause/resume, cumulative limits, cancellation and safe deletion before enabling schedules or chains.
 
 ## P4 — Outcome and regression gates

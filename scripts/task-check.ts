@@ -54,6 +54,7 @@ const steps = [
    window.dispatchEvent(new Event('vak:model'));check(!document.getElementById('task-spending-ack').checked,'model change retained spending acknowledgement');
    check(!document.getElementById('task-create-form').checkValidity(),'API charges require no acknowledgement');
    document.getElementById('task-goal').value='Create two independent forms and a table';document.getElementById('task-criteria').value='All three stay interactive';
+   document.getElementById('task-budget-runs').value='3';document.getElementById('task-budget-model').value='3';document.getElementById('task-budget-tools').value='0';
    const oldIds=(await(await fetch('/api/tasks')).json()).map(t=>t.id);
    document.getElementById('task-spending').value='api_allowed';document.getElementById('task-spending').dispatchEvent(new Event('change'));document.getElementById('task-spending-ack').checked=true;document.getElementById('task-create-form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
    await wait(async()=>{const list=await(await fetch('/api/tasks')).json();window.qaTask=list.find(t=>!oldIds.includes(t.id))?.id;return Boolean(window.qaTask)});
@@ -103,7 +104,7 @@ const steps = [
    check(document.documentElement.scrollWidth<=innerWidth,'page overflow');return 'reviewed completion and interactive continuation';`,
   `document.getElementById('open-schedule').click();await wait(()=>document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]'));document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]').click();
    await wait(()=>document.querySelectorAll('.schedule-run').length===3);
-   const history=await task();check(history.runHistory.length===3,'run records missing');check(history.runHistory[1].state==='accepted','review decision absent from run history');
+   const history=await task();check(history.runHistory.length===3,'run records missing');check(history.limits.runs===3&&history.limits.modelRequests===3&&history.budget.modelRequests===3,'cumulative limits or counters missing');check(history.runHistory[1].state==='accepted','review decision absent from run history');
    document.querySelector('.schedule-run summary').click();check(document.querySelector('.schedule-run').open,'run receipt will not expand');check(document.querySelector('.schedule-run-id').textContent.includes(history.runHistory[2].id),'wrong run receipt');
    document.querySelector('.schedule-run-usage').click();await wait(()=>document.querySelector('.schedule-run [role="status"]').textContent.includes('Model API estimate'));
    check(document.querySelector('.schedule-run [role="status"]').textContent.includes('unknown'),'missing usage became zero');

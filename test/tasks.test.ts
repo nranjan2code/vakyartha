@@ -124,7 +124,7 @@ test("task admission fails closed for invalid input and unavailable capabilities
 test("typed input and journal boundaries reject invalid combinations and unsupported versions", () => {
   assert.throws(() => parseTaskInput({ id: "x", message: "hi", action: { surface: "s", source: "a", data: {} }, revision: 1 }));
   assert.throws(() => parseTaskInput({ id: "x", action: { surface: "s", source: "a", data: {} }, revision: -1 }));
-  assert.throws(() => parseTaskView({ version: 5 }));
+  assert.throws(() => parseTaskView({ version: 6 }));
   assert.throws(() => parseTaskView({ version: 1, state: "__proto__" }));
 });
 

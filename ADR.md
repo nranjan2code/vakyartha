@@ -94,7 +94,7 @@ Status: implemented bounded slice, 2026-10-26. Owner: Vakyartha.
 
 Task identity, execution identity and trigger state are distinct. Each admitted attempt receives a run ID, sequence and accepted input identity/kind. Store its start/end timestamps, recorded active milliseconds, tool-call count, stop reason and reviewed/accepted/failed/cancelled/interrupted outcome in the existing task journal. Operations reference their run ID. Schedule detail exposes expandable records alongside the task lifecycle. User acceptance applies to the latest reviewed run; a clean model stop alone never means the task is complete.
 
-Do not copy conversations, surfaces or memory into run records. They continue to reference the canonical session, and historical surface snapshots are not promised. Use one strict schema (task journal version 4), with a complete ordered record for every run. No legacy adapters or migrations are needed before launch. Reject incompatible development journals explicitly; never delete them automatically. An unfinished record recovered after restart is interrupted, with recovery time and an unknown end time. Recovery still does not replay work or retain authority.
+Do not copy conversations, surfaces or memory into run records. They continue to reference the canonical session, and historical surface snapshots are not promised. Use one strict schema (task journal version 5), with a complete ordered record for every run. No legacy adapters or migrations are needed before launch. Reject incompatible development journals explicitly; never delete them automatically. An unfinished record recovered after restart is interrupted, with recovery time and an unknown end time. Recovery still does not replay work or retain authority.
 
 This preserves the temporary 32-run task bound, counts queued reservations before accepting inputs, and keeps the existing single journal writer. It does not yet provide sustained retention, lifetime deduplication or recurring execution; P3.10 remains open. Those require a deliberate migration/retention design before removing the lifetime bound. No package, crate, process or IPC path is added.
 
@@ -116,7 +116,7 @@ A clean run or rendered interface cannot certify completion. Review opens a full
 
 Acceptance requires a current task revision/run and a fingerprint of the canonical saved timeline and surfaces. Recompute it immediately before acceptance, reject stale/duplicate review, and require a saved assistant result from the latest run. Persist the user's note, review time and evidence references on that run without copying canonical content. The fingerprint detects changes; it is not a truth or authenticity score. Existing surfaces remain interactive after acceptance.
 
-Task schema v4 requires matching review metadata for accepted runs. No backward adapter or automatic development-data deletion is added. Source correctness, automatic criterion verification, output-file receipts and provenance labels remain separate gates (P1.9/P2.7). This uses the public host view API, standard hashing and the existing journal; no new dependency, process or IPC.
+Task schema v5 requires matching review metadata for accepted runs. No backward adapter or automatic development-data deletion is added. Source correctness, automatic criterion verification, output-file receipts and provenance labels remain separate gates (P1.9/P2.7). This uses the public host view API, standard hashing and the existing journal; no new dependency, process or IPC.
 
 
 ## ADR-012 — Explicit model spending admission
@@ -129,4 +129,15 @@ Reject strict monetary-ceiling requests before saving/admitting work because cur
 
 Revalidate at creation, scheduled dispatch, continuation, tool use and approval resumption. At provider construction, check the task-local execution policy against the same captured environment used to construct the provider, so configuration changes cannot bypass admission. Environment snapshots stay inside the app process and never reach MCP servers. This uses existing public provider APIs, the canonical task journal and in-process execution scope; no new dependency or IPC.
 
-Strict task schema v4 requires this policy, with no compatibility adapter or automatic development-data deletion. Cumulative budgets and actual monetary enforcement remain future gates.
+Strict task schema v5 requires this policy, with no compatibility adapter or automatic development-data deletion. Cumulative execution budgets are implemented in ADR-013; actual monetary enforcement remains a future gate.
+
+
+## ADR-013 — Durable cumulative execution budgets
+
+Status: implemented bounded slice, 2026-10-26. Owner: Vakyartha.
+
+Every task stores finite limits and a reservation ledger for model requests, tool attempts and active time; run records account for the totals. Defaults are 32 runs, 96 model requests, 96 tool attempts and 30 active minutes. Setup can lower or raise them within supported caps (32/384/768/160 minutes). Per-run caps remain 12 generation requests, 24 tool attempts, five active minutes and 4096 requested output tokens per generation. Generation retries count as requests; queued inputs reserve run capacity. Continuations and restart never replenish the ledger. Limits cannot be changed after creation.
+
+Persist model/tool reservations before dispatch. Provider admission precedes usage observation, so refused requests do not become measured model usage. Reserve a run's active-time allowance before execution, settle the unused portion on a known stop, and retain the full unfinished charge after crash recovery. Monotonic active-time accounting excludes approval and execution-slot waits. Check the deadline before new effects as well as using cooperative abort signals. Already dispatched operations may still have external effects; cancellation and reconciliation semantics remain unchanged.
+
+These reservations are admission controls, separate from FinOps measurements and monetary ceilings. Task journals retain a single writer, with no new process, native IPC, framework contract or dependency. Schema v5 validates ledger totals against run records. The temporary 32-run ceiling, long-term retention/deduplication, source verification and repeating execution remain open gates.

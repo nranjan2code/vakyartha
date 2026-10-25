@@ -148,6 +148,8 @@ test("authenticated app HTTP chats record real request metrics and replace recon
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   assert.equal(finished.state, "needs_input");
+  assert.equal(finished.budget.modelRequests, 1);
+  assert.equal(finished.runHistory[0]!.modelRequests, 1);
   const taskUsage = await (await fetch(`${app.url}/api/finops`, { headers })).json() as { turns: Turn[] };
   const recorded = taskUsage.turns.find((turn) => turn.session === task.id)!;
   assert.deepEqual(recorded.task, { taskId: task.id, runId: finished.runHistory[0]!.id });
