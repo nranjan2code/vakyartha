@@ -1,5 +1,5 @@
-// vak desktop shell. The engine is the framework's own TypeScript, run by a
-// Node sidecar (apps/desktop/sidecar/main.ts); this side only starts it,
+// Vakyartha desktop shell. The engine is the framework's own TypeScript, run by a
+// Node sidecar (sidecar/main.ts); this side only starts it,
 // hands its address and token to the webview, and stops it on quit.
 //
 // Dev builds run the sidecar source with the `node` on PATH (or VAK_NODE) and
@@ -139,7 +139,7 @@ fn tray(app: &tauri::App) -> tauri::Result<()> {
     TrayIconBuilder::with_id("main")
         .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
         .icon_as_template(true)
-        .tooltip("vak")
+        .tooltip("Vakyartha")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -159,15 +159,15 @@ fn tray(app: &tauri::App) -> tauri::Result<()> {
 
 fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
     if cfg!(debug_assertions) {
-        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
         let repo = repo.canonicalize().map_err(|e| format!("repo path: {e}"))?;
         let node = std::env::var("VAK_NODE").unwrap_or_else(|_| "node".into());
         let mut cmd = Command::new(node);
         cmd.arg("--disable-warning=ExperimentalWarning")
-            .arg(repo.join("apps/desktop/sidecar/main.ts"))
+            .arg(repo.join("sidecar/main.ts"))
             .env("VAK_DATA_DIR", repo.join(".vak/desktop"))
             // Dev keys stay apart from the installed app's.
-            .env("VAK_KEYCHAIN_SERVICE", "com.vakprojection.desktop.dev")
+            .env("VAK_KEYCHAIN_SERVICE", "com.nranjan2code.vakyartha.dev")
             .env("VAK_ENV_FILES", repo.join(".env"));
         Ok(cmd)
     } else {
@@ -277,7 +277,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building the vak desktop app");
+        .expect("error while building the Vakyartha app");
 
     app.run(|handle, event| {
         // Clicking the Dock icon brings back a window hidden by close.

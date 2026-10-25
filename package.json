@@ -1,9 +1,22 @@
 {
-  "name": "@vak/desktop",
+  "name": "vakyartha",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "description": "Vakyartha: the desktop app built on the Projection framework (https://github.com/nranjan2code/Projection).",
+  "workspaces": [
+    "framework/packages/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
+    "test": "node --test \"test/**/*.test.ts\"",
+    "test:framework": "node --test \"framework/packages/*/test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json",
+    "desktop": "tauri dev",
+    "desktop:build": "npm run build:app --",
+    "web": "npm run build --silent && node --disable-warning=ExperimentalWarning scripts/web.ts",
     "dev": "vite",
     "build": "vite build",
     "sidecar": "node --disable-warning=ExperimentalWarning sidecar/main.ts",
@@ -17,6 +30,8 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4",
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2",
     "vite": "8.3.5"
   }
 }

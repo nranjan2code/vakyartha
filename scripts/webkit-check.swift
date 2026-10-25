@@ -3,9 +3,9 @@
 // after each step (the page only, never the screen). Chromium previews miss
 // WebKit's own layout and form-control differences; check UI changes here.
 //
-//   swiftc -O apps/desktop/scripts/webkit-check.swift -o /tmp/webkit-check
+//   swiftc -O scripts/webkit-check.swift -o /tmp/webkit-check
 //   /tmp/webkit-check http://localhost:5177/ /tmp/shot 'document.getElementById("open-settings").click(); return "ok"'
-//   WK_TAURI_ROOT=apps/desktop/dist /tmp/webkit-check "tauri://localhost/index.html?backend=http://127.0.0.1:5177" /tmp/shot '...'
+//   WK_TAURI_ROOT=dist /tmp/webkit-check "tauri://localhost/index.html?backend=http://127.0.0.1:5177" /tmp/shot '...'
 //
 // The second form serves the built UI from tauri://localhost like the app does.
 import AppKit

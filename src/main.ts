@@ -1,4 +1,4 @@
-// vak desktop UI: chats in a sidebar, a thread of turns, surfaces rendered by
+// Vakyartha UI: chats in a sidebar, a thread of turns, surfaces rendered by
 // <vak-surface>. Everything model-related runs in the engine sidecar; this
 // side only talks to it over HTTP with the token the shell handed over.
 // Kept deliberately quiet: the window is the conversation and a composer with

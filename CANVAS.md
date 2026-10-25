@@ -62,9 +62,9 @@ Run:
 npm run typecheck
 npm test
 npm run build --workspace @vak/desktop
-node apps/desktop/scripts/canvas-check.ts
-cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --offline
-cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --offline --lib canvas_tests
+node scripts/canvas-check.ts
+cargo check --manifest-path src-tauri/Cargo.toml --offline
+cargo test --manifest-path src-tauri/Cargo.toml --offline --lib canvas_tests
 ```
 
 The WebKit smoke check uses an isolated server and deterministic surfaces, with

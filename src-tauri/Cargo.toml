@@ -1,13 +1,13 @@
 [package]
-name = "vak-desktop"
+name = "vakyartha"
 version = "0.1.0"
-description = "vak desktop: ask any model, get an interface"
+description = "Vakyartha: ask any model, get an interface"
 authors = ["Nisheeth Ranjan"]
 edition = "2024"
 rust-version = "1.85"
 
 [lib]
-name = "vak_desktop_lib"
+name = "vakyartha_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

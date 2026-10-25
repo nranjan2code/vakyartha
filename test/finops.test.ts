@@ -114,7 +114,7 @@ test("authenticated app HTTP chats record real request metrics and replace recon
     else process.env.OPENAI_COMPAT_BASE_URL = previous;
     fake.closeAllConnections(); fake.close();
   });
-  const app = await startAppServer({ dataDir: dir, access: "token", keychainService: "com.vakprojection.finops-test" });
+  const app = await startAppServer({ dataDir: dir, access: "token", keychainService: "com.nranjan2code.vakyartha.finops-test" });
   t.after(() => app.shutdown());
   assert.equal((await fetch(`${app.url}/api/finops`)).status, 401);
   const headers = { "content-type": "application/json", authorization: `Bearer ${app.token}` };

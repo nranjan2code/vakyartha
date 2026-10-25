@@ -1,4 +1,4 @@
-// vak desktop sidecar: the engine host the Tauri shell starts and stops.
+// Vakyartha sidecar: the engine host the Tauri shell starts and stops.
 // Runs the app server on an ephemeral loopback port behind a random bearer
 // token, so only the app's own webview (which gets the token over IPC) can
 // use the keys and run models. Prints one ready line for the shell:
@@ -14,7 +14,7 @@ import path from "node:path";
 import { startAppServer } from "./server.ts";
 
 const app = await startAppServer({
-  dataDir: process.env.VAK_DATA_DIR ?? path.join(homedir(), ".vak-desktop"),
+  dataDir: process.env.VAK_DATA_DIR ?? path.join(homedir(), ".vakyartha"),
   envFiles: (process.env.VAK_ENV_FILES ?? "").split(path.delimiter).filter(Boolean),
   keychainService: process.env.VAK_KEYCHAIN_SERVICE,
   port: Number(process.env.VAK_PORT ?? 0),

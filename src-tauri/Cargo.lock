@@ -4058,7 +4058,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "vak-desktop"
+name = "vakyartha"
 version = "0.1.0"
 dependencies = [
  "serde",

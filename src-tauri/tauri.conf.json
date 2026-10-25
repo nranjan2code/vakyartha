@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "vak",
+  "productName": "Vakyartha",
   "version": "0.1.0",
-  "identifier": "com.vakprojection.desktop",
+  "identifier": "com.nranjan2code.vakyartha",
   "build": {
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "vak",
+        "title": "Vakyartha",
         "width": 1280,
         "height": 840,
         "minWidth": 720,

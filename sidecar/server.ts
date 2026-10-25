@@ -1,4 +1,4 @@
-// The vak app server: @vak/host plus the app's own routes (settings, channels,
+// The Vakyartha app server: @vak/host plus the app's own routes (settings, channels,
 // info) and, optionally, the built UI. The desktop sidecar runs it behind a
 // token for the Tauri window; the playground runs it open on :5177 for a
 // browser, serving the same UI, so both show one interface.
@@ -68,7 +68,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   const settingsFile = path.join(dataDir, "settings.env");
   const settings = new Settings({
     file: settingsFile,
-    secrets: process.platform === "darwin" ? keychainStore(opts.keychainService ?? "com.vakprojection.desktop") : fileSecrets(settingsFile),
+    secrets: process.platform === "darwin" ? keychainStore(opts.keychainService ?? "com.nranjan2code.vakyartha") : fileSecrets(settingsFile),
   });
   // Settings saved in the app win over a developer's .env.
   try {
@@ -138,7 +138,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
     return true;
   }
 
-  const INSTRUCTIONS = () => `You are the assistant inside ${opts.appName ?? "the vak desktop app"}.
+  const INSTRUCTIONS = () => `You are the assistant inside ${opts.appName ?? "Vakyartha, a desktop app"}.
 Today is ${new Date().toISOString().slice(0, 10)}.
 Answer with rich UI whenever the answer has any structure; keep accompanying text to one short sentence, the UI carries the content.
 When the user asks for examples or you lack real data, use realistic sample data and say it is sample data in a caption.

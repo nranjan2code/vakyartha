@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    vak_desktop_lib::run()
+    vakyartha_lib::run()
 }

@@ -1,5 +1,5 @@
 // Real WebKit smoke test with an isolated app server and deterministic surfaces.
-// No model calls. Build the UI first, then: node apps/desktop/scripts/canvas-check.ts
+// No model calls. Build the UI first, then: node scripts/canvas-check.ts
 import { execFile } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,9 +9,9 @@ import { promisify } from "node:util";
 import { startAppServer } from "../sidecar/server.ts";
 
 const run = promisify(execFile);
-const root = fileURLToPath(new URL("../../..", import.meta.url));
+const root = fileURLToPath(new URL("..", import.meta.url));
 const out = await mkdtemp(path.join(tmpdir(), "vak-canvas-check-"));
-const app = await startAppServer({ dataDir: path.join(out, "data"), keychainService: "com.vakprojection.canvas-check", port: 0, access: "open", uiDir: path.join(root, "apps/desktop/dist") });
+const app = await startAppServer({ dataDir: path.join(out, "data"), keychainService: "com.nranjan2code.vakyartha.canvas-check", port: 0, access: "open", uiDir: path.join(root, "dist") });
 const setup = `
   const style = document.createElement('style'); style.textContent='.app {transition:none!important}'; document.head.append(style);
   const check = (ok, message) => { if (!ok) throw new Error(message); };
@@ -144,7 +144,7 @@ const steps = [
 
 try {
   const bin = path.join(out, "webkit-check");
-  await run("swiftc", ["-O", path.join(root, "apps/desktop/scripts/webkit-check.swift"), "-o", bin]);
+  await run("swiftc", ["-O", path.join(root, "scripts/webkit-check.swift"), "-o", bin]);
   for (const width of [1100, 620]) {
     // Give the second run a fresh session while testing the identical code.
     const session = `canvas-check-${width}`;

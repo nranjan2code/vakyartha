@@ -1,6 +1,6 @@
 # Desktop FinOps
 
-FinOps is a product feature in `apps/desktop`, shared with the playground. The framework remains responsible for projection and provider execution; no pricing, accounting, retention, or FinOps UI belongs in `packages/*`.
+FinOps is a product feature of Vakyartha (desktop app and its browser version). The framework remains responsible for projection and provider execution; no pricing, accounting, retention, or FinOps UI belongs in the [Projection](https://github.com/nranjan2code/Projection) packages (`framework/packages/*`).
 
 Open **Settings → FinOps** for the same turn-by-turn views used to inspect the installed app's logs:
 
@@ -35,4 +35,4 @@ Costs use the **current** configured rates, including when viewing previous turn
 
 ## Validation
 
-`apps/desktop/test/finops.test.ts` covers stream transparency, persistence without prompt content, per-step usage/cost, concurrent chats, incomplete streams, historical reconstruction, deduplication and rate validation. Run `npm test`, `npm run typecheck`, and the desktop UI build. Check charts and turn selection in `scripts/webkit-check.swift`, since the installed window uses WebKit.
+`test/finops.test.ts` covers stream transparency, persistence without prompt content, per-step usage/cost, concurrent chats, incomplete streams, historical reconstruction, deduplication and rate validation. Run `npm test`, `npm run typecheck`, and the desktop UI build. Check charts and turn selection in `scripts/webkit-check.swift`, since the installed window uses WebKit.
