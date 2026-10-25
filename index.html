@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>vak</title>
+    <link rel="stylesheet" href="/src/app.css" />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar" aria-label="Chats">
+        <div class="side-head" data-tauri-drag-region>
+          <button type="button" class="new" id="new-chat" title="New chat (⌘N)">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+            New chat
+          </button>
+        </div>
+        <nav id="chats" class="chats"></nav>
+        <div class="side-foot">
+          <button type="button" class="quiet" id="open-settings" title="Settings (⌘,)">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Settings
+          </button>
+        </div>
+      </aside>
+
+      <section class="main">
+        <div class="drag" data-tauri-drag-region></div>
+        <main id="thread" class="thread" aria-live="polite"></main>
+
+        <form id="composer" class="composer">
+          <textarea id="input" rows="1" placeholder="Ask for anything" aria-label="Message"></textarea>
+          <div class="composer-row">
+            <select id="model-pick" class="model-pick" aria-label="Model" title="Model"></select>
+            <button type="submit" id="send" class="send" aria-label="Send">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <dialog id="settings" class="sheet" aria-labelledby="settings-title">
+      <form method="dialog" id="settings-form">
+        <header class="sheet-head">
+          <h2 id="settings-title">Settings</h2>
+          <button type="button" class="close" id="settings-cancel" aria-label="Close">×</button>
+        </header>
+        <section>
+          <h3>Model</h3>
+          <div class="fields">
+            <label class="ctl"><span>Provider</span><select id="provider"></select></label>
+            <label class="ctl"><span>Model</span><input id="model" list="models" autocomplete="off" spellcheck="false" /><datalist id="models"></datalist></label>
+            <div class="plan">
+              <p id="plan-text" class="muted small">…</p>
+              <button type="button" class="ghost small" id="calibrate">Calibrate</button>
+            </div>
+            <p id="calibration" class="muted small" hidden></p>
+          </div>
+        </section>
+        <section>
+          <h3>API keys and endpoints</h3>
+          <p class="muted small">Stored in the app's data folder, readable only by you. Saved keys are never shown again.</p>
+          <div id="provider-settings" class="fields"></div>
+        </section>
+        <details class="advanced">
+          <summary>Advanced</summary>
+          <div class="fields">
+            <label class="check"><input type="checkbox" id="think" /> Model thinking (Ollama)</label>
+            <label class="ctl"><span>Generation</span><select id="generation"><option value="auto">auto</option><option value="tools">tools</option><option value="constrained">constrained</option></select></label>
+            <label class="ctl"><span>Schema</span><select id="schema"><option value="compact">compact</option><option value="strict">strict</option></select></label>
+            <label class="ctl"><span>Effort</span><select id="effort"><option value="">default</option><option>low</option><option>medium</option><option>high</option></select></label>
+            <label class="check"><input type="checkbox" id="show-notes" /> Show engine notes under replies</label>
+          </div>
+        </details>
+        <p id="settings-error" class="error" hidden></p>
+        <div class="actions">
+          <button type="submit" class="primary" id="settings-save">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="ask" class="sheet small">
+      <form method="dialog">
+        <p id="ask-text"></p>
+        <div class="actions">
+          <button type="submit" class="ghost" value="no">Cancel</button>
+          <button type="submit" class="primary" id="ask-ok" value="yes">Continue</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "@vak/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "sidecar": "node --disable-warning=ExperimentalWarning sidecar/main.ts",
+    "bundle-sidecar": "node --disable-warning=ExperimentalWarning scripts/bundle-sidecar.ts",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4",
+    "@tauri-apps/plugin-opener": "2.7.2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4",
+    "vite": "8.3.5"
+  }
+}
