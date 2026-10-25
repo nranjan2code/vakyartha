@@ -27,6 +27,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
   - **New identity** (user's choice, before the first Vakyartha release): `Vakyartha.app`, bundle ID `com.nranjan2code.vakyartha`, Keychain services `com.nranjan2code.vakyartha` (`.dev`, `.web`). Old installs (`vak.app`, `com.vakprojection.desktop`) are not migrated: keys are re-entered once. The user removed the old install for a fresh start; the old data folder `~/Library/Application Support/com.vakprojection.desktop` may still exist and is unused.
   - **Release procedure** written in RELEASING.md (SemVer, `scripts/version.ts`, checklist, framework updates); app docs (SPECS, SECURITY, AGENTS, this file, CHANGELOG) are the app's own.
   - **First local install (RELEASING.md steps 1–6, 2026-10-25):** built from `27c8d63` on Projection `0dc3e49` (the last pre-split commit; its `apps/` folder is unused). Checks: 197 framework + 11 app tests, typecheck, WebKit canvas smoke (wide/narrow), Rust lib test. `npm run desktop:build` → `Vakyartha.app` (133 MB) and `Vakyartha_0.1.0_aarch64.dmg` (42 MB); installed to `/Applications/Vakyartha.app` (`com.nranjan2code.vakyartha`, 0.1.0). The bundled engine was smoke-tested headless: 401 without the token; with it the local 4B answered with a surface and the chat was saved. Not yet checked by eye: the window, About page and Keychain entry of the installed app. Not tagged or published.
+  - **Pin moved to Projection `e09b7ca`** (the split commit, pushed): the framework checkout no longer contains the old `apps/` folder. Rechecked: 197 framework + 11 app tests, typecheck, Vite build, Rust lib test, sidecar bundle, WebKit canvas smoke. The installed 0.1.0 was built on the previous pin (`0dc3e49`); the engine code is the same, but rebuild before tagging.
   - Verified after the split: 11 app tests, 197 framework tests, typecheck, Vite build, `cargo check`.
 - **Canvas reopening fix:** all live artifacts, including updates to existing ones, open in the canvas. `vak_render`/`vak_update` tool-start opens a pending panel before the first snapshot; the snapshot selects the actual target. Manual close suppresses reopening for the current turn, and the next request can reopen it. Saved history does not auto-open every artifact. Added deterministic SSE checks for early opening, target selection, manual close and failure cleanup in the wide/narrow WebKit smoke. 208 tests (then one repository), typecheck and WebKit checks pass; fresh release rebuilt and installed to `/Applications/vak.app` (pre-split name), then relaunched. No paid model runs.
 
@@ -58,11 +59,12 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Next (in order)
 
-1. **Tag and publish 0.1.0** (user's call): once Projection's split commit is pushed, move the pin to it (or a `v0.1.0` tag there), rebuild, then RELEASING.md steps 3 and 7 (CHANGELOG `## 0.1.0`, tag `v0.1.0`); the GitHub release (step 8) only when the user says so.
-2. **Ask the user to retry Appearance in the installed app**; if it still fails, read `logs/engine.log` in the data folder (`[ui error]` lines).
-3. **Integrations, next:** OAuth for remote servers (Linear, Notion remote), an update check against newer pinned versions, macOS sandbox profiles for local servers. OAuth in the MCP client itself is a Projection change.
-4. **Move the pin to a Projection tag** once Projection tags its first release.
-5. **Optional, ask first:** code signing/notarization and auto-update; CI for releases; Windows/Linux builds.
+1. **Tag and publish 0.1.0** (user's call): rebuild and reinstall on the current pin (RELEASING.md steps 5–6), then steps 3 and 7 (CHANGELOG `## 0.1.0`, tag `v0.1.0`); the GitHub release (step 8) only when the user says so.
+2. **Canvas check flake:** `scripts/canvas-check.ts` failed once (stack trace ending in `processTicksAndRejections`, not captured in full) right after repinning, then passed three runs in a row. If it recurs, capture the full output and find the timing cause.
+3. **Ask the user to retry Appearance in the installed app**; if it still fails, read `logs/engine.log` in the data folder (`[ui error]` lines).
+4. **Integrations, next:** OAuth for remote servers (Linear, Notion remote), an update check against newer pinned versions, macOS sandbox profiles for local servers. OAuth in the MCP client itself is a Projection change.
+5. **Move the pin to a Projection tag** once Projection tags its first release.
+6. **Optional, ask first:** code signing/notarization and auto-update; CI for releases; Windows/Linux builds.
 
 ## Useful paths
 
