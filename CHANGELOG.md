@@ -2,7 +2,9 @@
 
 What changed in the app, newest first. Each release names the [Projection](https://github.com/nranjan2code/Projection) version it was built on; framework changes themselves are in Projection's CHANGELOG. Procedure: [RELEASING.md](RELEASING.md).
 
-## Unreleased
+## 0.1.0 (2026-10-25)
+
+Built on Projection `e09b7ca` (no tag yet). The first release as Vakyartha: macOS, Apple silicon, unsigned (build from source, or allow it in System Settings → Privacy & Security).
 
 - **Own repository:** split from Projection's `apps/desktop` with its history; the framework is now the pinned `framework/` submodule. The browser version is `npm run web` on :5178.
 - **New identity:** `Vakyartha.app`, bundle ID `com.nranjan2code.vakyartha`, data in `~/Library/Application Support/com.nranjan2code.vakyartha/`. Installs of the old `vak.app` are not migrated: enter provider keys again once.
