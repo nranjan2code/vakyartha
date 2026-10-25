@@ -6,13 +6,14 @@ import { autostart, inTauri, revealPath, setKeepRunning } from "./backend.ts";
 import { $, api, ask, el, engine, prefs } from "./core.ts";
 import { choose, current, labelOf, listModels, loadProviders, modelOptions, parseChoice, type ProviderInfo, providers } from "./models.ts";
 import { applyAppearance, appearance, MODES, SIZES, THEMES } from "./theme.ts";
+import { addOwnPage, integrationPage, marketplace } from "./integrations-page.ts";
+import { group, pill, plainField, row, secretField, segmented, select, type Setting, title, toggle } from "./ui.ts";
 
-interface Setting { name: string; label: string; secret: boolean; placeholder?: string; group: "main" | "more" | "channel"; owner: string; set: boolean; value?: string }
 interface ChannelInfo { id: string; label: string; enabled: boolean; provider?: string; model?: string; ready: boolean; secrets: string[]; needs: string[]; state: string; detail: string }
 interface PlanInfo { generation: string; tier: string; examples: boolean; authoring?: string; maxSteps: number; reasons: string[] }
 interface Info { version: string; node: string; platform: string; dataDir: string; logFile: string; keys: string }
 
-type Section = "models" | "providers" | "channel:telegram" | "channel:slack" | "channel:discord" | "appearance" | "chats" | "general" | "about";
+type Section = "models" | "providers" | "integrations" | "integrations:add" | `integration:${string}` | "channel:telegram" | "channel:slack" | "channel:discord" | "appearance" | "chats" | "general" | "about";
 
 /** Channels whose listeners are not built yet: shown so the place is known, marked as coming. */
 const COMING: Record<string, string> = {
@@ -23,6 +24,7 @@ const COMING: Record<string, string> = {
 const NAV: [Section, string, boolean?][] = [
   ["models", "Models"],
   ["providers", "Providers"],
+  ["integrations", "Integrations"],
   ["channel:telegram", "Telegram", true],
   ["channel:slack", "Slack", true],
   ["channel:discord", "Discord", true],
@@ -65,7 +67,8 @@ function nav(): void {
       list.append(el("div", { className: "nav-group", textContent: "Channels" }));
     }
     const soon = id.startsWith("channel:") && COMING[id.slice(8)];
-    const b = el("button", { type: "button", className: `nav-item${sub ? " sub" : ""}`, "aria-current": String(id === section) }, label, soon ? el("span", { className: "soon", textContent: "soon" }) : null);
+    const current = id === section || (id === "integrations" && section.startsWith("integration"));
+    const b = el("button", { type: "button", className: `nav-item${sub ? " sub" : ""}`, "aria-current": String(current) }, label, soon ? el("span", { className: "soon", textContent: "soon" }) : null);
     b.addEventListener("click", () => void show(id));
     list.append(b);
   }
@@ -77,7 +80,10 @@ async function show(to: Section, arg?: string): Promise<void> {
   prefs.set("settings:section", to);
   nav();
   settings = await api<Setting[]>("/api/settings").catch(() => []);
-  const render: Record<Section, () => Promise<HTMLElement[]>> = {
+  const integration = to.startsWith("integration:") ? to.slice("integration:".length) : undefined;
+  const render: Record<string, () => Promise<HTMLElement[]>> = {
+    integrations: () => marketplace((id) => void show(`integration:${id}`), () => void show("integrations:add")),
+    "integrations:add": async () => addOwnPage(() => void show("integrations"), (id) => void show(`integration:${id}`)),
     models: () => modelsPage(arg),
     providers: providersPage,
     "channel:telegram": () => channelPage("telegram"),
@@ -88,97 +94,10 @@ async function show(to: Section, arg?: string): Promise<void> {
     general: generalPage,
     about: aboutPage,
   };
-  const parts = await render[to]();
+  const parts = integration ? await integrationPage(integration, () => void show("integrations"), () => void show(to)) : await (render[to] ?? render.models!)();
   if (section !== to) return;
   content().replaceChildren(...parts);
   content().scrollTop = 0;
-}
-
-// --- building blocks ----------------------------------------------------------
-const title = (text: string, sub?: string) => [el("h1", { textContent: text }), sub ? el("p", { className: "lead", textContent: sub }) : null].filter(Boolean) as HTMLElement[];
-
-function group(heading: string | null, ...rows: (HTMLElement | null)[]): HTMLElement {
-  return el("section", { className: "group" }, heading ? el("h2", { textContent: heading }) : null, el("div", { className: "rows" }, ...rows));
-}
-
-function row(label: string, hint: string | null, control: HTMLElement): HTMLElement {
-  return el("div", { className: "row" }, el("div", { className: "row-text" }, el("div", { className: "row-label", textContent: label }), hint ? el("div", { className: "row-hint", textContent: hint }) : null), el("div", { className: "row-control" }, control));
-}
-
-function toggle(checked: boolean, onChange: (on: boolean) => void | Promise<void>): HTMLElement {
-  const input = el("input", { type: "checkbox", className: "switch", checked });
-  input.addEventListener("change", () => void onChange(input.checked));
-  return input;
-}
-
-function segmented<T extends string>(options: readonly (readonly [T, string])[], value: T, onChange: (v: T) => void): HTMLElement {
-  const box = el("div", { className: "seg", role: "radiogroup" });
-  for (const [id, label] of options) {
-    const b = el("button", { type: "button", "aria-pressed": String(id === value), textContent: label });
-    b.addEventListener("click", () => {
-      for (const x of box.children) x.setAttribute("aria-pressed", String(x === b));
-      onChange(id);
-    });
-    box.append(b);
-  }
-  return box;
-}
-
-function select(options: (readonly [string, string])[], value: string, onChange: (v: string) => void): HTMLSelectElement {
-  const s = el("select", {}, ...options.map(([v, t]) => el("option", { value: v, textContent: t })));
-  s.value = value;
-  s.addEventListener("change", () => onChange(s.value));
-  return s;
-}
-
-function pill(text: string, tone: "" | "ok" | "bad" = ""): HTMLElement {
-  return el("span", { className: `pill ${tone}`, textContent: text });
-}
-
-/** A key field: Save appears once something is typed; Remove when one is saved. Never shows a saved value. */
-function secretField(s: Setting, onSaved: () => void | Promise<void>): HTMLElement {
-  const input = el("input", { type: "password", autocomplete: "off", spellcheck: false, placeholder: s.set ? "•••••••• saved" : "Paste a key", "aria-label": s.label });
-  const save = el("button", { type: "button", className: "primary small", textContent: "Save", hidden: true });
-  const remove = el("button", { type: "button", className: "ghost small", textContent: "Remove", hidden: !s.set });
-  const note = el("span", { className: "field-note" });
-  input.addEventListener("input", () => (save.hidden = !input.value.trim()));
-  input.addEventListener("keydown", (e) => e.key === "Enter" && save.click());
-  const put = async (value: string | null) => {
-    note.textContent = "";
-    try {
-      await api("/api/settings", { method: "PUT", body: JSON.stringify({ values: { [s.name]: value } }) });
-      await onSaved();
-    } catch (err) {
-      note.textContent = (err as Error).message;
-    }
-  };
-  save.addEventListener("click", () => void put(input.value.trim()));
-  remove.addEventListener("click", async () => {
-    if (await ask(`Remove the saved ${s.label}?`, "Remove")) await put(null);
-  });
-  return el("div", { className: "field" }, el("label", { className: "field-label", textContent: s.label }), el("div", { className: "field-line" }, input, save, remove), note);
-}
-
-/** A plain value (host, URL): saved on Enter or when the field loses focus. */
-function plainField(s: Setting, onSaved: () => void | Promise<void>): HTMLElement {
-  const input = el("input", { type: "text", autocomplete: "off", spellcheck: false, value: s.value ?? "", placeholder: s.placeholder ?? "", "aria-label": s.label });
-  const note = el("span", { className: "field-note" });
-  let saved = s.value ?? "";
-  const commit = async () => {
-    const v = input.value.trim();
-    if (v === saved) return;
-    try {
-      await api("/api/settings", { method: "PUT", body: JSON.stringify({ values: { [s.name]: v || null } }) });
-      saved = v;
-      note.textContent = "Saved";
-      await onSaved();
-    } catch (err) {
-      note.textContent = (err as Error).message;
-    }
-  };
-  input.addEventListener("keydown", (e) => e.key === "Enter" && input.blur());
-  input.addEventListener("blur", () => void commit());
-  return el("div", { className: "field" }, el("label", { className: "field-label", textContent: s.label }), input, note);
 }
 
 // --- Models -----------------------------------------------------------------
@@ -289,7 +208,7 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     group(
       "Model",
       row("Provider", usable.length ? null : "Add a key in Providers, or start Ollama.", providerSel),
-      el("div", { className: "row stack" }, el("div", { className: "row-text" }, el("div", { className: "row-label", textContent: "Model" }), status), el("div", { className: "row-control wide" }, modelSel, other)),
+      el("div", { className: "row" }, el("div", { className: "row-text" }, el("div", { className: "row-label", textContent: "Model" }), status), el("div", { className: "row-control column" }, modelSel, other)),
     ),
     group("How vak asks this model", el("div", { className: "row stack" }, plan, el("div", { className: "row-actions" }, calibrate, calibration))),
   ];
@@ -488,8 +407,11 @@ async function aboutPage(): Promise<HTMLElement[]> {
     ["Esc", "Stop a reply · close Settings"],
     ["⇧↩", "New line in a message"],
   ].map(([k, v]) => el("div", {}, el("kbd", { textContent: k! }), el("span", { textContent: v! }))));
+  // Inside a block of its own, so it lines up with the page's column.
+  const mark = el("div", { className: "about-mark" }, el("img", { src: "/icon.svg", alt: "", width: 72, height: 72 }));
   return [
-    ...title("About vak", "Ask any model, get an interface."),
+    mark,
+    ...title("About vak", "Ask any model, get an interface. A sibling of Vakyartha: same ink, ivory and saffron."),
     group(
       null,
       row("Version", null, el("span", { textContent: info?.version ?? "?" })),

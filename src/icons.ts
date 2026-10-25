@@ -1,0 +1,58 @@
+// Original icons for integrations and the app's chrome: simple 24px stroke
+// glyphs on a tinted tile, drawn for vak. Vendors' logos are not used (they
+// are trademarks); the publisher's name is shown beside each instead.
+
+const GLYPHS: Record<string, string> = {
+  globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.9 5.2 3.9 8.5s-1.3 6.1-3.9 8.5M12 3.5C9.4 5.9 8.1 8.7 8.1 12s1.3 6.1 3.9 8.5"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  folder: '<path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2.2h7.4a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M3.5 10.5h17"/>',
+  memory: '<circle cx="6.5" cy="7" r="2.3"/><circle cx="17.5" cy="7" r="2.3"/><circle cx="12" cy="17" r="2.3"/><path d="M8.6 8.1 10.8 15M15.4 8.1 13.2 15M8.8 7h6.4"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>',
+  branch: '<circle cx="7" cy="5.8" r="2.2"/><circle cx="7" cy="18.2" r="2.2"/><circle cx="17" cy="8.5" r="2.2"/><path d="M7 8v8M17 10.7c0 4-5.5 3.2-9.2 6"/>',
+  page: '<path d="M6.5 3.5h7.5l4 4v13h-11.5z"/><path d="M14 3.5v4h4M9.5 12h5M9.5 15.5h5"/>',
+  book: '<path d="M5 5.5a2 2 0 0 1 2-2h11v15H7a2 2 0 0 0-2 2z"/><path d="M5 20.5a2 2 0 0 1 2-2h11v2H7M9 7.5h5"/>',
+  plug: '<path d="M9 3.5v4M15 3.5v4M7 7.5h10v3a5 5 0 0 1-10 0z"/><path d="M12 15.5v5"/>',
+  shield: '<path d="M12 3.5 5 6v5.5c0 4.2 3 7.6 7 9 4-1.4 7-4.8 7-9V6z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
+  sidebar: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/>',
+  tool: '<path d="M14.5 5.5a4 4 0 0 0-5.3 5l-5 5a1.8 1.8 0 0 0 2.5 2.5l5-5a4 4 0 0 0 5-5.3l-2.4 2.4-2.2-.6-.6-2.2z"/>',
+};
+
+/** Tile colours: light and dark pairs (CSS light-dark), one hue per icon. */
+const TINT: Record<string, [string, string]> = {
+  globe: ["#0e7490", "#22d3ee"],
+  clock: ["#6d28d9", "#a78bfa"],
+  folder: ["#b45309", "#fbbf24"],
+  memory: ["#be185d", "#f472b6"],
+  search: ["#c2410c", "#fb923c"],
+  branch: ["#374151", "#d1d5db"],
+  page: ["#1f2937", "#e5e7eb"],
+  book: ["#15803d", "#4ade80"],
+  plug: ["#4b5563", "#9ca3af"],
+};
+
+export function icon(name: string, size = 18): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.7");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  // Fixed markup from this file only; nothing here comes from a server.
+  svg.innerHTML = GLYPHS[name] ?? GLYPHS.plug!;
+  return svg;
+}
+
+/** An icon on its tinted tile, for integration cards and the chat. */
+export function tile(name: string, size = 40): HTMLElement {
+  const [light, dark] = TINT[name] ?? TINT.plug!;
+  const box = document.createElement("span");
+  box.className = "tile";
+  box.style.setProperty("--tint", `light-dark(${light}, ${dark})`);
+  box.style.width = box.style.height = `${size}px`;
+  box.append(icon(name, Math.round(size * 0.55)));
+  return box;
+}

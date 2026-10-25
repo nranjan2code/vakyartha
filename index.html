@@ -4,13 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>vak</title>
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/src/app.css" />
     <script type="module" src="/src/main.ts"></script>
   </head>
   <body>
     <div class="app">
       <aside class="sidebar" aria-label="Chats">
-        <div class="side-head" data-tauri-drag-region>
+        <div class="side-top" data-tauri-drag-region>
+          <span class="brand" data-tauri-drag-region><img src="/icon.svg" alt="" width="20" height="20" data-tauri-drag-region />vak</span>
+          <button type="button" class="icon-btn" id="collapse" title="Hide sidebar (⌘\)" aria-label="Hide sidebar"></button>
+        </div>
+        <div class="side-head">
           <button type="button" class="new" id="new-chat" title="New chat (⌘N)">
             <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
             New chat
@@ -26,7 +31,9 @@
       </aside>
 
       <section class="main">
-        <div class="drag" data-tauri-drag-region></div>
+        <div class="drag" data-tauri-drag-region>
+          <button type="button" class="icon-btn" id="expand" title="Show sidebar (⌘\)" aria-label="Show sidebar"></button>
+        </div>
         <main id="thread" class="thread" aria-live="polite"></main>
 
         <form id="composer" class="composer">

@@ -2,6 +2,6 @@
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
     "externalBin": ["binaries/node"],
-    "resources": ["resources/sidecar.mjs"]
+    "resources": ["resources/sidecar.mjs", "resources/npm/**/*"]
   }
 }

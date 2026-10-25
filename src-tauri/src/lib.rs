@@ -125,8 +125,13 @@ fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
             .map_err(|e| format!("resource dir: {e}"))?
             .join("resources/sidecar.mjs");
         let data = app.path().app_data_dir().map_err(|e| format!("app data dir: {e}"))?;
+        let npm = app
+            .path()
+            .resource_dir()
+            .map_err(|e| format!("resource dir: {e}"))?
+            .join("resources/npm/bin/npm-cli.js");
         let mut cmd = Command::new(node);
-        cmd.arg("--disable-warning=ExperimentalWarning").arg(script).env("VAK_DATA_DIR", data).env("VAK_APP_VERSION", env!("CARGO_PKG_VERSION"));
+        cmd.arg("--disable-warning=ExperimentalWarning").arg(script).env("VAK_DATA_DIR", data).env("VAK_APP_VERSION", env!("CARGO_PKG_VERSION")).env("VAK_NPM_CLI", npm);
         Ok(cmd)
     }
 }
@@ -196,6 +201,19 @@ pub fn run() {
                 eprintln!("[engine] {e}");
             }
             app.manage(Sidecar { child: Mutex::new(child), stdin: Mutex::new(stdin), backend });
+            // Debug builds only: run a script inside the window (UI probes, no screen needed).
+            #[cfg(debug_assertions)]
+            if let Ok(path) = std::env::var("VAK_DEBUG_JS") {
+                if let Ok(js) = std::fs::read_to_string(&path) {
+                    let handle = app.handle().clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(4));
+                        if let Some(w) = handle.get_webview_window("main") {
+                            let _ = w.eval(&js);
+                        }
+                    });
+                }
+            }
             Ok(())
         })
         .build(tauri::generate_context!())

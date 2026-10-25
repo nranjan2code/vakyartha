@@ -4,12 +4,13 @@
 // Kept deliberately quiet: the window is the conversation and a composer with
 // a model picker; everything else is on the Settings page.
 
-import { type AgentEvent, projectText, type SurfaceSnapshot } from "@vak/core";
+import { type AgentEvent, projectText, readSse, type SurfaceSnapshot } from "@vak/core";
 import type { SessionSummary, SessionView } from "@vak/host";
 import { defineVakElements, renderMarkdown, type VakActionDetail, VakClient, type VakSurfaceElement } from "@vak/web";
 import { connect, openExternal, setKeepRunning } from "./backend.ts";
 import { $, api, ask, engine, prefs, setBackend } from "./core.ts";
 import { choose, current, fillPicker, loadProviders, modelErrors, parseChoice, providers } from "./models.ts";
+import { icon, tile } from "./icons.ts";
 import { closest, onContextMenu } from "./menu.ts";
 import { closeSettings, openSettings, settingsOpen } from "./settings.ts";
 import { applyAppearance, surfaceMode } from "./theme.ts";
@@ -24,7 +25,8 @@ const modelPick = $<HTMLSelectElement>("model-pick");
 const chatsNav = $<HTMLElement>("chats");
 
 let client: VakClient;
-let session = prefs.get("session") ?? crypto.randomUUID();
+// ?session=… opens that chat: the link the MCP server and the bench hand out.
+let session = new URLSearchParams(location.search).get("session") ?? prefs.get("session") ?? crypto.randomUUID();
 const mounted = new Map<string, VakSurfaceElement>();
 let running: AbortController | undefined;
 const opt = (k: string, fallback = "") => prefs.get(`opt:${k}`) ?? fallback;
@@ -45,6 +47,7 @@ window.addEventListener("vak:chats-cleared", () => {
   void loadChats();
 });
 window.addEventListener("vak:settings-closed", () => {
+  void loadLabels();
   if (document.getElementById("empty")) showEmpty();
   input.focus();
 });
@@ -61,7 +64,7 @@ function showEmpty(): void {
   const empty = document.createElement("section");
   empty.className = "empty";
   empty.id = "empty";
-  empty.innerHTML = '<h1>What can I show you?</h1><div class="samples"></div>';
+  empty.innerHTML = '<img class="empty-mark" src="/icon.svg" alt="" width="64" height="64" /><h1>What can I show you?</h1><div class="samples"></div>';
   const problem = modelErrors.get(current.provider);
   if (problem) {
     const label = providers.find((p) => p.id === current.provider)?.label ?? current.provider;
@@ -142,6 +145,7 @@ function newChat(): void {
   clearThread();
   session = crypto.randomUUID();
   prefs.set("session", session);
+  watch(session);
   showEmpty();
   for (const row of chatsNav.querySelectorAll(".chat")) row.setAttribute("aria-current", "false");
   input.focus();
@@ -154,6 +158,7 @@ async function openChat(id: string): Promise<void> {
   prefs.set("session", id);
   const view = await api<SessionView>(`/api/sessions/${encodeURIComponent(id)}`);
   if (session !== id) return;
+  watch(id);
   for (const snap of view.surfaces) client.store.load(snap);
   if (!view.timeline.length) showEmpty();
   else thread.replaceChildren();
@@ -167,7 +172,8 @@ async function openChat(id: string): Promise<void> {
         const snap = client.store.snapshot(sid);
         if (snap && !mounted.has(sid)) mount(turn, snap, false);
       }
-      for (const note of entry.notes) addNote(turn, note.name, note.result);
+      for (const u of entry.used ?? []) usedChip(turn, u.name, u.ok);
+      for (const note of entry.notes) if (note.name.startsWith("vak_")) addNote(turn, note.name, note.result);
       setStatus(turn, entry.status, entry.error ? "error" : "done");
     }
   }
@@ -265,6 +271,14 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
   const turnSession = session;
   const turn = newTurn("Thinking…");
   const started = performance.now();
+  // Local models deliver a tool call whole at the end (Ollama does not stream
+  // its arguments; 20-50 s on a 4B model), so show that time is passing.
+  let phase = "Thinking";
+  const ticker = setInterval(() => {
+    if (turn.status.classList.contains("done") || turn.status.classList.contains("error")) return;
+    const secs = Math.round((performance.now() - started) / 1000);
+    if (secs >= 3 && !turn.root.querySelector(".approval:not(.settled)")) setStatus(turn, `${phase}… ${secs}s`);
+  }, 1000);
   let text = "";
   let frame = 0;
   const { provider, model } = current;
@@ -281,7 +295,14 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
         }
         break;
       case "tool_start":
-        setStatus(turn, e.name.startsWith("vak_") ? "Building the interface…" : `Running ${e.name}…`);
+        phase = e.name.startsWith("vak_") ? "Building the interface" : `Using ${toolLabel(e.name)}`;
+        setStatus(turn, `${phase}…`);
+        break;
+      case "approval":
+        approvalCard(turn, e);
+        break;
+      case "approval_done":
+        settleApproval(e.id, e.decision);
         break;
       case "surface":
         mount(turn, e.snapshot);
@@ -291,7 +312,8 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
         mounted.delete(e.id);
         break;
       case "tool_end":
-        if (e.isError || e.result !== "ok") addNote(turn, e.name, e.result);
+        if (!e.name.startsWith("vak_")) usedChip(turn, e.name, !e.isError);
+        else if (e.isError || e.result !== "ok") addNote(turn, e.name, e.result);
         break;
       case "error":
         setStatus(turn, e.message, "error");
@@ -325,6 +347,7 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
     if (ctrl.signal.aborted) setStatus(turn, "Stopped", "done");
     else setStatus(turn, (err as Error).message, "error");
   } finally {
+    clearInterval(ticker);
     if (running === ctrl) running = undefined;
     updateSend();
     if (frame) cancelAnimationFrame(frame);
@@ -382,6 +405,11 @@ $<HTMLButtonElement>("open-settings").addEventListener("click", () => void openS
 // "New chat" from the tray menu.
 window.addEventListener("vak:new-chat", newChat);
 
+$<HTMLButtonElement>("collapse").append(icon("sidebar", 18));
+$<HTMLButtonElement>("expand").append(icon("sidebar", 18));
+$<HTMLButtonElement>("collapse").addEventListener("click", toggleSidebar);
+$<HTMLButtonElement>("expand").addEventListener("click", toggleSidebar);
+
 function toggleSidebar(): void {
   document.body.classList.toggle("collapsed");
   prefs.set("collapsed", String(document.body.classList.contains("collapsed")));
@@ -401,6 +429,137 @@ document.addEventListener("keydown", (e) => {
     act();
   }
 });
+
+// --- integrations in the chat ----------------------------------------------------------
+// Tool names are "<integration>__<tool>"; the chat shows the integration's own name and icon.
+interface IntegrationLabel { name: string; icon: string; tools: Record<string, string> }
+let labels: Record<string, IntegrationLabel> = {};
+
+async function loadLabels(): Promise<void> {
+  try {
+    const list = await api<{ entry: { id: string; name: string; icon: string }; tools: { name: string; title?: string; annotations?: { title?: string } }[] }[]>("/api/integrations");
+    labels = Object.fromEntries(list.map((i) => [i.entry.id.replace(/[^a-zA-Z0-9_-]+/g, "_"), { name: i.entry.name, icon: i.entry.icon, tools: Object.fromEntries(i.tools.map((t) => [t.name.replace(/[^a-zA-Z0-9_-]+/g, "_"), t.annotations?.title ?? t.title ?? t.name])) }]));
+  } catch {
+    /* labels are a nicety */
+  }
+}
+
+function splitTool(name: string): { server: string; tool: string } {
+  const i = name.indexOf("__");
+  return i < 0 ? { server: "", tool: name } : { server: name.slice(0, i), tool: name.slice(i + 2) };
+}
+
+function toolLabel(name: string): string {
+  const { server, tool } = splitTool(name);
+  const l = labels[server];
+  return l ? `${l.name} · ${l.tools[tool] ?? tool}` : name;
+}
+
+function usedChip(turn: Turn, name: string, ok: boolean): void {
+  let row = turn.root.querySelector<HTMLElement>(".used");
+  if (!row) {
+    row = document.createElement("div");
+    row.className = "used";
+    turn.root.insertBefore(row, turn.text);
+  }
+  const { server } = splitTool(name);
+  const chip = document.createElement("span");
+  chip.className = `used-chip${ok ? "" : " failed"}`;
+  chip.append(icon(labels[server]?.icon ?? "tool", 13), document.createTextNode(`${toolLabel(name)}${ok ? "" : " · failed"}`));
+  row.append(chip);
+}
+
+/** "May I?" for a tool on Ask: what it is, what it will be given, and three answers. */
+function approvalCard(turn: Turn, e: Extract<AgentEvent, { type: "approval" }>): void {
+  const l = labels[e.server.replace(/[^a-zA-Z0-9_-]+/g, "_")];
+  const card = document.createElement("div");
+  card.className = "approval";
+  card.dataset.id = e.id;
+  const head = document.createElement("div");
+  head.className = "approval-head";
+  const words = document.createElement("div");
+  const b = document.createElement("b");
+  b.textContent = `Use ${l?.name ?? e.server}: ${e.title}?`;
+  const sub = document.createElement("div");
+  sub.className = "approval-sub";
+  sub.textContent = "The model wants to run this tool with:";
+  words.append(b, sub);
+  head.append(tile(l?.icon ?? "tool", 32), words);
+  const args = document.createElement("pre");
+  args.className = "approval-args";
+  const text = JSON.stringify(e.args, null, 2);
+  args.textContent = text.length > 1500 ? `${text.slice(0, 1500)}\n…` : text;
+  const actions = document.createElement("div");
+  actions.className = "approval-actions";
+  const answer = (decision: "allow" | "allow-chat" | "deny") => async () => {
+    for (const x of actions.querySelectorAll("button")) (x as HTMLButtonElement).disabled = true;
+    await api(`/api/approvals/${encodeURIComponent(e.id)}`, { method: "POST", body: JSON.stringify({ decision }) }).catch(() => settleApproval(e.id, "deny"));
+  };
+  for (const [label, decision, cls] of [["Deny", "deny", "ghost small"], ["Allow for this chat", "allow-chat", "ghost small"], ["Allow once", "allow", "primary small"]] as const) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = cls;
+    btn.textContent = label;
+    btn.addEventListener("click", answer(decision));
+    actions.append(btn);
+  }
+  card.append(head, args, actions);
+  // Where it happened: before what the model makes of the result.
+  turn.root.insertBefore(card, turn.surfaces);
+  setStatus(turn, "Waiting for your answer…");
+  card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  actions.querySelector<HTMLButtonElement>(".primary")?.focus();
+}
+
+function settleApproval(id: string, decision: "allow" | "deny"): void {
+  const card = document.querySelector<HTMLElement>(`.approval[data-id="${CSS.escape(id)}"]`);
+  if (!card) return;
+  card.classList.add("settled", decision);
+  card.querySelector(".approval-actions")?.replaceChildren(Object.assign(document.createElement("span"), { className: "approval-result", textContent: decision === "allow" ? "Allowed" : "Declined" }));
+  card.querySelector(".approval-args")?.remove();
+}
+
+// --- outside agents --------------------------------------------------------------------
+// Surfaces an agent projects into this chat from outside (the MCP server's
+// vak_render, a script via /api/project) appear live; their buttons and forms
+// go back to that agent, not to the model here.
+let watching: AbortController | undefined;
+let outsideTurn: Turn | undefined;
+
+function watch(id: string): void {
+  watching?.abort();
+  const ctrl = new AbortController();
+  watching = ctrl;
+  outsideTurn = undefined;
+  void (async () => {
+    for (let attempt = 0; !ctrl.signal.aborted; attempt++) {
+      try {
+        const { url, token } = engine();
+        const res = await fetch(`${url}/api/events?session=${encodeURIComponent(id)}`, { headers: { authorization: `Bearer ${token}` }, signal: ctrl.signal });
+        for await (const msg of readSse(res.body!)) {
+          if (session !== id) return;
+          const e = JSON.parse(msg.data) as AgentEvent;
+          if (e.type === "surface") {
+            client.store.load(e.snapshot);
+            if (mounted.has(e.snapshot.id)) mounted.get(e.snapshot.id)!.refresh();
+            else {
+              outsideTurn ??= newTurn("");
+              setStatus(outsideTurn, "projected by an outside agent", "done");
+              mount(outsideTurn, e.snapshot);
+            }
+          } else if (e.type === "surface_removed") {
+            mounted.get(e.id)?.remove();
+            mounted.delete(e.id);
+          }
+        }
+      } catch {
+        if (ctrl.signal.aborted) return;
+      }
+      // The engine restarted or the connection dropped: reconnect, backing off.
+      await new Promise((r) => setTimeout(r, Math.min(10_000, 500 * 2 ** attempt)));
+    }
+  })();
+}
 
 // --- right-click ---------------------------------------------------------------------
 /** Rename a chat in place in the sidebar: Enter saves, Escape cancels. */
@@ -494,6 +653,12 @@ onContextMenu((_t, path) => {
   if (text?.textContent?.trim()) return [{ label: "Copy reply", run: () => copy(text.innerText) }];
 });
 
+// --- errors -------------------------------------------------------------------------
+// A release window has no console: errors go to the engine log (About → Engine log).
+const report = (message: string) => void api("/api/client-log", { method: "POST", body: JSON.stringify({ level: "error", message }) }).catch(() => {});
+window.addEventListener("error", (e) => report(`${e.message} at ${e.filename}:${e.lineno}`));
+window.addEventListener("unhandledrejection", (e) => report(`unhandled: ${String((e.reason as Error)?.stack ?? e.reason)}`));
+
 // --- start -------------------------------------------------------------------------
 async function start(): Promise<void> {
   document.body.classList.toggle("notes", opt("notes") === "true");
@@ -509,6 +674,7 @@ async function start(): Promise<void> {
   client = new VakClient(`${url}/api/chat`, undefined, { authorization: `Bearer ${token}` });
   try {
     await loadProviders();
+    await loadLabels();
     await openChat(session);
   } catch (err) {
     showNotice("Could not reach the engine.", (err as Error).message);

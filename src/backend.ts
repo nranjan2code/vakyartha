@@ -1,6 +1,7 @@
-// Where the engine sidecar listens. Inside Tauri the shell knows (it started
-// the sidecar); in a plain browser, for UI work against `npm run sidecar`,
-// pass ?backend=http://127.0.0.1:<port>#token=<token> (or enter it when asked).
+// Where the engine listens. Inside Tauri the shell knows (it started the
+// sidecar). Served by the app server (the playground) it is this page's own
+// origin, with no token. For UI work against `npm run sidecar` from the Vite
+// dev server, pass ?backend=http://127.0.0.1:<port>#token=<token>.
 
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -15,7 +16,8 @@ export const inTauri = isTauri();
 export async function connect(): Promise<Backend> {
   if (inTauri) return await invoke<Backend>("backend");
   const url = new URLSearchParams(location.search).get("backend");
-  if (!url) throw new Error("No engine: open this page from the vak app, or add ?backend=http://127.0.0.1:<port> for a sidecar you started.");
+  // Served by the app server itself (the playground): same origin, no token.
+  if (!url) return { url: location.origin, token: "" };
   const key = `vak:token:${url}`;
   // A #token=… fragment stays in the browser (never sent in a request).
   let token = new URLSearchParams(location.hash.slice(1)).get("token") ?? sessionStorage.getItem(key) ?? "";

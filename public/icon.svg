@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>vak</title>
+  <desc>An ivory speech bubble on an ink tile, holding a V (the Vakyartha wing) and two interface bars; saffron marks the live line. Sibling of the Vakyartha Songbird: same ink, ivory and saffron.</desc>
+  <!-- Tile: the Vakyartha app-icon proportions and ink. -->
+  <rect x="100" y="100" width="824" height="824" rx="150" fill="#101D3D"/>
+  <!-- Speech bubble with a tail at the lower left. -->
+  <path fill="#F6F4EF" d="M300 250h424c50 0 90 40 90 90v300c0 50-40 90-90 90H430l-118 96c-14 11-34 1-34-17v-80c-38-10-68-45-68-86V340c0-50 40-90 90-90z"/>
+  <!-- The V: the wing's open check, one ink stroke. -->
+  <path d="M322 436 L446 584 L606 362" fill="none" stroke="#101D3D" stroke-width="72" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Interface bars: what the answer becomes. -->
+  <rect x="656" y="452" width="110" height="34" rx="17" fill="#101D3D" opacity="0.85"/>
+  <rect x="656" y="518" width="78" height="34" rx="17" fill="#101D3D" opacity="0.5"/>
+  <!-- Saffron: the one accent, the live line. -->
+  <rect x="300" y="656" width="466" height="30" rx="15" fill="#F5A400"/>
+</svg>

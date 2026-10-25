@@ -2,11 +2,12 @@
 // - bundles sidecar/main.ts and the framework packages it imports into one
 //   ES module (Node built-ins stay imports), src-tauri/resources/sidecar.mjs
 // - copies the Node binary running this script to
-//   src-tauri/binaries/node-<target triple>, Tauri's externalBin naming.
+//   src-tauri/binaries/node-<target triple>, Tauri's externalBin naming,
+//   and its npm to src-tauri/resources/npm (installing integrations).
 // Node 24+ is required: the bundle uses the same built-ins as the source.
 
 import { execFileSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, realpathSync } from "node:fs";
+import { chmodSync, copyFileSync, cpSync, mkdirSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
@@ -37,4 +38,7 @@ const bin = path.join(tauri, "binaries", `node-${triple}${ext}`);
 mkdirSync(path.dirname(bin), { recursive: true });
 copyFileSync(realpathSync(process.execPath), bin);
 chmodSync(bin, 0o755);
+// npm, so integrations can be installed in the release app (it runs with the bundled Node).
+const npmDir = path.resolve(path.dirname(realpathSync(process.execPath)), "../lib/node_modules/npm");
+cpSync(npmDir, path.join(tauri, "resources", "npm"), { recursive: true, dereference: true });
 console.log(`sidecar → ${path.relative(app, path.join(tauri, "resources/sidecar.mjs"))}, node ${process.version} → ${path.relative(app, bin)}`);
