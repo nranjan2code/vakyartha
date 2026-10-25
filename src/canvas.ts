@@ -7,14 +7,6 @@ import { $, prefs } from "./core.ts";
 import { icon } from "./icons.ts";
 import { downloadMarkdown } from "./backend.ts";
 
-/** Presentation preference only; neither the model nor the wire format needs it. */
-export function prefersCanvas(snap: SurfaceSnapshot): boolean {
-  return snap.nodes.some((n) => n.type === "chart" || n.type === "tabs" || n.type === "table" ||
-    (n.type === "code" && String(n.props?.code ?? "").length > 400)) ||
-    snap.nodes.filter((n) => ["input", "select", "checkbox", "date", "textarea", "radio", "slider"].includes(n.type)).length > 5 ||
-    snap.nodes.length > 24;
-}
-
 interface Entry { surface: VakSurfaceElement; home: HTMLElement; button: HTMLButtonElement; title: HTMLElement; option: HTMLOptionElement }
 
 export class Canvas {
@@ -24,6 +16,8 @@ export class Canvas {
   #store: () => SurfaceStore;
   #text = false;
   #last?: string;
+  #inTurn = false;
+  #dismissed = false;
   #feedbackTimer?: ReturnType<typeof setTimeout>;
   #panel = $<HTMLElement>("canvas");
   #content = $<HTMLElement>("canvas-content");
@@ -31,6 +25,36 @@ export class Canvas {
   #resize = $<HTMLElement>("canvas-resize");
   #expand = $<HTMLButtonElement>("canvas-expand");
   #picker = $<HTMLSelectElement>("canvas-pick");
+
+  beginTurn(): void {
+    this.#inTurn = true;
+    this.#dismissed = false;
+  }
+
+  beginWork(): void {
+    if (this.#dismissed) return;
+    // A tool-start event has no surface ID yet. Show progress without guessing
+    // which of several artifacts the model will change; the snapshot selects it.
+    this.#panel.hidden = this.#resize.hidden = false;
+    this.#workspace.classList.add("canvas-open");
+    if (!this.#active) this.#view(false);
+    this.#panel.setAttribute("aria-busy", "true");
+    $("canvas-progress").hidden = false;
+    this.#controls();
+  }
+
+  endTurn(): void {
+    this.#inTurn = false;
+    this.#dismissed = false;
+    this.#panel.removeAttribute("aria-busy");
+    $("canvas-progress").hidden = true;
+    if (!this.#active) this.close(false, false);
+  }
+
+  #controls(): void {
+    this.#picker.hidden = !this.#active;
+    for (const id of ["canvas-copy", "canvas-download", "canvas-preview", "canvas-text"]) $<HTMLButtonElement>(id).disabled = !this.#active;
+  }
 
   constructor(session: () => string, store: () => SurfaceStore) {
     this.#session = session;
@@ -157,7 +181,6 @@ export class Canvas {
 
   register(surface: VakSurfaceElement, snap: SurfaceSnapshot, parent: HTMLElement, auto: boolean): void {
     let entry = this.#entries.get(snap.id);
-    const fresh = !entry;
     if (!entry) {
       const home = document.createElement("section");
       home.className = "surface-home";
@@ -184,7 +207,9 @@ export class Canvas {
     entry.button.setAttribute("aria-expanded", String(this.#active === snap.id));
     if (this.#active === snap.id) $("canvas-title").textContent = entry.title.textContent;
     if (this.#active === snap.id) this.#updateText();
-    if (fresh && auto && prefersCanvas(snap)) this.open(snap.id);
+    // Both new and updated live surfaces belong in the canvas. History redraws
+    // pass auto=false; closing during this turn suppresses later stream ticks.
+    if (auto && !this.#dismissed) this.open(snap.id);
   }
 
   open(id: string, focus = false): void {
@@ -206,6 +231,7 @@ export class Canvas {
     $("canvas-title").textContent = entry.title.textContent;
     this.#panel.hidden = this.#resize.hidden = false;
     this.#workspace.classList.add("canvas-open");
+    this.#controls();
     prefs.set(`canvas:session:${this.#session()}`, id);
     if (focus) $("canvas-close").focus();
   }
@@ -221,11 +247,13 @@ export class Canvas {
   }
 
   close(focus = false, save = true): void {
+    if (focus && this.#inTurn) this.#dismissed = true;
     const button = this.#active ? this.#entries.get(this.#active)?.button : undefined;
     this.#returnHome();
     this.#active = undefined;
     this.#panel.hidden = this.#resize.hidden = true;
     this.#workspace.classList.remove("canvas-open");
+    $("canvas-progress").hidden = true;
     this.#setExpanded(false);
     clearTimeout(this.#feedbackTimer);
     $("canvas-feedback").textContent = "";
@@ -247,7 +275,10 @@ export class Canvas {
   }
 
   reset(): void {
+    this.#inTurn = false;
+    this.#dismissed = false;
     this.close(false, false);
+    this.#panel.removeAttribute("aria-busy");
     this.#entries.clear();
     this.#last = undefined;
     this.#picker.replaceChildren();

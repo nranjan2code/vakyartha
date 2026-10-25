@@ -269,7 +269,7 @@ function mount(turn: Turn, snap: SurfaceSnapshot, scroll = true): void {
     const shown = el;
     if (scroll && !shown.closest(".canvas")) requestAnimationFrame(() => shown.scrollIntoView({ block: "start", behavior: "smooth" }));
   } else {
-    canvas.register(el, snap, turn.surfaces, false);
+    canvas.register(el, snap, turn.surfaces, scroll);
     el.refresh();
   }
 }
@@ -284,6 +284,7 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
   running?.abort();
   const ctrl = new AbortController();
   running = ctrl;
+  canvas.beginTurn();
   updateSend();
   const turnSession = session;
   const turn = newTurn("Thinking…");
@@ -301,6 +302,7 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
   const { provider, model } = current;
 
   const onEvent = (e: AgentEvent) => {
+    if (session !== turnSession || running !== ctrl) return;
     switch (e.type) {
       case "text_delta":
         text += e.delta;
@@ -312,6 +314,7 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
         }
         break;
       case "tool_start":
+        if (e.name === "vak_render" || e.name === "vak_update") canvas.beginWork();
         phase = e.name.startsWith("vak_") ? "Building the interface" : `Using ${toolLabel(e.name)}`;
         setStatus(turn, `${phase}…`);
         break;
@@ -365,7 +368,10 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
     else setStatus(turn, (err as Error).message, "error");
   } finally {
     clearInterval(ticker);
-    if (running === ctrl) running = undefined;
+    if (running === ctrl) {
+      canvas.endTurn();
+      running = undefined;
+    }
     updateSend();
     if (frame) cancelAnimationFrame(frame);
     turn.text.replaceChildren(renderMarkdown(text));
@@ -566,7 +572,7 @@ function watch(id: string): void {
           if (e.type === "surface") {
             client.store.load(e.snapshot);
             if (mounted.has(e.snapshot.id)) {
-              canvas.register(mounted.get(e.snapshot.id)!, e.snapshot, thread, false);
+              canvas.register(mounted.get(e.snapshot.id)!, e.snapshot, thread, true);
               mounted.get(e.snapshot.id)!.refresh();
             }
             else {

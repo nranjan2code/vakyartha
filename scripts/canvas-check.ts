@@ -29,7 +29,8 @@ const setup = `
 const steps = [
   `document.getElementById('settings-back').click();
    await project('vak_render', {surface:'signup',title:'Newsletter signup',nodes:[{id:'root',type:'form',props:{submit:'subscribe',submitLabel:'Subscribe'},children:[{id:'name',type:'input',props:{label:'Name',bind:'/name',checks:['required']}},{id:'email',type:'input',props:{label:'Email',bind:'/email',checks:['required','email']}}]}]});
-   check(document.getElementById('canvas').hidden, 'small artifact should wait for Open');
+   check(!document.getElementById('canvas').hidden, 'new small artifact should auto-open');
+   document.getElementById('canvas-close').click();
    check(getComputedStyle(document.querySelector('.surface-home vak-surface')).display === 'none', 'artifact content leaked into chat'); return 'artifact reference only';`,
   `const s = document.querySelector('vak-surface'); window.qaSurface = s;
    const field = s.shadowRoot.querySelector('input'); field.value='Draft name'; field.dispatchEvent(new Event('input',{bubbles:true}));
@@ -58,6 +59,32 @@ const steps = [
    document.getElementById('canvas-pick').value='sales'; document.getElementById('canvas-pick').dispatchEvent(new Event('change'));
    check(document.querySelector('#canvas-content vak-surface')?.surfaceId === 'sales', 'picker did not switch');
    return 'updates, text view and picker';`,
+  `document.getElementById('canvas-close').click();
+   window.qaRealFetch=window.fetch.bind(window);
+   window.fetch=async (url, init) => String(url).endsWith('/api/chat')
+     ? new Response(new ReadableStream({start(c){window.qaController=c}}),{headers:{'content-type':'text/event-stream'}})
+     : window.qaRealFetch(url,init);
+   window.qaEmit=e=>window.qaController.enqueue(new TextEncoder().encode('data: '+JSON.stringify(e)+'\\n\\n'));
+   const pick=document.getElementById('model-pick'); const value=JSON.stringify(['qa','scripted']); pick.add(new Option('Scripted',value)); pick.value=value; pick.dispatchEvent(new Event('change'));
+   window.qaSubmit=()=>{document.getElementById('input').value='Update the artifact';document.getElementById('composer').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}))};
+   window.qaSubmit(); await new Promise(r=>setTimeout(r,30));
+   window.qaEmit({type:'tool_start',id:'u1',name:'vak_update'}); await new Promise(r=>setTimeout(r,30));
+   check(!document.getElementById('canvas').hidden && !document.getElementById('canvas-progress').hidden,'closed canvas did not open at update start');
+   check(document.getElementById('canvas-copy').disabled,'pending canvas should not expose old content');
+   const session=new URLSearchParams(location.search).get('session');
+   const view=await (await window.qaRealFetch('/api/sessions/'+session)).json(); window.qaSnapshot=view.surfaces.find(s=>s.id==='sales');
+   window.qaEmit({type:'surface',snapshot:window.qaSnapshot}); await new Promise(r=>setTimeout(r,30)); flush();
+   check(document.querySelector('#canvas-content vak-surface')?.surfaceId==='sales','update did not select its target');
+   document.getElementById('canvas-close').click();
+   window.qaEmit({type:'surface',snapshot:window.qaSnapshot}); window.qaEmit({type:'tool_start',id:'u2',name:'vak_update'}); await new Promise(r=>setTimeout(r,30));
+   check(document.getElementById('canvas').hidden,'stream reopened canvas after manual close');
+   window.qaEmit({type:'run_end',stop:'done'}); window.qaController.close(); await new Promise(r=>setTimeout(r,30));
+   window.qaSubmit(); await new Promise(r=>setTimeout(r,30));
+   window.qaEmit({type:'tool_start',id:'u3',name:'vak_render'}); await new Promise(r=>setTimeout(r,30));
+   check(!document.getElementById('canvas').hidden,'next turn should reopen canvas');
+   window.qaEmit({type:'error',message:'Scripted failure'}); window.qaEmit({type:'run_end',stop:'error'}); window.qaController.close(); await new Promise(r=>setTimeout(r,30));
+   check(document.getElementById('canvas').hidden && document.getElementById('canvas-progress').hidden,'failed generation left an empty canvas');
+   window.fetch=window.qaRealFetch; return 'update-start reopen, streamed target, manual close and failure cleanup';`,
   `document.getElementById('open-artifacts').click(); await new Promise(r => setTimeout(r, 250));
    check(!document.getElementById('artifacts-page').hidden && document.getElementById('workspace').hidden, 'library did not open');
    check(document.querySelectorAll('.artifact-card').length === 2, 'library missing saved surfaces'); return 'artifact library rendered';`,

@@ -14,9 +14,13 @@ framework continues to own surfaces, rendering, bindings, validation and actions
   Opening an artifact from the current chat preserves its live form draft.
 - The chat shows a compact artifact card with Open in canvas; full content
   appears exclusively in the canvas. Closing the canvas keeps the content hidden
-  and preserves its live draft. Tables, charts, tabs,
-  long code, forms with more than five fields, and large node trees open in the
-  canvas on first creation. Updates do not reopen a panel the user closed.
+  and preserves its live draft. New and updated artifacts open automatically.
+  A render/update tool-start event opens the panel with a progress indicator,
+  without guessing the target artifact; the first surface snapshot selects it.
+  Streamed snapshots paint there as they arrive. Closing during a turn suppresses
+  reopening for the rest of that turn; the next request may open it again.
+  Loading history only restores the explicitly saved open selection. An empty
+  pending panel closes if generation fails or stops before producing a surface.
 - One live element moves between hidden storage in the thread and the canvas. Drafts, validation,
   local filters and actions remain attached to it. The thread keeps a reference.
 - The canvas provides a surface picker, Preview/Text, Copy as text, Markdown
@@ -65,7 +69,8 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --offline --lib can
 
 The WebKit smoke check uses an isolated server and deterministic surfaces, with
 no model calls. It exercises live drafts, full view, automatic placement, text,
-updates, picker navigation, library search/filtering, Markdown content, chat
+updates, tool-start reopening, streamed target selection, manual-close suppression,
+failure cleanup, picker navigation, library search/filtering, Markdown content, chat
 restoration, removal, form submit, keyboard controls, pagination, sorting and
 cross-chat opening at 1100px and 620px. It prints its screenshot directory.
 `webkit-check.swift` also accepts `WK_WIDTH` and `WK_HEIGHT` for manual probes.

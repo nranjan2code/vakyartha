@@ -50,7 +50,7 @@ Each folder holds `sessions/`, `integrations/` (one folder per installed server)
 
 **Artifacts** in the sidebar opens a library of surfaces from saved chats. Search by artifact or chat, filter by type, sort, and browse more than the initial 24 cards. Opening an item returns to its chat and shows it in the canvas. Library cards show metadata, without exposing form values.
 
-The chat shows compact artifact cards with **Open in canvas**. Full content appears exclusively in the canvas; closing it keeps the content hidden while preserving form drafts, validation and local views. Larger artifacts open automatically beside the chat. The canvas offers a surface picker, Preview/Text, Copy, Markdown download to Downloads, resizing and full/split views. Shortcuts: ⌘B for the sidebar, ⌘⌥B for the canvas, ⌘⇧F for full/split view, ⌘⇧B to cycle layouts. Details, design references and checks: [CANVAS.md](CANVAS.md).
+The chat shows compact artifact cards with **Open in canvas**. Full content appears exclusively in the canvas; closing it keeps the content hidden while preserving form drafts, validation and local views. Artifact creation and updates open the canvas automatically, showing progress until the first surface arrives. Closing during a turn keeps it closed for that turn; a later request can reopen it. The canvas offers a surface picker, Preview/Text, Copy, Markdown download to Downloads, resizing and full/split views. Shortcuts: ⌘B for the sidebar, ⌘⌥B for the canvas, ⌘⇧F for full/split view, ⌘⇧B to cycle layouts. Details, design references and checks: [CANVAS.md](CANVAS.md).
 
 ## Debugging
 
