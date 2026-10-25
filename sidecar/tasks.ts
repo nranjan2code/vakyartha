@@ -1,11 +1,11 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentEvent } from "@vak/core";
 import type { HostRunOptions, HostTurn, SessionView } from "@vak/host";
 import type { AgentTool } from "@vak/providers";
-import { TASK_LIMITS, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskRun, type TaskRunIdentity } from "../task-contract.ts";
+import { TASK_LIMITS, parseReviewSnapshot, type ReviewSnapshot, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskRun, type TaskRunIdentity } from "../task-contract.ts";
 import { parseSchedule, SCHEDULE_GRACE_MS } from "../schedule.ts";
 
 interface Dependencies {
@@ -117,7 +117,7 @@ export class Tasks {
     const schedule = body.schedule === undefined ? undefined : parseSchedule(body.schedule);
     if (schedule && (schedule.status !== "armed" || Date.parse(schedule.at) <= Date.now())) throw new Error("Choose a future date and time");
     const id = randomUUID(), at = new Date().toISOString();
-    const t: TaskView = { version: 2, revision: 0, id, session: id, goal, criteria, provider, model, integrations, confirmedFree, state: "queued", created: at, updated: at, note: "Waiting to start", runs: 0, runHistory: [], pending: [{ id: randomUUID(), kind: "message", message: goal }], activity: [], operations: [], accepted: [] };
+    const t: TaskView = { version: 3, revision: 0, id, session: id, goal, criteria, provider, model, integrations, confirmedFree, state: "queued", created: at, updated: at, note: "Waiting to start", runs: 0, runHistory: [], pending: [{ id: randomUUID(), kind: "message", message: goal }], activity: [], operations: [], accepted: [] };
     if (schedule) { t.schedule = schedule; t.state = "scheduled"; t.note = "Will run once at the selected time while this app is running and the computer is awake."; }
     await this.persist(t);
     this.tasks.set(id, t);
@@ -161,18 +161,33 @@ export class Tasks {
     return this.copy(t);
   }
 
-  async complete(id: string): Promise<TaskView> {
-    if (this.deleting.has(id)) throw new Error("Task is being deleted");
-    const t = this.tasks.get(id); if (!t || t.state !== "needs_input" || t.pending.length) throw new Error("Only a result awaiting review can be completed");
-    if (!t.runs || t.operations.some((o) => o.state === "started" || o.state === "uncertain")) throw new Error("Review unresolved operations first");
+  async review(id: string): Promise<ReviewSnapshot> {
+    const t = this.tasks.get(id);
+    if (!t || this.deleting.has(id) || t.state !== "needs_input" || t.pending.length || t.runHistory.at(-1)?.state !== "review") throw new Error("Only a saved result awaiting review can be accepted");
+    if (t.operations.some((o) => o.state === "started" || o.state === "uncertain")) throw new Error("Review unresolved operations first");
+    const revision = t.revision, run = t.runHistory.at(-1)!;
     const view = await this.deps.view(t.session);
-    if (this.deleting.has(id) || t.state !== "needs_input" || t.pending.length) throw new Error("Task changed while reviewing; check it again");
-    if (!view.timeline.some((e) => e.kind === "assistant")) throw new Error("No saved result to review");
+    if (this.deleting.has(id) || t.revision !== revision || t.state !== "needs_input" || t.pending.length) throw new Error("Task changed during review. Open a fresh review.");
+    const assistant = view.timeline.findLast((e) => e.kind === "assistant" && Date.parse(e.at) >= Date.parse(run.started));
+    if (!assistant) throw new Error("This run has no saved assistant result to review");
+    return { revision, runId: run.id, assistantAt: assistant.at, fingerprint: createHash("sha256").update(JSON.stringify({ timeline: view.timeline, surfaces: view.surfaces })).digest("hex"), surfaces: view.surfaces.map((s) => ({ id: s.id, title: s.title || s.id, version: s.version })) };
+  }
+
+  async complete(id: string, value: unknown): Promise<TaskView> {
+    const body = taskObject(value), submitted = parseReviewSnapshot(body);
+    const note = text(body.note, 4000);
+    if (body.confirmed !== true || !note) throw new Error("Confirm the criteria and record the evidence you checked");
+    const snapshot = await this.review(id);
+    if (submitted.revision !== snapshot.revision || submitted.runId !== snapshot.runId || submitted.fingerprint !== snapshot.fingerprint || submitted.assistantAt !== snapshot.assistantAt || JSON.stringify(submitted.surfaces) !== JSON.stringify(snapshot.surfaces)) throw new Error("The result changed while you reviewed it. Open a fresh review.");
+    const t = this.tasks.get(id)!;
+    if (this.deleting.has(id) || t.revision !== snapshot.revision || t.state !== "needs_input" || t.pending.length) throw new Error("Task changed during review. Open a fresh review.");
     t.state = "completed";
-    t.note = "You confirmed that the saved result meets the completion criteria.";
-    const latest = t.runHistory.at(-1);
-    if (latest?.state === "review") { latest.state = "accepted"; latest.note = "You accepted the saved result against the completion criteria."; }
-    this.activity(t, "Result accepted by the user");
+    t.note = "You reviewed the recorded evidence against the completion criteria.";
+    const latest = t.runHistory.at(-1)!;
+    latest.state = "accepted";
+    latest.review = { ...snapshot, method: "user", at: new Date().toISOString(), note };
+    latest.note = "Result accepted after user evidence review; not automatic verification.";
+    this.activity(t, "Result accepted with a revision-bound user evidence review");
     await this.persist(t);
     return this.copy(t);
   }
@@ -342,7 +357,7 @@ export class Tasks {
         if (e.ctrl.signal.aborted) throw e.ctrl.signal.reason ?? new Error("Run stopped");
         if (["error", "max_steps", "aborted"].includes(result.stop)) throw new Error(t.note === "Working" ? `Run ended: ${result.stop}` : t.note);
         t.state = t.pending.length ? "queued" : "needs_input";
-        t.note = t.pending.length ? "Waiting for the next input" : "Review the saved result against your criteria. Continue interacting with any surface, or mark the task complete.";
+        t.note = t.pending.length ? "Waiting for the next input" : "Review the saved result against your criteria. Continue interacting with any surface, or open an evidence review to accept the result.";
       }, { taskId: t.id, runId: run.id }));
     } catch (err) {
       if (t.state !== "cancelled") {

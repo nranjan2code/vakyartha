@@ -211,6 +211,8 @@ function newChat(): void {
 async function openChat(id: string, keepLibrary = false): Promise<void> {
   tasksPanel.page.close();
   if (!keepLibrary) artifacts.close();
+  // Returning from a product page must retain live form elements and their controls.
+  if (id === session && mounted.size) { canvas.restore(); tasksPanel.selectionChanged(); return; }
   clearThread();
   session = id;
   drafts.begin(session);

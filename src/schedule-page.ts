@@ -1,5 +1,5 @@
 import { parseRunUsage } from "../finops.ts";
-import { TASK_LABELS, TASK_RUN_LABELS, TASK_LIMITS, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../task-contract.ts";
+import { TASK_LABELS, TASK_RUN_LABELS, TASK_LIMITS, parseReviewSnapshot, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../task-contract.ts";
 import { scheduleLabel } from "../schedule.ts";
 import { $, api, ask, el } from "./core.ts";
 import { icon } from "./icons.ts";
@@ -8,7 +8,7 @@ import { openSettings } from "./settings.ts";
 
 interface Capability { id: string; name: string; summary: string; ready: boolean; free: boolean; access: string[] }
 type Filter = "all" | "upcoming" | "attention" | "active" | "history";
-type View = { kind: "list" } | { kind: "create" } | { kind: "detail"; id: string };
+type View = { kind: "list" } | { kind: "create" } | { kind: "detail"; id: string } | { kind: "review"; id: string };
 const ATTENTION = new Set(["needs_input", "needs_approval", "interrupted", "failed"]);
 const TEMPLATES = [
   { title: "Research brief", glyph: "book", description: "Compare sources and turn a question into a clear, cited brief.", goal: "Research this topic using the public sources I provide. Compare the evidence and prepare an interactive brief with source links and missing information clearly labelled.", criteria: "A cited brief with a comparison, source dates and any gaps clearly shown." },
@@ -85,7 +85,7 @@ export class SchedulePage {
     this.summaries = summaries;
     if (this.page.hidden || this.view.kind === "create") return;
     if (this.view.kind === "list") this.drawList();
-    else if (this.detail?.revision !== summaries.find((t) => t.id === this.detail?.id)?.revision) void this.showDetail(this.view.id, false);
+    else if (this.view.kind === "detail" && this.detail?.revision !== summaries.find((t) => t.id === this.detail?.id)?.revision) void this.showDetail(this.view.id, false);
   }
   error(message: string): void {
     if (!this.visible()) return;
@@ -149,6 +149,44 @@ export class SchedulePage {
     }));
   }
 
+  async reviewResult(id: string): Promise<void> {
+    this.beforeOpen(); this.page.hidden = false; $("workspace").hidden = true;
+    document.body.classList.add("in-schedule"); $("open-schedule").setAttribute("aria-current", "page");
+    const request = ++this.request; this.view = { kind: "review", id };
+    try {
+      const task = parseTaskView(await api<unknown>(`/api/tasks/${encodeURIComponent(id)}`));
+      const snapshot = parseReviewSnapshot(await api<unknown>(`/api/tasks/${encodeURIComponent(id)}/review`));
+      if (request !== this.request || this.page.hidden) return;
+      if (task.revision !== snapshot.revision) throw new Error("Task changed. Open a fresh review.");
+      const body = this.shell("Review the result", "Accept what you checked, with a record of the evidence.", () => void this.showDetail(id));
+      const layout = el("div", { className: "schedule-detail-grid" });
+      const result = this.section("Saved result", el("p", { textContent: `Run ${task.runs} · ${date(snapshot.assistantAt)}` }), button("Open workspace", () => { this.close(); void this.navigate(id).catch((err: unknown) => this.error(String(err))); }));
+      result.append(el("p", { className: "hint", textContent: "Review the saved workspace and source receipts. Unsubmitted form edits are not part of this result. A returned tool call alone does not prove an external change." }));
+      for (const surface of snapshot.surfaces) result.append(el("p", { textContent: `${surface.title} · version ${surface.version}` }));
+      if (!snapshot.surfaces.length) result.append(el("p", { className: "hint", textContent: "Text result only; no saved surfaces." }));
+      const operations = task.operations.filter((operation) => operation.runId === snapshot.runId);
+      if (operations.length) {
+        result.append(el("h3", { textContent: "Tool call records" }), el("p", { className: "hint", textContent: "Returned means a response was received. Verify the external outcome separately." }));
+        for (const operation of operations) result.append(el("p", { textContent: `${operation.tool} · ${operation.state} · ${operation.id}` }));
+      }
+      const note = el("textarea", { id: "review-evidence", required: true, maxLength: 4000, rows: 5, placeholder: "What did you check? Reference the sources, values, output or operation receipts that support the criteria." });
+      const confirm = el("input", { id: "review-confirm", type: "checkbox", required: true });
+      const save = el("button", { type: "submit", className: "primary", textContent: "Accept reviewed result" });
+      const error = el("p", { className: "error", role: "alert" });
+      const form = el("form", { className: "schedule-review-form" }, el("label", { htmlFor: "review-evidence", textContent: "Evidence you checked" }), note, el("label", { className: "schedule-review-confirm" }, confirm, el("span", { textContent: "I checked the saved result against the completion criteria, including any external effects." })), error, save);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault(); if (!form.reportValidity() || save.disabled) return;
+        save.disabled = true; error.textContent = "";
+        try {
+          await api(`/api/tasks/${encodeURIComponent(id)}/complete`, { method: "POST", body: JSON.stringify({ ...snapshot, note: note.value, confirmed: confirm.checked }) });
+          await this.refresh(); await this.showDetail(id);
+        } catch (err) { error.textContent = String(err); save.disabled = false; }
+      });
+      layout.append(el("div", {}, this.section("Completion criteria", el("p", { textContent: task.criteria })), result, this.section("Your review", form)), el("aside", {}, this.section("A clear acceptance record", el("p", { textContent: "Acceptance records your review, the run identity and the saved surface versions. It is not automatic verification. If the task or result changes, review it again." }), button("Refresh review", () => void this.reviewResult(id)))));
+      body.append(layout); $("schedule-title").focus();
+    } catch (err) { this.error(String(err)); }
+  }
+
   private async showDetail(id: string, focus = true): Promise<void> {
     if (this.busy || this.page.hidden) return;
     if (!focus && this.page.contains(document.activeElement) && document.activeElement instanceof HTMLInputElement) return;
@@ -165,7 +203,7 @@ export class SchedulePage {
         actions.append(button("Run now", () => change("run")), button(task.state === "paused" ? "Resume" : "Pause", () => change(task.state === "paused" ? "resume" : "pause")));
       }
       if (["queued", "running", "needs_approval"].includes(task.state)) actions.append(button("Cancel run", () => void this.mutate(task, "cancel", {})));
-      if (task.state === "needs_input") actions.append(button("Accept result", async () => { if (await ask(`Does the result meet these criteria?\n\n${task.criteria}`, "Accept result")) await this.mutate(task, "complete", {}); }));
+      if (task.state === "needs_input") actions.append(button("Review result", () => void this.reviewResult(task.id)));
       body.append(actions, el("p", { className: "schedule-status-note", role: "status", textContent: task.note }));
       const layout = el("div", { className: "schedule-detail-grid" });
       const main = el("div", {}, this.section("Instructions", el("p", { className: "schedule-instructions", textContent: task.goal })), this.section("The finish line", el("p", { textContent: task.criteria })), this.section("Activity", task.activity.length ? el("ol", { className: "schedule-timeline" }, ...task.activity.slice(-24).reverse().map((a) => el("li", {}, el("time", { dateTime: a.at, textContent: date(a.at) }), el("span", { textContent: a.text })))) : el("p", { className: "hint", textContent: "Your first run will appear here. No model work happens while waiting for a scheduled time." })));
@@ -174,6 +212,7 @@ export class SchedulePage {
         const timing = run.ended ? `Finished ${date(run.ended)}` : run.recovered ? `Recovery recorded ${date(run.recovered)} · end time unknown` : "In progress";
         const item = el("details", { className: "schedule-run" }, el("summary", {}, el("span", { className: "schedule-run-sequence", textContent: String(run.sequence).padStart(2, "0") }), el("span", {}, el("strong", { textContent: run.inputKind === "action" ? "Surface interaction" : run.sequence === 1 ? "Initial run" : "Continuation" }), el("small", { textContent: date(run.started) })), el("span", { className: `schedule-badge ${run.state === "review" ? "needs_input" : run.state === "accepted" ? "completed" : run.state}`, textContent: TASK_RUN_LABELS[run.state] })));
         item.append(el("p", { textContent: run.note }), el("p", { className: "hint", textContent: `${timing} · ${run.state === "running" || run.recovered ? "Active time incomplete" : `${(run.activeMs / 1000).toFixed(1)}s active`} · ${run.toolCalls} tool ${run.toolCalls === 1 ? "call" : "calls"}${run.stop ? ` · Stop: ${run.stop}` : ""}` }), el("code", { className: "schedule-run-id", textContent: `Run ${run.id} · Input ${run.inputId}` }));
+        if (run.review) item.append(el("p", { className: "hint", textContent: `Reviewed by you ${date(run.review.at)} · ${run.review.surfaces.length} saved surfaces · versions recorded` }), el("blockquote", { textContent: run.review.note }));
         const usage = el("p", { className: "hint", role: "status" });
         const loadUsage = button("Show usage", async () => {
           loadUsage.disabled = true;

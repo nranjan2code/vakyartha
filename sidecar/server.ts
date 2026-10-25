@@ -219,17 +219,18 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
       } catch (err) { json(res, 400, { error: (err as Error).message }); }
       return true;
     }
-    const m = /^\/api\/tasks(?:\/([\w-]+)(?:\/(input|cancel|complete|approve|schedule))?)?$/.exec(p);
+    const m = /^\/api\/tasks(?:\/([\w-]+)(?:\/(input|cancel|complete|approve|schedule|review))?)?$/.exec(p);
     if (!m) return false;
     try {
       const [, id, operation] = m;
       if (!id && req.method === "GET") json(res, 200, tasks!.list());
       else if (!id && req.method === "POST") json(res, 201, await tasks!.create(await readJson(req)));
       else if (id && !operation && req.method === "GET") json(res, 200, tasks!.get(id));
+      else if (id && operation === "review" && req.method === "GET") json(res, 200, await tasks!.review(id));
       else if (id && !operation && req.method === "DELETE") { await tasks!.remove(id, await readJson(req)); json(res, 200, { ok: true }); }
-      else if (id && operation && req.method === "POST") {
+      else if (id && operation && operation !== "review" && req.method === "POST") {
         const body = await readJson(req);
-        const result = operation === "input" ? await tasks!.input(id, body) : operation === "cancel" ? await tasks!.cancel(id) : operation === "complete" ? await tasks!.complete(id) : operation === "schedule" ? await tasks!.changeSchedule(id, body) : await tasks!.answer(id, String(body.approval), body.decision);
+        const result = operation === "input" ? await tasks!.input(id, body) : operation === "cancel" ? await tasks!.cancel(id) : operation === "complete" ? await tasks!.complete(id, body) : operation === "schedule" ? await tasks!.changeSchedule(id, body) : await tasks!.answer(id, String(body.approval), body.decision);
         json(res, 200, result);
       } else json(res, 405, { error: "method not allowed" });
     } catch (err) { json(res, 400, { error: (err as Error).message }); }

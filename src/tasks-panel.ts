@@ -2,7 +2,7 @@ import { TASK_LABELS, parseTaskSummaries, parseTaskView, type TaskSummary, type 
 import { $, api, ask, el } from "./core.ts";
 import { SchedulePage } from "./schedule-page.ts";
 
-type Command = { kind: "cancel" } | { kind: "complete" } | { kind: "approve"; approval: string; decision: "allow" | "deny" };
+type Command = { kind: "cancel" } | { kind: "approve"; approval: string; decision: "allow" | "deny" };
 
 /** Task controls use the existing conversation and canvas; no surface copies live here. */
 export class TasksPanel {
@@ -63,10 +63,8 @@ export class TasksPanel {
     const details = el("details", { open: Boolean(expanded) }, el("summary", { textContent: "Task details and activity" }), el("p", { textContent: t.goal }), el("p", {}, el("strong", { textContent: "Complete when: " }), t.criteria), el("p", { className: "hint", textContent: `${t.model} · ${t.runs} runs · ${t.pending.length} queued inputs` }), el("ol", {}, ...t.activity.slice(-8).map((a) => el("li", { textContent: a.text }))));
     const controls = el("div", { className: "task-controls" });
     if (t.state === "needs_input") {
-      const complete = el("button", { type: "button", className: "primary small", textContent: "Mark complete" });
-      complete.addEventListener("click", async () => {
-        if (await ask(`Does the saved result meet these criteria?\n\n${t.criteria}`, "Mark complete")) await this.command({ kind: "complete" });
-      });
+      const complete = el("button", { type: "button", className: "primary small", textContent: "Review result" });
+      complete.addEventListener("click", () => void this.page.reviewResult(t.id));
       controls.append(complete);
     }
     if (["queued", "running", "needs_approval"].includes(t.state)) {

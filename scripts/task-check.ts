@@ -86,10 +86,14 @@ const steps = [
    check(view.timeline.filter(e=>e.kind==='action').length===1,'action not delivered exactly once');
    const denied=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session:window.qaTask,provider:'compatible',model:'scripted',message:'bypass'})});
    check(denied.status===409,'task ownership bypass');return 'background continuation, scoped action and mutation protection';`,
-  `await wait(()=>Array.from(document.querySelectorAll('#task-bar button')).some(b=>b.textContent==='Mark complete'));
-   Array.from(document.querySelectorAll('#task-bar button')).find(b=>b.textContent==='Mark complete').click();await wait(()=>document.getElementById('ask').open);document.getElementById('ask-ok').click();
+  `window.qaReviewedSurface=pick('second');await wait(()=>Array.from(document.querySelectorAll('#task-bar button')).some(b=>b.textContent==='Review result'));
+   Array.from(document.querySelectorAll('#task-bar button')).find(b=>b.textContent==='Review result').click();await wait(()=>document.getElementById('review-evidence'));
+   check(document.getElementById('schedule-title').textContent==='Review the result','review is not a full page');check(document.documentElement.scrollWidth<=innerWidth,'review overflow');return 'full-page evidence review and saved surface references';`,
+  `document.getElementById('review-evidence').value='Checked both interactive forms and the table against the saved criteria.';document.getElementById('review-confirm').checked=true;
+   document.querySelector('.schedule-review-form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
    await wait(async()=>(await task()).state==='completed');
-   const b=pick('second');flush();check(!b.shadowRoot.querySelector('button').disabled,'completion disabled a surface');b.shadowRoot.querySelector('button').click();
+   await wait(()=>document.querySelector('#schedule-page .schedule-detail-actions'));Array.from(document.querySelectorAll('#schedule-page button')).find(b=>b.textContent==='Open workspace').click();await wait(()=>document.querySelectorAll('vak-surface').length===3);flush();
+   const b=pick('second');check(b===window.qaReviewedSurface,'review return recreated a live surface');flush();check(!b.shadowRoot.querySelector('button').disabled,'completion disabled a surface');b.shadowRoot.querySelector('button').click();
    await wait(async()=>(await task()).runs===3);await wait(async()=>(await task()).state==='needs_input');
    await new Promise(r=>setTimeout(r,2200));flush();check(pick('second')===b,'status refresh recreated an interactive surface');
    check(document.documentElement.scrollWidth<=innerWidth,'page overflow');return 'reviewed completion and interactive continuation';`,

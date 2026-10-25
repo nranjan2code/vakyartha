@@ -94,7 +94,7 @@ Status: implemented bounded slice, 2026-10-26. Owner: Vakyartha.
 
 Task identity, execution identity and trigger state are distinct. Each admitted attempt receives a run ID, sequence and accepted input identity/kind. Store its start/end timestamps, recorded active milliseconds, tool-call count, stop reason and reviewed/accepted/failed/cancelled/interrupted outcome in the existing task journal. Operations reference their run ID. Schedule detail exposes expandable records alongside the task lifecycle. User acceptance applies to the latest reviewed run; a clean model stop alone never means the task is complete.
 
-Do not copy conversations, surfaces or memory into run records. They continue to reference the canonical session, and historical surface snapshots are not promised. Use one strict schema (task journal version 2), with a complete ordered record for every run. No legacy adapters or migrations are needed before launch. Reject incompatible development journals explicitly; never delete them automatically. An unfinished record recovered after restart is interrupted, with recovery time and an unknown end time. Recovery still does not replay work or retain authority.
+Do not copy conversations, surfaces or memory into run records. They continue to reference the canonical session, and historical surface snapshots are not promised. Use one strict schema (task journal version 3), with a complete ordered record for every run. No legacy adapters or migrations are needed before launch. Reject incompatible development journals explicitly; never delete them automatically. An unfinished record recovered after restart is interrupted, with recovery time and an unknown end time. Recovery still does not replay work or retain authority.
 
 This preserves the temporary 32-run task bound, counts queued reservations before accepting inputs, and keeps the existing single journal writer. It does not yet provide sustained retention, lifetime deduplication or recurring execution; P3.10 remains open. Those require a deliberate migration/retention design before removing the lifetime bound. No package, crate, process or IPC path is added.
 
@@ -106,3 +106,14 @@ Status: implemented, 2026-10-26. Owner: Vakyartha.
 The task dispatcher passes typed task/run identity into the existing FinOps observation scope. Provider measurement inherits that identity, including across approval suspension; HTTP bodies and model text cannot assign it. Keep the numeric ledger as the sole usage writer, separate from task journals and canonical content. Schedule reads a narrow run summary on demand; FinOps retains detailed inspection and export. No new process, native IPC, dependency or framework contract is needed.
 
 Unreported/incomplete usage, absent records and missing prices remain unknown. Model API estimates use current configured rates and exclude tool/server charges, compute and hosting. Local API cost can be zero without implying zero total operating cost. Ledger rotation and save failures may make historical usage unavailable. This is attribution and accounting, not enforceable cumulative budgets or a monetary ceiling; those remain separate admission-policy gates.
+
+
+## ADR-011 — Revision-bound user evidence review
+
+Status: implemented manual-review slice, 2026-10-26. Owner: Vakyartha.
+
+A clean run or rendered interface cannot certify completion. Review opens a full page with criteria, saved surface identities/versions and run-scoped tool-call records. The user inspects the canonical workspace and source receipts, writes an evidence note and explicitly confirms the criteria. Returned tool calls are labelled as responses, not verified external effects; unsubmitted form drafts are excluded.
+
+Acceptance requires a current task revision/run and a fingerprint of the canonical saved timeline and surfaces. Recompute it immediately before acceptance, reject stale/duplicate review, and require a saved assistant result from the latest run. Persist the user's note, review time and evidence references on that run without copying canonical content. The fingerprint detects changes; it is not a truth or authenticity score. Existing surfaces remain interactive after acceptance.
+
+Task schema v3 requires matching review metadata for accepted runs. No backward adapter or automatic development-data deletion is added. Source correctness, automatic criterion verification, output-file receipts and provenance labels remain separate gates (P1.9/P2.7). This uses the public host view API, standard hashing and the existing journal; no new dependency, process or IPC.

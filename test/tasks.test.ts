@@ -38,7 +38,7 @@ test("tasks run through one canonical host, retain multiple interactive surfaces
     assert.equal(view.surfaces.length, 3);
     assert.equal(view.surfaces[0]?.nodes[0]?.type, "form");
     assert.equal(tasks.get(t.id).state, "needs_input");
-    await tasks.complete(t.id);
+    await tasks.complete(t.id, { ...await tasks.review(t.id), confirmed: true, note: "Checked the saved result against the criteria." });
     assert.equal(tasks.get(t.id).state, "completed");
     await tasks.close(); tasks = await Tasks.open(deps);
     assert.equal(tasks.get(t.id).state, "completed");
@@ -124,7 +124,7 @@ test("task admission fails closed for invalid input and unavailable capabilities
 test("typed input and journal boundaries reject invalid combinations and unsupported versions", () => {
   assert.throws(() => parseTaskInput({ id: "x", message: "hi", action: { surface: "s", source: "a", data: {} }, revision: 1 }));
   assert.throws(() => parseTaskInput({ id: "x", action: { surface: "s", source: "a", data: {} }, revision: -1 }));
-  assert.throws(() => parseTaskView({ version: 3 }));
+  assert.throws(() => parseTaskView({ version: 4 }));
   assert.throws(() => parseTaskView({ version: 1, state: "__proto__" }));
 });
 
@@ -260,14 +260,15 @@ test("shutdown aborts suspended approvals and a running peer without replaying e
 
 test("run history retains distinct input identities and outcomes without copying canonical content", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "vak-run-history-"));
-  const deps = { dir, ready: () => {}, warn: () => {}, instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), tools: async () => [], view: async (id: string) => ({ id, title: "", updated: "", timeline: [{ kind: "assistant" as const, text: "Result", surfaces: [], notes: [], status: "end", at: new Date().toISOString() }], surfaces: [] }), run: async () => ({ stop: "end" }) };
+  let resultAt = "";
+  const deps = { dir, ready: () => {}, warn: () => {}, instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), tools: async () => [], view: async (id: string) => ({ id, title: "", updated: "", timeline: [{ kind: "assistant" as const, text: "Result", surfaces: [], notes: [], status: "end", at: resultAt }], surfaces: [] }), run: async () => { resultAt = new Date().toISOString(); return { stop: "end" }; } };
   let tasks = await Tasks.open(deps);
   try {
     const t = await tasks.create({ goal: "First", criteria: "Review", provider: "p", model: "m", integrations: [] });
     await until(() => tasks.get(t.id).state === "needs_input");
     await tasks.input(t.id, { id: "continuation", message: "Check it again" });
     await until(() => tasks.get(t.id).state === "needs_input");
-    await tasks.complete(t.id);
+    await tasks.complete(t.id, { ...await tasks.review(t.id), confirmed: true, note: "Checked the saved result against the criteria." });
     await tasks.close();
     const saved = parseTaskView(JSON.parse(await readFile(path.join(dir, `${t.id}.json`), "utf8")));
     assert.deepEqual(saved.runHistory.map((r) => r.sequence), [1, 2]);
@@ -330,5 +331,38 @@ test("unfinished run records recover with an unknown end time and never invented
     assert.equal(recovered.runHistory[0]!.ended, undefined);
     assert.ok(recovered.runHistory[0]!.recovered);
     assert.equal(recovered.runs, 1);
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("result acceptance binds explicit evidence to the latest saved result and rejects stale or duplicate review", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-result-review-"));
+  let at = "", publish = true;
+  const surface = { id: "report", title: "Report", version: 1, nodes: [], data: { value: "first" } };
+  const deps = { dir, ready: () => {}, warn: () => {}, instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), tools: async () => [], view: async (id: string) => ({ id, title: "", updated: "", timeline: [{ kind: "assistant" as const, text: "Result", at, surfaces: ["report"], notes: [], status: "end" }], surfaces: [structuredClone(surface)] }), run: async () => { if (publish) at = new Date().toISOString(); return { stop: "end" }; } };
+  let tasks = await Tasks.open(deps);
+  try {
+    const t = await tasks.create({ goal: "Report", criteria: "Verified values", provider: "p", model: "m", integrations: [] });
+    await until(() => tasks.get(t.id).state === "needs_input");
+    const snapshot = await tasks.review(t.id);
+    await assert.rejects(tasks.complete(t.id, { ...snapshot, note: "Checked" }), /Confirm/);
+    await assert.rejects(tasks.complete(t.id, { ...snapshot, confirmed: true, note: " " }), /Confirm/);
+    surface.data.value = "changed without a version bump";
+    await assert.rejects(tasks.complete(t.id, { ...snapshot, confirmed: true, note: "Checked" }), /changed/);
+    surface.version++;
+    const fresh = await tasks.review(t.id);
+    const payload = { ...fresh, confirmed: true, note: "Checked the report values against the source receipt." };
+    const accepted = await Promise.allSettled([tasks.complete(t.id, payload), tasks.complete(t.id, payload)]);
+    assert.equal(accepted.filter((r) => r.status === "fulfilled").length, 1);
+    const review = tasks.get(t.id).runHistory[0]!.review!;
+    assert.equal(review.method, "user"); assert.equal(review.note, payload.note);
+    assert.deepEqual(review.surfaces, [{ id: "report", title: "Report", version: 2 }]);
+    assert.equal("data" in review.surfaces[0]!, false);
+    await tasks.close(); tasks = await Tasks.open(deps);
+    assert.deepEqual(tasks.get(t.id).runHistory[0]!.review, review);
+    publish = false;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await tasks.input(t.id, { id: "no-result", message: "Continue" });
+    await until(() => tasks.get(t.id).state === "needs_input");
+    await assert.rejects(tasks.review(t.id), /no saved assistant result/);
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });

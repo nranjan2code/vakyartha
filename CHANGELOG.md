@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Result review:** full-page evidence review replaces one-click completion. Record what you checked against the criteria; changed results require a fresh review. Accepted runs retain review notes and saved surface-version references. This records user acceptance, not automatic verification. Task schema is now v3, with no compatibility migration or automatic data deletion.
+
 - **Task usage:** run-level model usage in Schedule, task/run attribution and filtering in FinOps, and matching CSV columns. Missing costs remain unknown; model estimates exclude tool/server charges and do not enforce a spending ceiling.
 
 Built on Projection `c8e7245`.

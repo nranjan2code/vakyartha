@@ -56,7 +56,7 @@ Owner: Vakyartha; any missing general execution contract goes through D7. Accept
 - [ ] P1.6. Record operation identity and outcome; reconcile uncertain effects before retrying. Repeated submissions do not duplicate external effects.
 - [x] P1.7. Stop new work on cancellation and report completed or uncertain in-flight effects honestly.
 - [x] P1.8. Persist pending approval identity and scope; enforce task tool restrictions and fresh checks for delayed, changed or resumed operations. Existing chat-wide grants do not silently transfer.
-- [ ] P1.9. Verify completion conditions with evidence and retain useful partial results on failure.
+- [ ] P1.9. Verify completion conditions with evidence and retain useful partial results on failure. Manual evidence review implemented (ADR-011): required note/confirmation, current-run result, revision/fingerprint guard and recorded surface versions. Automatic/source verification remains open.
 
 ## P2 — Task workspace and results
 
@@ -68,7 +68,7 @@ Owner: Vakyartha. Reuse framework rendering and actions. Acceptance: M5 and M8.
 - [x] P2.4. Route any surface's action to its owning task/outside agent, independently of which task is visible.
 - [x] P2.5. Preserve all supported interactions after completion; additional work becomes an explicit continuation with its own record.
 - [x] P2.6. Prevent background updates from stealing focus, opening another task's canvas or changing the user's selection unexpectedly.
-- [ ] P2.7. Link evidence and output receipts to artifacts; distinguish real, sample, missing and stale information.
+- [ ] P2.7. Link evidence and output receipts to artifacts; distinguish real, sample, missing and stale information. User review now records run/surface version references and rejects stale results; output-file receipts and provenance classification remain open.
 - [ ] P2.8. Verify keyboard, assistive-technology status announcements, focus return and wide/narrow layouts.
 
 ## P3 — Limits, data and recovery

@@ -146,6 +146,9 @@ test("authenticated app HTTP chats record real request metrics and replace recon
   const taskUsage = await (await fetch(`${app.url}/api/finops`, { headers })).json() as { turns: Turn[] };
   const recorded = taskUsage.turns.find((turn) => turn.session === task.id)!;
   assert.deepEqual(recorded.task, { taskId: task.id, runId: finished.runHistory[0]!.id });
+  assert.equal((await fetch(`${app.url}/api/tasks/${task.id}/review`)).status, 401);
+  const snapshot = await (await fetch(`${app.url}/api/tasks/${task.id}/review`, { headers })).json();
+  assert.equal((await fetch(`${app.url}/api/tasks/${task.id}/complete`, { method: "POST", headers, body: JSON.stringify({ ...snapshot, note: "No confirmation" }) })).status, 400);
   const usageUrl = `${app.url}/api/tasks/${task.id}/runs/${finished.runHistory[0]!.id}/usage`;
   assert.equal((await fetch(usageUrl)).status, 401);
   const measured = parseRunUsage(await (await fetch(usageUrl, { headers })).json());

@@ -30,10 +30,11 @@ export interface TaskRun {
   toolCalls: number;
   stop?: string;
   note: string;
+  review?: ResultReview;
 }
 export const TASK_RUN_LABELS: Record<TaskRunState, string> = { running: "In progress", review: "Ready for review", accepted: "Accepted", failed: "Could not finish", cancelled: "Cancelled", interrupted: "Interrupted" };
 export interface TaskView {
-  version: 2;
+  version: 3;
   revision: number;
   id: string;
   session: string;
@@ -95,7 +96,7 @@ export function parseTaskInput(value: unknown): TaskInput {
 }
 export function parseTaskView(value: unknown): TaskView {
   const raw = taskObject(value);
-  if (raw.version !== 2 || !isState(raw.state)) throw new Error("Unsupported task journal version or state");
+  if (raw.version !== 3 || !isState(raw.state)) throw new Error("Unsupported task journal version or state");
   const id = taskString(raw.id, 120), session = taskString(raw.session, 120);
   if (!/^[\w-]+$/.test(id) || session !== id) throw new Error("Invalid task identity");
   const created = taskString(raw.created, 40), updated = taskString(raw.updated, 40);
@@ -121,7 +122,7 @@ export function parseTaskView(value: unknown): TaskView {
   if ((raw.state === "scheduled" && schedule?.status !== "armed") || (raw.state === "paused" && schedule?.status !== "paused")) throw new Error("Schedule state does not match its trigger");
   const note = typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "";
   return {
-    version: 2, revision: integer(raw.revision, Number.MAX_SAFE_INTEGER), id, session, goal: taskString(raw.goal, 8000), criteria: taskString(raw.criteria, 4000), provider: taskString(raw.provider, 120), model: taskString(raw.model, 240),
+    version: 3, revision: integer(raw.revision, Number.MAX_SAFE_INTEGER), id, session, goal: taskString(raw.goal, 8000), criteria: taskString(raw.criteria, 4000), provider: taskString(raw.provider, 120), model: taskString(raw.model, 240),
     integrations: array(raw.integrations, 16).map((v) => taskString(v, 120)), state: raw.state, created, updated, note, runs, runHistory,
     confirmedFree: array(raw.confirmedFree, 16).map((v) => taskString(v, 120)),
     pending: array(raw.pending, TASK_LIMITS.pending).map(parseTaskInput), accepted: array(raw.accepted, 256).map((v) => taskString(v, 120)), operations,
@@ -154,5 +155,42 @@ function parseTaskRun(value: unknown): TaskRun {
   if (sequence < 1) throw new Error("Invalid run sequence");
   const started = timestamp(raw.started), ended = raw.ended === undefined ? undefined : timestamp(raw.ended), recovered = raw.recovered === undefined ? undefined : timestamp(raw.recovered);
   if ((raw.state === "running" && (ended || recovered)) || (["review", "accepted", "failed", "cancelled"].includes(raw.state) && !ended) || (raw.state !== "interrupted" && recovered) || (ended && Date.parse(ended) < Date.parse(started))) throw new Error("Run timestamps do not match its state");
-  return { id: taskString(raw.id, 120), sequence, inputId: taskString(raw.inputId, 120), inputKind: raw.inputKind, state: raw.state as TaskRunState, started, activeMs: integer(raw.activeMs, TASK_LIMITS.activeMs), toolCalls: integer(raw.toolCalls, TASK_LIMITS.tools), note: typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "", ...(ended ? { ended } : {}), ...(recovered ? { recovered } : {}), ...(raw.stop === undefined ? {} : { stop: taskString(raw.stop, 120) }) };
+  const review = raw.review === undefined ? undefined : parseResultReview(raw.review);
+  if ((raw.state === "accepted") !== Boolean(review) || (review && review.runId !== raw.id)) throw new Error("Acceptance requires a matching user review");
+  return { ...(review ? { review } : {}), id: taskString(raw.id, 120), sequence, inputId: taskString(raw.inputId, 120), inputKind: raw.inputKind, state: raw.state as TaskRunState, started, activeMs: integer(raw.activeMs, TASK_LIMITS.activeMs), toolCalls: integer(raw.toolCalls, TASK_LIMITS.tools), note: typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "", ...(ended ? { ended } : {}), ...(recovered ? { recovered } : {}), ...(raw.stop === undefined ? {} : { stop: taskString(raw.stop, 120) }) };
+}
+
+
+export interface ReviewSnapshot {
+  revision: number;
+  runId: string;
+  fingerprint: string;
+  assistantAt: string;
+  surfaces: { id: string; title: string; version: number }[];
+}
+export interface ResultReview extends ReviewSnapshot {
+  method: "user";
+  at: string;
+  note: string;
+}
+export function parseReviewSnapshot(value: unknown): ReviewSnapshot {
+  const raw = taskObject(value);
+  const count = (n: unknown): number => {
+    if (typeof n !== "number" || !Number.isSafeInteger(n) || n < 0) throw new Error("Invalid review revision");
+    return n;
+  };
+  if (typeof raw.fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(raw.fingerprint) || !Array.isArray(raw.surfaces) || raw.surfaces.length > 1000) throw new Error("Invalid result evidence");
+  const assistantAt = taskString(raw.assistantAt, 40);
+  if (!Number.isFinite(Date.parse(assistantAt))) throw new Error("Invalid result timestamp");
+  const surfaces = raw.surfaces.map((value) => {
+    const s = taskObject(value);
+    return { id: taskString(s.id, 240), title: taskString(s.title, 1000), version: count(s.version) };
+  });
+  if (new Set(surfaces.map((s) => s.id)).size !== surfaces.length) throw new Error("Duplicate evidence surface");
+  return { revision: count(raw.revision), runId: taskString(raw.runId, 120), fingerprint: raw.fingerprint, assistantAt, surfaces };
+}
+export function parseResultReview(value: unknown): ResultReview {
+  const raw = taskObject(value), at = taskString(raw.at, 40);
+  if (raw.method !== "user" || !Number.isFinite(Date.parse(at))) throw new Error("Invalid user review");
+  return { ...parseReviewSnapshot(raw), method: "user", at, note: taskString(raw.note, 4000) };
 }

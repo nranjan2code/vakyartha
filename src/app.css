@@ -584,3 +584,10 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 .schedule-run > p { margin: 12px 0; }
 .schedule-run-id { display: block; overflow-wrap: anywhere; font-size: 11px; color: var(--muted); }
 .schedule-run-history > .hint { margin-top: 16px; }
+
+.schedule-review-form { display: grid; gap: 16px; }
+.schedule-review-form textarea { width: 100%; resize: vertical; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); padding: 12px 14px; line-height: 1.6; }
+.schedule-review-confirm { display: flex; gap: 12px; align-items: flex-start; font-size: .85rem; }
+.schedule-review-confirm input { flex: none; margin-top: 5px; }
+.schedule-review-form > button { justify-self: start; }
+.schedule-run blockquote { margin: 14px 0; padding-left: 16px; border-left: 2px solid var(--accent); white-space: pre-wrap; }
