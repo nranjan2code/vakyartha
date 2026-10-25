@@ -30,7 +30,9 @@ export class Tasks {
   private readonly tasks = new Map<string, TaskView>();
   private readonly writes = new Map<string, Promise<void>>();
   private readonly scope = new AsyncLocalStorage<Execution>();
-  private active?: Promise<void>;
+  private readonly running = new Map<string, Execution>();
+  private readonly inflight = new Set<Promise<void>>();
+  private readonly resumptions = new Map<Execution, () => void>();
   private execution?: Execution;
   private closed = false;
   private readonly answers = new Map<string, (decision: "allow" | "deny") => void>();
@@ -81,7 +83,7 @@ export class Tasks {
       await writeFile(temporary, body, { mode: 0o600, flag: "wx" });
       await rename(temporary, file);
     }).catch((err: unknown) => {
-      if (this.execution?.task.id === t.id) this.execution.ctrl.abort(new Error("Task state could not be saved"));
+      this.running.get(t.id)?.ctrl.abort(new Error("Task state could not be saved"));
       if (t.state !== "cancelled") t.state = "failed";
       t.note = "Task state could not be saved. No new work will start; check storage and retry.";
       throw err;
@@ -122,6 +124,7 @@ export class Tasks {
     const body = taskObject(value), input = parseTaskInput(value);
     const t = this.tasks.get(id); if (!t) throw new Error("Task not found");
     if (this.deleting.has(id)) throw new Error("Task is being deleted");
+    if (this.running.get(id)?.ctrl.signal.aborted) throw new Error("Wait for the previous run to stop before continuing");
     if (t.state === "scheduled" || t.state === "paused") throw new Error("Use Run now or change the schedule before adding inputs");
     if (!identifier(body.id)) throw new Error("Input identity required");
     if (t.pending.some((p) => p.id === body.id) || t.accepted.includes(body.id as string)) return this.copy(t);
@@ -146,7 +149,7 @@ export class Tasks {
     t.note = "Stopped new work. Operations already sent may still have effects.";
     t.pending = [];
     if (t.schedule?.status === "armed") t.schedule.status = "paused";
-    if (this.execution?.task.id === id) this.execution.ctrl.abort();
+    this.running.get(id)?.ctrl.abort();
     await this.persist(t);
     this.planWake();
     return this.copy(t);
@@ -171,7 +174,7 @@ export class Tasks {
     if (this.deleting.has(id)) throw new Error("Task is being deleted");
     const t = this.tasks.get(id); if (!t) throw new Error("Task not found");
     const body = taskObject(value);
-    if (["queued", "running", "needs_approval"].includes(t.state) || this.execution?.task.id === id) throw new Error("Cancel this task and wait for execution to stop before deleting it");
+    if (["queued", "running", "needs_approval"].includes(t.state) || this.running.has(id)) throw new Error("Cancel this task and wait for execution to stop before deleting it");
     if (body.revision !== t.revision) throw new Error("Task changed while you reviewed deletion; check it again");
     if (t.operations.some((op) => op.state === "uncertain" || op.state === "started") && body.confirmUncertain !== true) throw new Error("Acknowledge uncertain external effects before deleting the recovery record");
     this.deleting.add(id);
@@ -188,7 +191,7 @@ export class Tasks {
   async changeSchedule(id: string, value: unknown): Promise<TaskView> {
     const t = this.tasks.get(id); if (!t) throw new Error("Schedule not found");
     const body = taskObject(value);
-    if (this.closed || this.deleting.has(id) || this.execution?.task.id === id) throw new Error("Wait for active work to finish");
+    if (this.closed || this.deleting.has(id) || this.running.has(id)) throw new Error("Wait for active work to finish");
     if (body.revision !== t.revision) throw new Error("This schedule changed. Refresh and try again.");
     if (t.state !== "scheduled" && t.state !== "paused") throw new Error("Only upcoming or paused work can be rescheduled");
     if (!t.schedule || !t.pending.length) throw new Error("No pending scheduled run");
@@ -237,10 +240,41 @@ export class Tasks {
   }
 
   private pump(): void {
-    if (this.active || this.closed) return;
-    const t = [...this.tasks.values()].find((t) => t.state === "queued" && t.pending.length);
+    if (this.execution || this.closed) return;
+    // A permission decision resumes the same suspended host call before admitting new work.
+    for (const [e, resume] of this.resumptions) {
+      this.resumptions.delete(e);
+      if (e.ctrl.signal.aborted) { resume(); continue; }
+      this.execution = e;
+      resume();
+      return;
+    }
+    const t = [...this.tasks.values()].find((t) => t.state === "queued" && t.pending.length && !this.running.has(t.id));
     if (!t) return;
-    this.active = this.execute(t).catch((err) => this.deps.warn(`Task persistence/execution failed: ${(err as Error).message}`)).finally(() => { this.active = undefined; this.execution = undefined; this.pump(); });
+    const e: Execution = { task: t, ctrl: new AbortController(), remaining: TASK_LIMITS.activeMs, since: Date.now() };
+    this.execution = e;
+    this.running.set(t.id, e);
+    const work = this.execute(e).catch((err) => this.deps.warn(`Task persistence/execution failed: ${(err as Error).message}`)).finally(() => {
+      this.running.delete(t.id);
+      this.inflight.delete(work);
+      if (this.execution === e) this.execution = undefined;
+      this.pump();
+    });
+    this.inflight.add(work);
+  }
+
+  private async acquire(e: Execution): Promise<void> {
+    if (e.ctrl.signal.aborted || this.execution === e) return;
+    await new Promise<void>((resolve) => {
+      const finish = () => {
+        this.resumptions.delete(e);
+        e.ctrl.signal.removeEventListener("abort", finish);
+        resolve();
+      };
+      this.resumptions.set(e, finish);
+      e.ctrl.signal.addEventListener("abort", finish, { once: true });
+      this.pump();
+    });
   }
 
   private arm(e: Execution): void {
@@ -248,9 +282,8 @@ export class Tasks {
     e.timer = setTimeout(() => e.ctrl.abort(new Error("Active time limit reached")), Math.max(0, e.remaining));
   }
 
-  private async execute(t: TaskView): Promise<void> {
-    const e: Execution = { task: t, ctrl: new AbortController(), remaining: TASK_LIMITS.activeMs, since: Date.now() };
-    this.execution = e;
+  private async execute(e: Execution): Promise<void> {
+    const t = e.task;
     try {
       this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
       const input = t.pending[0]!;
@@ -334,13 +367,34 @@ export class Tasks {
     try { await this.persist(t); }
     catch (err) { this.answers.get(req.id)?.("deny"); throw err; }
     if (!signal.aborted) emit?.({ type: "approval", ...req });
-    const decision = await waiting;
+    if (this.execution === e) this.execution = undefined;
+    this.pump();
+    let decision = await waiting;
+    const approval = t.approval!;
     delete t.approval;
-    if (!e.ctrl.signal.aborted) t.state = "running";
+    if (!e.ctrl.signal.aborted) {
+      t.state = "queued";
+      t.note = "Permission reviewed; waiting for the execution slot";
+    }
     this.activity(t, `Permission ${decision === "allow" ? "allowed once" : "denied"}: ${req.server} / ${req.tool}`);
     await this.persist(t);
+    await this.acquire(e);
+    // Authority may change while another task holds the slot. Revalidate at dispatch.
+    if (e.ctrl.signal.aborted || signal.aborted || Date.parse(approval.expires) <= Date.now()) decision = "deny";
+    if (decision === "allow") {
+      try {
+        this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
+        if (this.deps.permitted?.(req.server, req.tool) === false || approval.capabilityRevision !== (this.deps.permissionRevision?.(req.server) ?? 0)) decision = "deny";
+      } catch { decision = "deny"; }
+    }
+    if (decision === "deny" && !e.ctrl.signal.aborted) this.activity(t, "Operation not authorized at dispatch; no permission grant is retained");
+    if (!e.ctrl.signal.aborted) {
+      t.state = "running"; t.note = "Working";
+      await this.persist(t);
+      this.arm(e);
+    }
+    if (e.ctrl.signal.aborted || signal.aborted) decision = "deny";
     emit?.({ type: "approval_done", id: req.id, decision });
-    this.arm(e);
     return decision;
   }
 
@@ -364,8 +418,8 @@ export class Tasks {
   async close(): Promise<void> {
     this.closed = true;
     clearTimeout(this.wake);
-    this.execution?.ctrl.abort(new Error("Application stopped; review before continuing"));
-    await this.active;
+    for (const e of this.running.values()) e.ctrl.abort(new Error("Application stopped; review before continuing"));
+    await Promise.all(this.inflight);
     await this.checking;
     await Promise.all(this.writes.values());
   }

@@ -45,7 +45,7 @@ test("pause, resume, reschedule and Run now enforce revisions and cannot take ov
     t = await tasks.changeSchedule(t.id, { operation: "run", revision: t.revision });
     await ready(() => tasks.get(t.id).state === "needs_input");
     assert.equal(calls.length, 1);
-    await assert.rejects(tasks.changeSchedule(t.id, { operation: "run", revision: tasks.get(t.id).revision }), /upcoming or paused/);
+    await assert.rejects(tasks.changeSchedule(t.id, { operation: "run", revision: tasks.get(t.id).revision }), /upcoming or paused|active work/);
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });
 

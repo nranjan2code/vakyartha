@@ -175,3 +175,80 @@ test("deletion refuses active/stale tasks and requires acknowledgement before re
     await assert.rejects(readFile(file));
   } finally { release(); await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });
+
+for (const outcome of ["allow", "revoked", "cancel"] as const) {
+  test(`approval wait yields to another task and ${outcome} resumes without parallel execution or replay`, async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "vak-task-slot-"));
+    let tasks!: Tasks, release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let revision = 0, effects = 0, secondActive = false, starts = 0;
+    const tasksDeps = {
+      dir, ready: () => {}, warn: () => {}, instructions: () => "", permissionRevision: () => revision,
+      observe: async (_session: string, work: () => Promise<void>) => work(),
+      view: async (id: string) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }),
+      remove: async () => {},
+      tools: async (): Promise<AgentTool[]> => [{ spec: { name: "memory__write", description: "test", inputSchema: { type: "object" } }, execute: async () => {
+        const decision = await tasks.approve({ id: "permission-slot", server: "memory", tool: "write", title: "Write", args: { value: "fact" } });
+        if (decision === "allow") { assert.equal(secondActive, false); effects++; }
+        return decision;
+      } }],
+      run: async (input: { message?: string }, options: HostRunOptions) => {
+        if (input.message === "First") { starts++; await options.tools![0]!.execute({}, { signal: options.signal, callId: "effect" }); }
+        else { secondActive = true; await gate; secondActive = false; }
+        return { stop: "end" };
+      },
+    };
+    tasks = await Tasks.open(tasksDeps);
+    try {
+      const first = await tasks.create({ goal: "First", criteria: "Review", provider: "p", model: "m", integrations: ["memory"] });
+      await until(() => tasks.get(first.id).state === "needs_approval");
+      const second = await tasks.create({ goal: "Second", criteria: "Review", provider: "p", model: "m", integrations: [] });
+      await until(() => secondActive);
+      await tasks.answer(first.id, "permission-slot", "allow");
+      await until(() => tasks.get(first.id).state === "queued");
+      assert.equal(effects, 0);
+      await assert.rejects(tasks.remove(first.id, { revision: tasks.get(first.id).revision }), /Cancel/);
+      if (outcome === "revoked") revision++;
+      if (outcome === "cancel") await tasks.cancel(first.id);
+      release();
+      await until(() => tasks.get(second.id).state === "needs_input");
+      await until(() => tasks.get(first.id).state === (outcome === "cancel" ? "cancelled" : "needs_input"));
+      await tasks.close();
+      assert.equal(effects, outcome === "allow" ? 1 : 0);
+      assert.equal(starts, 1);
+      assert.equal(tasks.get(first.id).runs, 1);
+      tasks = await Tasks.open(tasksDeps);
+      assert.equal(starts, 1);
+      assert.equal(tasks.get(first.id).approval, undefined);
+    } finally { release(); await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+}
+
+test("shutdown aborts suspended approvals and a running peer without replaying either", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-task-stop-slots-"));
+  let tasks!: Tasks, calls = 0;
+  const deps = {
+    dir, ready: () => {}, warn: () => {}, instructions: () => "",
+    observe: async (_session: string, work: () => Promise<void>) => work(),
+    view: async (id: string) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }), tools: async () => [],
+    run: async (input: { message?: string }, options: HostRunOptions) => {
+      calls++;
+      if (input.message === "First") await tasks.approve({ id: "stop-permission", server: "memory", tool: "write", title: "Write", args: {} });
+      else await new Promise<void>((resolve) => { if (options.signal?.aborted) resolve(); else options.signal?.addEventListener("abort", () => resolve(), { once: true }); });
+      return { stop: "end" };
+    },
+  };
+  tasks = await Tasks.open(deps);
+  try {
+    const first = await tasks.create({ goal: "First", criteria: "Review", provider: "p", model: "m", integrations: [] });
+    await until(() => tasks.get(first.id).state === "needs_approval");
+    const second = await tasks.create({ goal: "Second", criteria: "Review", provider: "p", model: "m", integrations: [] });
+    await until(() => calls === 2);
+    await tasks.close();
+    tasks = await Tasks.open(deps);
+    assert.equal(tasks.get(first.id).state, "interrupted");
+    assert.equal(tasks.get(second.id).state, "interrupted");
+    assert.equal(calls, 2);
+    await assert.rejects(tasks.answer(first.id, "stop-permission", "allow"));
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});

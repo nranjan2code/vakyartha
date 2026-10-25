@@ -77,3 +77,12 @@ Support immediate execution and a one-time future instant. Store the UTC instant
 A one-time trigger is not a repeating schedule. On startup, past due work pauses for explicit review. While running, a delay greater than one minute also pauses instead of silently executing stale instructions. Future instants survive restart; queued/in-flight work interrupted by shutdown is still held for review. Cancellation/deletion disarms future work. The local date/time input resolves to an explicit instant shown before saving; changing the computer's time zone does not change that stored instant.
 
 Repeating wall-clock rules, event triggers, chains, lifetime budgets and sustained long-term run history remain separate gates. Do not display nonfunctional recurrence controls. The local app and computer must remain available; this slice neither wakes the computer nor runs in the cloud.
+
+
+## ADR-008 — Release compute capacity during permission review
+
+Status: accepted, 2026-10-26. Owner: Vakyartha.
+
+A task awaiting approval keeps its existing host call suspended and its task-local abort controller, but releases the single execution slot. Another ready task may run. A permission decision queues a resumption ahead of new admissions; only after it reacquires the slot can the suspended call continue. The original model/tool call is never replayed to resume work. Active-time accounting pauses during both review and slot acquisition.
+
+The local journal records review state before yielding and the decision before resumption. Permission expiry, capability readiness, tool policy and capability revision are checked again at dispatch. Cancellation/shutdown abort all in-flight calls, including suspended calls. Deletion refuses a task until its call has unwound. Recovery after restart remains explicit and never restores permission authority or replays an uncertain operation. This is app scheduling through the existing public host API; no new process, framework contract, native IPC or dependency is required.
