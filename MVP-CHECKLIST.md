@@ -52,7 +52,7 @@ Owner: Vakyartha; any missing general execution contract goes through D7. Accept
 - [x] P1.2. Implement persisted lifecycle states and allowed transitions, including waiting, interruption and explicit continuation.
 - [x] P1.3. Execute one task at a time with a durable queue; release the slot during user waits. Approval suspends the same host call, resumes through the dispatcher and rechecks authority; three two-task interleavings and shutdown/restart covered in `test/tasks.test.ts`.
 - [x] P1.4. Keep execution alive across view changes, hidden windows and event-stream disconnects while the app remains running.
-- [ ] P1.5. Separate progress/surface publication from task completion without breaking existing framework clients.
+- [x] P1.5. Separate progress/surface publication from task completion without breaking existing framework clients. Projection `dbae5c2` adds opt-in response completion; app tasks use it, ordinary clients retain projection completion. Host/provider regressions and app task WebKit checks pass. Product completion still requires user evidence review.
 - [ ] P1.6. Record operation identity and outcome; reconcile uncertain effects before retrying. Repeated submissions do not duplicate external effects.
 - [x] P1.7. Stop new work on cancellation and report completed or uncertain in-flight effects honestly.
 - [x] P1.8. Persist pending approval identity and scope; enforce task tool restrictions and fresh checks for delayed, changed or resumed operations. Existing chat-wide grants do not silently transfer.
@@ -99,7 +99,7 @@ Owners: Vakyartha end-to-end; Projection verifies any changed framework contract
 - [ ] P4.6. Ownership regression: outside-agent actions stay outside-owned and background task events do not contaminate the visible task.
 - [ ] P4.7. Recovery regression: event disconnect, app quit/restart, engine failure, uncertain write, expired approval, save failure and limit exhaustion preserve truthful state without duplicate effects.
 - [ ] P4.8. Permission regression: generated content cannot authorize itself; denied/revoked access remains blocked, and changed targets require fresh review.
-- [ ] P4.9. Establish and run a repeatable outcome evaluation set; report completions, failures, correctness, duration and intervention counts. Agree release thresholds before claiming readiness.
+- [ ] P4.9. Establish and run a repeatable outcome evaluation set (initial local-model harness and diagnostic baseline in `EVALUATION.md`; research/comparison failures remain, no release thresholds agreed); report completions, failures, correctness, duration and intervention counts. Agree release thresholds before claiming readiness.
 - [ ] P4.10. Run app tests, tests against the pinned framework, typecheck, build, canvas smoke and native tests; add targeted checks for new contracts.
 - [ ] P4.11. Inspect the actual app window for setup, multiple interactive surfaces, waiting, cancellation, recovery and deletion. A rendering test alone does not close this gate.
 - [ ] P4.12. Verify unavoidable process contracts: malformed/incompatible messages, stale IDs, duplicate commands, disconnect and reconnect. Check message counts, payload size, bounded queues and interaction latency against D8 without weakening authorization or isolation.
@@ -157,3 +157,8 @@ This first checkpoint did not close the remaining composite gates. Approval-slot
 - `f5130ec`: permanent Schedule destination, full-page creation/overview/detail, one-time timing and guarded lifecycle controls. 28 app tests, typecheck/build, wide/light and narrow/dark task and canvas WebKit checks. No new dependency or framework change.
 - `5aa1534`: approval review yields the execution slot; the same call resumes through the dispatcher with dispatch-time authority revalidation. 32 app tests, 235 pinned framework tests, typecheck/build and task WebKit checks.
 - Run-history slice: typed execution records reference inputs and operations without copying canonical surfaces, messages or shared memory. Outcome, stop reason, recorded active time and user acceptance are visible in expandable detail rows. Schema v2 requires complete run records without legacy fallbacks; crash recovery never invents an end time. 35 app tests cover these boundaries and the run admission limit. P3.10 remains open until retention and durable deduplication support sustained long-term operation.
+
+
+## Real-model outcome checkpoint — 2026-10-26
+
+`EVALUATION.md` records the persistent installed-runtime setup, authorization, commands and before/after results. Baseline Projection `c8e7245` and opt-in response completion `dbae5c2` were each tried on three bounded local-model cases. Memory write/read-back produced independently persisted evidence. Research fetched/cited both sources but still failed layout and factual checks. Comparison gained separate surfaces but omitted table row identities and supplied form defaults; its initial machine candidate was corrected to failure. These observations do not close P4.1–P4.4 or P4.9. Retained-output WebKit checks verify local edits/filtering make no model requests, but do not certify factual correctness or full accessibility. App unit tests: 52; pinned framework tests: 238. No paid model calls or new integration installs.

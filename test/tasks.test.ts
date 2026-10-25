@@ -15,7 +15,8 @@ async function until(check: () => boolean): Promise<void> {
 
 const scripted: Provider = {
   id: "scripted", async describeModel() { return { tools: true, fingerprint: "task-test", source: "test" }; },
-  async *stream() {
+  async *stream(req) {
+    if (req.messages.at(-1)?.role === "tool" && !req.messages.at(-1)?.isError) { yield { type: "text", delta: "Ready for review" }; yield { type: "done", stop: "end" }; return; }
     for (const id of ["first", "second", "table"]) {
       const nodes = id === "table" ? [{ id: "root", type: "table", props: { columns: ["Name", "Value"], rows: [["B", 2], ["A", 1]] } }] : [{ id: "root", type: "form", props: { submit: "save" }, children: [{ id: "name", type: "input", props: { label: "Name", bind: "/name", checks: ["required"] } }] }];
       yield { type: "tool_start", id, name: "vak_render" };

@@ -216,3 +216,6 @@ Spending admission (ADR-012) now defaults tasks to a declared local provider on 
 
 
 Cumulative execution limits (ADR-013) persist across runs and restart: by default 32 runs, 96 generation requests, 96 tool attempts and 30 active minutes. Setup exposes supported finite limits; per-run caps also apply. Reserve before dispatch, count retries, and retain unfinished active-time charges after a crash. Approval/slot waits do not consume active time. Admission reservations are separate from measured FinOps usage and do not imply a monetary ceiling. Long-term retention and execution beyond the bounded task lifetime remain open.
+
+
+The initial outcome evaluation is repeatable through `scripts/task-evaluate.ts`, with retained real outputs and WebKit inspection described in `EVALUATION.md`. Response-oriented task runs now continue after progress publication via Projection's public opt-in completion API; default projection clients remain unchanged. This mechanism does not establish outcome correctness: current research and comparison trials still fail recorded requirements.

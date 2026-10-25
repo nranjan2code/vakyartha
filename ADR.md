@@ -141,3 +141,15 @@ Every task stores finite limits and a reservation ledger for model requests, too
 Persist model/tool reservations before dispatch. Provider admission precedes usage observation, so refused requests do not become measured model usage. Reserve a run's active-time allowance before execution, settle the unused portion on a known stop, and retain the full unfinished charge after crash recovery. Monotonic active-time accounting excludes approval and execution-slot waits. Check the deadline before new effects as well as using cooperative abort signals. Already dispatched operations may still have external effects; cancellation and reconciliation semantics remain unchanged.
 
 These reservations are admission controls, separate from FinOps measurements and monetary ceilings. Task journals retain a single writer, with no new process, native IPC, framework contract or dependency. Schema v5 validates ledger totals against run records. The temporary 32-run ceiling, long-term retention/deduplication, source verification and repeating execution remain open gates.
+
+## ADR-014 — Evaluate real outcomes and separate publication from run completion
+
+Status: response-completion contract implemented and evaluated, 2026-10-26.
+
+Use the installed local model/settings and existing pinned MCP runtime for opt-in development evaluation. Keep a persistent evaluation workspace at `.vak/evaluations/agent-mvp`, with raw sessions/transcripts and per-run reports for later sessions. The user explicitly authorized using or altering the dev setup; do not repeat that approval request. No paid model run, MCP reinstall or channel restart is needed. Machine checks exclude user instructions from result evidence and distinguish separate surfaces from nested sections; a candidate pass still needs semantic/interaction review.
+
+The primary-local-model baseline fetched and cited both requested public sources and completed an approved Memory write/read-back with an independently persisted marker. It still combined requested interfaces or substituted components, so those outcome gates fail. The existing host ends a run after a clean projection; app composition cannot continue that same model/tool call stack through its public API. Do not split surfaces, synthesize extra tasks or send repeated chat requests to hide the failure.
+
+Add a minimal general response-completion option in Projection's own repository: defaults retain projection-oriented behavior; opt-in tool runs may publish progress and continue until the model responds without tool calls, or a bound/error/abort stops them. This ends a run, not the product task. Product acceptance remains the separate evidence-bound user review. Re-evaluate the actual local model after adopting the pushed public API; do not mark interface correctness solved merely by adding the mechanism.
+
+Projection `dbae5c2` implements the public option and passes 238 tests. Local trials show it permits additional publications and tool steps, while research and comparison still fail recorded requirements; see EVALUATION.md. The app enables the option only for task runs and retains explicit evidence-bound acceptance.
