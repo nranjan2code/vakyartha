@@ -28,6 +28,7 @@ The site describes where Vakyartha is going. Here is what this repository does t
 | Connected tools and services | **Works.** A curated integrations catalog (Web pages, Time, Files, Memory, Brave Search, GitHub, Notion, Context7), each pinned, with per-tool policies and approvals. |
 | In your everyday chat | **Telegram works**, answered from the menu bar while the window is closed. Slack and Discord are listed as coming. |
 | Spending limits and usage | **Usage works:** Settings → FinOps charts tokens, context and estimated cost per turn. Spending limits are not built yet. |
+| Agent tasks | **First slice works:** manual tasks, bounded background runs, review, continuation and guarded deletion reuse the interactive canvas. Scheduling, task chains and long-term run history are not built yet. |
 | Pick up the thread (commitments) | Not yet. |
 | Vakyartha and seven companions | Not yet. |
 | Headless & Cloud, scheduled routines | Not yet. `npm run web` serves the same app on loopback for development only. |
@@ -111,7 +112,7 @@ Each folder holds `sessions/`, `integrations/`, `integrations.json`, `channels.j
 ## Documentation
 
 - [SPECS.md](SPECS.md): what the app is, its framework dependency and identity.
-- [MVP-SPECS.md](MVP-SPECS.md) and [MVP-CHECKLIST.md](MVP-CHECKLIST.md): proposed agent MVP, preserved interactive surfaces, ownership, progress gates and later scope.
+- [MVP-SPECS.md](MVP-SPECS.md), [MVP-CHECKLIST.md](MVP-CHECKLIST.md) and [ADR.md](ADR.md): agent MVP implementation, preserved interactive surfaces, architecture decisions, progress gates and later scope.
 - [RELEASING.md](RELEASING.md): releasing the app and updating Projection.
 - [AGENTS.md](AGENTS.md) and [HANDOVER.md](HANDOVER.md): working rules and where work stands.
 - [SECURITY.md](SECURITY.md), [CANVAS.md](CANVAS.md), [FINOPS.md](FINOPS.md) and [CHANGELOG.md](CHANGELOG.md).

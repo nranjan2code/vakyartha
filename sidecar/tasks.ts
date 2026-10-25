@@ -1,0 +1,305 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import type { AgentEvent } from "@vak/core";
+import type { HostRunOptions, HostTurn, SessionView } from "@vak/host";
+import type { AgentTool } from "@vak/providers";
+import { TASK_LIMITS, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView } from "../task-contract.ts";
+
+interface Dependencies {
+  dir: string;
+  run(input: HostTurn, options: HostRunOptions): Promise<{ stop: string }>;
+  view(session: string): Promise<SessionView>;
+  remove?(session: string): Promise<void>;
+  tools(session: string): Promise<AgentTool[]>;
+  instructions(): string;
+  observe(session: string, work: () => Promise<void>): Promise<void>;
+  ready(provider: string, model: string, integrations: string[], confirmedFree: string[]): void;
+  permissionRevision?(server: string): number;
+  permitted?(server: string, tool: string): boolean;
+  warn(message: string): void;
+}
+type Execution = { task: TaskView; ctrl: AbortController; remaining: number; since: number; timer?: ReturnType<typeof setTimeout> };
+const text = (v: unknown, max: number) => typeof v === "string" && v.trim().length <= max ? v.trim() : "";
+const identifier = (v: unknown) => typeof v === "string" && /^[\w-]{1,120}$/.test(v);
+
+/** Product task journal. Surface content stays exclusively in the host's canonical sessions. */
+export class Tasks {
+  private readonly tasks = new Map<string, TaskView>();
+  private readonly writes = new Map<string, Promise<void>>();
+  private readonly scope = new AsyncLocalStorage<Execution>();
+  private active?: Promise<void>;
+  private execution?: Execution;
+  private closed = false;
+  private readonly answers = new Map<string, (decision: "allow" | "deny") => void>();
+  private readonly deciding = new Set<string>();
+  private readonly deleting = new Set<string>();
+  private readonly deps: Dependencies;
+
+  private constructor(deps: Dependencies) { this.deps = deps; }
+
+  static async open(deps: Dependencies): Promise<Tasks> {
+    const owner = new Tasks(deps);
+    await mkdir(deps.dir, { recursive: true, mode: 0o700 });
+    for (const file of await readdir(deps.dir)) {
+      if (!/^[\w-]{1,120}\.json$/.test(file)) continue;
+      const t = parseTaskView(JSON.parse(await readFile(path.join(deps.dir, file), "utf8")));
+      if (file !== `${t.id}.json`) throw new Error("Task identity does not match its journal");
+      if (["queued", "running", "needs_approval"].includes(t.state)) {
+        t.state = "interrupted";
+        t.note = "Execution was interrupted. Check any external effects before starting a continuation.";
+        delete t.approval;
+        for (const op of t.operations) if (op.state === "started") op.state = "uncertain";
+        await owner.persist(t);
+      }
+      owner.tasks.set(t.id, t);
+    }
+    return owner;
+  }
+
+  list(): TaskSummary[] { return [...this.tasks.values()].map(({ id, session, goal, state, updated, revision, note }) => ({ id, session, goal: goal.slice(0, 120), state, updated, revision, note })).sort((a, b) => b.updated.localeCompare(a.updated)); }
+  get(id: string): TaskView { const t = this.tasks.get(id); if (!t) throw new Error("Task not found"); return this.copy(t); }
+  owns(session: string): boolean { return this.tasks.has(session); }
+  inTask(): boolean { return Boolean(this.scope.getStore()); }
+  private copy(t: TaskView): TaskView { return structuredClone(t); }
+
+  private persist(t: TaskView): Promise<void> {
+    t.updated = new Date().toISOString();
+    t.revision++;
+    const body = JSON.stringify(t);
+    const previous = this.writes.get(t.id) ?? Promise.resolve();
+    const work = previous.catch(() => {}).then(async () => {
+      const file = path.join(this.deps.dir, `${t.id}.json`);
+      const temporary = `${file}.${randomUUID()}.tmp`;
+      await writeFile(temporary, body, { mode: 0o600, flag: "wx" });
+      await rename(temporary, file);
+    }).catch((err: unknown) => {
+      if (this.execution?.task.id === t.id) this.execution.ctrl.abort(new Error("Task state could not be saved"));
+      if (t.state !== "cancelled") t.state = "failed";
+      t.note = "Task state could not be saved. No new work will start; check storage and retry.";
+      throw err;
+    });
+    this.writes.set(t.id, work);
+    void work.finally(() => { if (this.writes.get(t.id) === work) this.writes.delete(t.id); }).catch(() => {});
+    return work;
+  }
+
+  private activity(t: TaskView, message: string): void {
+    t.activity.push({ at: new Date().toISOString(), text: message });
+    if (t.activity.length > 100) t.activity.shift();
+  }
+
+  async create(value: unknown): Promise<TaskView> {
+    const body = taskObject(value);
+    if (this.closed) throw new Error("Task service is stopping");
+    if (this.tasks.size >= 200) throw new Error("Task limit reached");
+    const goal = text(body.goal, 8000), criteria = text(body.criteria, 4000);
+    const provider = text(body.provider, 120), model = text(body.model, 240);
+    if (!goal || !criteria || !provider || !model || !Array.isArray(body.integrations) || body.integrations.length > 16 || !body.integrations.every(identifier)) throw new Error("Goal, completion criteria, model and explicit tool selection are required");
+    const integrations = [...new Set(body.integrations as string[])];
+    const confirmedFree = Array.isArray(body.confirmedFree) && body.confirmedFree.length <= 16 && body.confirmedFree.every(identifier) ? [...new Set(body.confirmedFree as string[])] : [];
+    this.deps.ready(provider, model, integrations, confirmedFree);
+    const id = randomUUID(), at = new Date().toISOString();
+    const t: TaskView = { version: 1, revision: 0, id, session: id, goal, criteria, provider, model, integrations, confirmedFree, state: "queued", created: at, updated: at, note: "Waiting to start", runs: 0, pending: [{ id: randomUUID(), kind: "message", message: goal }], activity: [], operations: [], accepted: [] };
+    await this.persist(t);
+    this.tasks.set(id, t);
+    this.pump();
+    return this.copy(t);
+  }
+
+  async input(id: string, value: unknown): Promise<TaskView> {
+    const body = taskObject(value), input = parseTaskInput(value);
+    const t = this.tasks.get(id); if (!t) throw new Error("Task not found");
+    if (this.deleting.has(id)) throw new Error("Task is being deleted");
+    if (!identifier(body.id)) throw new Error("Input identity required");
+    if (t.pending.some((p) => p.id === body.id) || t.accepted.includes(body.id as string)) return this.copy(t);
+    if (t.accepted.length >= 256 || t.runs >= 32) throw new Error("Task continuation limit reached; start a new task");
+    if (this.closed || t.state === "needs_approval" || t.pending.length >= TASK_LIMITS.pending) throw new Error("Resolve the pending approval or wait for queued inputs");
+    if (t.operations.some((o) => o.state === "uncertain") && body.reconciled !== true) throw new Error("Review uncertain external effects before continuing");
+    if (body.reconciled === true) for (const op of t.operations) if (op.state === "uncertain") op.state = "reviewed";
+    if (["interrupted", "cancelled", "failed"].includes(t.state)) t.pending = [];
+    t.pending.push(input);
+    t.accepted.push(input.id);
+    this.activity(t, `Input accepted: ${input.id}`);
+    if (t.state !== "running") t.state = "queued";
+    await this.persist(t);
+    this.pump();
+    return this.copy(t);
+  }
+
+  async cancel(id: string): Promise<TaskView> {
+    if (this.deleting.has(id)) throw new Error("Task is being deleted");
+    const t = this.tasks.get(id); if (!t) throw new Error("Task not found");
+    t.state = "cancelled";
+    t.note = "Stopped new work. Operations already sent may still have effects.";
+    t.pending = [];
+    if (this.execution?.task.id === id) this.execution.ctrl.abort();
+    await this.persist(t);
+    return this.copy(t);
+  }
+
+  async complete(id: string): Promise<TaskView> {
+    if (this.deleting.has(id)) throw new Error("Task is being deleted");
+    const t = this.tasks.get(id); if (!t || t.state !== "needs_input" || t.pending.length) throw new Error("Only a result awaiting review can be completed");
+    if (!t.runs || t.operations.some((o) => o.state === "started" || o.state === "uncertain")) throw new Error("Review unresolved operations first");
+    const view = await this.deps.view(t.session);
+    if (this.deleting.has(id) || t.state !== "needs_input" || t.pending.length) throw new Error("Task changed while reviewing; check it again");
+    if (!view.timeline.some((e) => e.kind === "assistant")) throw new Error("No saved result to review");
+    t.state = "completed";
+    t.note = "You confirmed that the saved result meets the completion criteria.";
+    this.activity(t, "Result accepted by the user");
+    await this.persist(t);
+    return this.copy(t);
+  }
+
+  async remove(id: string, value: unknown): Promise<void> {
+    if (!this.deps.remove) throw new Error("Task deletion is unavailable");
+    if (this.deleting.has(id)) throw new Error("Task is being deleted");
+    const t = this.tasks.get(id); if (!t) throw new Error("Task not found");
+    const body = taskObject(value);
+    if (["queued", "running", "needs_approval"].includes(t.state) || this.execution?.task.id === id) throw new Error("Cancel this task and wait for execution to stop before deleting it");
+    if (body.revision !== t.revision) throw new Error("Task changed while you reviewed deletion; check it again");
+    if (t.operations.some((op) => op.state === "uncertain" || op.state === "started") && body.confirmUncertain !== true) throw new Error("Acknowledge uncertain external effects before deleting the recovery record");
+    this.deleting.add(id);
+    try {
+      await this.writes.get(id);
+      if (body.revision !== t.revision) throw new Error("Task changed while you reviewed deletion; check it again");
+      await this.deps.remove(id);
+      await rm(path.join(this.deps.dir, `${id}.json`), { force: true });
+      this.tasks.delete(id);
+    } finally { this.deleting.delete(id); }
+  }
+
+  private pump(): void {
+    if (this.active || this.closed) return;
+    const t = [...this.tasks.values()].find((t) => t.state === "queued" && t.pending.length);
+    if (!t) return;
+    this.active = this.execute(t).catch((err) => this.deps.warn(`Task persistence/execution failed: ${(err as Error).message}`)).finally(() => { this.active = undefined; this.execution = undefined; this.pump(); });
+  }
+
+  private arm(e: Execution): void {
+    e.since = Date.now();
+    e.timer = setTimeout(() => e.ctrl.abort(new Error("Active time limit reached")), Math.max(0, e.remaining));
+  }
+
+  private async execute(t: TaskView): Promise<void> {
+    const e: Execution = { task: t, ctrl: new AbortController(), remaining: TASK_LIMITS.activeMs, since: Date.now() };
+    this.execution = e;
+    try {
+      this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
+      const input = t.pending[0]!;
+      if (input.action) {
+        const view = await this.deps.view(t.session);
+        if (view.surfaces.find((s) => s.id === input.action!.surface)?.version !== input.revision) throw new Error("This surface changed. Review it and submit again.");
+      }
+      if (e.ctrl.signal.aborted || t.state === "cancelled") throw new Error("Task stopped before execution");
+      t.state = "running"; t.note = "Working"; t.runs++;
+      this.activity(t, input.action ? `Form action: ${input.action.source}` : "Started a run");
+      await this.persist(t);
+      this.arm(e);
+      await this.scope.run(e, () => this.deps.observe(t.session, async () => {
+        let calls = 0;
+        const tools = (await this.deps.tools(t.session)).filter((tool) => t.integrations.includes(tool.spec.name.split("__")[0]!)).map((tool): AgentTool => ({
+          spec: tool.spec,
+          execute: async (args, ctx) => {
+            this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
+            if (e.ctrl.signal.aborted || t.state === "cancelled" || ++calls > TASK_LIMITS.tools) { e.ctrl.abort(new Error("Tool-call limit reached or task stopped")); throw new Error("Tool-call limit reached or task stopped"); }
+            const op = { id: ctx.callId ?? randomUUID(), tool: tool.spec.name, state: "started" as const };
+            t.operations.push(op);
+            await this.persist(t);
+            try {
+              const result = await tool.execute(args, ctx);
+              Object.assign(op, { state: e.ctrl.signal.aborted ? "uncertain" : "returned" });
+              await this.persist(t);
+              return result;
+            } catch (err) {
+              Object.assign(op, { state: "uncertain" });
+              await this.persist(t);
+              throw err;
+            }
+          },
+        }));
+        const result = await this.deps.run({ session: t.session, provider: t.provider, model: t.model, message: input.message, action: input.action, history: 10 }, {
+          signal: e.ctrl.signal, tools, maxSteps: TASK_LIMITS.rounds, maxTokens: TASK_LIMITS.outputTokens,
+          instructions: `${this.deps.instructions()}\nYou are working on a task. Goal: ${t.goal}\nCompletion criteria: ${t.criteria}\nKeep every existing surface interactive. Use evidence from the available tools; do not claim an external effect without a receipt. The user reviews your result before marking the task complete.`,
+          emit: (event) => {
+            if (event.type === "tool_start") this.activity(t, `Using ${event.name}`);
+            if (event.type === "error") t.note = event.message.slice(0, 2000);
+          },
+        });
+        t.pending.shift();
+        if (e.ctrl.signal.aborted) throw e.ctrl.signal.reason ?? new Error("Run stopped");
+        if (["error", "max_steps", "aborted"].includes(result.stop)) throw new Error(t.note === "Working" ? `Run ended: ${result.stop}` : t.note);
+        t.state = t.pending.length ? "queued" : "needs_input";
+        t.note = t.pending.length ? "Waiting for the next input" : "Review the saved result against your criteria. Continue interacting with any surface, or mark the task complete.";
+      }));
+    } catch (err) {
+      if (t.state !== "cancelled") {
+        t.state = this.closed ? "interrupted" : "failed";
+        t.note = (err as Error).message.slice(0, 2000);
+      }
+      for (const op of t.operations) if (op.state === "started") op.state = "uncertain";
+    } finally {
+      clearTimeout(e.timer);
+      delete t.approval;
+      await this.persist(t);
+    }
+  }
+
+  async approve(req: Omit<TaskApproval, "expires" | "capabilityRevision">, emit?: (event: AgentEvent) => void, signal?: AbortSignal): Promise<"allow" | "deny"> {
+    const e = this.scope.getStore();
+    if (!e || signal?.aborted) return "deny";
+    signal ??= e.ctrl.signal;
+    const t = e.task;
+    clearTimeout(e.timer); e.remaining -= Date.now() - e.since;
+    t.approval = { ...structuredClone(req), expires: new Date(Date.now() + TASK_LIMITS.approvalMs).toISOString(), capabilityRevision: this.deps.permissionRevision?.(req.server) ?? 0 };
+    t.state = "needs_approval"; t.note = "Review the exact operation before it runs";
+    const waiting = new Promise<"allow" | "deny">((resolve) => {
+      const finish = (decision: "allow" | "deny") => {
+        if (!this.answers.delete(req.id)) return;
+        clearTimeout(timer); signal?.removeEventListener("abort", aborted); resolve(decision);
+      };
+      const aborted = () => finish("deny");
+      const timer = setTimeout(aborted, TASK_LIMITS.approvalMs);
+      this.answers.set(req.id, finish);
+      signal?.addEventListener("abort", aborted, { once: true });
+      if (signal?.aborted) aborted();
+    });
+    try { await this.persist(t); }
+    catch (err) { this.answers.get(req.id)?.("deny"); throw err; }
+    if (!signal.aborted) emit?.({ type: "approval", ...req });
+    const decision = await waiting;
+    delete t.approval;
+    if (!e.ctrl.signal.aborted) t.state = "running";
+    this.activity(t, `Permission ${decision === "allow" ? "allowed once" : "denied"}: ${req.server} / ${req.tool}`);
+    await this.persist(t);
+    emit?.({ type: "approval_done", id: req.id, decision });
+    this.arm(e);
+    return decision;
+  }
+
+  async answer(id: string, approval: string, decision: unknown): Promise<TaskView> {
+    const t = this.tasks.get(id);
+    if (!t?.approval || t.state !== "needs_approval" || t.approval.id !== approval || Date.parse(t.approval.expires) <= Date.now() || !this.answers.has(approval) || this.deciding.has(approval)) throw new Error("Approval expired or no longer applies");
+    if (decision !== "allow" && decision !== "deny") throw new Error("Choose allow once or deny");
+    if (decision === "allow") this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
+    if (decision === "allow" && (this.deps.permitted?.(t.approval.server, t.approval.tool) === false || t.approval.capabilityRevision !== (this.deps.permissionRevision?.(t.approval.server) ?? 0))) throw new Error("Tool access changed; deny this request and review the task again");
+    this.deciding.add(approval);
+    try {
+      this.activity(t, `Approval decision recorded: ${approval} / ${decision}`);
+      await this.persist(t);
+      if (!this.answers.has(approval) || !t.approval || Date.parse(t.approval.expires) <= Date.now()) throw new Error("Approval expired while saving");
+      if (decision === "allow" && (this.deps.permitted?.(t.approval.server, t.approval.tool) === false || t.approval.capabilityRevision !== (this.deps.permissionRevision?.(t.approval.server) ?? 0))) { this.answers.get(approval)!("deny"); throw new Error("Tool access changed while saving; the request was denied"); }
+      this.answers.get(approval)!(decision);
+    } finally { this.deciding.delete(approval); }
+    return this.copy(t);
+  }
+
+  async close(): Promise<void> {
+    this.closed = true;
+    this.execution?.ctrl.abort(new Error("Application stopped; review before continuing"));
+    await this.active;
+    await Promise.all(this.writes.values());
+  }
+}

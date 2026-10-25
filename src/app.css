@@ -407,6 +407,28 @@ kbd { font: 0.8rem ui-monospace, SFMono-Regular, Menlo, monospace; min-width: 34
 .approval.settled .approval-sub { display: none; }
 .approval.settled .tile { width: 24px !important; height: 24px !important; }
 .approval-result { font-size: 0.82rem; color: var(--muted); }
+.task-bar { flex: 0 0 auto; max-height: 34vh; overflow: auto; margin: 0 24px 8px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); font-size: .85rem; }
+.task-heading, .task-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
+.task-state { font-weight: 650; color: var(--accent); }
+.task-note { margin: 6px 0; color: var(--muted); }
+.task-bar details p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-bar details summary { cursor: pointer; }
+.task-bar .approval { margin-top: 12px; }
+.task-error { flex: 0 0 auto; color: var(--danger); margin: 4px 24px; font-size: .85rem; }
+#task-list { max-height: 35vh; overflow: auto; padding: 8px 0; }
+.task-link { display: flex; flex-direction: column; text-align: left; background: none; border: 0; width: 100%; padding: 8px; border-radius: 8px; cursor: pointer; }
+.task-link:hover, .task-link[aria-current="true"] { background: var(--hover); }
+.task-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.task-link small, .task-capability small { display: block; color: var(--muted); }
+.task-create { width: min(580px, calc(100vw - 32px)); max-height: 90vh; overflow: auto; }
+.task-create form { display: flex; flex-direction: column; gap: 14px; }
+.task-create h2, .task-create p { margin: 0; }
+.task-create label { display: flex; flex-direction: column; gap: 5px; }
+.task-create fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.task-create .task-capability { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; margin: 8px 0; }
+.task-create textarea { width: 100%; resize: vertical; }
+.draft-notice { padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--soft); font-size: .85rem; }
+.draft-notice p { margin: 0 0 6px; }
 .approval.settled.allow .approval-result { color: var(--ok); }
 
 /* FinOps belongs to the app; these charts never enter a model's projection surface. */

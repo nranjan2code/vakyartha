@@ -19,6 +19,14 @@ What the app protects, from whom, and how. Rules for changing code are in [AGENT
 | A stolen settings file | Someone copies the data folder | On macOS keys live in the Keychain, written through `security -i` on stdin (never on a command line) and never sent back to the UI. Elsewhere they live in a file only the user can read (0600). Settings values are checked so they cannot inject into `settings.env`. |
 | A second program on the same bot | `npm run telegram` (Projection) and the app poll one Telegram bot | Reported as a conflict in Settings → Channels, not crashed on. |
 
+## Task records and drafts
+
+Task journals are local user content, created with owner-only file permissions in a private task directory. Bound-field drafts are also user content, persisted in the app window's local storage; they are separate from the canonical saved surfaces and numeric usage ledger. Neither store is a place for provider or integration credentials.
+
+Task permissions allow one concrete operation. Pending requests expire and lose authority on restart; changed integration configuration or blocked tools prevent an old request being approved. Task sessions reject ordinary HTTP mutation paths, including while idle, so a chat request cannot bypass task access policy.
+
+Task deletion requires stopped execution, a current revision and explicit acknowledgement of uncertain effects. It removes only the selected journal, conversation, raw transcript and local drafts. External changes, shared memory, integrations, credentials, shared integration logs and numeric usage records remain. Cancellation and deletion cannot undo an operation already sent to an external service. Shared-log retention and sustained long-term history are tracked separately in the MVP checklist.
+
 ## What the app does not defend against
 
 - **Code the user chooses to run.** A custom MCP server added by command runs with the user's permissions. The app marks it unverified and makes every tool ask, but cannot sandbox it (macOS sandbox profiles are a planned step).

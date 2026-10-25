@@ -14,6 +14,7 @@ import { Channels, CHANNELS } from "./channels.ts";
 import { createIntegrations } from "./integrations.ts";
 import { Finops } from "./finops.ts";
 import { fileSecrets, keychainStore, Settings, SettingsError } from "./settings.ts";
+import { Tasks } from "./tasks.ts";
 
 export interface AppServerOptions {
   /** Conversations, settings, channels, logs (and profiles/transcripts unless given). */
@@ -159,6 +160,8 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
   const token = opts.access === "token" ? randomBytes(32).toString("base64url") : undefined;
   // Created after the host (it asks the host for approvals); the host reads it per turn.
   let integrations: Integrations | undefined;
+  let tasks: Tasks | undefined;
+  const integrationRevisions = new Map<string, number>();
   const host = createHost({
     tools: ({ session }) => {
       finops.session(session);
@@ -170,15 +173,57 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     transcripts: opts.transcriptsDir ?? path.join(dataDir, "transcripts"),
     sessionsDir: path.join(dataDir, "sessions"),
     token,
+    allowSessionMutation: (session) => !tasks?.owns(session),
     // The webview's origin per platform (macOS/Linux, Windows) and the Vite dev server.
     origins: ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420", "http://127.0.0.1:1420"],
     // Outside agents get a link to watch what they projected (only when this server serves the UI).
     viewerUrl: opts.uiDir ? (session) => `http://127.0.0.1:${listening}/?session=${encodeURIComponent(session)}` : undefined,
-    routes: async (req, res, url) => (await finopsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || infoRoute(req, res, url),
+    routes: async (req, res, url) => (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || infoRoute(req, res, url),
     log,
   });
 
-  integrations = createIntegrations({ dataDir, secrets: settings.secrets, log, approve: host.approve, npm: opts.npm });
+  integrations = createIntegrations({ dataDir, secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm });
+  const freeCapabilities = new Set(["time", "web", "files", "memory"]);
+  tasks = await Tasks.open({
+    dir: path.join(dataDir, "tasks"), run: host.run, view: host.view, remove: host.remove,
+    tools: (session) => integrations!.toolsFor(session), instructions: INSTRUCTIONS,
+    observe: (session, work) => finops.chat(async () => { finops.session(session); await work(); }), warn: log,
+    permissionRevision: (server) => integrationRevisions.get(server) ?? 0,
+    permitted: (server, tool) => integrations!.view().some((i) => i.entry.id === server && i.enabled && i.status === "ready" && i.tools.some((t) => t.name === tool && t.policy !== "off")),
+    ready(provider, model, selected, confirmedFree) {
+      if (!model || !providersFromEnv().some((p) => p.id === provider && p.available)) throw new Error("Choose an available model");
+      const available = integrations!.view();
+      for (const id of selected) if (!available.some((i) => i.entry.id === id && i.enabled && i.status === "ready" && (freeCapabilities.has(id) || (i.entry.trust === "custom" && confirmedFree.includes(id))))) throw new Error("Choose a ready free capability, or verify the cost of your own configured server");
+    },
+  });
+
+  async function tasksRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+    const p = url.pathname;
+    // A task's session is controlled through task commands even between runs.
+    const sessionId = /^\/api\/sessions\/([^/]+)$/.exec(p)?.[1];
+    if (sessionId && req.method !== "GET" && tasks?.owns(decodeURIComponent(sessionId))) {
+      json(res, 409, { error: "This conversation belongs to a task; use its task controls" }); return true;
+    }
+    if (p === "/api/task-capabilities" && req.method === "GET") {
+      json(res, 200, integrations!.view().filter((i) => freeCapabilities.has(i.entry.id) || i.entry.trust === "custom").map((i) => ({ id: i.entry.id, name: i.entry.name, summary: i.entry.summary, ready: i.enabled && i.status === "ready", free: freeCapabilities.has(i.entry.id), access: i.entry.access })));
+      return true;
+    }
+    const m = /^\/api\/tasks(?:\/([\w-]+)(?:\/(input|cancel|complete|approve))?)?$/.exec(p);
+    if (!m) return false;
+    try {
+      const [, id, operation] = m;
+      if (!id && req.method === "GET") json(res, 200, tasks!.list());
+      else if (!id && req.method === "POST") json(res, 201, await tasks!.create(await readJson(req)));
+      else if (id && !operation && req.method === "GET") json(res, 200, tasks!.get(id));
+      else if (id && !operation && req.method === "DELETE") { await tasks!.remove(id, await readJson(req)); json(res, 200, { ok: true }); }
+      else if (id && operation && req.method === "POST") {
+        const body = await readJson(req);
+        const result = operation === "input" ? await tasks!.input(id, body) : operation === "cancel" ? await tasks!.cancel(id) : operation === "complete" ? await tasks!.complete(id) : await tasks!.answer(id, String(body.approval), body.decision);
+        json(res, 200, result);
+      } else json(res, 405, { error: "method not allowed" });
+    } catch (err) { json(res, 400, { error: (err as Error).message }); }
+    return true;
+  }
 
   async function finopsRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     if (url.pathname !== "/api/finops") return false;
@@ -207,11 +252,13 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
         const body = await readJson(req);
         json(res, 200, await list.test(id, String(body.tool), (body.args ?? {}) as Record<string, unknown>));
       } else if (id && req.method === "POST" && verb) {
+        integrationRevisions.set(id, (integrationRevisions.get(id) ?? 0) + 1);
         if (verb === "install") await list.install(id);
         else if (verb === "uninstall") await list.uninstall(id);
         else await list.refresh(id);
         json(res, 200, list.view());
       } else if (id && !verb && req.method === "PUT") {
+        integrationRevisions.set(id, (integrationRevisions.get(id) ?? 0) + 1);
         await list.configure(id, await readJson(req));
         json(res, 200, list.view());
       } else return false;
@@ -248,6 +295,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     url: `http://127.0.0.1:${port}`,
     async shutdown() {
       server.close();
+      await tasks?.close();
       await channels.stopAll();
       await integrations?.stopAll();
     },

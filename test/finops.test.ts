@@ -117,6 +117,7 @@ test("authenticated app HTTP chats record real request metrics and replace recon
   const app = await startAppServer({ dataDir: dir, access: "token", keychainService: "com.nranjan2code.vakyartha.finops-test" });
   t.after(() => app.shutdown());
   assert.equal((await fetch(`${app.url}/api/finops`)).status, 401);
+  assert.equal((await fetch(`${app.url}/api/tasks`)).status, 401);
   const headers = { "content-type": "application/json", authorization: `Bearer ${app.token}` };
   const response = await fetch(`${app.url}/api/chat`, { method: "POST", headers, body: JSON.stringify({ session: "http-test", provider: "compatible", model: "fake", message: "test", history: 6 }) });
   assert.equal(response.status, 200);
@@ -127,4 +128,30 @@ test("authenticated app HTTP chats record real request metrics and replace recon
   assert.equal(turn.source, "recorded"); assert.equal(turn.session, "http-test");
   assert.equal(turn.steps[0]?.input, 100); assert.equal(turn.steps[0]?.cachedInput, 60);
   assert.ok(turn.steps[0]!.systemChars > 0); assert.ok(turn.steps[0]!.schemaChars > 0);
+  const clock = await fetch(`${app.url}/api/integrations/time/test`, { method: "POST", headers, body: JSON.stringify({ tool: "now", args: { timezone: "UTC" } }) });
+  assert.equal(clock.status, 200);
+  const clockResult: unknown = await clock.json();
+  assert.ok(clockResult && typeof clockResult === "object" && "isError" in clockResult && clockResult.isError === false);
+  const created = await fetch(`${app.url}/api/tasks`, { method: "POST", headers, body: JSON.stringify({ goal: "Synthetic task", criteria: "Review synthetic result", provider: "compatible", model: "fake", integrations: ["time"] }) });
+  assert.equal(created.status, 201);
+  const { parseTaskView } = await import("../task-contract.ts");
+  const task = parseTaskView(await created.json());
+  let finished = task;
+  for (let i = 0; i < 100; i++) {
+    finished = parseTaskView(await (await fetch(`${app.url}/api/tasks/${task.id}`, { headers })).json());
+    if (finished.state === "needs_input") break;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(finished.state, "needs_input");
+  const taskUsage = await (await fetch(`${app.url}/api/finops`, { headers })).json() as { turns: Turn[] };
+  assert.ok(taskUsage.turns.some((turn) => turn.session === task.id));
+  const bypass = await fetch(`${app.url}/api/reset`, { method: "POST", headers, body: JSON.stringify({ session: task.id }) });
+  assert.equal(bypass.status, 409);
+  assert.equal((await fetch(`${app.url}/api/tasks/${task.id}`, { method: "DELETE", headers, body: JSON.stringify({ revision: -1 }) })).status, 400);
+  assert.equal((await fetch(`${app.url}/api/tasks/${task.id}`, { method: "DELETE", headers, body: JSON.stringify({ revision: finished.revision }) })).status, 200);
+  assert.equal(readFileSync(path.join(dir, "logs/finops.jsonl"), "utf8").includes("Synthetic task"), false);
+  const { existsSync } = await import("node:fs");
+  assert.equal(existsSync(path.join(dir, "tasks", `${task.id}.json`)), false);
+  assert.equal(existsSync(path.join(dir, "sessions", `${task.id}.json`)), false);
+  assert.equal(existsSync(path.join(dir, "transcripts", `${task.id}.jsonl`)), false);
 });

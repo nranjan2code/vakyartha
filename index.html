@@ -21,7 +21,7 @@
             New chat
           </button>
         </div>
-        <div class="side-pages"><button type="button" class="quiet" id="open-artifacts" aria-current="false"></button></div>
+        <div class="side-pages"><button type="button" class="quiet" id="open-artifacts" aria-current="false"></button><button type="button" class="quiet" id="open-tasks" aria-expanded="false" aria-controls="task-list">Tasks</button><section id="task-list" hidden aria-label="Tasks"><button type="button" class="ghost small" id="new-task">New task</button><div id="task-items"></div></section></div>
         <nav id="chats" class="chats" aria-label="Recent chats"></nav>
         <div class="side-foot">
           <button type="button" class="quiet" id="open-settings" title="Settings (⌘,)">
@@ -36,6 +36,8 @@
         <div class="drag" data-tauri-drag-region>
           <button type="button" class="icon-btn" id="expand" title="Show sidebar (⌘\)" aria-label="Show sidebar"></button>
         </div>
+        <section id="task-bar" class="task-bar" aria-label="Current task" hidden></section>
+        <p id="task-error" class="task-error" role="alert" hidden></p>
         <main id="thread" class="thread" aria-live="polite"></main>
 
         <form id="composer" class="composer">
@@ -65,6 +67,7 @@
           <button type="button" class="icon-btn" id="canvas-download" aria-label="Download Markdown" title="Download Markdown"></button>
         </div>
         <div id="canvas-progress" class="canvas-progress" role="status" hidden>Building the interface…</div>
+        <div id="draft-notice" class="draft-notice" role="status" hidden><p>This surface changed while you had unsent edits. Your edits are preserved. Review which values to use.</p><button type="button" class="ghost small" id="draft-keep">Keep my edits</button><button type="button" class="ghost small" id="draft-latest">Use latest values</button></div>
         <div id="canvas-content" class="canvas-content"></div>
         <pre id="canvas-text-content" class="canvas-text-content" tabindex="0" aria-label="Canvas as text" hidden></pre>
       </aside>
@@ -88,6 +91,18 @@
       </div>
     </div>
 
+    <dialog id="task-create" class="sheet task-create" aria-labelledby="task-create-title">
+      <form id="task-create-form">
+        <h2 id="task-create-title">New task</h2>
+        <p id="task-create-model" class="hint"></p>
+        <label>What should be done?<textarea id="task-goal" rows="3" required maxlength="8000" placeholder="Describe the outcome and the information to use"></textarea></label>
+        <label>When is it complete?<textarea id="task-criteria" rows="2" required maxlength="4000" placeholder="What will you check in the result?"></textarea></label>
+        <fieldset><legend>Capabilities</legend><p class="hint">Free choices and servers you have configured. Model usage may have a separate cost.</p><div id="task-capabilities"></div></fieldset>
+        <div class="task-controls"><button type="button" class="link" id="task-manage-integrations">Manage integrations</button><button type="button" class="link" id="task-change-model">Change model</button></div>
+        <p id="task-create-limits" class="hint"></p><p id="task-create-error" role="alert" class="error"></p>
+        <div class="actions"><button type="button" class="ghost" id="task-create-cancel">Cancel</button><button type="submit" class="primary" id="task-create-start">Start task</button></div>
+      </form>
+    </dialog>
     <dialog id="ask" class="sheet small">
       <form method="dialog">
         <p id="ask-text"></p>

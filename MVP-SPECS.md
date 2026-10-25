@@ -1,6 +1,12 @@
 # Vakyartha agent MVP
 
-Planning baseline: 2026-10-25. Status: draft for discussion; no agent implementation is claimed by this document. Progress and release evidence: [MVP-CHECKLIST.md](MVP-CHECKLIST.md). Current implementation: [SPECS.md](SPECS.md). Working rules: [AGENTS.md](AGENTS.md).
+Planning baseline: 2026-10-25. Status: implementation in progress; the checklist distinguishes working behavior from planned requirements. Progress and release evidence: [MVP-CHECKLIST.md](MVP-CHECKLIST.md). Current implementation: [SPECS.md](SPECS.md). Working rules: [AGENTS.md](AGENTS.md).
+
+Architecture decisions: [ADR.md](ADR.md). Implementation is now authorized; the checklist records which parts actually work.
+
+Task and plugin contracts are explicitly typed and versioned. Validate untrusted boundary data before converting it to domain types; do not treat type assertions as validation. See ADR-004.
+
+Task lifetime, bounded runs, trigger dispatch and task chains are separate concerns. All runs share a dispatcher; a calendar schedule is optional. ADR-005 defines the long-term contract and the additional gates before scheduled or dependency-driven execution. ADR-006 defines explicit, revision-checked deletion without hidden cancellation or cascading effects.
 
 ## 1. Product goal and scope
 
@@ -166,6 +172,8 @@ Dependency avoidance does not justify custom cryptography, a new authentication 
 
 ## 7. Later scope
 
+Memory, reusable context and external tool capabilities use the existing MCP integration/plugin boundary, with catalog choices and user-configured servers. Prefer free built-in/local choices initially. Do not build a parallel memory database, retrieval stack or plugin marketplace. Optional capability failure cannot prevent local task recovery. This is the selected architecture for later knowledge features, not a claim they are implemented; task-local continuity remains MVP scope. See ADR-002.
+
 The following are planned candidates, not MVP commitments or implemented features:
 
 - Reviewed reusable skills after the initial outcomes are reliable.
@@ -185,6 +193,14 @@ The proposed defaults are individual knowledge work, one agent, one executing ta
 Settle the task-entry and navigation design, draft/update conflict behavior, exact run limits, minimum supported input formats, runtime/data authority and the initial outcome evaluation set before implementation. Show a concrete workspace design covering multiple surfaces, waiting states, recovery and narrow layouts. Keep third-party product names and competitor comparisons out of product and planning documents.
 
 The MVP is complete only when every MVP gate in the checklist has evidence. Passing the existing rendering suite alone does not establish reliable task execution.
+
+### First implementation slice and limits
+
+The initial slice supports manually created tasks, one executing run, persisted input queues, per-run limits, one-time task approvals, explicit user review, safe continuation, multi-surface interaction and scoped deletion. The task journal references the existing canonical conversation; it does not duplicate surfaces. Native responsibilities remain unchanged and no new dependency or native IPC path is introduced.
+
+This is not the complete MVP. An approval wait currently occupies the execution slot. Task history is not yet segmented for sustained long-term operation, and conservative journal/continuation guards apply. Calendar/event triggers, chains, automatic evidence-based outcome verification, cumulative spend controls and complete shared-log retention remain open. Free/local capability choices reuse the existing catalog; configured custom servers require explicit cost/trust review. No additional server is installed automatically.
+
+Local field drafts persist in UI storage, with explicit resolution of conflicting incoming values. Task deletion removes its journal, conversation, raw transcript and local drafts; shared integration logs, numeric usage records, credentials, memory and external files remain. Deletion requires stopped execution, a current revision and additional acknowledgement of uncertain effects.
 
 ## 9. Design review
 

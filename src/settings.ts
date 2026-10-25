@@ -8,13 +8,14 @@ import { choose, current, labelOf, listModels, loadProviders, modelOptions, pars
 import { applyAppearance, appearance, MODES, SIZES, THEMES } from "./theme.ts";
 import { addOwnPage, integrationPage, marketplace } from "./integrations-page.ts";
 import { disposeFinops, finopsPage } from "./finops-page.ts";
+import { TASK_LIMITS, parseTaskSummaries } from "../task-contract.ts";
 import { group, pill, plainField, row, secretField, segmented, select, type Setting, title, toggle } from "./ui.ts";
 
 interface ChannelInfo { id: string; label: string; enabled: boolean; provider?: string; model?: string; ready: boolean; secrets: string[]; needs: string[]; state: string; detail: string }
 interface PlanInfo { generation: string; tier: string; examples: boolean; authoring?: string; maxSteps: number; reasons: string[] }
 interface Info { version: string; node: string; platform: string; dataDir: string; logFile: string; keys: string }
 
-type Section = "models" | "providers" | "integrations" | "integrations:add" | `integration:${string}` | "channel:telegram" | "channel:slack" | "channel:discord" | "appearance" | "chats" | "finops" | "general" | "about";
+type Section = "models" | "providers" | "integrations" | "integrations:add" | `integration:${string}` | "channel:telegram" | "channel:slack" | "channel:discord" | "appearance" | "chats" | "tasks" | "finops" | "general" | "about";
 
 /** Channels whose listeners are not built yet: shown so the place is known, marked as coming. */
 const COMING: Record<string, string> = {
@@ -31,6 +32,7 @@ const NAV: [Section, string, boolean?][] = [
   ["channel:discord", "Discord", true],
   ["appearance", "Appearance"],
   ["chats", "Chats"],
+  ["tasks", "Tasks"],
   ["finops", "FinOps"],
   ["general", "General"],
   ["about", "About"],
@@ -96,6 +98,11 @@ async function show(to: Section, arg?: string): Promise<void> {
     "channel:discord": () => comingPage("discord", "Discord"),
     appearance: appearancePage,
     chats: chatsPage,
+    tasks: async () => [
+      ...title("Tasks", "Give work a clear goal and completion criteria. Every surface remains interactive; completion requires your review."),
+      group("Execution", row("Availability", "Work continues while you switch views or hide the window. Keep the app running and the computer awake. Interrupted work requires review before continuation.", el("span")), row("Per-run limits", `${TASK_LIMITS.rounds} model rounds, ${TASK_LIMITS.tools} tool calls and ${TASK_LIMITS.activeMs / 60000} active minutes. Approval waiting has its own five-minute expiry.`, el("span"))),
+      group("Access and results", row("Capabilities", "Select ready, free capabilities per task. Configure access in Integrations; no capability is installed or enabled automatically.", el("button", { type: "button", className: "ghost small", textContent: "Open Integrations", onclick: () => void show("integrations") })), row("Review", "A generated interface does not prove that an external action happened. Check the criteria and any operation receipts before marking a task complete.", el("span"))),
+    ],
     finops: finopsPage,
     general: generalPage,
     about: aboutPage,
@@ -353,10 +360,11 @@ async function chatsPage(): Promise<HTMLElement[]> {
   const opt = (k: string, fallback: string) => prefs.get(`opt:${k}`) ?? fallback;
   const wipe = el("button", { type: "button", className: "danger small", textContent: "Delete all chats" });
   wipe.addEventListener("click", async () => {
-    const list = await api<{ id: string }[]>("/api/sessions");
+    const taskSessions = new Set(parseTaskSummaries(await api<unknown>("/api/tasks")).map((t) => t.session));
+    const list = (await api<{ id: string }[]>("/api/sessions")).filter((c) => !taskSessions.has(c.id));
     if (!list.length || !(await ask(`Delete all ${list.length} chats and their interfaces? This can't be undone.`, "Delete all"))) return;
     for (const c of list) await api(`/api/sessions/${encodeURIComponent(c.id)}`, { method: "DELETE" });
-    window.dispatchEvent(new Event("vak:chats-cleared"));
+    window.dispatchEvent(new CustomEvent("vak:chats-cleared", { detail: list.map((c) => c.id) }));
   });
   return [
     ...title("Chats"),
@@ -368,7 +376,7 @@ async function chatsPage(): Promise<HTMLElement[]> {
         document.body.classList.toggle("notes", on);
       })),
     ),
-    group("Stored chats", row("Delete all chats", "Removes every saved conversation from this computer.", wipe)),
+    group("Stored chats", row("Delete all chats", "Removes ordinary chats and their interfaces. Task conversations are retained.", wipe)),
   ];
 }
 

@@ -1,0 +1,67 @@
+# Architecture decisions
+
+These decisions constrain the agent MVP. Scope: [MVP-SPECS.md](MVP-SPECS.md). Progress: [MVP-CHECKLIST.md](MVP-CHECKLIST.md). No decision authorizes a new dependency or integration installation.
+
+## ADR-001 — One surface authority and minimal runtime boundaries
+
+Date: 2026-10-25. Status: accepted for implementation.
+
+Keep the existing engine/session store as the canonical surface authority. Task records reference session and surface IDs; they do not store parallel renderable artifacts. Conversation, activity and library views reuse the existing interactive surfaces, forms, actions and local controls.
+
+Task policy, journals, queues, budget choices and workspace belong to Vakyartha. Reuse public framework APIs. Add only a demonstrated missing generic mechanism to Projection in its own repository, then consume a pushed pin. The first identified gap is in-process execution independent of HTTP response lifetime, using the host's existing session/store.
+
+Keep orchestration beside that state and use the existing event connection. Native lifecycle and confined platform operations remain in Rust where useful. No native relay for field edits, surface streams or task steps. Any additional IPC or persistence owner must demonstrate a concrete benefit, one writer, explicit recovery semantics and measured overhead. No new storage dependency is selected.
+
+## ADR-002 — Capability plugins through existing integrations
+
+Date: 2026-10-25. Status: accepted direction; capability selection remains explicit.
+
+Use the existing MCP catalog and integration lifecycle as the extension boundary for memory, reusable context and external tools. Users may choose catalog entries or configure their own servers. Do not add a parallel SDK plugin loader, arbitrary UI extensions, a second marketplace or an in-app memory/retrieval database.
+
+Select a capability because a workflow needs its declared contract, not simply because a server exists. Task access is explicit and bounded by configured tool policies. Context returned by a plugin is untrusted data, not system instructions. State where data lives, what leaves the machine, authentication needs, costs, limits and unavailable-service behavior. User-supplied servers remain unverified; custom code is not made safe merely by speaking MCP.
+
+Begin with free built-in and local choices: time, public-page reading, scoped files and persistent memory. Availability does not imply activation. Keep chargeable or account-dependent capabilities out of the default task setup; do not claim a hosted free tier guarantees no future charges. Any additional catalog entry requires source/version/security and cost verification. Installation still follows pinned, script-free framework machinery.
+
+Task continuity is different from reusable knowledge. Execution checkpoints, pending input, approval identity, operation receipts and recovery state stay app-owned and local. They must not depend on an optional memory/context server being reachable. Core rendering, validation and local interactions remain framework primitives, not remote plugin calls.
+
+## ADR-003 — Owned code before added dependencies
+
+Date: 2026-10-25. Status: accepted constraint.
+
+Prefer the existing stack and standard libraries. Build small maintainable capabilities in the owning repository. New SDKs, packages, crates, services and build tools require explicit approval and review of transitive changes, provenance and scripts. Development/testing integrations are assessed separately from shipped integrations and are used only for a concrete benefit. Approval of an integration category is not blanket trust in every implementation.
+
+## ADR-004 — Typed contracts and validated boundaries
+
+Date: 2026-10-25. Status: accepted constraint.
+
+Use explicit domain types and discriminated unions for states, inputs and commands. Keep valid states representable and reject invalid combinations. HTTP, persisted JSON, tool output and native messages enter as `unknown` and are validated before becoming trusted domain values. A cast is not validation. Use typed capability contracts rather than arbitrary property bags in internal logic; unstructured tool data stays confined to the integration boundary.
+
+Version persisted and cross-process contracts, define absence and error semantics, and test malformed, unsupported and stale data. Do not add a schema SDK for this: use small owned validators for the bounded contracts and existing framework validation for surfaces and tools. Avoid duplicate schema authorities across runtimes.
+
+## ADR-005 — Durable tasks, bounded runs, triggers and chains
+
+Date: 2026-10-25. Status: accepted design direction; scheduling and chains are not implemented by the first task slice.
+
+A task's lifetime is distinct from the duration of an execution attempt. The same durable goal may be useful for seconds, days, months or years. A run is a bounded attempt with its own identity, limits, inputs, operation journal and result. A waiting task consumes no model work. Do not leave a model call, worker or timer alive for the lifetime of a long-running goal.
+
+All execution enters one dispatcher with a durable ready queue. An immediate/manual command is a trigger too; a calendar schedule is optional. Scheduled, event-driven and dependency triggers must eventually use that same admission, permission, budget, deduplication and cancellation path. Do not add an independent execution loop for each trigger type.
+
+Before adding schedules, separate task lifecycle, run state and trigger configuration in persisted typed records. Store bounded per-run history separately from task identity, with retention/compaction policies and durable command deduplication. A total lifetime run cap or a single ever-growing conversation/journal is not a long-term scheduling design. The first slice's bounded journal guards are temporary safeguards, not a promise of sustained unattended operation.
+
+Scheduling requires persisted next-due time, a named time zone, recurrence rules, pause/resume, expiry and an explicit missed-run policy. Derive bounded wakeups from durable state; reconcile at startup and after sleep/clock changes. Define daylight-saving behavior and prevent overlapping runs by default. Never replay every missed occurrence automatically. Trigger delivery may repeat; dispatch identity and side-effect reconciliation must make that safe. Local execution requires the app and computer to be available; cloud execution is a separate decision.
+
+Long-lived tasks need cumulative usage limits, recurring-run limits, permission expiry/revalidation, stale-input handling, storage retention and quiet notifications. Old consent does not grant indefinite access. Persistent knowledge uses selected MCP capabilities; task/run recovery cannot depend on them. Provide explicit failure and review states rather than making the model invent unavailable information.
+
+A chain declares dependencies between tasks or steps. Start with explicit sequential handoffs; general graphs and parallel branches require a concrete need. A child becomes eligible only when the parent's required outcome has been verified. Pass typed, versioned artifact/result references and needed inputs, not copies of entire conversations or broadened permission grants. Each step retains interactive surfaces and its own access and execution limits.
+
+Define stop, retry, skip, compensation and partial-success behavior before running a chain. Do not assume external actions are reversible. Cancelling a chain stops future dispatch and reports in-flight/finished effects. Deleting a parent must not silently delete children, shared artifacts or memory: dependencies require an explicit retain, detach or block decision and a minimal reference record where needed.
+
+The first implementation proves the immediate queue, bounded execution and interactive continuity. Durable scheduled triggers, waiting-slot release, segmented run history and dependency-aware deletion are subsequent gates, not features inferred from the presence of a queue.
+
+## ADR-006 — Explicit scoped task deletion
+
+Date: 2026-10-25. Status: accepted for the first slice.
+
+Deleting a task is an explicit user operation with its current revision. Running, queued and approval-waiting work must first be cancelled and settle. Deletion must reject stale state, block concurrent new inputs and require additional acknowledgement before removing uncertain-effect recovery records.
+
+Remove only that task's journal, canonical conversation, raw transcript and local drafts. Do not recursively remove data directories, delete external effects or cascade through shared memory, integrations, credentials or other tasks. Shared integration logs and numeric usage records are retained and disclosed. If any removal fails, show the failure and retain enough identity for an idempotent retry. Full shared-log retention and future chain dependency handling remain separate requirements.

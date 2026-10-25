@@ -11,10 +11,13 @@ Check an implementation item only after its acceptance behavior is verified. App
 - [x] D3. Independent design review completed; findings incorporated into spec sections 3, 4, 6 and 9 and the gates below. See evidence log.
 - [ ] D4. Confirm initial audience, three outcome scenarios and supported inputs.
 - [ ] D5. Review a concrete workspace design: task entry, conversation, compact activity, existing canvas, multiple surface selection, narrow layout and keyboard flow.
-- [ ] D6. Set run limits, draft/update conflict rules and recovery/deletion expectations.
-- [ ] D7. Prove the public-API composition for one canonical session/surface store, detached execution and durable action ownership. Review each proposed framework gap and record the smallest needed change or that no change is needed. No repeated chat requests or volatile inbox may be passed off as durable execution.
+- [x] D6. Set run limits, draft/update conflict rules and recovery/deletion expectations.
+- [x] D7. Prove the public-API composition for one canonical session/surface store, detached execution and durable action ownership. Review each proposed framework gap and record the smallest needed change or that no change is needed. No repeated chat requests or volatile inbox may be passed off as durable execution.
 - [ ] D8. Assign runtime/data ownership before coding. Prefer no new IPC; justify any native boundary with a concrete benefit, define its narrow contract, and measure message count, payload/serialization cost and UI responsiveness. Establish a regression budget and one persistence writer per entity.
-- [ ] D9. Plan against zero new third-party dependencies. Reuse public APIs and standard libraries; identify small owned implementations. Any unavoidable SDK/package/crate/tool exception needs a concrete justification and user approval before installation or adoption.
+- [x] D9. Plan against zero new third-party dependencies. Reuse public APIs and standard libraries; identify small owned implementations. Any unavoidable SDK/package/crate/tool exception needs a concrete justification and user approval before installation or adoption.
+- [x] D10. Record capability plugin architecture and runtime/ownership decisions — `ADR.md`. Reuse the existing MCP store; memory and reusable context are selectable integrations, while task recovery remains local.
+- [ ] D11. Verify free capability choices, setup/access requirements and failure behavior. Add catalog entries only for concrete missing capabilities; no automatic installation or activation.
+- [x] D12. Record typed contracts, scoped deletion, task/run lifetime, shared dispatch and chain semantics — ADR-004–006. Scheduling and chain execution remain unimplemented gates.
 
 ## Existing foundations to retain
 
@@ -32,12 +35,12 @@ These are present today, not newly implemented agent capabilities. Baseline evid
 
 Owner: Vakyartha for product behavior; framework fixes only after D7. Acceptance: MVP-SPECS sections 2, 3 and 6.
 
-- [ ] P0.1. Map the current render → field edit → validation → submission → update path and record which public APIs will be reused.
-- [ ] P0.2. Define task/session/run/surface identities and additive linkage for existing conversations and artifacts; no second artifact store.
-- [ ] P0.3. Protect local interactions from model calls and protect every surface's interactivity during task progress.
-- [ ] P0.4. Preserve independent drafts across canvas closing, surface/task switches and restart; expose conflicts with incoming updates.
-- [ ] P0.5. Replace implicit cancellation by follow-up submissions with explicit queue/rejection behavior and separate cancellation.
-- [ ] P0.6. Make complete approval arguments inspectable, define scope/revocation, and keep permission decisions outside generated surfaces.
+- [x] P0.1. Map the current render → field edit → validation → submission → update path and record which public APIs will be reused.
+- [x] P0.2. Define task/session/run/surface identities and additive linkage for existing conversations and artifacts; no second artifact store.
+- [x] P0.3. Protect local interactions from model calls and protect every surface's interactivity during task progress.
+- [x] P0.4. Preserve independent drafts across canvas closing, surface/task switches and restart; expose conflicts with incoming updates.
+- [x] P0.5. Replace implicit cancellation by follow-up submissions with explicit queue/rejection behavior and separate cancellation.
+- [x] P0.6. Make complete approval arguments inspectable, define scope/revocation, and keep permission decisions outside generated surfaces.
 - [ ] P0.7. Define deletion and transcript retention together; verify deletion removes raw content within the stated scope.
 
 ## P1 — Bounded task execution
@@ -45,25 +48,25 @@ Owner: Vakyartha for product behavior; framework fixes only after D7. Acceptance
 Owner: Vakyartha; any missing general execution contract goes through D7. Acceptance: M1–M4.
 
 - [ ] P1.1. Create and persist a task with goal, inputs, completion conditions, model, tool scope, output destination and limits.
-- [ ] P1.2. Implement persisted lifecycle states and allowed transitions, including waiting, interruption and explicit continuation.
+- [x] P1.2. Implement persisted lifecycle states and allowed transitions, including waiting, interruption and explicit continuation.
 - [ ] P1.3. Execute one task at a time with a durable queue; release the slot during user waits.
-- [ ] P1.4. Keep execution alive across view changes, hidden windows and event-stream disconnects while the app remains running.
+- [x] P1.4. Keep execution alive across view changes, hidden windows and event-stream disconnects while the app remains running.
 - [ ] P1.5. Separate progress/surface publication from task completion without breaking existing framework clients.
 - [ ] P1.6. Record operation identity and outcome; reconcile uncertain effects before retrying. Repeated submissions do not duplicate external effects.
-- [ ] P1.7. Stop new work on cancellation and report completed or uncertain in-flight effects honestly.
-- [ ] P1.8. Persist pending approval identity and scope; enforce task tool restrictions and fresh checks for delayed, changed or resumed operations. Existing chat-wide grants do not silently transfer.
+- [x] P1.7. Stop new work on cancellation and report completed or uncertain in-flight effects honestly.
+- [x] P1.8. Persist pending approval identity and scope; enforce task tool restrictions and fresh checks for delayed, changed or resumed operations. Existing chat-wide grants do not silently transfer.
 - [ ] P1.9. Verify completion conditions with evidence and retain useful partial results on failure.
 
 ## P2 — Task workspace and results
 
 Owner: Vakyartha. Reuse framework rendering and actions. Acceptance: M5 and M8.
 
-- [ ] P2.1. Add task discovery, clear start controls, current status and attention-needed states while preserving ordinary conversation use.
-- [ ] P2.2. Add compact activity with factual steps, tool outcomes, sources, requested input and recoverable errors.
-- [ ] P2.3. Reuse the existing multi-surface canvas and picker for inputs, intermediate work and results; no duplicate interactive renderings.
-- [ ] P2.4. Route any surface's action to its owning task/outside agent, independently of which task is visible.
-- [ ] P2.5. Preserve all supported interactions after completion; additional work becomes an explicit continuation with its own record.
-- [ ] P2.6. Prevent background updates from stealing focus, opening another task's canvas or changing the user's selection unexpectedly.
+- [x] P2.1. Add task discovery, clear start controls, current status and attention-needed states while preserving ordinary conversation use.
+- [x] P2.2. Add compact activity with factual steps, tool outcomes, sources, requested input and recoverable errors.
+- [x] P2.3. Reuse the existing multi-surface canvas and picker for inputs, intermediate work and results; no duplicate interactive renderings.
+- [x] P2.4. Route any surface's action to its owning task/outside agent, independently of which task is visible.
+- [x] P2.5. Preserve all supported interactions after completion; additional work becomes an explicit continuation with its own record.
+- [x] P2.6. Prevent background updates from stealing focus, opening another task's canvas or changing the user's selection unexpectedly.
 - [ ] P2.7. Link evidence and output receipts to artifacts; distinguish real, sample, missing and stale information.
 - [ ] P2.8. Verify keyboard, assistive-technology status announcements, focus return and wide/narrow layouts.
 
@@ -79,7 +82,9 @@ Owner: Vakyartha for policies and records; general enforcement gaps through D7. 
 - [ ] P3.6. Delete task-owned records, drafts and applicable diagnostics; retain shared/external data only according to the explained scope.
 - [ ] P3.7. Show completion, failure, input and approval attention without unchanged repeat notifications.
 - [ ] P3.8. Detect unavailable models/tools, lost authorization and unsupported inputs with actionable next steps.
-- [ ] P3.9. Keep native supervision/platform/file operations in Rust where justified; do not add native relays for task commands, surface streaming or field edits. Core task behavior remains available through the shared app server without the native window.
+- [x] P3.9. Keep native supervision/platform/file operations in Rust where justified; do not add native relays for task commands, surface streaming or field edits. Core task behavior remains available through the shared app server without the native window.
+- [ ] P3.10. Segment task identity, per-run history and trigger state before sustained long-term operation; replace temporary lifetime journal guards with retention and durable deduplication policies.
+- [ ] P3.11. Add trigger admission and dependency-aware result handoffs through the same dispatcher; define missed runs, time zones, pause/resume, cumulative limits, cancellation and safe deletion before enabling schedules or chains.
 
 ## P4 — Outcome and regression gates
 
@@ -111,8 +116,9 @@ Owners: Vakyartha end-to-end; Projection verifies any changed framework contract
 These boxes track future candidates only. Do not start them simply because they appear here.
 
 - [ ] L1. Reusable, reviewed skills with validation and permission boundaries.
-- [ ] L2. User-controlled memory across tasks with inspect, edit and delete controls.
+- [ ] L2. User-controlled memory/context across tasks through selectable MCP integrations, with inspect, edit and delete capabilities where supported; no parallel built-in knowledge database.
 - [ ] L3. Scheduled routines and event triggers with time zones, missed-run handling and run history.
+- [ ] L3a. Task chains: verified sequential dependencies, typed artifact handoffs, per-step permissions and budgets, partial failure handling and deletion without cascades.
 - [ ] L4. Additional connectors, authorization methods and document formats.
 - [ ] L5. Browser/computer interaction and isolated command execution.
 - [ ] L6. Multiple agent roles, delegation and concurrent execution.
@@ -127,3 +133,19 @@ These boxes track future candidates only. Do not start them simply because they 
 | 2026-10-25 | D1–D2; B1–B7 | Draft documents; source inspection of surface mounting, canvas, library, bound edits, validation, local interactions, host dispatch and outside ownership. Earlier review ran existing suites and deterministic multi-surface canvas checks. | Foundations only; all new task behavior and expanded interaction/recovery gates remain open. |
 | 2026-10-25 | D3 | Independent read-only design review: public execution primitives, private host state, volatile external action inbox, navigation cancellation, transient drafts, approval lifetime/scope and actual work limits. Findings incorporated into spec and checklist. | Public-API architecture proof, concrete workspace design and product decisions remain open. |
 | 2026-10-25 | D3; D8 | Follow-up design review supports native Rust responsibilities, a single data authority and persistence writer, no duplicated surface schemas, and shared-server correctness. Runtime/IPC constraints incorporated into spec section 6. | Runtime placement proof and performance measurements are not completed. |
+
+
+## First implementation checkpoint
+
+Evidence for the completed items above: `sidecar/tasks.ts`, `task-contract.ts`, `src/tasks-panel.ts`, `src/drafts.ts`, their tests and `scripts/task-check.ts`. Public host execution, ownership protection, action release and idle deletion were made in Projection first and introduced through pushed commit `caef74e`; the current app pin `8bd736e` also retains the later interactive graph capability. Product task state and UI remain here.
+
+- D6: initial limits are 12 model rounds, 24 tool calls, five active minutes and separate five-minute approval expiry per run. Draft conflicts preserve edits pending an explicit choice. Deletion requires stopped execution, a current monotonic revision and additional acknowledgement of uncertain effects.
+- D7/P0.1–P0.3: one canonical host/session/surface store; detached in-process execution and existing event delivery. No loopback execution relay, second renderer or native IPC path.
+- P0.4–P0.6/P1.8: independent persisted field drafts, safe follow-up handling, complete inspectable approval arguments, one-time decisions, tool/config revision revalidation and no inherited chat-wide grants.
+- P1.2/P1.4/P1.7: persisted lifecycle, input queue, navigation-independent work, cancellation and restart without automatic replay. An uncertain operation requires explicit reconciliation before continuation.
+- P2.1–P2.6: task creation, capability/setup links, activity, completion review, continued interaction after completion and updates without recreating live surfaces on status refresh.
+- D9/P3.9: no dependency or lockfile additions and no native runtime changes. Existing native responsibilities are retained; core task behavior works through the shared server.
+
+Validation: 24 app tests, 232 pinned framework tests, typecheck, UI build, native export test and sidecar bundle. Existing canvas smoke and the new task smoke run in wide/narrow layouts. The task smoke exercises two forms and a table, validates before dispatch, preserves drafts through navigation/library access, checks background continuation and completed-task interaction, and verifies exactly six scripted model calls across six intentional runs; local controls trigger none. Unit/HTTP checks include malformed inputs, duplicate commands, restart, revoked approval, tool-call limits, authentication, guarded deletion and transcript cleanup.
+
+This checkpoint does not close the remaining composite gates. Approval waits still hold the single execution slot; run history is not segmented for long-term schedules/chains. Automatic outcome verification, cumulative spend, complete shared-log retention, comprehensive accessibility/performance evidence and installed-window review remain open. A live primary-local-model task completed a run in about 30 seconds but returned one combined interactive surface instead of the requested two; record this as a failed outcome check, not a passing multi-surface evaluation. Generic output/execution fixes belong in Projection; do not split or patch model surfaces in the app.

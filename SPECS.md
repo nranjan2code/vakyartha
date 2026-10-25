@@ -40,3 +40,10 @@ Tauri 2 shell, Vite + plain TypeScript UI, the engine as a Node sidecar. **The b
 ## 4. FinOps
 
 **FinOps is app-only**, not a framework responsibility. Settings → FinOps charts turn duration, context composition, repeated context, generated output, provider token/cache usage and estimated API cost, with turn details, chat filters, editable model rates and CSV export. The sidecar observes its provider requests and saves numeric telemetry locally; old sessions are explicitly reconstructed with unknown token usage and paid spend. Details and limits: [FINOPS.md](FINOPS.md).
+
+
+## 5. Agent tasks (first implementation slice)
+
+Tasks are app-owned product records linked to the host's canonical sessions and interactive surfaces. The UI adds task creation, scoped capabilities, compact activity, one-time approvals, explicit result review, cancellation and revision-checked deletion. Runs continue across navigation while the app is running. Bound-field drafts persist locally and conflicting incoming values require an explicit choice. Task completion leaves every surface interactive, and further actions create a continuation.
+
+The framework supplies in-process execution, immutable views, session ownership protection, action release and idle-session/transcript removal. No second surface store or native execution relay is introduced. The initial limits are bounded per run; this does not yet provide calendar scheduling, chains or sustained long-term execution. Detailed behavior, limits, evidence and remaining work are in [MVP-SPECS.md](MVP-SPECS.md), [MVP-CHECKLIST.md](MVP-CHECKLIST.md) and [ADR.md](ADR.md).

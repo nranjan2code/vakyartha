@@ -14,6 +14,7 @@ Vakyartha is an app built on the [Projection framework](https://github.com/nranj
 6. **Ask when in doubt** about scope or a decision that is the user's.
 7. **Product and planning documents use our own capability language.** Do not name third-party products or competitors in product specifications, design comparisons, roadmaps or checklists. Preserve the existing interactive surfaces and multiple-surface support when planning agent work; read [MVP-SPECS.md](MVP-SPECS.md) and track changes in [MVP-CHECKLIST.md](MVP-CHECKLIST.md). Add to Projection only after identifying a required general capability missing from its public API.
 8. **Choose runtime boundaries deliberately.** Use Rust where native responsibilities or a demonstrated benefit justify it. Prefer no new IPC; keep related logic with its canonical data owner, one persistence writer per entity, and no native relay for surface streaming or field edits. Necessary boundaries must be narrow, validated and measured without weakening security. See the MVP spec's runtime placement requirements.
+9. **Pluggable capabilities:** memory, reusable context and external tools use the existing MCP catalog/lifecycle with user-selected or user-configured servers. Prefer verified free choices. Do not build a parallel memory/retrieval database or plugin marketplace. Task checkpoints, approvals and recovery remain app-owned local state. See [ADR.md](ADR.md).
 
 ## Secrets and the public repo
 

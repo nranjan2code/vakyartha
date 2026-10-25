@@ -19,7 +19,7 @@ Filter by chat, select a turn or click a chart bar for details, and export the c
 
 The app saves numeric telemetry in `<dataDir>/logs/finops.jsonl`, with owner-only creation permissions. The file rotates at 10 MB and retains one previous file. It records session/model identifiers, timings, character counts, token usage and call counts, never prompt text, tool arguments/results, credentials or native reasoning content. An interrupted or missing usage report stays unknown. Ledger errors are logged and do not prevent a reply.
 
-Current scope is desktop/playground HTTP chat turns. Calibration, Telegram/channel runs, integration setup tests and external agents are excluded. Local endpoints have a zero API rate; their compute, electricity and hosting costs are excluded.
+Current scope is desktop/playground HTTP chat turns and in-process task runs. Task usage is attributed to its canonical session, so existing session filters can inspect it. This is observation, not a cumulative task spending ceiling. Calibration, channel runs, integration setup tests and external agents are excluded. Local endpoints have a zero API rate; their compute, electricity and hosting costs are excluded.
 
 ## Historical sessions
 

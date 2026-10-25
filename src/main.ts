@@ -16,6 +16,8 @@ import { icon, tile } from "./icons.ts";
 import { closest, onContextMenu } from "./menu.ts";
 import { closeSettings, openSettings, settingsOpen } from "./settings.ts";
 import { applyAppearance, surfaceMode } from "./theme.ts";
+import { TasksPanel } from "./tasks-panel.ts";
+import { Drafts } from "./drafts.ts";
 
 applyAppearance();
 defineVakElements();
@@ -30,6 +32,7 @@ let client: VakClient;
 // ?session=… opens that chat: the link the MCP server and the bench hand out.
 let session = new URLSearchParams(location.search).get("session") ?? prefs.get("session") ?? crypto.randomUUID();
 const mounted = new Map<string, VakSurfaceElement>();
+const remoteVersions = new Map<string, number>();
 const canvas = new Canvas(() => session, () => client.store);
 const artifacts = new ArtifactsPage(async (id, surface) => {
   if (id !== session) await openChat(id, true);
@@ -38,6 +41,33 @@ const artifacts = new ArtifactsPage(async (id, surface) => {
   canvas.open(surface, true);
 }, newChat, toggleSidebar);
 let running: AbortController | undefined;
+const tasksPanel = new TasksPanel(() => session, (id) => openChat(id));
+const drafts = new Drafts(localStorage, (message) => tasksPanel.error(message));
+document.addEventListener("vak-change", (e) => {
+  const detail = (e as CustomEvent<{ surface: string; path: string; value: unknown }>).detail;
+  drafts.record(detail.surface, detail.path, detail.value);
+});
+window.addEventListener("pagehide", () => drafts.flush());
+window.addEventListener("vak:task-deleted", (e) => {
+  const id: unknown = (e as CustomEvent<unknown>).detail;
+  if (typeof id !== "string") return;
+  drafts.clear(id);
+  if (session === id) newChat();
+  void loadChats();
+});
+function loadSnapshot(snapshot: SurfaceSnapshot): void {
+  remoteVersions.set(snapshot.id, snapshot.version);
+  client.store.load(drafts.receive(snapshot));
+  updateDraftNotice();
+}
+function updateDraftNotice(): void {
+  $("draft-notice").hidden = !drafts.conflicted($<HTMLSelectElement>("canvas-pick").value);
+}
+$("canvas-pick").addEventListener("change", updateDraftNotice);
+for (const [id, keep] of [["draft-keep", true], ["draft-latest", false]] as const) $(id).addEventListener("click", () => {
+  const surface = $<HTMLSelectElement>("canvas-pick").value, snapshot = client.store.snapshot(surface);
+  if (snapshot) { client.store.load(drafts.resolve(snapshot, keep)); mounted.get(surface)?.refresh(); updateDraftNotice(); }
+});
 const opt = (k: string, fallback = "") => prefs.get(`opt:${k}`) ?? fallback;
 
 modelPick.addEventListener("change", () => {
@@ -51,7 +81,9 @@ modelPick.addEventListener("change", () => {
 });
 window.addEventListener("vak:model", () => updateSend());
 window.addEventListener("vak:providers", () => document.getElementById("empty") && showEmpty());
-window.addEventListener("vak:chats-cleared", () => {
+window.addEventListener("vak:chats-cleared", (e) => {
+  const ids: unknown = (e as CustomEvent<unknown>).detail;
+  if (Array.isArray(ids)) for (const id of ids) if (typeof id === "string") drafts.clear(id);
   newChat();
   void loadChats();
 });
@@ -122,6 +154,7 @@ async function loadChats(): Promise<void> {
   chatsNav.replaceChildren();
   let group = "";
   for (const c of list) {
+    if (tasksPanel.owns(c.id)) continue;
     if (groupOf(c.updated) !== group) {
       group = groupOf(c.updated);
       chatsNav.append(Object.assign(document.createElement("div"), { className: "group", textContent: group }));
@@ -138,6 +171,7 @@ async function loadChats(): Promise<void> {
     row.querySelector<HTMLButtonElement>(".del")!.addEventListener("click", async () => {
       if (!(await ask(`Delete “${c.title}”?`, "Delete"))) return;
       await api(`/api/sessions/${encodeURIComponent(c.id)}`, { method: "DELETE" });
+      drafts.clear(c.id);
       if (c.id === session) newChat();
       await loadChats();
     });
@@ -146,9 +180,11 @@ async function loadChats(): Promise<void> {
 }
 
 function clearThread(): void {
+  drafts.flush();
   running?.abort();
   canvas.reset();
   mounted.clear();
+  remoteVersions.clear();
   for (const s of client.store.list()) client.store.remove({ surface: s.id });
 }
 
@@ -156,9 +192,11 @@ function newChat(): void {
   artifacts.close();
   clearThread();
   session = crypto.randomUUID();
+  drafts.begin(session);
   prefs.set("session", session);
   watch(session);
   showEmpty();
+  tasksPanel.selectionChanged();
   for (const row of chatsNav.querySelectorAll(".chat")) row.setAttribute("aria-current", "false");
   input.focus();
 }
@@ -168,11 +206,12 @@ async function openChat(id: string, keepLibrary = false): Promise<void> {
   if (!keepLibrary) artifacts.close();
   clearThread();
   session = id;
+  drafts.begin(session);
   prefs.set("session", id);
   const view = await api<SessionView>(`/api/sessions/${encodeURIComponent(id)}`);
   if (session !== id) return;
   watch(id);
-  for (const snap of view.surfaces) client.store.load(snap);
+  for (const snap of view.surfaces) loadSnapshot(snap);
   if (!view.timeline.length) showEmpty();
   else thread.replaceChildren();
   for (const entry of view.timeline) {
@@ -191,6 +230,7 @@ async function openChat(id: string, keepLibrary = false): Promise<void> {
     }
   }
   canvas.restore();
+  tasksPanel.selectionChanged();
   thread.scrollTop = thread.scrollHeight;
   await loadChats();
   input.focus();
@@ -257,6 +297,7 @@ function addNote(turn: Turn, name: string, result: string): void {
 }
 
 function mount(turn: Turn, snap: SurfaceSnapshot, scroll = true): void {
+  remoteVersions.set(snap.id, snap.version);
   let el = mounted.get(snap.id);
   if (!el) {
     el = document.createElement("vak-surface") as VakSurfaceElement;
@@ -281,7 +322,12 @@ function updateSend(): void {
 }
 
 async function runTurn(req: { message?: string; action?: VakActionDetail["action"] & { data: Record<string, unknown> } }): Promise<void> {
-  running?.abort();
+  if (running) {
+    const note = newTurn("Wait for the current response, or stop it before starting another.");
+    setStatus(note, "The current response is still running", "done");
+    if (req.action) mounted.get(req.action.surface)?.releaseAction();
+    return;
+  }
   const ctrl = new AbortController();
   running = ctrl;
   canvas.beginTurn();
@@ -325,9 +371,12 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
         settleApproval(e.id, e.decision);
         break;
       case "surface":
+        loadSnapshot(e.snapshot);
         mount(turn, e.snapshot);
+        updateDraftNotice();
         break;
       case "surface_removed":
+        drafts.remove(e.id);
         canvas.remove(e.id);
         mounted.delete(e.id);
         break;
@@ -375,6 +424,7 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
     updateSend();
     if (frame) cancelAnimationFrame(frame);
     turn.text.replaceChildren(renderMarkdown(text));
+    if (req.action && session === turnSession) mounted.get(req.action.surface)?.releaseAction();
     // The first message names the chat; refresh the list either way (order by recency).
     if (session === turnSession) void loadChats();
   }
@@ -383,6 +433,11 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
 function submit(text: string): void {
   const t = text.trim();
   if (!t) return;
+  if (tasksPanel.owns(session)) {
+    void tasksPanel.input(t).then(() => { input.value = ""; autosize(); }).catch((err) => tasksPanel.error((err as Error).message));
+    return;
+  }
+  if (running) return;
   if (!current.model) return void openSettings();
   userBubble(t);
   input.value = "";
@@ -393,6 +448,12 @@ function submit(text: string): void {
 // UI actions from any surface go back to the model.
 document.addEventListener("vak-action", (e) => {
   const { action, data } = (e as CustomEvent<VakActionDetail>).detail;
+  if (tasksPanel.owns(session)) {
+    const surface = mounted.get(action.surface);
+    void tasksPanel.input(undefined, { surface: action.surface, source: action.source, data }, remoteVersions.get(action.surface))
+      .catch((err) => tasksPanel.error((err as Error).message)).finally(() => surface?.releaseAction());
+    return;
+  }
   eventChip(action.action);
   void runTurn({ action: { ...action, data } });
 });
@@ -518,7 +579,7 @@ function approvalCard(turn: Turn, e: Extract<AgentEvent, { type: "approval" }>):
   const args = document.createElement("pre");
   args.className = "approval-args";
   const text = JSON.stringify(e.args, null, 2);
-  args.textContent = text.length > 1500 ? `${text.slice(0, 1500)}\n…` : text;
+  args.textContent = text;
   const actions = document.createElement("div");
   actions.className = "approval-actions";
   const answer = (decision: "allow" | "allow-chat" | "deny") => async () => {
@@ -569,19 +630,37 @@ function watch(id: string): void {
         for await (const msg of readSse(res.body!)) {
           if (session !== id) return;
           const e = JSON.parse(msg.data) as AgentEvent;
+          if (e.type === "surface" && mounted.has(e.snapshot.id) && remoteVersions.get(e.snapshot.id) === e.snapshot.version) continue;
+          if (tasksPanel.owns(id)) {
+            if (e.type === "plan") { canvas.beginTurn(); outsideTurn = newTurn("Working…"); }
+            else if (e.type === "text_delta") {
+              outsideTurn ??= newTurn("Working…");
+              outsideTurn.text.dataset.text = (outsideTurn.text.dataset.text ?? "") + e.delta;
+              outsideTurn.text.replaceChildren(renderMarkdown(outsideTurn.text.dataset.text));
+            } else if (e.type === "tool_start" && (e.name === "vak_render" || e.name === "vak_update")) canvas.beginWork();
+            else if (e.type === "run_end") {
+              canvas.endTurn();
+              for (const surface of mounted.values()) surface.releaseAction();
+              if (outsideTurn) setStatus(outsideTurn, "Review the task result", "done");
+              void tasksPanel.refresh();
+            }
+          }
           if (e.type === "surface") {
-            client.store.load(e.snapshot);
+            loadSnapshot(e.snapshot);
             if (mounted.has(e.snapshot.id)) {
               canvas.register(mounted.get(e.snapshot.id)!, e.snapshot, thread, true);
               mounted.get(e.snapshot.id)!.refresh();
             }
             else {
               outsideTurn ??= newTurn("");
-              setStatus(outsideTurn, "projected by an outside agent", "done");
+              setStatus(outsideTurn, tasksPanel.owns(id) ? "Working on this task" : "projected by an outside agent", "done");
               mount(outsideTurn, e.snapshot);
             }
+            remoteVersions.set(e.snapshot.id, e.snapshot.version);
+            updateDraftNotice();
             void loadChats();
           } else if (e.type === "surface_removed") {
+            drafts.remove(e.id);
             client.store.remove({ surface: e.id });
             canvas.remove(e.id);
             mounted.delete(e.id);
@@ -635,6 +714,7 @@ onContextMenu((_t, path) => {
       run: async () => {
         if (!(await ask(`Delete “${row.querySelector(".open")?.textContent ?? "this chat"}”?`, "Delete"))) return;
         await api(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+        drafts.clear(id);
         if (id === session) newChat();
         await loadChats();
       },
@@ -711,6 +791,7 @@ async function start(): Promise<void> {
   try {
     await loadProviders();
     await loadLabels();
+    await tasksPanel.refresh();
     await openChat(session);
   } catch (err) {
     showNotice("Could not reach the engine.", (err as Error).message);

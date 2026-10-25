@@ -1,0 +1,177 @@
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { test } from "node:test";
+import { createHost, type HostRunOptions } from "@vak/host";
+import { ProfileCache, type Provider, type AgentTool } from "@vak/providers";
+import { Tasks } from "../sidecar/tasks.ts";
+import { parseTaskInput, parseTaskView } from "../task-contract.ts";
+
+async function until(check: () => boolean): Promise<void> {
+  const end = Date.now() + 3000;
+  while (!check()) { if (Date.now() > end) throw new Error("Task did not reach expected state"); await new Promise((r) => setTimeout(r, 5)); }
+}
+
+const scripted: Provider = {
+  id: "scripted", async describeModel() { return { tools: true, fingerprint: "task-test", source: "test" }; },
+  async *stream() {
+    for (const id of ["first", "second", "table"]) {
+      const nodes = id === "table" ? [{ id: "root", type: "table", props: { columns: ["Name", "Value"], rows: [["B", 2], ["A", 1]] } }] : [{ id: "root", type: "form", props: { submit: "save" }, children: [{ id: "name", type: "input", props: { label: "Name", bind: "/name", checks: ["required"] } }] }];
+      yield { type: "tool_start", id, name: "vak_render" };
+      yield { type: "tool_args", id, delta: JSON.stringify({ surface: id, title: id, nodes }) };
+      yield { type: "tool_end", id };
+    }
+    yield { type: "done", stop: "tool_use" };
+  },
+};
+
+test("tasks run through one canonical host, retain multiple interactive surfaces, and require explicit review", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-tasks-"));
+  const host = createHost({ providers: () => [{ id: "scripted", label: "Scripted", available: true, make: () => scripted }], profiles: new ProfileCache(path.join(dir, "profiles.json")), instructions: "test", sessionsDir: path.join(dir, "sessions"), log: () => {} });
+  const deps = { dir: path.join(dir, "tasks"), run: host.run, view: host.view, tools: async () => [], instructions: () => "test", observe: async (_session: string, work: () => Promise<void>) => work(), ready: () => {}, warn: () => {} };
+  let tasks = await Tasks.open(deps);
+  try {
+    const t = await tasks.create({ goal: "Create two forms and a table", criteria: "All three are usable", provider: "scripted", model: "fake", integrations: [] });
+    await until(() => tasks.get(t.id).state === "needs_input");
+    const view = await host.view(t.session);
+    assert.equal(view.surfaces.length, 3);
+    assert.equal(view.surfaces[0]?.nodes[0]?.type, "form");
+    assert.equal(tasks.get(t.id).state, "needs_input");
+    await tasks.complete(t.id);
+    assert.equal(tasks.get(t.id).state, "completed");
+    await tasks.close(); tasks = await Tasks.open(deps);
+    assert.equal(tasks.get(t.id).state, "completed");
+    // A finished task's surfaces still accept a continuation; duplicate command IDs are ignored.
+    const command = { id: "same-command", action: { surface: "first", source: "root", data: { name: "Alice" } }, revision: view.surfaces[0]!.version };
+    await tasks.input(t.id, command); await tasks.input(t.id, command);
+    await until(() => tasks.get(t.id).state === "needs_input");
+    assert.equal(tasks.get(t.id).runs, 2);
+    assert.equal((await host.view(t.id)).timeline.filter((e) => e.kind === "action").length, 1);
+    const raw = JSON.parse(await readFile(path.join(dir, "tasks", `${t.id}.json`), "utf8"));
+    assert.equal(raw.surfaces, undefined);
+    assert.equal(raw.messages, undefined);
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("task approvals are exact, one-time decisions; cancellation preserves uncertainty and startup never replays", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-task-permission-"));
+  let tasks!: Tasks;
+  let calls = 0;
+  let permissionRevision = 0;
+  const deps = {
+    dir, ready: () => {}, warn: () => {}, instructions: () => "test", observe: async (_session: string, work: () => Promise<void>) => work(),
+    permissionRevision: () => permissionRevision,
+    tools: async (): Promise<AgentTool[]> => [{ spec: { name: "memory__write", description: "test", inputSchema: { type: "object" } }, execute: async () => {
+      const decision = await tasks.approve({ id: `permission-${calls}`, server: "memory", tool: "write", title: "Write", args: { value: "test" } });
+      if (decision === "allow") calls++;
+      return decision;
+    } }],
+    view: async (id: string) => ({ id, title: "test", updated: "", timeline: [], surfaces: [] }),
+    run: async (_input: unknown, options: HostRunOptions) => { await options.tools![0]!.execute({}, { signal: options.signal, callId: "operation-1" }); return { stop: "end" }; },
+  };
+  tasks = await Tasks.open(deps);
+  try {
+    const t = await tasks.create({ goal: "Remember a fact", criteria: "Review fact", provider: "scripted", model: "fake", integrations: ["memory"] });
+    await until(() => tasks.get(t.id).state === "needs_approval");
+    const pending = tasks.get(t.id).approval!;
+    assert.deepEqual(pending.args, { value: "test" });
+    await assert.rejects(tasks.answer(t.id, pending.id, "allow-chat"));
+    await tasks.answer(t.id, pending.id, "allow");
+    await until(() => tasks.get(t.id).state === "needs_input");
+    await assert.rejects(tasks.answer(t.id, pending.id, "allow"));
+    assert.equal(calls, 1);
+    await tasks.input(t.id, { id: "next", message: "Another fact" });
+    await until(() => tasks.get(t.id).state === "needs_approval");
+    assert.equal(calls, 1);
+    permissionRevision++;
+    await assert.rejects(tasks.answer(t.id, tasks.get(t.id).approval!.id, "allow"), /access changed/);
+    await tasks.cancel(t.id);
+    await tasks.close();
+    tasks = await Tasks.open(deps);
+    assert.equal(tasks.get(t.id).state, "cancelled");
+    assert.equal(calls, 1);
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("tool limits count calls independently of model rounds and stop before the next effect", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-task-limits-"));
+  let calls = 0;
+  const tasks = await Tasks.open({
+    dir, ready: () => {}, warn: () => {}, instructions: () => "", observe: async (_session, work) => work(),
+    view: async (id) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }),
+    tools: async () => [{ spec: { name: "time__now", description: "test", inputSchema: { type: "object" } }, execute: () => { calls++; return "ok"; } }],
+    run: async (_input, options) => { for (let i = 0; i < 50; i++) await options.tools![0]!.execute({}, { signal: options.signal, callId: `op-${i}` }); return { stop: "end" }; },
+  });
+  try {
+    const t = await tasks.create({ goal: "test", criteria: "test", provider: "p", model: "m", integrations: ["time"] });
+    await until(() => tasks.get(t.id).state === "failed");
+    assert.equal(calls, 24);
+    assert.equal(tasks.get(t.id).operations.length, 24);
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("task admission fails closed for invalid input and unavailable capabilities", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-task-admission-"));
+  const tasks = await Tasks.open({ dir, run: async () => ({ stop: "end" }), view: async (id) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }), tools: async () => [], instructions: () => "", observe: async (_session, work) => work(), ready: () => { throw new Error("Capability unavailable"); }, warn: () => {} });
+  try {
+    await assert.rejects(tasks.create({ goal: "Missing criteria" }), /required/);
+    await assert.rejects(tasks.create({ goal: "test", criteria: "test", model: "m", provider: "p", integrations: ["unknown"] }), /unavailable/);
+    assert.deepEqual(tasks.list(), []);
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("typed input and journal boundaries reject invalid combinations and unsupported versions", () => {
+  assert.throws(() => parseTaskInput({ id: "x", message: "hi", action: { surface: "s", source: "a", data: {} }, revision: 1 }));
+  assert.throws(() => parseTaskInput({ id: "x", action: { surface: "s", source: "a", data: {} }, revision: -1 }));
+  assert.throws(() => parseTaskView({ version: 2 }));
+  assert.throws(() => parseTaskView({ version: 1, state: "__proto__" }));
+});
+
+test("interrupted journals expire approval authority and require reconciliation before continuation", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-task-restart-"));
+  const deps = { dir, run: async () => ({ stop: "end" }), view: async (id: string) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }), tools: async () => [], instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), ready: () => {}, warn: () => {} };
+  let tasks = await Tasks.open(deps);
+  try {
+    const task = await tasks.create({ goal: "test", criteria: "test", provider: "p", model: "m", integrations: [] });
+    await until(() => tasks.get(task.id).state === "needs_input"); await tasks.close();
+    const file = path.join(dir, `${task.id}.json`), journal = parseTaskView(JSON.parse(await readFile(file, "utf8")));
+    journal.state = "needs_approval";
+    journal.approval = { id: "expired", server: "memory", tool: "write", title: "Write", args: {}, expires: new Date(Date.now() + 100000).toISOString(), capabilityRevision: 0 };
+    journal.operations.push({ id: "unknown", tool: "memory__write", state: "started" });
+    await writeFile(file, JSON.stringify(journal));
+    tasks = await Tasks.open(deps);
+    assert.equal(tasks.get(task.id).state, "interrupted");
+    assert.equal(tasks.get(task.id).approval, undefined);
+    assert.equal(tasks.get(task.id).operations[0]?.state, "uncertain");
+    await assert.rejects(tasks.answer(task.id, "expired", "allow"));
+    await assert.rejects(tasks.input(task.id, { id: "resume", message: "Continue" }), /Review uncertain/);
+    await tasks.input(task.id, { id: "resume", message: "I checked the effect", reconciled: true });
+    await until(() => tasks.get(task.id).state === "needs_input");
+    assert.equal(tasks.get(task.id).operations[0]?.state, "reviewed");
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("deletion refuses active/stale tasks and requires acknowledgement before removing uncertain recovery records", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-task-delete-"));
+  const removed: string[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const deps = { dir, run: async () => { await gate; return { stop: "end" }; }, remove: async (id: string) => { removed.push(id); }, view: async (id: string) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }), tools: async () => [], instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), ready: () => {}, warn: () => {} };
+  let tasks = await Tasks.open(deps);
+  try {
+    const task = await tasks.create({ goal: "test", criteria: "test", provider: "p", model: "m", integrations: [] });
+    await until(() => tasks.get(task.id).state === "running");
+    await assert.rejects(tasks.remove(task.id, { revision: tasks.get(task.id).revision }), /Cancel/);
+    release(); await until(() => tasks.get(task.id).state === "needs_input"); await tasks.close();
+    const file = path.join(dir, `${task.id}.json`), journal = parseTaskView(JSON.parse(await readFile(file, "utf8")));
+    journal.operations.push({ id: "effect", tool: "memory__write", state: "uncertain" });
+    await writeFile(file, JSON.stringify(journal)); tasks = await Tasks.open(deps);
+    await assert.rejects(tasks.remove(task.id, { revision: -1 }), /changed/);
+    await assert.rejects(tasks.remove(task.id, { revision: tasks.get(task.id).revision }), /Acknowledge/);
+    assert.deepEqual(removed, []);
+    await tasks.remove(task.id, { revision: tasks.get(task.id).revision, confirmUncertain: true });
+    assert.deepEqual(removed, [task.id]); assert.deepEqual(tasks.list(), []);
+    await assert.rejects(readFile(file));
+  } finally { release(); await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
