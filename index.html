@@ -41,45 +41,21 @@
       </section>
     </div>
 
-    <dialog id="settings" class="sheet" aria-labelledby="settings-title">
-      <form method="dialog" id="settings-form">
-        <header class="sheet-head">
-          <h2 id="settings-title">Settings</h2>
-          <button type="button" class="close" id="settings-cancel" aria-label="Close">×</button>
-        </header>
-        <section>
-          <h3>Model</h3>
-          <div class="fields">
-            <label class="ctl"><span>Provider</span><select id="provider"></select></label>
-            <label class="ctl"><span>Model</span><input id="model" list="models" autocomplete="off" spellcheck="false" /><datalist id="models"></datalist></label>
-            <div class="plan">
-              <p id="plan-text" class="muted small">…</p>
-              <button type="button" class="ghost small" id="calibrate">Calibrate</button>
-            </div>
-            <p id="calibration" class="muted small" hidden></p>
-          </div>
-        </section>
-        <section>
-          <h3>API keys and endpoints</h3>
-          <p class="muted small">Stored in the app's data folder, readable only by you. Saved keys are never shown again.</p>
-          <div id="provider-settings" class="fields"></div>
-        </section>
-        <details class="advanced">
-          <summary>Advanced</summary>
-          <div class="fields">
-            <label class="check"><input type="checkbox" id="think" /> Model thinking (Ollama)</label>
-            <label class="ctl"><span>Generation</span><select id="generation"><option value="auto">auto</option><option value="tools">tools</option><option value="constrained">constrained</option></select></label>
-            <label class="ctl"><span>Schema</span><select id="schema"><option value="compact">compact</option><option value="strict">strict</option></select></label>
-            <label class="ctl"><span>Effort</span><select id="effort"><option value="">default</option><option>low</option><option>medium</option><option>high</option></select></label>
-            <label class="check"><input type="checkbox" id="show-notes" /> Show engine notes under replies</label>
-          </div>
-        </details>
-        <p id="settings-error" class="error" hidden></p>
-        <div class="actions">
-          <button type="submit" class="primary" id="settings-save">Save</button>
+    <div id="settings" class="settings-page" hidden>
+      <nav class="settings-nav" aria-label="Settings sections">
+        <div class="settings-nav-head" data-tauri-drag-region>
+          <button type="button" class="quiet back" id="settings-back" title="Back to chats (Esc)">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Back to chats
+          </button>
         </div>
-      </form>
-    </dialog>
+        <div id="settings-nav-list" class="settings-nav-list"></div>
+      </nav>
+      <div class="settings-body">
+        <div class="drag" data-tauri-drag-region></div>
+        <div id="settings-content" class="settings-content"></div>
+      </div>
+    </div>
 
     <dialog id="ask" class="sheet small">
       <form method="dialog">

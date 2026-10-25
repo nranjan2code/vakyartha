@@ -8,7 +8,8 @@
     "build": "vite build",
     "sidecar": "node --disable-warning=ExperimentalWarning sidecar/main.ts",
     "bundle-sidecar": "node --disable-warning=ExperimentalWarning scripts/bundle-sidecar.ts",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:app": "tauri build --config src-tauri/tauri.release.conf.json"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.4",
