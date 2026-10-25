@@ -1,4 +1,4 @@
-# HANDOVER.md: Vakyartha, state of work (2026-10-25)
+# HANDOVER.md: Vakyartha, state of work (2026-10-26)
 
 Start here in a new session. Rules: [AGENTS.md](AGENTS.md). App: [SPECS.md](SPECS.md). Releases and framework updates: [RELEASING.md](RELEASING.md).
 
@@ -21,6 +21,13 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 ```
 
 ## Where things stand
+
+- **Engine fixes from the installed app's Kyoto run, rebuilt and installed (2026-10-26, user's request):** "Compare three hotels in Kyoto … let me book one" showed `unknown component "data"`, then garbled cards. Fixed in Projection (details in its CHANGELOG), each with tests from the real transcript, then live runs on the local 4B model:
+  - `960203c`: a node of type `"data"` is surface data; the parser drops a stray quote after a number (`"rating":4.3",` scrambled the rest of the call); a template that repeats itself loses those children (it rendered as cycle boxes).
+  - `e7c4ef1`: a `{/path}` binding with no data is an error naming the paths the data has (a budget chart drew empty and passed as clean); `{/stats/x}` with data `{x}` binds. Replay gate: sales-q3 1.00 → 0.75 accepted (its table had only a header), restaurants 0.33 → 0.67.
+  - `0226512`: bound props are validated against their component's schema once the data fills them (they were never checked; a chart bound to records drew seven empty series); charts read record rows and records of numbers as series; `anyOf` errors name the branch the value matched furthest.
+  - `8e0810f`: a retry that patches nodes at the top level and re-sends the tree with them in place no longer copies them (every Book button showed twice).
+  - Pin moved through each (`e40a73c`, `0f19033`, `ee3833c`, `a6dcc22`), all pushed. Checked: 221 framework tests (replay gate included), 14 app tests, typecheck, build, WebKit canvas smoke, Rust test. Rebuilt from `a6dcc22` (fresh `npm ci`, no version bump or tag; still 0.1.0), bundled engine confirmed to contain the fixes, reinstalled to `/Applications/Vakyartha.app` and relaunched; data folder kept. Not yet checked by eye: a chat in the installed window.
 
 - **Integrations moved into the framework (2026-10-26, user's request):** Projection `3cd169d` has `Integrations` in `@vak/mcp/client` (install, configure, run, policies, approvals, call log); `sidecar/integrations.ts` went from 516 to 124 lines and keeps only `CATALOG` and `createIntegrations` (Time on at first run). Pin moved to `3cd169d`. Checked: 14 app tests (3 new), 213 framework tests, typecheck, build, WebKit canvas smoke, Rust test, sidecar bundle, and the HTTP routes on a throwaway engine with the real catalog and a fake npm (Time test call, Memory install args pinned, enable lists tools with default policies, http custom server refused). Rebuilt from `644a787` (fresh `npm ci`, no version bump or tag; the bundle still says 0.1.0) and reinstalled to `/Applications/Vakyartha.app`; the existing data folder was kept. Smoke test on the installed bundle's engine (throwaway data, fake npm): 401 without the token, version 0.1.0, Integrations list with Time ready, a Time call, Memory install with `--ignore-scripts --before=2026-10-11`, and a local 4B chat that projected a surface. Other candidates from the same review stay in the app for now: secret storage (`sidecar/settings.ts`) and the channel manager (`sidecar/channels.ts`).
 
@@ -63,11 +70,13 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 ## Next (in order)
 
 1. **GitHub release for v0.1.0** (only when the user says so): RELEASING.md step 8 with `Vakyartha_0.1.0_aarch64.dmg`, marked unsigned.
-2. **Canvas check flake:** `scripts/canvas-check.ts` failed once (stack trace ending in `processTicksAndRejections`, not captured in full) right after repinning, then passed three runs in a row. If it recurs, capture the full output and find the timing cause.
-3. **Ask the user to retry Appearance in the installed app**; if it still fails, read `logs/engine.log` in the data folder (`[ui error]` lines).
-4. **Integrations, next:** OAuth for remote servers (Linear, Notion remote), an update check against newer pinned versions, macOS sandbox profiles for local servers. OAuth in the MCP client itself is a Projection change.
-5. **Move the pin to a Projection tag** once Projection tags its first release.
-6. **Optional, ask first:** code signing/notarization and auto-update; CI for releases; Windows/Linux builds.
+2. **Canvas check flake:** `scripts/canvas-check.ts` failed once (stack trace ending in `processTicksAndRejections`, not captured in full) right after repinning, then passed three runs in a row. It recurred on 2026-10-26 before the rebuild: step 10, "wrong surface after switching chats" at 1100px, then passed twice. Find the timing cause in step 10 (cross-chat artifact).
+3. **Ask the user to retry the Kyoto prompt in the installed app** and read `logs/engine.log` and the transcript if it still looks wrong.
+4. **Engine gaps seen in live runs (Projection, not here):** when the model never sends a list's item template, the default card shows the fields but no action, so "let me book one" has no Book button; the 4B model's JSON sometimes closes a group early (`"style":"success"}}, "priority":…`), so later cards land outside it.
+5. **Ask the user to retry Appearance in the installed app**; if it still fails, read `logs/engine.log` in the data folder (`[ui error]` lines).
+6. **Integrations, next:** OAuth for remote servers (Linear, Notion remote), an update check against newer pinned versions, macOS sandbox profiles for local servers. OAuth in the MCP client itself is a Projection change.
+7. **Move the pin to a Projection tag** once Projection tags its first release.
+8. **Optional, ask first:** code signing/notarization and auto-update; CI for releases; Windows/Linux builds.
 
 ## Useful paths
 
