@@ -12,6 +12,7 @@ import type { Integrations } from "@vak/mcp/client";
 import { hardenNetwork, loadEnvFile, ProfileCache, providersFromEnv } from "@vak/providers";
 import { Channels, CHANNELS } from "./channels.ts";
 import { createIntegrations } from "./integrations.ts";
+import { runUsage } from "../finops.ts";
 import { Finops } from "./finops.ts";
 import { fileSecrets, keychainStore, Settings, SettingsError } from "./settings.ts";
 import { Tasks } from "./tasks.ts";
@@ -187,7 +188,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
   tasks = await Tasks.open({
     dir: path.join(dataDir, "tasks"), run: host.run, view: host.view, remove: host.remove,
     tools: (session) => integrations!.toolsFor(session), instructions: INSTRUCTIONS,
-    observe: (session, work) => finops.chat(async () => { finops.session(session); await work(); }), warn: log,
+    observe: (session, work, run) => finops.chat(async () => { finops.session(session); await work(); }, run), warn: log,
     permissionRevision: (server) => integrationRevisions.get(server) ?? 0,
     permitted: (server, tool) => integrations!.view().some((i) => i.entry.id === server && i.enabled && i.status === "ready" && i.tools.some((t) => t.name === tool && t.policy !== "off")),
     ready(provider, model, selected, confirmedFree) {
@@ -206,6 +207,16 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     }
     if (p === "/api/task-capabilities" && req.method === "GET") {
       json(res, 200, integrations!.view().filter((i) => freeCapabilities.has(i.entry.id) || i.entry.trust === "custom").map((i) => ({ id: i.entry.id, name: i.entry.name, summary: i.entry.summary, ready: i.enabled && i.status === "ready", free: freeCapabilities.has(i.entry.id), access: i.entry.access })));
+      return true;
+    }
+    const usage = /^\/api\/tasks\/([\w-]+)\/runs\/([\w-]+)\/usage$/.exec(p);
+    if (usage) {
+      if (req.method !== "GET") { json(res, 405, { error: "method not allowed" }); return true; }
+      try {
+        const task = tasks!.get(usage[1]!);
+        if (!task.runHistory.some((run) => run.id === usage[2])) throw new Error("Run not found in this task");
+        json(res, 200, runUsage(finops.view(), task.id, usage[2]!));
+      } catch (err) { json(res, 400, { error: (err as Error).message }); }
       return true;
     }
     const m = /^\/api\/tasks(?:\/([\w-]+)(?:\/(input|cancel|complete|approve|schedule))?)?$/.exec(p);

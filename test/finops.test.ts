@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import type { Message, Provider } from "@vak/providers";
-import { emptyShape, estimateCost, type Turn } from "../finops.ts";
+import { emptyShape, estimateCost, runUsage, parseRunUsage, type Turn } from "../finops.ts";
 import { Finops } from "../sidecar/finops.ts";
 
 function manager(t: { after(fn: () => void): void }) {
@@ -119,13 +119,13 @@ test("authenticated app HTTP chats record real request metrics and replace recon
   assert.equal((await fetch(`${app.url}/api/finops`)).status, 401);
   assert.equal((await fetch(`${app.url}/api/tasks`)).status, 401);
   const headers = { "content-type": "application/json", authorization: `Bearer ${app.token}` };
-  const response = await fetch(`${app.url}/api/chat`, { method: "POST", headers, body: JSON.stringify({ session: "http-test", provider: "compatible", model: "fake", message: "test", history: 6 }) });
+  const response = await fetch(`${app.url}/api/chat`, { method: "POST", headers, body: JSON.stringify({ session: "http-test", provider: "compatible", model: "fake", message: "test", history: 6, task: { taskId: "forged", runId: "forged" } }) });
   assert.equal(response.status, 200);
   await response.text();
   const view = await (await fetch(`${app.url}/api/finops`, { headers })).json() as { turns: Turn[] };
   assert.equal(view.turns.length, 1);
   const turn = view.turns[0]!;
-  assert.equal(turn.source, "recorded"); assert.equal(turn.session, "http-test");
+  assert.equal(turn.source, "recorded"); assert.equal(turn.session, "http-test"); assert.equal(turn.task, undefined);
   assert.equal(turn.steps[0]?.input, 100); assert.equal(turn.steps[0]?.cachedInput, 60);
   assert.ok(turn.steps[0]!.systemChars > 0); assert.ok(turn.steps[0]!.schemaChars > 0);
   const clock = await fetch(`${app.url}/api/integrations/time/test`, { method: "POST", headers, body: JSON.stringify({ tool: "now", args: { timezone: "UTC" } }) });
@@ -144,7 +144,13 @@ test("authenticated app HTTP chats record real request metrics and replace recon
   }
   assert.equal(finished.state, "needs_input");
   const taskUsage = await (await fetch(`${app.url}/api/finops`, { headers })).json() as { turns: Turn[] };
-  assert.ok(taskUsage.turns.some((turn) => turn.session === task.id));
+  const recorded = taskUsage.turns.find((turn) => turn.session === task.id)!;
+  assert.deepEqual(recorded.task, { taskId: task.id, runId: finished.runHistory[0]!.id });
+  const usageUrl = `${app.url}/api/tasks/${task.id}/runs/${finished.runHistory[0]!.id}/usage`;
+  assert.equal((await fetch(usageUrl)).status, 401);
+  const measured = parseRunUsage(await (await fetch(usageUrl, { headers })).json());
+  assert.equal(measured.input, 100); assert.equal(measured.output, 25);
+  assert.equal((await fetch(`${app.url}/api/tasks/${task.id}/runs/not-this-run/usage`, { headers })).status, 400);
   const bypass = await fetch(`${app.url}/api/reset`, { method: "POST", headers, body: JSON.stringify({ session: task.id }) });
   assert.equal(bypass.status, 409);
   assert.equal((await fetch(`${app.url}/api/tasks/${task.id}`, { method: "DELETE", headers, body: JSON.stringify({ revision: -1 }) })).status, 400);
@@ -154,4 +160,30 @@ test("authenticated app HTTP chats record real request metrics and replace recon
   assert.equal(existsSync(path.join(dir, "tasks", `${task.id}.json`)), false);
   assert.equal(existsSync(path.join(dir, "sessions", `${task.id}.json`)), false);
   assert.equal(existsSync(path.join(dir, "transcripts", `${task.id}.jsonl`)), false);
+});
+
+
+test("run accounting isolates overlapping runs and keeps absent, partial and unpriced usage unknown", async (t) => {
+  const { ledger } = manager(t);
+  const observed = ledger.observe(provider, false);
+  await Promise.all(["run-one", "run-two"].map((runId) => ledger.chat(async () => {
+    ledger.session("one-task");
+    await new Promise((resolve) => setTimeout(resolve, runId === "run-one" ? 10 : 1));
+    for await (const _ of observed.stream({ model: "model", messages: [] })) { /* consume */ }
+  }, { taskId: "one-task", runId })));
+  const view = ledger.view();
+  assert.equal(view.turns.length, 2);
+  for (const runId of ["run-one", "run-two"]) {
+    assert.equal(view.turns.filter((turn) => turn.task?.runId === runId).length, 1);
+    assert.deepEqual(runUsage(view, "one-task", runId), { requests: 1, input: 100, output: 25, estimatedModelUsd: undefined });
+  }
+  assert.equal(runUsage(view, "another-task", "run-one").requests, 0);
+  assert.equal(runUsage(view, "one-task", "missing").estimatedModelUsd, undefined);
+  ledger.setRate({ provider: "fake", model: "model", input: 2, cached: .2, output: 8 });
+  assert.ok(runUsage(ledger.view(), "one-task", "run-one").estimatedModelUsd! > 0);
+  view.turns[0]!.complete = false;
+  const partial = runUsage(view, "one-task", view.turns[0]!.task!.runId);
+  assert.equal(partial.input, undefined); assert.equal(partial.estimatedModelUsd, undefined);
+  assert.throws(() => parseRunUsage({ requests: -1 }));
+  assert.throws(() => parseRunUsage({ requests: 1, estimatedModelUsd: Infinity }));
 });

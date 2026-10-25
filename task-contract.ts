@@ -16,6 +16,7 @@ export interface TaskApproval {
 }
 export interface TaskActivity { at: string; text: string }
 export type TaskRunState = "running" | "review" | "accepted" | "failed" | "cancelled" | "interrupted";
+export interface TaskRunIdentity { taskId: string; runId: string }
 export interface TaskRun {
   id: string;
   sequence: number;

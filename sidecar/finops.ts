@@ -3,9 +3,10 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Message, Provider, ProviderEntry } from "@vak/providers";
+import type { TaskRunIdentity } from "../task-contract.ts";
 import { emptyShape, type FinopsView, type Rate, type Shape, type Step, type Turn } from "../finops.ts";
 
-type Context = { turn?: Turn; session?: string; at: string; started: number };
+type Context = { task?: TaskRunIdentity; turn?: Turn; session?: string; at: string; started: number };
 export function messageShape(messages: Message[]): Shape {
   const s = emptyShape();
   for (const m of messages) {
@@ -39,8 +40,8 @@ export class Finops {
     if (c) c.session = id;
   }
 
-  async chat(work: () => Promise<void>): Promise<void> {
-    const c: Context = { at: new Date().toISOString(), started: performance.now() };
+  async chat(work: () => Promise<void>, task?: TaskRunIdentity): Promise<void> {
+    const c: Context = { ...(task ? { task: { ...task } } : {}), at: new Date().toISOString(), started: performance.now() };
     await this.scope.run(c, async () => {
       try { await work(); }
       finally {
@@ -79,7 +80,7 @@ export class Finops {
         const c = owner.scope.getStore();
         if (!c) { yield* provider.stream(req); return; }
         const turn = c.turn ??= {
-          id: randomUUID(), session: c.session ?? "default", at: c.at, provider: provider.id, model: req.model, local,
+          ...(c.task ? { task: c.task } : {}), id: randomUUID(), session: c.session ?? "default", at: c.at, provider: provider.id, model: req.model, local,
           ms: 0, source: "recorded", context: messageShape(req.messages), output: emptyShape(), steps: [],
           projectionCalls: 0, externalCalls: 0, errors: 0, complete: true,
         };

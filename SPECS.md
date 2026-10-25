@@ -39,7 +39,7 @@ Tauri 2 shell, Vite + plain TypeScript UI, the engine as a Node sidecar. **The b
 
 ## 4. FinOps
 
-**FinOps is app-only**, not a framework responsibility. Settings → FinOps charts turn duration, context composition, repeated context, generated output, provider token/cache usage and estimated API cost, with turn details, chat filters, editable model rates and CSV export. The sidecar observes its provider requests and saves numeric telemetry locally; old sessions are explicitly reconstructed with unknown token usage and paid spend. Details and limits: [FINOPS.md](FINOPS.md).
+**FinOps is app-only**, not a framework responsibility. Settings → FinOps charts turn duration, context composition, repeated context, generated output, provider token/cache usage and estimated API cost, with turn details, work-type/conversation filters, task/run attribution, editable model rates and CSV export. Schedule run details can load a numeric usage summary on demand; missing measurements and prices stay unknown, and estimates exclude tool/server charges and do not enforce a spending ceiling. The sidecar observes its provider requests and saves numeric telemetry locally; old sessions are explicitly reconstructed with unknown token usage and paid spend. Details and limits: [FINOPS.md](FINOPS.md).
 
 
 ## 5. Agent tasks (first implementation slice)

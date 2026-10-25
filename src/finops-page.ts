@@ -26,7 +26,7 @@ export async function finopsPage(): Promise<HTMLElement[]> {
   const charts = el("div", { className: "finops-plots" });
   const detail = el("div", { className: "finops-detail", "aria-live": "polite" });
   const error = el("p", { className: "error", role: "alert" });
-  let session = "", selected = "";
+  let session = "", selected = "", scope = "all";
   const sessions = [...new Set(data.turns.map((t) => t.session))];
   const labels = new Map(sessions.map((id, i) => [id, String.fromCharCode(65 + i)]));
   const ordinals = new Map<string, string>();
@@ -36,10 +36,12 @@ export async function finopsPage(): Promise<HTMLElement[]> {
   const refresh = el("button", { type: "button", className: "ghost", textContent: "Refresh" });
   refresh.addEventListener("click", () => window.dispatchEvent(new Event("vak:finops-refresh")));
   const exportButton = el("button", { type: "button", className: "ghost", textContent: "Export CSV" });
-  controls.append(filter, refresh, exportButton);
+  const scopeFilter = select([["all", "All work"], ["tasks", "Task runs"], ["chats", "Ordinary chats"]], "all", (value) => { scope = value; selected = ""; render(); });
+  scopeFilter.setAttribute("aria-label", "FinOps work type");
+  controls.append(scopeFilter, filter, refresh, exportButton);
   const picker = el("select", { "aria-label": "Inspect turn" });
   picker.addEventListener("change", () => { selected = picker.value; showDetail(); });
-  function visible(): Turn[] { return data.turns.filter((t) => !session || t.session === session); }
+  function visible(): Turn[] { return data.turns.filter((t) => (!session || t.session === session) && (scope === "all" || (scope === "tasks" ? Boolean(t.task) : !t.task))); }
   const usage = (t: Turn, k: "input" | "cachedInput" | "outputTokens"): number | undefined => t.source === "recorded" && t.complete && t.steps.length && t.steps.every((s) => s.complete && s[k] !== undefined) ? t.steps.reduce((a, s) => a + s[k]!, 0) : undefined;
   function showDetail(): void {
     const t = visible().find((t) => t.id === selected) ?? visible().at(-1);
@@ -49,6 +51,7 @@ export async function finopsPage(): Promise<HTMLElement[]> {
     const table = el("table", { className: "finops-table" });
     const tr = (k: string, v: string) => table.append(el("tr", {}, el("th", { scope: "row", textContent: k }), el("td", { textContent: v })));
     tr("Turn", `${ordinals.get(t.id)} · ${t.provider} / ${t.model}`);
+    if (t.task) { tr("Task", t.task.taskId); tr("Run", t.task.runId); }
     tr("When", new Date(t.at).toLocaleString());
     tr("Source", t.source === "recorded" ? (t.complete ? "Measured provider requests" : "Incomplete request; billing may be partial") : "Saved messages; assumed last 10 turns");
     tr("Duration", `${number(t.ms / 1000)}s · ${t.steps.length} model steps`);
@@ -139,17 +142,26 @@ export async function finopsPage(): Promise<HTMLElement[]> {
     el("div", { className: "finops-controls" }, ...fields.map((f, i) => el("label", {}, ["Input", "Cached input", "Output"][i], f))), save, rateDate);
   loadRate();
   exportButton.addEventListener("click", () => {
-    const rows: (string | number)[][] = [["turn", "session", "at", "provider", "model", "source", "seconds", "steps", "input_tokens", "cached_tokens", "output_tokens", "estimated_usd", "first_context_chars", "repeated_context_chars", "ui_chars", "tool_arg_chars", "text_chars"]];
-    for (const t of visible()) rows.push([ordinals.get(t.id)!, t.session, t.at, t.provider, t.model, t.source, t.ms / 1000, t.steps.length, usage(t, "input") ?? "", usage(t, "cachedInput") ?? "", usage(t, "outputTokens") ?? "", estimateCost(t, data.rates) ?? "", shapeTotal(t.context), t.steps.reduce((a, s) => a + shapeTotal(s.context), 0), t.output.projection, t.output.tools, t.output.text]);
+    const rows: (string | number)[][] = [["turn", "task_id", "run_id", "session", "at", "provider", "model", "source", "seconds", "steps", "input_tokens", "cached_tokens", "output_tokens", "estimated_usd", "first_context_chars", "repeated_context_chars", "ui_chars", "tool_arg_chars", "text_chars"]];
+    for (const t of visible()) rows.push([ordinals.get(t.id)!, t.task?.taskId ?? "", t.task?.runId ?? "", t.session, t.at, t.provider, t.model, t.source, t.ms / 1000, t.steps.length, usage(t, "input") ?? "", usage(t, "cachedInput") ?? "", usage(t, "outputTokens") ?? "", estimateCost(t, data.rates) ?? "", shapeTotal(t.context), t.steps.reduce((a, s) => a + shapeTotal(s.context), 0), t.output.projection, t.output.tools, t.output.text]);
     // Guard spreadsheet formula execution even when a custom provider supplies the model id.
     const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""')}"`).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = el("a", { href: url, download: "vak-finops.csv" }); a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   box.append(controls, summary, pricing, error, charts, el("label", { className: "finops-picker" }, "Inspect turn", picker), detail,
-    el("p", { className: "row-hint", textContent: "Character charts exclude system instructions, tool schemas and native replay; their measured sizes appear in turn details. Characters are not tokens. Old turns use saved messages and the default last 10 turns; their actual window and token usage were not recorded. Tool and approval waits are included in turn duration. Empty token/cost marks mean unknown, not zero." }));
+    el("p", { className: "row-hint", textContent: "Character charts exclude system instructions, tool schemas and native replay; their measured sizes appear in turn details. Characters are not tokens. Old turns use saved messages and the default last 10 turns; their actual window and token usage were not recorded. Tool and approval waits are included in turn duration. Empty token/cost marks mean unknown, not zero. Estimates cover model API usage; tool/server charges, local compute and hosting are excluded. This is accounting, not an enforced spending ceiling." }));
   // Settings attaches the page after this function returns; observe actual width then.
-  observer = new ResizeObserver(() => { if (box.isConnected) render(); }); observer.observe(box);
+  let observedWidth = 0, layoutFrame = 0;
+  observer = new ResizeObserver(() => {
+    const width = Math.floor(box.getBoundingClientRect().width);
+    // Rendering changes chart height; only width changes require another layout.
+    if (box.isConnected && width > 0 && width !== observedWidth) {
+      observedWidth = width;
+      cancelAnimationFrame(layoutFrame);
+      layoutFrame = requestAnimationFrame(() => { if (box.isConnected) render(); });
+    }
+  }); observer.observe(box);
   render();
   return [...title("FinOps", "Cost, context and output shape for your desktop chats. Stored on this machine."), box];
 }

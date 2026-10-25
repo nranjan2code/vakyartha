@@ -97,9 +97,18 @@ const steps = [
    await wait(()=>document.querySelectorAll('.schedule-run').length===3);
    const history=await task();check(history.runHistory.length===3,'run records missing');check(history.runHistory[1].state==='accepted','review decision absent from run history');
    document.querySelector('.schedule-run summary').click();check(document.querySelector('.schedule-run').open,'run receipt will not expand');check(document.querySelector('.schedule-run-id').textContent.includes(history.runHistory[2].id),'wrong run receipt');
+   document.querySelector('.schedule-run-usage').click();await wait(()=>document.querySelector('.schedule-run [role="status"]').textContent.includes('Model API estimate'));
+   check(document.querySelector('.schedule-run [role="status"]').textContent.includes('unknown'),'missing usage became zero');
    check(document.documentElement.scrollWidth<=innerWidth,'run history overflow');
    return 'distinct run history, accepted outcome and expandable receipts';`,
-  `document.getElementById('open-schedule').click();document.getElementById('create-schedule').click();
+  `Array.from(document.querySelectorAll('.schedule-run button')).find(b=>b.textContent==='Open FinOps').click();
+   await wait(()=>document.querySelector('[aria-label="FinOps work type"]'));
+   const scope=document.querySelector('[aria-label="FinOps work type"]');scope.value='tasks';scope.dispatchEvent(new Event('change'));
+   const current=await task();check(document.querySelector('.finops-detail').textContent.includes(current.runHistory[2].id),'FinOps missing run identity');
+   scope.value='chats';scope.dispatchEvent(new Event('change'));check(!document.querySelector('.finops-detail').textContent.includes(current.id),'task leaked into ordinary chat filter');
+   scope.value='tasks';scope.dispatchEvent(new Event('change'));check(document.documentElement.scrollWidth<=innerWidth,'FinOps overflow');
+   return 'FinOps attribution, work-type filters and responsive details';`,
+  `document.getElementById('settings-back').click();document.getElementById('open-schedule').click();document.getElementById('create-schedule').click();
    await wait(()=>!document.getElementById('schedule-compose').hidden&&!document.getElementById('task-create-start').disabled);
    document.getElementById('task-goal').value='Future review';document.getElementById('task-criteria').value='An explicit reviewed result';
    const timing=document.getElementById('schedule-timing');timing.value='once';timing.dispatchEvent(new Event('change'));

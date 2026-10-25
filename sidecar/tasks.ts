@@ -5,7 +5,7 @@ import path from "node:path";
 import type { AgentEvent } from "@vak/core";
 import type { HostRunOptions, HostTurn, SessionView } from "@vak/host";
 import type { AgentTool } from "@vak/providers";
-import { TASK_LIMITS, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskRun } from "../task-contract.ts";
+import { TASK_LIMITS, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskRun, type TaskRunIdentity } from "../task-contract.ts";
 import { parseSchedule, SCHEDULE_GRACE_MS } from "../schedule.ts";
 
 interface Dependencies {
@@ -15,7 +15,7 @@ interface Dependencies {
   remove?(session: string): Promise<void>;
   tools(session: string): Promise<AgentTool[]>;
   instructions(): string;
-  observe(session: string, work: () => Promise<void>): Promise<void>;
+  observe(session: string, work: () => Promise<void>, run: TaskRunIdentity): Promise<void>;
   ready(provider: string, model: string, integrations: string[], confirmedFree: string[]): void;
   permissionRevision?(server: string): number;
   permitted?(server: string, tool: string): boolean;
@@ -343,7 +343,7 @@ export class Tasks {
         if (["error", "max_steps", "aborted"].includes(result.stop)) throw new Error(t.note === "Working" ? `Run ended: ${result.stop}` : t.note);
         t.state = t.pending.length ? "queued" : "needs_input";
         t.note = t.pending.length ? "Waiting for the next input" : "Review the saved result against your criteria. Continue interacting with any surface, or mark the task complete.";
-      }));
+      }, { taskId: t.id, runId: run.id }));
     } catch (err) {
       if (t.state !== "cancelled") {
         t.state = this.closed ? "interrupted" : "failed";

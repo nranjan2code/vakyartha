@@ -17,7 +17,7 @@ Check an implementation item only after its acceptance behavior is verified. App
 - [x] D9. Plan against zero new third-party dependencies. Reuse public APIs and standard libraries; identify small owned implementations. Any unavoidable SDK/package/crate/tool exception needs a concrete justification and user approval before installation or adoption.
 - [x] D10. Record capability plugin architecture and runtime/ownership decisions — `ADR.md`. Reuse the existing MCP store; memory and reusable context are selectable integrations, while task recovery remains local.
 - [ ] D11. Verify free capability choices, setup/access requirements and failure behavior. Add catalog entries only for concrete missing capabilities; no automatic installation or activation.
-- [x] D12. Record typed contracts, scoped deletion, task/run lifetime, shared dispatch and chain semantics — ADR-004–006. Scheduling and chain execution remain unimplemented gates.
+- [x] D12. Record typed contracts, scoped deletion, task/run lifetime, shared dispatch and chain semantics — ADR-004–006. One-time scheduling is implemented; recurring and chain execution remain open gates.
 - [x] D13. Schedule workspace and one-time triggers — ADR-007, `schedule.ts`, `src/schedule-page.ts`, `test/schedule.test.ts` and expanded task smoke. Recurring/event/chain triggers remain unimplemented.
 
 ## Existing foundations to retain
@@ -76,7 +76,7 @@ Owner: Vakyartha. Reuse framework rendering and actions. Acceptance: M5 and M8.
 Owner: Vakyartha for policies and records; general enforcement gaps through D7. Acceptance: M6–M7.
 
 - [ ] P3.1. Enforce finite elapsed-time, model-call, tool-call and retry limits with understandable stop reasons.
-- [ ] P3.2. Attribute usage to tasks/runs; identify unknown costs and prevent silent paid-model switching.
+- [x] P3.2. Attribute usage to tasks/runs; identify unknown costs and prevent silent paid-model switching. Dispatcher-owned IDs reach the numeric ledger, Schedule summaries, FinOps work filters/details and CSV. HTTP tests reject forged attribution; concurrent-run isolation and unknown/missing costs are covered. Runs retain their explicit model, with no fallback. Tool/server charges are unmeasured and explicitly excluded; ceilings remain P3.3.
 - [ ] P3.3. Define behavior when a required monetary ceiling cannot be conservatively enforced.
 - [ ] P3.4. Checkpoint safely, expose failed saves and recover interrupted tasks without blindly repeating writes.
 - [ ] P3.5. Store necessary drafts/content separately from numeric telemetry and credentials; apply retention controls.

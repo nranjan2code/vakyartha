@@ -1,3 +1,4 @@
+import { parseRunUsage } from "../finops.ts";
 import { TASK_LABELS, TASK_RUN_LABELS, TASK_LIMITS, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../task-contract.ts";
 import { scheduleLabel } from "../schedule.ts";
 import { $, api, ask, el } from "./core.ts";
@@ -173,6 +174,18 @@ export class SchedulePage {
         const timing = run.ended ? `Finished ${date(run.ended)}` : run.recovered ? `Recovery recorded ${date(run.recovered)} · end time unknown` : "In progress";
         const item = el("details", { className: "schedule-run" }, el("summary", {}, el("span", { className: "schedule-run-sequence", textContent: String(run.sequence).padStart(2, "0") }), el("span", {}, el("strong", { textContent: run.inputKind === "action" ? "Surface interaction" : run.sequence === 1 ? "Initial run" : "Continuation" }), el("small", { textContent: date(run.started) })), el("span", { className: `schedule-badge ${run.state === "review" ? "needs_input" : run.state === "accepted" ? "completed" : run.state}`, textContent: TASK_RUN_LABELS[run.state] })));
         item.append(el("p", { textContent: run.note }), el("p", { className: "hint", textContent: `${timing} · ${run.state === "running" || run.recovered ? "Active time incomplete" : `${(run.activeMs / 1000).toFixed(1)}s active`} · ${run.toolCalls} tool ${run.toolCalls === 1 ? "call" : "calls"}${run.stop ? ` · Stop: ${run.stop}` : ""}` }), el("code", { className: "schedule-run-id", textContent: `Run ${run.id} · Input ${run.inputId}` }));
+        const usage = el("p", { className: "hint", role: "status" });
+        const loadUsage = button("Show usage", async () => {
+          loadUsage.disabled = true;
+          try {
+            const measured = parseRunUsage(await api<unknown>(`/api/tasks/${encodeURIComponent(task.id)}/runs/${encodeURIComponent(run.id)}/usage`));
+            usage.textContent = `${measured.requests} recorded model requests · Input ${measured.input ?? "unknown"} tokens · Output ${measured.output ?? "unknown"} tokens · Model API estimate ${measured.estimatedModelUsd === undefined ? "unknown" : `$${measured.estimatedModelUsd.toFixed(6)}`}. Tool/server charges, compute and hosting excluded. Not a spending ceiling.`;
+            loadUsage.textContent = "Refresh usage";
+          } catch (err) { usage.textContent = `Usage unavailable: ${String(err)}`; }
+          finally { loadUsage.disabled = false; }
+        });
+        loadUsage.classList.add("schedule-run-usage");
+        item.append(el("div", { className: "task-controls" }, loadUsage, button("Open FinOps", () => void openSettings("finops"))), usage);
         history.append(item);
       }
       if (!task.runs) history.append(el("p", { className: "hint", textContent: "No runs yet. Waiting for a scheduled time uses no model work." }));

@@ -11,7 +11,7 @@ Open **Settings → FinOps** for the same turn-by-turn views used to inspect the
 - Provider-reported input, output, and cached input tokens. An input total without cache detail is shown separately.
 - Estimated API cost, with missing usage or rates explicitly unknown.
 
-Filter by chat, select a turn or click a chart bar for details, and export the current selection as CSV. Details include system instructions, tool schemas, and native replay sizes for new turns. Native replay overlaps visible content; encrypted reasoning length is not a token count.
+Filter by work type (task runs or ordinary chats) and conversation, select a turn or click a chart bar for details, and export the current selection as CSV. Details include system instructions, tool schemas, and native replay sizes for new turns. Native replay overlaps visible content; encrypted reasoning length is not a token count.
 
 ## Accounting boundary
 
@@ -36,3 +36,10 @@ Costs use the **current** configured rates, including when viewing previous turn
 ## Validation
 
 `test/finops.test.ts` covers stream transparency, persistence without prompt content, per-step usage/cost, concurrent chats, incomplete streams, historical reconstruction, deduplication and rate validation. Run `npm test`, `npm run typecheck`, and the desktop UI build. Check charts and turn selection in `scripts/webkit-check.swift`, since the installed window uses WebKit.
+
+
+## Task and run attribution
+
+The task dispatcher supplies its task/run IDs directly to the accounting scope; model output and HTTP chat payloads cannot assign them. Each observed turn retains these IDs without goal text or result content. Concurrent and approval-suspended runs keep independent scopes. FinOps details and CSV include both IDs. Schedule → Run history → Show usage requests only that run's numeric summary; viewing usage never calls a model or integration. Usage for a running task may not be saved until its observation scope exits.
+
+Counts and estimates cover measured model requests only. Missing/incomplete token reports, absent ledger records and unpriced models stay unknown. Model API estimates exclude tool/server charges, compute and hosting; local model API cost is zero, not a claim of zero total operating cost. Estimates use the currently configured rates and are not a spending ceiling. Ledger rotation can remove earlier measurements; task records and evidence are retained separately. Budget enforcement and cumulative task limits remain open.
