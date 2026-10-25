@@ -7,6 +7,8 @@
 import { type AgentEvent, projectText, readSse, type SurfaceSnapshot } from "@vak/core";
 import type { SessionSummary, SessionView } from "@vak/host";
 import { defineVakElements, renderMarkdown, type VakActionDetail, VakClient, type VakSurfaceElement } from "@vak/web";
+import { ArtifactsPage } from "./artifacts-page.ts";
+import { Canvas } from "./canvas.ts";
 import { connect, openExternal, setKeepRunning } from "./backend.ts";
 import { $, api, ask, engine, prefs, setBackend } from "./core.ts";
 import { choose, current, fillPicker, loadProviders, modelErrors, parseChoice, providers } from "./models.ts";
@@ -28,6 +30,13 @@ let client: VakClient;
 // ?session=… opens that chat: the link the MCP server and the bench hand out.
 let session = new URLSearchParams(location.search).get("session") ?? prefs.get("session") ?? crypto.randomUUID();
 const mounted = new Map<string, VakSurfaceElement>();
+const canvas = new Canvas(() => session, () => client.store);
+const artifacts = new ArtifactsPage(async (id, surface) => {
+  if (id !== session) await openChat(id, true);
+  if (id !== session) return;
+  artifacts.close();
+  canvas.open(surface, true);
+}, newChat, toggleSidebar);
 let running: AbortController | undefined;
 const opt = (k: string, fallback = "") => prefs.get(`opt:${k}`) ?? fallback;
 
@@ -109,6 +118,7 @@ function groupOf(iso: string): string {
 
 async function loadChats(): Promise<void> {
   const list = await api<SessionSummary[]>("/api/sessions");
+  artifacts.update(list);
   chatsNav.replaceChildren();
   let group = "";
   for (const c of list) {
@@ -137,11 +147,13 @@ async function loadChats(): Promise<void> {
 
 function clearThread(): void {
   running?.abort();
+  canvas.reset();
   mounted.clear();
   for (const s of client.store.list()) client.store.remove({ surface: s.id });
 }
 
 function newChat(): void {
+  artifacts.close();
   clearThread();
   session = crypto.randomUUID();
   prefs.set("session", session);
@@ -152,7 +164,8 @@ function newChat(): void {
 }
 
 /** Redraw a saved conversation from its timeline and final surfaces. */
-async function openChat(id: string): Promise<void> {
+async function openChat(id: string, keepLibrary = false): Promise<void> {
+  if (!keepLibrary) artifacts.close();
   clearThread();
   session = id;
   prefs.set("session", id);
@@ -177,6 +190,7 @@ async function openChat(id: string): Promise<void> {
       setStatus(turn, entry.status, entry.error ? "error" : "done");
     }
   }
+  canvas.restore();
   thread.scrollTop = thread.scrollHeight;
   await loadChats();
   input.focus();
@@ -247,14 +261,17 @@ function mount(turn: Turn, snap: SurfaceSnapshot, scroll = true): void {
   if (!el) {
     el = document.createElement("vak-surface") as VakSurfaceElement;
     mounted.set(snap.id, el);
-    turn.surfaces.append(el);
+    canvas.register(el, snap, turn.surfaces, scroll);
     el.attach(client.store, snap.id);
     surfaceMode(el);
     // A new interface is the answer: bring its top into view (a reply to a
     // click otherwise lands below the fold and looks like nothing happened).
     const shown = el;
-    if (scroll) requestAnimationFrame(() => shown.scrollIntoView({ block: "start", behavior: "smooth" }));
-  } else el.refresh();
+    if (scroll && !shown.closest(".canvas")) requestAnimationFrame(() => shown.scrollIntoView({ block: "start", behavior: "smooth" }));
+  } else {
+    canvas.register(el, snap, turn.surfaces, false);
+    el.refresh();
+  }
 }
 
 function updateSend(): void {
@@ -308,7 +325,7 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
         mount(turn, e.snapshot);
         break;
       case "surface_removed":
-        mounted.get(e.id)?.remove();
+        canvas.remove(e.id);
         mounted.delete(e.id);
         break;
       case "tool_end":
@@ -411,18 +428,25 @@ $<HTMLButtonElement>("collapse").addEventListener("click", toggleSidebar);
 $<HTMLButtonElement>("expand").addEventListener("click", toggleSidebar);
 
 function toggleSidebar(): void {
+  if (document.body.classList.contains("in-artifacts") && matchMedia("(max-width: 720px)").matches) {
+    document.body.classList.toggle("artifacts-show-sidebar");
+    return;
+  }
   document.body.classList.toggle("collapsed");
   prefs.set("collapsed", String(document.body.classList.contains("collapsed")));
 }
 document.body.classList.toggle("collapsed", prefs.get("collapsed") === "true");
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && running && !settingsOpen()) return running.abort();
+  if (e.defaultPrevented) return;
+  if (e.key === "Escape" && running && !settingsOpen() && !document.body.classList.contains("in-artifacts")) return running.abort();
   if (!(e.metaKey || e.ctrlKey)) return;
   const actions: Record<string, () => void> = {
     n: () => (closeSettings(), newChat()),
     ",": () => void (settingsOpen() ? closeSettings() : openSettings()),
     "\\": toggleSidebar,
+    b: () => { if (!e.altKey && !e.shiftKey) toggleSidebar(); },
   };
+  if ((e.altKey || e.shiftKey) && e.key.toLowerCase() === "b") return;
   const act = actions[e.key];
   if (act) {
     e.preventDefault();
@@ -541,15 +565,21 @@ function watch(id: string): void {
           const e = JSON.parse(msg.data) as AgentEvent;
           if (e.type === "surface") {
             client.store.load(e.snapshot);
-            if (mounted.has(e.snapshot.id)) mounted.get(e.snapshot.id)!.refresh();
+            if (mounted.has(e.snapshot.id)) {
+              canvas.register(mounted.get(e.snapshot.id)!, e.snapshot, thread, false);
+              mounted.get(e.snapshot.id)!.refresh();
+            }
             else {
               outsideTurn ??= newTurn("");
               setStatus(outsideTurn, "projected by an outside agent", "done");
               mount(outsideTurn, e.snapshot);
             }
+            void loadChats();
           } else if (e.type === "surface_removed") {
-            mounted.get(e.id)?.remove();
+            client.store.remove({ surface: e.id });
+            canvas.remove(e.id);
             mounted.delete(e.id);
+            void loadChats();
           }
         }
       } catch {

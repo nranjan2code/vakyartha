@@ -68,7 +68,9 @@ let app = NSApplication.shared
 app.setActivationPolicy(.prohibited)
 let config = WKWebViewConfiguration()
 if let root = ProcessInfo.processInfo.environment["WK_TAURI_ROOT"] { config.setURLSchemeHandler(Scheme(root), forURLScheme: "tauri") }
-let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 1100, height: 760), configuration: config)
+let width = Double(ProcessInfo.processInfo.environment["WK_WIDTH"] ?? "1100") ?? 1100
+let height = Double(ProcessInfo.processInfo.environment["WK_HEIGHT"] ?? "760") ?? 760
+let view = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: height), configuration: config)
 let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
 window.contentView = view
 window.setFrameOrigin(NSPoint(x: -5000, y: -5000))

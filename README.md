@@ -46,6 +46,12 @@ Each folder holds `sessions/`, `integrations/` (one folder per installed server)
 
 **Settings → FinOps** charts duration, context composition, repeated context, generated output, provider tokens/cache usage and estimated API cost. Inspect individual turns, filter by chat, configure per-model rates and export CSV. New requests record numeric telemetry locally in `logs/finops.jsonl`; prices live in `finops-rates.json`. Old sessions are reconstructed and keep token usage and paid cost unknown. Accounting belongs only to the app, with no FinOps changes in `packages/*`. See [FINOPS.md](FINOPS.md) for scope and estimation limits.
 
+## Canvas and Artifacts
+
+**Artifacts** in the sidebar opens a library of surfaces from saved chats. Search by artifact or chat, filter by type, sort, and browse more than the initial 24 cards. Opening an item returns to its chat and shows it in the canvas. Library cards show metadata, without exposing form values.
+
+Small interfaces stay inline with **Open in canvas**; larger interfaces open beside the chat. The same live surface moves between the two, preserving form drafts, validation and local views. The canvas offers a surface picker, Preview/Text, Copy, Markdown download to Downloads, resizing and full/split views. Shortcuts: ⌘B for the sidebar, ⌘⌥B for the canvas, ⌘⇧F for full/split view, ⌘⇧B to cycle layouts. Details, design references and checks: [CANVAS.md](CANVAS.md).
+
 ## Debugging
 
 - **Engine log:** Settings → About → Engine log, or the file above. UI errors land there as `[ui error]`.

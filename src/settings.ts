@@ -409,8 +409,11 @@ async function aboutPage(): Promise<HTMLElement[]> {
   const keys = el("div", { className: "shortcuts" }, ...[
     ["⌘N", "New chat"],
     ["⌘,", "Settings"],
-    ["⌘\\", "Show or hide the sidebar"],
-    ["Esc", "Stop a reply · close Settings"],
+    ["⌘B / ⌘\\", "Show or hide the sidebar"],
+    ["⌘⌥B", "Show or hide the canvas"],
+    ["⌘⇧F", "Canvas full view / split view"],
+    ["⌘⇧B", "Cycle canvas layouts"],
+    ["Esc", "Stop a reply · close Settings or canvas"],
     ["⇧↩", "New line in a message"],
   ].map(([k, v]) => el("div", {}, el("kbd", { textContent: k! }), el("span", { textContent: v! }))));
   // Inside a block of its own, so it lines up with the page's column.

@@ -48,3 +48,19 @@ export async function openExternal(href: string): Promise<void> {
 export async function revealPath(path: string): Promise<void> {
   if (inTauri) await revealItemInDir(path);
 }
+
+/** WebKit downloads need a native handler; keep export consistent in the app. */
+export async function downloadMarkdown(filename: string, content: string): Promise<void> {
+  if (inTauri) {
+    await invoke("save_canvas", { filename, content });
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([content], { type: "text/markdown;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}

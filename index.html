@@ -21,7 +21,8 @@
             New chat
           </button>
         </div>
-        <nav id="chats" class="chats"></nav>
+        <div class="side-pages"><button type="button" class="quiet" id="open-artifacts" aria-current="false"></button></div>
+        <nav id="chats" class="chats" aria-label="Recent chats"></nav>
         <div class="side-foot">
           <button type="button" class="quiet" id="open-settings" title="Settings (⌘,)">
             <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -30,6 +31,7 @@
         </div>
       </aside>
 
+      <div class="workspace" id="workspace">
       <section class="main">
         <div class="drag" data-tauri-drag-region>
           <button type="button" class="icon-btn" id="expand" title="Show sidebar (⌘\)" aria-label="Show sidebar"></button>
@@ -46,6 +48,27 @@
           </div>
         </form>
       </section>
+      <div id="canvas-resize" class="canvas-resize" role="separator" aria-label="Resize canvas" aria-orientation="vertical" tabindex="0" hidden></div>
+      <aside id="canvas" class="canvas" aria-label="Canvas" hidden>
+        <header class="canvas-head">
+          <div class="canvas-heading"><span class="canvas-label">Canvas</span><select id="canvas-pick" aria-label="Choose canvas"></select><h2 id="canvas-title" class="sr-only"></h2></div>
+          <button type="button" class="icon-btn" id="canvas-expand" aria-label="Enter full view" title="Enter full view (⌘⇧F)" aria-pressed="false"></button>
+          <button type="button" class="icon-btn" id="canvas-close" aria-label="Close canvas" title="Close canvas (Esc)"></button>
+        </header>
+        <div class="canvas-toolbar" role="group" aria-label="Canvas controls">
+          <div class="seg" role="group" aria-label="Canvas view">
+            <button type="button" id="canvas-preview" aria-pressed="true">Preview</button>
+            <button type="button" id="canvas-text" aria-pressed="false">Text</button>
+          </div>
+          <span class="canvas-feedback" id="canvas-feedback" role="status"></span>
+          <button type="button" class="icon-btn" id="canvas-copy" aria-label="Copy as text" title="Copy as text"></button>
+          <button type="button" class="icon-btn" id="canvas-download" aria-label="Download Markdown" title="Download Markdown"></button>
+        </div>
+        <div id="canvas-content" class="canvas-content"></div>
+        <pre id="canvas-text-content" class="canvas-text-content" tabindex="0" aria-label="Canvas as text" hidden></pre>
+      </aside>
+      </div>
+      <section id="artifacts-page" class="artifacts-page" aria-label="Artifacts" hidden></section>
     </div>
 
     <div id="settings" class="settings-page" hidden>

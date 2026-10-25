@@ -6,7 +6,7 @@
 // keep data in <repo>/.vak/desktop. Release builds run the bundled Node binary
 // and bundled sidecar, with data in the OS app-data directory.
 
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
@@ -61,6 +61,66 @@ fn autostart(app: AppHandle, enable: Option<bool>) -> Result<bool, String> {
         None => {}
     }
     launcher.is_enabled().map_err(|e| e.to_string())
+}
+
+/// A toolbar click exports text to Downloads. Never accept a caller's path or
+/// overwrite an existing file, including a symlink, when titles repeat.
+#[tauri::command]
+fn save_canvas(app: AppHandle, filename: String, content: String) -> Result<(), String> {
+    let dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    write_canvas(&dir, &filename, &content)
+}
+
+fn write_canvas(dir: &std::path::Path, filename: &str, content: &str) -> Result<(), String> {
+    let stem = filename.strip_suffix(".md").ok_or("expected a Markdown filename")?;
+    if stem.is_empty() || stem.len() > 240 || !stem.chars().all(|c| c.is_alphanumeric() || " _-".contains(c)) {
+        return Err("invalid download filename".into());
+    }
+    for index in 0..1000 {
+        let name = if index == 0 { filename.to_owned() } else { format!("{stem} ({index}).md") };
+        let path = dir.join(name);
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                if let Err(e) = file.write_all(content.as_bytes()) {
+                    let _ = std::fs::remove_file(&path);
+                    return Err(e.to_string());
+                }
+                return Ok(());
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Err("too many downloads with this title".into())
+}
+
+#[cfg(test)]
+mod canvas_tests {
+    use super::write_canvas;
+
+    #[test]
+    fn exports_cannot_escape_downloads_or_overwrite_files_and_symlinks() {
+        let root = std::env::temp_dir().join(format!("vak-export-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let dir = root.join("downloads");
+        std::fs::create_dir_all(&dir).unwrap();
+        write_canvas(&dir, "Report.md", "first").unwrap();
+        write_canvas(&dir, "Report.md", "second").unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("Report.md")).unwrap(), "first");
+        assert_eq!(std::fs::read_to_string(dir.join("Report (1).md")).unwrap(), "second");
+        assert!(write_canvas(&dir, "../escape.md", "bad").is_err());
+        assert!(write_canvas(&dir, "wrong.html", "bad").is_err());
+        assert!(!root.join("escape.md").exists());
+        #[cfg(unix)]
+        {
+            let target = root.join("keep.txt");
+            std::fs::write(&target, "keep").unwrap();
+            std::os::unix::fs::symlink(&target, dir.join("Link.md")).unwrap();
+            write_canvas(&dir, "Link.md", "new").unwrap();
+            assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
+            assert_eq!(std::fs::read_to_string(dir.join("Link (1).md")).unwrap(), "new");
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 fn show_main(app: &AppHandle) {
@@ -185,7 +245,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![backend, set_keep_running, autostart])
+        .invoke_handler(tauri::generate_handler![backend, set_keep_running, autostart, save_canvas])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if KEEP_RUNNING.load(Ordering::Relaxed) {

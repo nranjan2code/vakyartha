@@ -63,6 +63,50 @@ code { font: 0.88em ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 body.collapsed .app { grid-template-columns: 0 minmax(0, 1fr); }
 body.collapsed .sidebar { visibility: hidden; }
 
+/* A canvas is app chrome around the same live surface used in the thread. */
+.workspace[hidden] { display: none; }
+.workspace { display: flex; min-width: 0; min-height: 0; container: workspace / inline-size; }
+.workspace > .main { flex: 1; }
+.canvas { flex: none; width: var(--canvas-width, 56%); min-width: 0; display: flex; flex-direction: column; background: var(--panel); }
+.canvas[hidden], .canvas-resize[hidden] { display: none; }
+.canvas-head { flex: none; display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+.canvas-heading { flex: 1; min-width: 0; }
+.canvas-label { display: block; font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.canvas-heading h2 { font-size: .95rem; font-weight: 600; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-content { flex: 1; min-height: 0; overflow: auto; padding: 24px; }
+.canvas-content > vak-surface { display: block; max-width: 1400px; margin: auto; }
+.canvas-content[hidden], .canvas-text-content[hidden] { display: none; }
+.canvas-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+.canvas-toolbar .seg { background: var(--bg); }
+.canvas-feedback { flex: 1; min-width: 0; text-align: right; font-size: .75rem; color: var(--muted); }
+.canvas-text-content { flex: 1; min-height: 0; margin: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 24px; font: .86rem/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
+#canvas-pick { width: 100%; min-width: 0; border: 0; background: transparent; font-size: .95rem; font-weight: 600; padding: 0 16px 0 0; text-overflow: ellipsis; cursor: pointer; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.canvas-resize { flex: none; width: 6px; background: var(--border); cursor: col-resize; touch-action: none; }
+.canvas-resize:hover, .canvas-resize:focus-visible, .resizing .canvas-resize { background: var(--accent); }
+.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none; }
+.resizing vak-surface { pointer-events: none; }
+.canvas-expanded > .main, .canvas-expanded > .canvas-resize { display: none; }
+.canvas-expanded > .canvas { width: 100%; }
+body.collapsed .canvas-expanded .canvas-head { padding-left: 84px; }
+.surface-home { min-width: 0; }
+.surface-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.surface-head > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; color: var(--muted); }
+.surface-head > button { flex: none; }
+.surface-home.in-canvas { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); padding: 12px; }
+.surface-home.in-canvas .surface-head { margin: 0; }
+@container workspace (max-width: 720px) {
+  .canvas-open > .main, .canvas-open > .canvas-resize { display: none; }
+  .canvas-open > .canvas { width: 100%; }
+  .canvas-content { padding: 16px; }
+  #canvas-expand { display: none; }
+  .canvas-head { padding-top: var(--titlebar); }
+}
+@media (max-width: 720px) {
+  .app:has(.canvas-open) { grid-template-columns: 0 minmax(0, 1fr); }
+  .app:has(.canvas-open) > .sidebar { visibility: hidden; }
+}
+
 /* sidebar */
 .sidebar { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; background: var(--side); border-right: 1px solid var(--border); }
 /* The mark sits right of the macOS traffic lights. */
@@ -71,6 +115,8 @@ body.collapsed .sidebar { visibility: hidden; }
 .brand img { border-radius: 5px; }
 .empty-mark { display: block; margin: 0 auto 14px; border-radius: 15px; box-shadow: 0 6px 24px var(--shadow); }
 .side-head { padding: 0 10px 8px; }
+.side-pages { padding: 0 10px 8px; }
+#open-artifacts[aria-current="page"] { color: var(--fg); background: var(--hover); }
 .new, .quiet {
   display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
   background: none; border: 0; border-radius: 8px; padding: 7px 10px; cursor: pointer; font-size: 0.9rem;
@@ -96,6 +142,62 @@ body.collapsed .sidebar { visibility: hidden; }
 /* The expand button sits right of the macOS traffic lights, only while the sidebar is hidden. */
 #expand { display: none; }
 body.collapsed #expand { display: grid; }
+
+/* The library keeps growing without taking space from chat navigation. */
+.artifacts-page { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
+.artifacts-page[hidden] { display: none; }
+.artifacts-top { height: 54px; flex: none; display: flex; align-items: center; gap: 10px; justify-content: flex-end; padding: 10px 28px; }
+.artifacts-sidebar { display: none; margin-right: auto; }
+body.collapsed .artifacts-sidebar { display: grid; margin-left: 58px; }
+.artifacts-body { flex: 1; min-height: 0; overflow-y: auto; padding: 28px clamp(20px, 4vw, 56px) 48px; }
+.artifacts-body > * { max-width: 1120px; margin-left: auto; margin-right: auto; }
+.artifacts-intro { position: relative; padding-right: 65px; margin-bottom: 30px; }
+.artifacts-intro h1 { margin: 0 0 6px; font-size: 2rem; font-weight: 650; letter-spacing: -.035em; }
+.artifacts-intro p { margin: 0; color: var(--muted); font-size: .92rem; }
+.artifacts-mark { position: absolute; right: 0; top: 4px; width: 48px; height: 48px; border: 1px solid var(--border); border-radius: 14px; display: grid; place-items: center; color: var(--accent); background: var(--panel); }
+.artifacts-search-row { display: flex; gap: 12px; margin-bottom: 16px; }
+.artifact-search { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; background: var(--panel); color: var(--muted); }
+.artifact-search input { width: 100%; min-width: 0; border: 0; outline: none; background: transparent; font-size: .88rem; }
+.artifact-search:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
+.artifacts-search-row select { flex: none; max-width: 150px; border: 1px solid var(--border); border-radius: 10px; padding: 8px; background: var(--panel); font-size: .82rem; }
+.artifact-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 22px; }
+.artifact-filter { border: 1px solid transparent; border-radius: 8px; padding: 5px 11px; background: none; color: var(--muted); font-size: .82rem; cursor: pointer; }
+.artifact-filter:hover { background: var(--hover); }
+.artifact-filter[aria-pressed="true"] { border-color: var(--border); background: var(--panel); color: var(--fg); box-shadow: 0 1px 2px var(--shadow); }
+.artifacts-results { color: var(--muted); font-size: .76rem; margin-bottom: 12px; }
+.artifacts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(225px, 100%), 1fr)); gap: 18px; }
+.artifact-card { min-width: 0; padding: 0; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--panel); text-align: left; cursor: pointer; transition: border-color 120ms, box-shadow 120ms; }
+.artifact-card:hover, .artifact-card:focus-visible { border-color: var(--accent); box-shadow: 0 5px 18px var(--shadow); }
+.artifact-card:disabled { opacity: .65; cursor: wait; }
+.artifact-cover { --artifact-tint: var(--accent); position: relative; display: grid; place-items: center; height: 130px; background: color-mix(in srgb, var(--artifact-tint) 6%, var(--bg)); border-bottom: 1px solid var(--border); }
+.artifact-card[data-kind="Form"] .artifact-cover { --artifact-tint: light-dark(#b45309, #e9a466); }
+.artifact-card[data-kind="Dashboard"] .artifact-cover { --artifact-tint: light-dark(#0e7490, #22d3ee); }
+.artifact-card[data-kind="Table"] .artifact-cover { --artifact-tint: light-dark(#15803d, #83c69c); }
+.artifact-card[data-kind="Gallery"] .artifact-cover { --artifact-tint: light-dark(#be185d, #d79ec9); }
+.artifact-symbol { display: grid; place-items: center; width: 64px; height: 70px; color: var(--artifact-tint); background: var(--panel); border: 1px solid color-mix(in srgb, var(--artifact-tint) 20%, var(--border)); border-radius: 12px; box-shadow: 0 4px 12px var(--shadow); }
+.artifact-kind { position: absolute; top: 10px; left: 12px; font-size: .67rem; color: var(--muted); }
+.artifact-card-body { display: flex; flex-direction: column; gap: 5px; padding: 15px 16px 12px; }
+.artifact-card-body strong { font-size: .95rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-chat { font-size: .78rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; font-size: .7rem; color: var(--faint); }
+.artifact-open { color: var(--accent); }
+.artifacts-more { text-align: center; margin-top: 24px; }
+.artifact-empty { grid-column: 1 / -1; text-align: center; padding: 56px 16px; color: var(--muted); }
+.artifact-empty > svg { color: var(--faint); }
+.artifact-empty h2 { color: var(--fg); font-size: 1.15rem; font-weight: 600; margin: 14px 0 8px; }
+.artifact-empty p { max-width: 360px; margin: 0 auto 20px; font-size: .88rem; }
+.artifact-skeleton { height: 255px; border-radius: 14px; border: 1px solid var(--border); background: linear-gradient(var(--hover) 0 130px, var(--panel) 130px); }
+@media (max-width: 720px) {
+  .in-artifacts .app { grid-template-columns: 0 minmax(0, 1fr); }
+  .in-artifacts .sidebar { visibility: hidden; }
+  .in-artifacts .artifacts-sidebar { display: grid; margin-left: 58px; }
+  .in-artifacts.artifacts-show-sidebar .app { grid-template-columns: 240px minmax(0, 1fr); }
+  .in-artifacts.artifacts-show-sidebar .sidebar { visibility: visible; }
+  .artifacts-top { padding-left: 12px; padding-right: 16px; }
+  .artifacts-body { padding-top: 16px; }
+  .artifacts-search-row { flex-wrap: wrap; }
+  .artifacts-search-row select { max-width: 100%; }
+}
 .thread { flex: 1; overflow-y: auto; padding: 8px 24px 24px; display: flex; flex-direction: column; gap: 20px; }
 .thread > * { width: 100%; max-width: 980px; margin: 0 auto; }
 .empty { margin: auto; text-align: center; }
