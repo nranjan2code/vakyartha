@@ -4,7 +4,11 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
-Built on Projection `3cd169d`.
+Built on Projection `1ef9010`.
+
+- **Graph view:** asking to see something "as a graph" (your memory, an org chart, dependencies) draws an interactive node-and-edge diagram in the canvas: drag to pan, pinch or Ctrl/⌘-scroll to zoom, Fit, keyboard, draggable nodes, and selecting a node shows its notes. It fits split, full-screen and narrow windows, and reads as a list of connections on Telegram and in text.
+- **Tavily integration:** Tavily's hosted MCP server joins Settings → Integrations: web search, page extraction, site map and crawl, and research reports. Add a Tavily API key (kept in the Keychain, sent as a header); every call asks first, as for any tool that reaches the internet.
+- **Richer components on the local model:** the 4B model now gets the timeline, steps, map, code, gallery or graph component when you ask for one by name, instead of falling back to cards.
 
 - **Integrations run on the framework:** installing, configuring and running MCP servers moved to Projection's `Integrations` (`@vak/mcp/client`); `sidecar/integrations.ts` keeps only the app's catalog. Nothing changes in Settings → Integrations, and servers already installed keep working (same folders and `integrations.json`). One visible detail: a server you add is described as "not reviewed" instead of "vak has not reviewed it".
 - From Projection `c575cd2`: the surface you see no longer gets worse while a model retries.
