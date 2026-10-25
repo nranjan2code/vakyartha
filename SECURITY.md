@@ -4,7 +4,7 @@ What the app protects, from whom, and how. Rules for changing code are in [AGENT
 
 ## What there is to protect
 
-- **API keys** for model providers, integrations (GitHub, Notion, Brave) and channels (Telegram).
+- **API keys** for model providers, integrations (GitHub, Notion, Brave, Tavily) and channels (Telegram).
 - **The user's data**: chats, files the Files integration can see, accounts reachable through integrations.
 - **The machine**: the app runs model-chosen requests and third-party MCP servers on it.
 

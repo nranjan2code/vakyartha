@@ -78,6 +78,20 @@ export const CATALOG: CatalogEntry[] = [
     config: [{ key: "apiKey", label: "Brave Search API key", kind: "secret", required: true, env: "BRAVE_API_KEY", help: "From api-dashboard.search.brave.com (a free plan exists)." }],
   },
   {
+    id: "tavily",
+    name: "Tavily",
+    publisher: "Tavily",
+    trust: "vendor",
+    summary: "Search, read and research the web.",
+    description: "Tavily's own remote MCP server: web search tuned for AI answers, clean text from pages, site maps and crawls, and multi-source research reports, so answers cite current sources.",
+    homepage: "https://github.com/tavily-ai/tavily-mcp",
+    icon: "search",
+    access: ["Sends your searches and the pages to read to Tavily", "Needs a Tavily API key; each call uses your Tavily credits", "Asks before each call unless you allow it for the chat"],
+    // The hosted server rather than the npm package: nothing third-party runs here, and the key travels in a header, never the URL.
+    source: { kind: "http", url: "https://mcp.tavily.com/mcp/" },
+    config: [{ key: "apiKey", label: "Tavily API key", kind: "secret", required: true, header: { name: "authorization", format: "Bearer {value}" }, help: "From app.tavily.com (a free plan exists)." }],
+  },
+  {
     id: "github",
     name: "GitHub",
     publisher: "GitHub",
