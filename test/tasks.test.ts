@@ -32,7 +32,7 @@ test("tasks run through one canonical host, retain multiple interactive surfaces
   const deps = { dir: path.join(dir, "tasks"), run: host.run, view: host.view, tools: async () => [], instructions: () => "test", observe: async (_session: string, work: () => Promise<void>) => work(), ready: () => {}, warn: () => {} };
   let tasks = await Tasks.open(deps);
   try {
-    const t = await tasks.create({ goal: "Create two forms and a table", criteria: "All three are usable", provider: "scripted", model: "fake", integrations: [] });
+    const t = await tasks.create({ goal: "Create two forms and a table", criteria: "All three are usable", provider: "scripted", model: "fake", spending: { kind: "local_only" }, integrations: [] });
     await until(() => tasks.get(t.id).state === "needs_input");
     const view = await host.view(t.session);
     assert.equal(view.surfaces.length, 3);
@@ -72,7 +72,7 @@ test("task approvals are exact, one-time decisions; cancellation preserves uncer
   };
   tasks = await Tasks.open(deps);
   try {
-    const t = await tasks.create({ goal: "Remember a fact", criteria: "Review fact", provider: "scripted", model: "fake", integrations: ["memory"] });
+    const t = await tasks.create({ goal: "Remember a fact", criteria: "Review fact", provider: "scripted", model: "fake", spending: { kind: "local_only" }, integrations: ["memory"] });
     await until(() => tasks.get(t.id).state === "needs_approval");
     const pending = tasks.get(t.id).approval!;
     assert.deepEqual(pending.args, { value: "test" });
@@ -104,7 +104,7 @@ test("tool limits count calls independently of model rounds and stop before the 
     run: async (_input, options) => { for (let i = 0; i < 50; i++) await options.tools![0]!.execute({}, { signal: options.signal, callId: `op-${i}` }); return { stop: "end" }; },
   });
   try {
-    const t = await tasks.create({ goal: "test", criteria: "test", provider: "p", model: "m", integrations: ["time"] });
+    const t = await tasks.create({ goal: "test", criteria: "test", provider: "p", model: "m", spending: { kind: "local_only" }, integrations: ["time"] });
     await until(() => tasks.get(t.id).state === "failed");
     assert.equal(calls, 24);
     assert.equal(tasks.get(t.id).operations.length, 24);
@@ -116,7 +116,7 @@ test("task admission fails closed for invalid input and unavailable capabilities
   const tasks = await Tasks.open({ dir, run: async () => ({ stop: "end" }), view: async (id) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }), tools: async () => [], instructions: () => "", observe: async (_session, work) => work(), ready: () => { throw new Error("Capability unavailable"); }, warn: () => {} });
   try {
     await assert.rejects(tasks.create({ goal: "Missing criteria" }), /required/);
-    await assert.rejects(tasks.create({ goal: "test", criteria: "test", model: "m", provider: "p", integrations: ["unknown"] }), /unavailable/);
+    await assert.rejects(tasks.create({ goal: "test", criteria: "test", model: "m", provider: "p", spending: { kind: "local_only" }, integrations: ["unknown"] }), /unavailable/);
     assert.deepEqual(tasks.list(), []);
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });
@@ -124,7 +124,7 @@ test("task admission fails closed for invalid input and unavailable capabilities
 test("typed input and journal boundaries reject invalid combinations and unsupported versions", () => {
   assert.throws(() => parseTaskInput({ id: "x", message: "hi", action: { surface: "s", source: "a", data: {} }, revision: 1 }));
   assert.throws(() => parseTaskInput({ id: "x", action: { surface: "s", source: "a", data: {} }, revision: -1 }));
-  assert.throws(() => parseTaskView({ version: 4 }));
+  assert.throws(() => parseTaskView({ version: 5 }));
   assert.throws(() => parseTaskView({ version: 1, state: "__proto__" }));
 });
 
@@ -133,7 +133,7 @@ test("interrupted journals expire approval authority and require reconciliation 
   const deps = { dir, run: async () => ({ stop: "end" }), view: async (id: string) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }), tools: async () => [], instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), ready: () => {}, warn: () => {} };
   let tasks = await Tasks.open(deps);
   try {
-    const task = await tasks.create({ goal: "test", criteria: "test", provider: "p", model: "m", integrations: [] });
+    const task = await tasks.create({ goal: "test", criteria: "test", provider: "p", model: "m", spending: { kind: "local_only" }, integrations: [] });
     await until(() => tasks.get(task.id).state === "needs_input"); await tasks.close();
     const file = path.join(dir, `${task.id}.json`), journal = parseTaskView(JSON.parse(await readFile(file, "utf8")));
     journal.state = "needs_approval";
@@ -160,7 +160,7 @@ test("deletion refuses active/stale tasks and requires acknowledgement before re
   const deps = { dir, run: async () => { await gate; return { stop: "end" }; }, remove: async (id: string) => { removed.push(id); }, view: async (id: string) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }), tools: async () => [], instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), ready: () => {}, warn: () => {} };
   let tasks = await Tasks.open(deps);
   try {
-    const task = await tasks.create({ goal: "test", criteria: "test", provider: "p", model: "m", integrations: [] });
+    const task = await tasks.create({ goal: "test", criteria: "test", provider: "p", model: "m", spending: { kind: "local_only" }, integrations: [] });
     await until(() => tasks.get(task.id).state === "running");
     await assert.rejects(tasks.remove(task.id, { revision: tasks.get(task.id).revision }), /Cancel/);
     release(); await until(() => tasks.get(task.id).state === "needs_input"); await tasks.close();
@@ -200,9 +200,9 @@ for (const outcome of ["allow", "revoked", "cancel"] as const) {
     };
     tasks = await Tasks.open(tasksDeps);
     try {
-      const first = await tasks.create({ goal: "First", criteria: "Review", provider: "p", model: "m", integrations: ["memory"] });
+      const first = await tasks.create({ goal: "First", criteria: "Review", provider: "p", model: "m", spending: { kind: "local_only" }, integrations: ["memory"] });
       await until(() => tasks.get(first.id).state === "needs_approval");
-      const second = await tasks.create({ goal: "Second", criteria: "Review", provider: "p", model: "m", integrations: [] });
+      const second = await tasks.create({ goal: "Second", criteria: "Review", provider: "p", model: "m", spending: { kind: "local_only" }, integrations: [] });
       await until(() => secondActive);
       await tasks.answer(first.id, "permission-slot", "allow");
       await until(() => tasks.get(first.id).state === "queued");
@@ -245,9 +245,9 @@ test("shutdown aborts suspended approvals and a running peer without replaying e
   };
   tasks = await Tasks.open(deps);
   try {
-    const first = await tasks.create({ goal: "First", criteria: "Review", provider: "p", model: "m", integrations: [] });
+    const first = await tasks.create({ goal: "First", criteria: "Review", provider: "p", model: "m", spending: { kind: "local_only" }, integrations: [] });
     await until(() => tasks.get(first.id).state === "needs_approval");
-    const second = await tasks.create({ goal: "Second", criteria: "Review", provider: "p", model: "m", integrations: [] });
+    const second = await tasks.create({ goal: "Second", criteria: "Review", provider: "p", model: "m", spending: { kind: "local_only" }, integrations: [] });
     await until(() => calls === 2);
     await tasks.close();
     tasks = await Tasks.open(deps);
@@ -264,7 +264,7 @@ test("run history retains distinct input identities and outcomes without copying
   const deps = { dir, ready: () => {}, warn: () => {}, instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), tools: async () => [], view: async (id: string) => ({ id, title: "", updated: "", timeline: [{ kind: "assistant" as const, text: "Result", surfaces: [], notes: [], status: "end", at: resultAt }], surfaces: [] }), run: async () => { resultAt = new Date().toISOString(); return { stop: "end" }; } };
   let tasks = await Tasks.open(deps);
   try {
-    const t = await tasks.create({ goal: "First", criteria: "Review", provider: "p", model: "m", integrations: [] });
+    const t = await tasks.create({ goal: "First", criteria: "Review", provider: "p", model: "m", spending: { kind: "local_only" }, integrations: [] });
     await until(() => tasks.get(t.id).state === "needs_input");
     await tasks.input(t.id, { id: "continuation", message: "Check it again" });
     await until(() => tasks.get(t.id).state === "needs_input");
@@ -293,7 +293,7 @@ test("run admission reserves queued capacity and refuses continuations past the 
   const deps = { dir, ready: () => {}, warn: () => {}, instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), tools: async () => [], view: async (id: string) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }), run: async () => { await gate; return { stop: "end" }; } };
   let tasks = await Tasks.open(deps);
   try {
-    const t = await tasks.create({ goal: "Bounded", criteria: "Review", provider: "p", model: "m", integrations: [] });
+    const t = await tasks.create({ goal: "Bounded", criteria: "Review", provider: "p", model: "m", spending: { kind: "local_only" }, integrations: [] });
     await until(() => tasks.get(t.id).state === "needs_input");
     for (let i = 0; i < 30; i++) {
       await tasks.input(t.id, { id: `prior-${i}`, message: "Continue" });
@@ -319,7 +319,7 @@ test("unfinished run records recover with an unknown end time and never invented
   const deps = { dir, ready: () => {}, warn: () => {}, instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), tools: async () => [], view: async (id: string) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }), run: async () => ({ stop: "end" }) };
   let tasks = await Tasks.open(deps);
   try {
-    const t = await tasks.create({ goal: "Recover", criteria: "Review", provider: "p", model: "m", integrations: [] });
+    const t = await tasks.create({ goal: "Recover", criteria: "Review", provider: "p", model: "m", spending: { kind: "local_only" }, integrations: [] });
     await until(() => tasks.get(t.id).state === "needs_input"); await tasks.close();
     const file = path.join(dir, `${t.id}.json`), saved = JSON.parse(await readFile(file, "utf8"));
     saved.runHistory[0].state = "running"; delete saved.runHistory[0].ended; delete saved.runHistory[0].stop;
@@ -341,7 +341,7 @@ test("result acceptance binds explicit evidence to the latest saved result and r
   const deps = { dir, ready: () => {}, warn: () => {}, instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), tools: async () => [], view: async (id: string) => ({ id, title: "", updated: "", timeline: [{ kind: "assistant" as const, text: "Result", at, surfaces: ["report"], notes: [], status: "end" }], surfaces: [structuredClone(surface)] }), run: async () => { if (publish) at = new Date().toISOString(); return { stop: "end" }; } };
   let tasks = await Tasks.open(deps);
   try {
-    const t = await tasks.create({ goal: "Report", criteria: "Verified values", provider: "p", model: "m", integrations: [] });
+    const t = await tasks.create({ goal: "Report", criteria: "Verified values", provider: "p", model: "m", spending: { kind: "local_only" }, integrations: [] });
     await until(() => tasks.get(t.id).state === "needs_input");
     const snapshot = await tasks.review(t.id);
     await assert.rejects(tasks.complete(t.id, { ...snapshot, note: "Checked" }), /Confirm/);

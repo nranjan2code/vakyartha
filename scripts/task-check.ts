@@ -49,9 +49,13 @@ const steps = [
    const p=document.getElementById('model-pick'),v=JSON.stringify(['compatible','scripted']);p.add(new Option('Scripted',v));p.value=v;p.dispatchEvent(new Event('change'));
    document.getElementById('open-schedule').click();document.getElementById('create-schedule').click();
    await wait(()=>!document.getElementById('schedule-compose').hidden&&!document.getElementById('task-create-start').disabled);check(!document.querySelector('dialog[open]'),'creation should be a page');
+   check(document.getElementById('task-spending').value==='local_only','local-only is not the default');
+   document.getElementById('task-spending').value='api_allowed';document.getElementById('task-spending').dispatchEvent(new Event('change'));document.getElementById('task-spending-ack').checked=true;
+   window.dispatchEvent(new Event('vak:model'));check(!document.getElementById('task-spending-ack').checked,'model change retained spending acknowledgement');
+   check(!document.getElementById('task-create-form').checkValidity(),'API charges require no acknowledgement');
    document.getElementById('task-goal').value='Create two independent forms and a table';document.getElementById('task-criteria').value='All three stay interactive';
    const oldIds=(await(await fetch('/api/tasks')).json()).map(t=>t.id);
-   document.getElementById('task-create-form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
+   document.getElementById('task-spending').value='api_allowed';document.getElementById('task-spending').dispatchEvent(new Event('change'));document.getElementById('task-spending-ack').checked=true;document.getElementById('task-create-form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
    await wait(async()=>{const list=await(await fetch('/api/tasks')).json();window.qaTask=list.find(t=>!oldIds.includes(t.id))?.id;return Boolean(window.qaTask)});
    await wait(async()=>(await task()).state==='needs_input');
    await wait(()=>document.querySelector('#schedule-page .schedule-detail-actions'));Array.from(document.querySelectorAll('#schedule-page button')).find(b=>b.textContent==='Open workspace').click();await wait(()=>document.querySelectorAll('vak-surface').length===3);flush();
@@ -118,7 +122,7 @@ const steps = [
    const timing=document.getElementById('schedule-timing');timing.value='once';timing.dispatchEvent(new Event('change'));
    const d=new Date(Date.now()+3600000);document.getElementById('schedule-at').value=new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
    const before=(await(await fetch('/api/tasks')).json()).map(t=>t.id);
-   document.getElementById('task-create-form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
+   document.getElementById('task-spending').value='api_allowed';document.getElementById('task-spending').dispatchEvent(new Event('change'));document.getElementById('task-spending-ack').checked=true;document.getElementById('task-create-form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
    await wait(async()=>{const all=await(await fetch('/api/tasks')).json();window.qaScheduled=all.find(t=>!before.includes(t.id))?.id;return Boolean(window.qaScheduled)});
    await wait(()=>document.querySelector('#schedule-page .schedule-badge.scheduled'));
    check((await(await fetch('/api/tasks/'+window.qaScheduled)).json()).runs===0,'scheduled work ran early');

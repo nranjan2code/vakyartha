@@ -107,8 +107,13 @@
             <p class="hint">Keep the app running and your computer awake. A missed time is held for review. This schedule runs once.</p>
           </section>
           <section class="schedule-section"><div class="schedule-step">03 / THE ACCESS</div><h2>Choose its capabilities</h2><p class="hint">Only selected, ready tools are available. Your integration permissions still apply.</p><div id="task-capabilities" class="schedule-capabilities"></div><button type="button" class="link" id="task-manage-integrations">Manage integrations</button></section>
+          <section class="schedule-section"><div class="schedule-step">04 / SPENDING</div><h2>Set the model spending policy</h2>
+            <label for="task-spending">Model access</label><select id="task-spending"><option value="local_only">Local provider only</option><option value="api_allowed">Allow model API charges</option></select>
+            <label id="task-spending-ack-row" class="schedule-spending-ack" hidden><input type="checkbox" id="task-spending-ack"><span>I allow model API charges for the selected model without an enforced monetary ceiling.</span></label>
+            <p class="hint">Strict monetary ceilings are not supported yet. Local services may have their own upstream or operating costs. Tool/server charges, compute and hosting are separate.</p>
+          </section>
         </div>
-        <aside class="schedule-form-aside"><section class="schedule-section"><h2>Ready when you are</h2><div class="schedule-model-label">MODEL</div><p id="task-create-model"></p><button type="button" class="link" id="task-change-model">Choose model</button><hr><p id="task-create-limits" class="hint"></p><p class="hint">Results wait for your review. You can keep interacting with every form, table and surface.</p><p class="hint">Model usage may have a separate cost.</p><p id="task-create-error" role="alert" class="error"></p><button type="submit" class="primary" id="task-create-start">Start now</button><button type="button" class="ghost" id="task-create-cancel">Back to Schedule</button></section></aside>
+        <aside class="schedule-form-aside"><section class="schedule-section"><h2>Ready when you are</h2><div class="schedule-model-label">MODEL</div><p id="task-create-model"></p><button type="button" class="link" id="task-change-model">Choose model</button><hr><p id="task-create-limits" class="hint"></p><p class="hint">Results wait for your review. You can keep interacting with every form, table and surface.</p><p id="task-create-error" role="alert" class="error"></p><button type="submit" class="primary" id="task-create-start">Start now</button><button type="button" class="ghost" id="task-create-cancel">Back to Schedule</button></section></aside>
       </form>
       </div>
     </div>

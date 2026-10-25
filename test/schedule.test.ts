@@ -8,7 +8,7 @@ import { parseSchedule, scheduleLabel } from "../schedule.ts";
 import { parseTaskView } from "../task-contract.ts";
 
 const schedule = (ms: number) => ({ kind: "once", at: new Date(Date.now() + ms).toISOString(), timezone: "Asia/Kolkata", status: "armed", missed: "review" });
-const input = { goal: "Synthetic scheduled work", criteria: "Review result", provider: "local", model: "fake", integrations: [] };
+const input = { goal: "Synthetic scheduled work", criteria: "Review result", provider: "local", model: "fake", spending: { kind: "local_only" }, integrations: [] };
 async function ready(check: () => boolean): Promise<void> {
   for (let i = 0; i < 400; i++) { if (check()) return; await new Promise((r) => setTimeout(r, 5)); }
   throw new Error("Schedule did not reach expected state");

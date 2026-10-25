@@ -1,5 +1,13 @@
 import { parseSchedule, type OnceSchedule } from "./schedule.ts";
 
+export type TaskSpending = { kind: "local_only" } | { kind: "api_allowed"; acknowledged: true } | { kind: "ceiling"; usd: number };
+export function parseTaskSpending(value: unknown): TaskSpending {
+  const raw = taskObject(value);
+  if (raw.kind === "local_only") return { kind: "local_only" };
+  if (raw.kind === "api_allowed" && raw.acknowledged === true) return { kind: "api_allowed", acknowledged: true };
+  if (raw.kind === "ceiling" && typeof raw.usd === "number" && Number.isFinite(raw.usd) && raw.usd > 0) return { kind: "ceiling", usd: raw.usd };
+  throw new Error("Choose a spending policy and acknowledge any model API charges");
+}
 export type TaskState = "scheduled" | "paused" | "queued" | "running" | "needs_input" | "needs_approval" | "interrupted" | "completed" | "failed" | "cancelled";
 export type TaskInput = { id: string } & (
   | { kind: "message"; message: string; action?: never; revision?: never }
@@ -34,7 +42,7 @@ export interface TaskRun {
 }
 export const TASK_RUN_LABELS: Record<TaskRunState, string> = { running: "In progress", review: "Ready for review", accepted: "Accepted", failed: "Could not finish", cancelled: "Cancelled", interrupted: "Interrupted" };
 export interface TaskView {
-  version: 3;
+  version: 4;
   revision: number;
   id: string;
   session: string;
@@ -44,6 +52,7 @@ export interface TaskView {
   model: string;
   integrations: string[];
   confirmedFree: string[];
+  spending: TaskSpending;
   state: TaskState;
   created: string;
   updated: string;
@@ -96,7 +105,7 @@ export function parseTaskInput(value: unknown): TaskInput {
 }
 export function parseTaskView(value: unknown): TaskView {
   const raw = taskObject(value);
-  if (raw.version !== 3 || !isState(raw.state)) throw new Error("Unsupported task journal version or state");
+  if (raw.version !== 4 || !isState(raw.state)) throw new Error("Unsupported task journal version or state");
   const id = taskString(raw.id, 120), session = taskString(raw.session, 120);
   if (!/^[\w-]+$/.test(id) || session !== id) throw new Error("Invalid task identity");
   const created = taskString(raw.created, 40), updated = taskString(raw.updated, 40);
@@ -122,9 +131,9 @@ export function parseTaskView(value: unknown): TaskView {
   if ((raw.state === "scheduled" && schedule?.status !== "armed") || (raw.state === "paused" && schedule?.status !== "paused")) throw new Error("Schedule state does not match its trigger");
   const note = typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "";
   return {
-    version: 3, revision: integer(raw.revision, Number.MAX_SAFE_INTEGER), id, session, goal: taskString(raw.goal, 8000), criteria: taskString(raw.criteria, 4000), provider: taskString(raw.provider, 120), model: taskString(raw.model, 240),
+    version: 4, revision: integer(raw.revision, Number.MAX_SAFE_INTEGER), id, session, goal: taskString(raw.goal, 8000), criteria: taskString(raw.criteria, 4000), provider: taskString(raw.provider, 120), model: taskString(raw.model, 240),
     integrations: array(raw.integrations, 16).map((v) => taskString(v, 120)), state: raw.state, created, updated, note, runs, runHistory,
-    confirmedFree: array(raw.confirmedFree, 16).map((v) => taskString(v, 120)),
+    spending: parseTaskSpending(raw.spending), confirmedFree: array(raw.confirmedFree, 16).map((v) => taskString(v, 120)),
     pending: array(raw.pending, TASK_LIMITS.pending).map(parseTaskInput), accepted: array(raw.accepted, 256).map((v) => taskString(v, 120)), operations,
     activity: array(raw.activity, 100).map((v) => { const a = taskObject(v); return { at: taskString(a.at, 40), text: taskString(a.text, 1000) }; }),
     ...(schedule ? { schedule } : {}),

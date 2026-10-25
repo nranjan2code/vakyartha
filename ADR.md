@@ -94,7 +94,7 @@ Status: implemented bounded slice, 2026-10-26. Owner: Vakyartha.
 
 Task identity, execution identity and trigger state are distinct. Each admitted attempt receives a run ID, sequence and accepted input identity/kind. Store its start/end timestamps, recorded active milliseconds, tool-call count, stop reason and reviewed/accepted/failed/cancelled/interrupted outcome in the existing task journal. Operations reference their run ID. Schedule detail exposes expandable records alongside the task lifecycle. User acceptance applies to the latest reviewed run; a clean model stop alone never means the task is complete.
 
-Do not copy conversations, surfaces or memory into run records. They continue to reference the canonical session, and historical surface snapshots are not promised. Use one strict schema (task journal version 3), with a complete ordered record for every run. No legacy adapters or migrations are needed before launch. Reject incompatible development journals explicitly; never delete them automatically. An unfinished record recovered after restart is interrupted, with recovery time and an unknown end time. Recovery still does not replay work or retain authority.
+Do not copy conversations, surfaces or memory into run records. They continue to reference the canonical session, and historical surface snapshots are not promised. Use one strict schema (task journal version 4), with a complete ordered record for every run. No legacy adapters or migrations are needed before launch. Reject incompatible development journals explicitly; never delete them automatically. An unfinished record recovered after restart is interrupted, with recovery time and an unknown end time. Recovery still does not replay work or retain authority.
 
 This preserves the temporary 32-run task bound, counts queued reservations before accepting inputs, and keeps the existing single journal writer. It does not yet provide sustained retention, lifetime deduplication or recurring execution; P3.10 remains open. Those require a deliberate migration/retention design before removing the lifetime bound. No package, crate, process or IPC path is added.
 
@@ -116,4 +116,17 @@ A clean run or rendered interface cannot certify completion. Review opens a full
 
 Acceptance requires a current task revision/run and a fingerprint of the canonical saved timeline and surfaces. Recompute it immediately before acceptance, reject stale/duplicate review, and require a saved assistant result from the latest run. Persist the user's note, review time and evidence references on that run without copying canonical content. The fingerprint detects changes; it is not a truth or authenticity score. Existing surfaces remain interactive after acceptance.
 
-Task schema v3 requires matching review metadata for accepted runs. No backward adapter or automatic development-data deletion is added. Source correctness, automatic criterion verification, output-file receipts and provenance labels remain separate gates (P1.9/P2.7). This uses the public host view API, standard hashing and the existing journal; no new dependency, process or IPC.
+Task schema v4 requires matching review metadata for accepted runs. No backward adapter or automatic development-data deletion is added. Source correctness, automatic criterion verification, output-file receipts and provenance labels remain separate gates (P1.9/P2.7). This uses the public host view API, standard hashing and the existing journal; no new dependency, process or IPC.
+
+
+## ADR-012 — Explicit model spending admission
+
+Status: implemented, 2026-10-26. Owner: Vakyartha.
+
+Every task persists a typed spending policy. New tasks default to a declared local provider with a loopback endpoint. Provider labels alone are insufficient: validate the endpoint from the public registry settings. Model API charges require an explicit acknowledgement; changing the selected model clears it. Keep the task's provider/model fixed with no fallback. Expose the policy in Schedule details and explain it in settings.
+
+Reject strict monetary-ceiling requests before saving/admitting work because current usage reports and prices cannot conservatively enforce them. Do not equate finite run limits with a dollar guarantee. Local services may have upstream or operating charges; tool/server charges, compute and hosting remain separate. Local-only routing is not a total-cost ceiling.
+
+Revalidate at creation, scheduled dispatch, continuation, tool use and approval resumption. At provider construction, check the task-local execution policy against the same captured environment used to construct the provider, so configuration changes cannot bypass admission. Environment snapshots stay inside the app process and never reach MCP servers. This uses existing public provider APIs, the canonical task journal and in-process execution scope; no new dependency or IPC.
+
+Strict task schema v4 requires this policy, with no compatibility adapter or automatic development-data deletion. Cumulative budgets and actual monetary enforcement remain future gates.

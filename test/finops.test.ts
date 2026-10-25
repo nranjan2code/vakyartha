@@ -132,7 +132,12 @@ test("authenticated app HTTP chats record real request metrics and replace recon
   assert.equal(clock.status, 200);
   const clockResult: unknown = await clock.json();
   assert.ok(clockResult && typeof clockResult === "object" && "isError" in clockResult && clockResult.isError === false);
-  const created = await fetch(`${app.url}/api/tasks`, { method: "POST", headers, body: JSON.stringify({ goal: "Synthetic task", criteria: "Review synthetic result", provider: "compatible", model: "fake", integrations: ["time"] }) });
+  for (const spending of [{ kind: "local_only" }, { kind: "api_allowed", acknowledged: false }, { kind: "ceiling", usd: 1 }]) {
+    const blocked = await fetch(`${app.url}/api/tasks`, { method: "POST", headers, body: JSON.stringify({ goal: "Blocked", criteria: "No execution", provider: "compatible", model: "fake", integrations: [], spending }) });
+    assert.equal(blocked.status, 400);
+  }
+  assert.equal(((await (await fetch(`${app.url}/api/finops`, { headers })).json()) as { turns: Turn[] }).turns.length, 1);
+  const created = await fetch(`${app.url}/api/tasks`, { method: "POST", headers, body: JSON.stringify({ goal: "Synthetic task", criteria: "Review synthetic result", provider: "compatible", model: "fake", spending: { kind: "api_allowed", acknowledged: true }, integrations: ["time"] }) });
   assert.equal(created.status, 201);
   const { parseTaskView } = await import("../task-contract.ts");
   const task = parseTaskView(await created.json());

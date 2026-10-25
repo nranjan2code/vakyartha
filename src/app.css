@@ -591,3 +591,7 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 .schedule-review-confirm input { flex: none; margin-top: 5px; }
 .schedule-review-form > button { justify-self: start; }
 .schedule-run blockquote { margin: 14px 0; padding-left: 16px; border-left: 2px solid var(--accent); white-space: pre-wrap; }
+
+.schedule-form .schedule-spending-ack { display: flex; align-items: flex-start; gap: 12px; font-weight: 400; }
+.schedule-spending-ack input { flex: none; margin-top: 5px; }
+.schedule-form .schedule-spending-ack[hidden] { display: none; }

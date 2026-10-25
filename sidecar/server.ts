@@ -15,6 +15,7 @@ import { createIntegrations } from "./integrations.ts";
 import { runUsage } from "../finops.ts";
 import { Finops } from "./finops.ts";
 import { fileSecrets, keychainStore, Settings, SettingsError } from "./settings.ts";
+import { checkTaskSpending } from "./task-policy.ts";
 import { Tasks } from "./tasks.ts";
 
 export interface AppServerOptions {
@@ -168,7 +169,15 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
       finops.session(session);
       return integrations?.toolsFor(session) ?? [];
     },
-    providers: () => finops.providers(providersFromEnv()),
+    providers: () => {
+      // Bind admission checks and provider construction to the same configuration.
+      const env = { ...process.env };
+      return finops.providers(providersFromEnv(env).map((entry) => ({ ...entry, make: (options) => {
+        const spending = tasks?.providerSpending(entry.id);
+        if (spending) checkTaskSpending(entry, spending, env);
+        return entry.make(options);
+      } })));
+    },
     profiles,
     instructions: INSTRUCTIONS,
     transcripts: opts.transcriptsDir ?? path.join(dataDir, "transcripts"),
@@ -191,8 +200,10 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     observe: (session, work, run) => finops.chat(async () => { finops.session(session); await work(); }, run), warn: log,
     permissionRevision: (server) => integrationRevisions.get(server) ?? 0,
     permitted: (server, tool) => integrations!.view().some((i) => i.entry.id === server && i.enabled && i.status === "ready" && i.tools.some((t) => t.name === tool && t.policy !== "off")),
-    ready(provider, model, selected, confirmedFree) {
-      if (!model || !providersFromEnv().some((p) => p.id === provider && p.available)) throw new Error("Choose an available model");
+    ready(provider, model, selected, confirmedFree, spending) {
+      const chosen = providersFromEnv().find((p) => p.id === provider && p.available);
+      if (!model || !chosen) throw new Error("Choose an available model");
+      checkTaskSpending(chosen, spending, process.env);
       const available = integrations!.view();
       for (const id of selected) if (!available.some((i) => i.entry.id === id && i.enabled && i.status === "ready" && (freeCapabilities.has(id) || (i.entry.trust === "custom" && confirmedFree.includes(id))))) throw new Error("Choose a ready free capability, or verify the cost of your own configured server");
     },

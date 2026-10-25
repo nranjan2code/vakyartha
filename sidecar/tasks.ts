@@ -5,7 +5,7 @@ import path from "node:path";
 import type { AgentEvent } from "@vak/core";
 import type { HostRunOptions, HostTurn, SessionView } from "@vak/host";
 import type { AgentTool } from "@vak/providers";
-import { TASK_LIMITS, parseReviewSnapshot, type ReviewSnapshot, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskRun, type TaskRunIdentity } from "../task-contract.ts";
+import { TASK_LIMITS, parseTaskSpending, type TaskSpending, parseReviewSnapshot, type ReviewSnapshot, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskRun, type TaskRunIdentity } from "../task-contract.ts";
 import { parseSchedule, SCHEDULE_GRACE_MS } from "../schedule.ts";
 
 interface Dependencies {
@@ -16,7 +16,7 @@ interface Dependencies {
   tools(session: string): Promise<AgentTool[]>;
   instructions(): string;
   observe(session: string, work: () => Promise<void>, run: TaskRunIdentity): Promise<void>;
-  ready(provider: string, model: string, integrations: string[], confirmedFree: string[]): void;
+  ready(provider: string, model: string, integrations: string[], confirmedFree: string[], spending: TaskSpending): void;
   permissionRevision?(server: string): number;
   permitted?(server: string, tool: string): boolean;
   warn(message: string): void;
@@ -76,6 +76,12 @@ export class Tasks {
   get(id: string): TaskView { const t = this.tasks.get(id); if (!t) throw new Error("Task not found"); return this.copy(t); }
   owns(session: string): boolean { return this.tasks.has(session); }
   inTask(): boolean { return Boolean(this.scope.getStore()); }
+  providerSpending(id: string): TaskSpending | undefined {
+    const e = this.scope.getStore();
+    if (!e) return undefined;
+    if (e.ctrl.signal.aborted || id !== e.task.provider) throw new Error("Task stopped or provider changed");
+    return e.task.spending;
+  }
   private copy(t: TaskView): TaskView { return structuredClone(t); }
 
   private persist(t: TaskView): Promise<void> {
@@ -113,11 +119,13 @@ export class Tasks {
     if (!goal || !criteria || !provider || !model || !Array.isArray(body.integrations) || body.integrations.length > 16 || !body.integrations.every(identifier)) throw new Error("Goal, completion criteria, model and explicit tool selection are required");
     const integrations = [...new Set(body.integrations as string[])];
     const confirmedFree = Array.isArray(body.confirmedFree) && body.confirmedFree.length <= 16 && body.confirmedFree.every(identifier) ? [...new Set(body.confirmedFree as string[])] : [];
-    this.deps.ready(provider, model, integrations, confirmedFree);
+    const spending = parseTaskSpending(body.spending);
+    if (spending.kind === "ceiling") throw new Error("Strict monetary ceilings cannot be enforced yet. No task was started.");
+    this.deps.ready(provider, model, integrations, confirmedFree, spending);
     const schedule = body.schedule === undefined ? undefined : parseSchedule(body.schedule);
     if (schedule && (schedule.status !== "armed" || Date.parse(schedule.at) <= Date.now())) throw new Error("Choose a future date and time");
     const id = randomUUID(), at = new Date().toISOString();
-    const t: TaskView = { version: 3, revision: 0, id, session: id, goal, criteria, provider, model, integrations, confirmedFree, state: "queued", created: at, updated: at, note: "Waiting to start", runs: 0, runHistory: [], pending: [{ id: randomUUID(), kind: "message", message: goal }], activity: [], operations: [], accepted: [] };
+    const t: TaskView = { version: 4, revision: 0, id, session: id, goal, criteria, provider, model, integrations, confirmedFree, spending, state: "queued", created: at, updated: at, note: "Waiting to start", runs: 0, runHistory: [], pending: [{ id: randomUUID(), kind: "message", message: goal }], activity: [], operations: [], accepted: [] };
     if (schedule) { t.schedule = schedule; t.state = "scheduled"; t.note = "Will run once at the selected time while this app is running and the computer is awake."; }
     await this.persist(t);
     this.tasks.set(id, t);
@@ -223,10 +231,10 @@ export class Tasks {
     } else if (body.operation === "resume" || body.operation === "reschedule") {
       const schedule = body.operation === "resume" ? t.schedule : parseSchedule(body.schedule);
       if (Date.parse(schedule.at) <= Date.now()) throw new Error("That time has passed. Choose a new time or Run now.");
-      this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
+      this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree, t.spending);
       t.schedule = { ...schedule, status: "armed" }; t.state = "scheduled"; t.note = "Waiting for the selected time";
     } else if (body.operation === "run") {
-      this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
+      this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree, t.spending);
       t.schedule.status = "dispatched"; t.state = "queued"; t.note = "Waiting to run";
     } else throw new Error("Unknown schedule operation");
     this.activity(t, `Schedule ${body.operation}`);
@@ -311,7 +319,7 @@ export class Tasks {
     const run: TaskRun = { id: randomUUID(), sequence: ++t.runs, inputId: input.id, inputKind: input.kind, state: "running", started: new Date().toISOString(), activeMs: 0, toolCalls: 0, note: "Working" };
     t.runHistory.push(run);
     try {
-      this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
+      this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree, t.spending);
       if (input.action) {
         const view = await this.deps.view(t.session);
         if (view.surfaces.find((s) => s.id === input.action!.surface)?.version !== input.revision) throw new Error("This surface changed. Review it and submit again.");
@@ -326,7 +334,7 @@ export class Tasks {
         const tools = (await this.deps.tools(t.session)).filter((tool) => t.integrations.includes(tool.spec.name.split("__")[0]!)).map((tool): AgentTool => ({
           spec: tool.spec,
           execute: async (args, ctx) => {
-            this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
+            this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree, t.spending);
             if (e.ctrl.signal.aborted || t.state === "cancelled" || ++calls > TASK_LIMITS.tools) { e.ctrl.abort(new Error("Tool-call limit reached or task stopped")); throw new Error("Tool-call limit reached or task stopped"); }
             const op = { id: ctx.callId ?? randomUUID(), tool: tool.spec.name, runId: run.id, state: "started" as const };
             run.toolCalls++;
@@ -413,7 +421,7 @@ export class Tasks {
     if (e.ctrl.signal.aborted || signal.aborted || Date.parse(approval.expires) <= Date.now()) decision = "deny";
     if (decision === "allow") {
       try {
-        this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
+        this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree, t.spending);
         if (this.deps.permitted?.(req.server, req.tool) === false || approval.capabilityRevision !== (this.deps.permissionRevision?.(req.server) ?? 0)) decision = "deny";
       } catch { decision = "deny"; }
     }
@@ -432,7 +440,7 @@ export class Tasks {
     const t = this.tasks.get(id);
     if (!t?.approval || t.state !== "needs_approval" || t.approval.id !== approval || Date.parse(t.approval.expires) <= Date.now() || !this.answers.has(approval) || this.deciding.has(approval)) throw new Error("Approval expired or no longer applies");
     if (decision !== "allow" && decision !== "deny") throw new Error("Choose allow once or deny");
-    if (decision === "allow") this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
+    if (decision === "allow") this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree, t.spending);
     if (decision === "allow" && (this.deps.permitted?.(t.approval.server, t.approval.tool) === false || t.approval.capabilityRevision !== (this.deps.permissionRevision?.(t.approval.server) ?? 0))) throw new Error("Tool access changed; deny this request and review the task again");
     this.deciding.add(approval);
     try {

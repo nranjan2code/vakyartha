@@ -58,6 +58,10 @@ export class SchedulePage {
     window.addEventListener("vak:settings-closed", () => {
       if (this.visible() && this.view.kind === "create") void this.create();
     });
+    window.addEventListener("vak:model", () => {
+      $<HTMLInputElement>("task-spending-ack").checked = false;
+      if (this.visible() && this.view.kind === "create") $("task-create-model").textContent = current.model || "Choose a model before saving";
+    });
     $("open-schedule").append(icon("calendar", 18), "Schedule");
     $("open-schedule").addEventListener("click", () => void this.openPage());
     document.addEventListener("keydown", (event) => {
@@ -231,7 +235,7 @@ export class SchedulePage {
       history.append(el("p", { className: "hint", textContent: "Runs share the live workspace. This history records execution; earlier surface versions are not snapshotted." }));
       main.append(this.section("Run history", history));
       const facts = el("dl", { className: "schedule-facts" });
-      for (const [label, value] of [["When", scheduleLabel(task.schedule)], ["Timing", task.schedule ? `Once · ${task.schedule.status === "dispatched" ? "Dispatched" : task.schedule.status === "paused" ? "Paused" : "Upcoming"}` : "Started manually"], ["Model", task.model], ["Capabilities", task.integrations.join(", ") || "None selected"], ["Runs", String(task.runs)], ["Created", date(task.created)]]) facts.append(el("dt", { textContent: label }), el("dd", { textContent: value }));
+      for (const [label, value] of [["Spending", task.spending.kind === "local_only" ? "Local provider only" : task.spending.kind === "api_allowed" ? "Model API charges allowed · no monetary ceiling" : `Required ceiling $${task.spending.usd}`], ["When", scheduleLabel(task.schedule)], ["Timing", task.schedule ? `Once · ${task.schedule.status === "dispatched" ? "Dispatched" : task.schedule.status === "paused" ? "Paused" : "Upcoming"}` : "Started manually"], ["Model", task.model], ["Capabilities", task.integrations.join(", ") || "None selected"], ["Runs", String(task.runs)], ["Created", date(task.created)]]) facts.append(el("dt", { textContent: label }), el("dd", { textContent: value }));
       const aside = el("aside", {}, this.section("At a glance", facts), this.section("Your control", el("p", { textContent: "Each run is bounded. Changes follow your integration permissions, and results wait for your review." }), button("Manage integrations", () => void openSettings("integrations"))));
       if (task.state === "scheduled" || task.state === "paused") {
         const value = new Date(task.schedule!.at); const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
@@ -274,6 +278,8 @@ export class SchedulePage {
     $("task-change-model").onclick = () => void openSettings("models");
     if (template) { $<HTMLTextAreaElement>("task-goal").value = template.goal; $<HTMLTextAreaElement>("task-criteria").value = template.criteria; }
     this.updateTiming();
+    this.updateSpending();
+    $("task-spending").onchange = () => { $<HTMLInputElement>("task-spending-ack").checked = false; this.updateSpending(); };
     $("schedule-timing").onchange = () => this.updateTiming();
     $("schedule-at").oninput = () => this.updateTiming();
     const generation = ++this.formGeneration;
@@ -293,6 +299,12 @@ export class SchedulePage {
     finally { if (generation === this.formGeneration) $<HTMLButtonElement>("task-create-start").disabled = false; }
     $("task-goal").focus();
   }
+  private updateSpending(): void {
+    const allowed = $<HTMLSelectElement>("task-spending").value === "api_allowed";
+    $("task-spending-ack-row").hidden = !allowed;
+    $<HTMLInputElement>("task-spending-ack").required = allowed;
+  }
+
   private updateTiming(): void {
     const later = $<HTMLSelectElement>("schedule-timing").value === "once";
     $("schedule-date-field").hidden = !later;
@@ -315,7 +327,7 @@ export class SchedulePage {
       const chosen = [...$("task-capabilities").querySelectorAll<HTMLInputElement>("input:checked")];
       const confirmedFree = chosen.filter((c) => c.dataset.free !== "true").map((c) => c.value);
       if (confirmedFree.length && !(await ask("You selected a server you configured. Continue only after checking its source, permissions and that there are no service fees for this work.", "I checked; continue"))) return;
-      const task = parseTaskView(await api<unknown>("/api/tasks", { method: "POST", body: JSON.stringify({ goal: $<HTMLTextAreaElement>("task-goal").value, criteria: $<HTMLTextAreaElement>("task-criteria").value, provider: current.provider, model: current.model, integrations: chosen.map((c) => c.value), confirmedFree, ...(later ? { schedule: { kind: "once", at: at.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, status: "armed", missed: "review" } } : {}) }) }));
+      const task = parseTaskView(await api<unknown>("/api/tasks", { method: "POST", body: JSON.stringify({ goal: $<HTMLTextAreaElement>("task-goal").value, criteria: $<HTMLTextAreaElement>("task-criteria").value, provider: current.provider, model: current.model, spending: $<HTMLSelectElement>("task-spending").value === "api_allowed" ? { kind: "api_allowed", acknowledged: $<HTMLInputElement>("task-spending-ack").checked } : { kind: "local_only" }, integrations: chosen.map((c) => c.value), confirmedFree, ...(later ? { schedule: { kind: "once", at: at.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, status: "armed", missed: "review" } } : {}) }) }));
       $<HTMLFormElement>("task-create-form").reset(); this.formReady = false;
       await this.refresh(); await this.showDetail(task.id);
     } catch (err) { error.textContent = (err as Error).message; }
