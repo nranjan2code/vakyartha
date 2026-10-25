@@ -2,6 +2,14 @@
 
 What changed in the app, newest first. Each release names the [Projection](https://github.com/nranjan2code/Projection) version it was built on; framework changes themselves are in Projection's CHANGELOG. Procedure: [RELEASING.md](RELEASING.md).
 
+## Unreleased
+
+Built on Projection `3cd169d`.
+
+- **Integrations run on the framework:** installing, configuring and running MCP servers moved to Projection's `Integrations` (`@vak/mcp/client`); `sidecar/integrations.ts` keeps only the app's catalog. Nothing changes in Settings → Integrations, and servers already installed keep working (same folders and `integrations.json`). One visible detail: a server you add is described as "not reviewed" instead of "vak has not reviewed it".
+- From Projection `c575cd2`: the surface you see no longer gets worse while a model retries.
+- New `test/integrations.test.ts`: every catalog server pinned exactly; earlier saved state still loads.
+
 ## 0.1.0 (2026-10-25)
 
 Built on Projection `e09b7ca` (no tag yet). The first release as Vakyartha: macOS, Apple silicon, unsigned (build from source, or allow it in System Settings → Privacy & Security).

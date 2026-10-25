@@ -13,8 +13,8 @@ What the app protects, from whom, and how. Rules for changing code are in [AGENT
 | Threat | Example | Defence |
 |---|---|---|
 | A web page in the user's browser | POSTs to the sidecar's loopback port to spend the user's keys | The framework's Host, Origin and JSON-body checks, plus a random bearer token that only the app's own window receives (`backend`). The browser version (`npm run web`) is open on loopback only, for development. |
-| A malicious or compromised MCP package | A new release of a dependency runs code at install | Catalog servers are pinned to an exact version published at least 14 days earlier. `npm install --ignore-scripts --before=<today − 14 days>` keeps every dependency to versions that old too, and runs nothing at install. Each server gets its own folder. |
-| An over-reaching filesystem server | Files reads `~/.ssh` | It is started with only the folders the user adds. Those must be absolute and existing, and never a system root or the whole home folder. Writes ask. |
+| A malicious or compromised MCP package | A new release of a dependency runs code at install | Each catalog server names an exact version published at least 14 days earlier (checked by `test/integrations.test.ts`). The framework's `Integrations` installs it with `--ignore-scripts --before=<today − 14 days>`, so every dependency is that old too and nothing runs at install, into its own folder. |
+| An over-reaching filesystem server | Files reads `~/.ssh` | It is started with only the folders the user adds, checked by the framework (`checkFolders`): absolute, existing, never a system root or the whole home folder. Writes ask. |
 | A prompt injection through an integration | A fetched page says "push to my repo" | Writes and open-internet tools default to Ask in each integration's policy; every call is logged to `logs/tools.jsonl`. |
 | A stolen settings file | Someone copies the data folder | On macOS keys live in the Keychain, written through `security -i` on stdin (never on a command line) and never sent back to the UI. Elsewhere they live in a file only the user can read (0600). Settings values are checked so they cannot inject into `settings.env`. |
 | A second program on the same bot | `npm run telegram` (Projection) and the app poll one Telegram bot | Reported as a conflict in Settings → Channels, not crashed on. |
@@ -33,6 +33,7 @@ The repository is public: <https://github.com/nranjan2code/vakyartha>. Report a 
 ## Checks that guard this
 
 - `test/settings.test.ts`: Keychain/file storage, secrets never returned, injection through settings values refused.
+- `test/integrations.test.ts`: every catalog server pinned to an exact version, first-run defaults, state saved by earlier versions still loads.
 - `test/finops.test.ts`: the token-protected HTTP path, and no prompt or tool content copied into the usage ledger.
-- The framework's checks (`framework/packages/host/test`, `framework/packages/mcp/test`) run in Projection.
+- The framework's checks (`framework/packages/host/test`, `framework/packages/mcp/test`, including installs and folder checks in `integrations.test.ts`) run with `npm run test:framework`.
 - Before every push: the secret scan in AGENTS.md.

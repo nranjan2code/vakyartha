@@ -46,7 +46,7 @@ Hosted provider keys go in **Settings → Providers** (Keychain), or in a local 
 | Shell | `src-tauri/src/lib.rs` | starts the engine, hands the window its address and token (`backend`), tray, close-to-background, single instance, launch at login, graceful stop |
 | Engine | `sidecar/main.ts` → `sidecar/server.ts` | `@vak/host` + settings, channels, integrations, client-log and info routes; token-protected for the window, open (loopback only) for `npm run web` |
 | Settings store | `sidecar/settings.ts` | provider and channel keys in the macOS Keychain (elsewhere a 0600 file); plain values in `settings.env` |
-| Integrations | `sidecar/integrations.ts` | the MCP catalog, pinned installs, per-tool policies, approvals, call log |
+| Integrations | `sidecar/integrations.ts` | the app's MCP catalog (which servers, pinned versions); installing and running them is Projection's `Integrations` |
 | FinOps | `sidecar/finops.ts`, `src/finops-page.ts`, `finops.ts` | app-owned usage ledger, model rates, per-turn cost/context/output charts and CSV export; see [FINOPS.md](FINOPS.md) |
 | Channels | `sidecar/channels.ts` | Telegram (`runTelegram`); Slack and Discord slots |
 | UI | `src/` | `main.ts` (chats, thread, composer, approvals), `settings.ts` + `integrations-page.ts` (Settings), `models.ts`, `theme.ts`, `menu.ts` (right-click), `icons.ts`, `ui.ts` |

@@ -8,9 +8,10 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSy
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { createHost, json, readJson } from "@vak/host";
+import type { Integrations } from "@vak/mcp/client";
 import { hardenNetwork, loadEnvFile, ProfileCache, providersFromEnv } from "@vak/providers";
 import { Channels, CHANNELS } from "./channels.ts";
-import { Integrations } from "./integrations.ts";
+import { createIntegrations } from "./integrations.ts";
 import { Finops } from "./finops.ts";
 import { fileSecrets, keychainStore, Settings, SettingsError } from "./settings.ts";
 
@@ -177,7 +178,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     log,
   });
 
-  integrations = new Integrations({ dataDir, secrets: settings.secrets, log, approve: host.approve, npm: opts.npm });
+  integrations = createIntegrations({ dataDir, secrets: settings.secrets, log, approve: host.approve, npm: opts.npm });
 
   async function finopsRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     if (url.pathname !== "/api/finops") return false;
