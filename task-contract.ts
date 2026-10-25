@@ -15,8 +15,24 @@ export interface TaskApproval {
   capabilityRevision: number;
 }
 export interface TaskActivity { at: string; text: string }
+export type TaskRunState = "running" | "review" | "accepted" | "failed" | "cancelled" | "interrupted";
+export interface TaskRun {
+  id: string;
+  sequence: number;
+  inputId: string;
+  inputKind: TaskInput["kind"];
+  state: TaskRunState;
+  started: string;
+  ended?: string;
+  recovered?: string;
+  activeMs: number;
+  toolCalls: number;
+  stop?: string;
+  note: string;
+}
+export const TASK_RUN_LABELS: Record<TaskRunState, string> = { running: "In progress", review: "Ready for review", accepted: "Accepted", failed: "Could not finish", cancelled: "Cancelled", interrupted: "Interrupted" };
 export interface TaskView {
-  version: 1;
+  version: 2;
   revision: number;
   id: string;
   session: string;
@@ -31,10 +47,11 @@ export interface TaskView {
   updated: string;
   note: string;
   runs: number;
+  runHistory: TaskRun[];
   pending: TaskInput[];
   approval?: TaskApproval;
   activity: TaskActivity[];
-  operations: { id: string; tool: string; state: "started" | "returned" | "failed" | "uncertain" | "reviewed" }[];
+  operations: { id: string; tool: string; runId?: string; state: "started" | "returned" | "failed" | "uncertain" | "reviewed" }[];
   accepted: string[];
   schedule?: OnceSchedule;
 }
@@ -77,7 +94,7 @@ export function parseTaskInput(value: unknown): TaskInput {
 }
 export function parseTaskView(value: unknown): TaskView {
   const raw = taskObject(value);
-  if (raw.version !== 1 || !isState(raw.state)) throw new Error("Unsupported task journal version or state");
+  if (raw.version !== 2 || !isState(raw.state)) throw new Error("Unsupported task journal version or state");
   const id = taskString(raw.id, 120), session = taskString(raw.session, 120);
   if (!/^[\w-]+$/.test(id) || session !== id) throw new Error("Invalid task identity");
   const created = taskString(raw.created, 40), updated = taskString(raw.updated, 40);
@@ -85,20 +102,31 @@ export function parseTaskView(value: unknown): TaskView {
   const operations = array(raw.operations, 768).map((value) => {
     const op = taskObject(value);
     if (!isOperationState(op.state)) throw new Error("Invalid operation state");
-    return { id: taskString(op.id, 120), tool: taskString(op.tool, 240), state: op.state };
+    return { id: taskString(op.id, 120), tool: taskString(op.tool, 240), state: op.state, ...(op.runId === undefined ? {} : { runId: taskString(op.runId, 120) }) };
   });
+  const runs = integer(raw.runs, 32);
+  const runHistory = array(raw.runHistory, 32).map(parseTaskRun);
+  const identities = new Set<string>();
+  let sequence = 0;
+  for (const run of runHistory) {
+    if (identities.has(run.id) || run.sequence <= sequence || run.sequence > runs) throw new Error("Invalid run history identity or order");
+    identities.add(run.id); sequence = run.sequence;
+  }
+  if (runHistory.length !== runs || runHistory.some((run, i) => run.sequence !== i + 1)) throw new Error("Run history must account for every run");
+  if (runHistory.some((r, i) => r.state === "running" && i !== runHistory.length - 1)) throw new Error("Only the latest run may be in progress");
+  if (operations.some((op) => op.runId !== undefined && !identities.has(op.runId))) throw new Error("Operation references an unknown run");
   const approval = raw.approval === undefined ? undefined : taskObject(raw.approval);
   const schedule = raw.schedule === undefined ? undefined : parseSchedule(raw.schedule);
   if ((raw.state === "scheduled" && schedule?.status !== "armed") || (raw.state === "paused" && schedule?.status !== "paused")) throw new Error("Schedule state does not match its trigger");
   const note = typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "";
   return {
-    version: 1, revision: integer(raw.revision ?? 0, Number.MAX_SAFE_INTEGER), id, session, goal: taskString(raw.goal, 8000), criteria: taskString(raw.criteria, 4000), provider: taskString(raw.provider, 120), model: taskString(raw.model, 240),
-    integrations: array(raw.integrations, 16).map((v) => taskString(v, 120)), state: raw.state, created, updated, note, runs: integer(raw.runs, 32),
-    confirmedFree: array(raw.confirmedFree ?? [], 16).map((v) => taskString(v, 120)),
+    version: 2, revision: integer(raw.revision, Number.MAX_SAFE_INTEGER), id, session, goal: taskString(raw.goal, 8000), criteria: taskString(raw.criteria, 4000), provider: taskString(raw.provider, 120), model: taskString(raw.model, 240),
+    integrations: array(raw.integrations, 16).map((v) => taskString(v, 120)), state: raw.state, created, updated, note, runs, runHistory,
+    confirmedFree: array(raw.confirmedFree, 16).map((v) => taskString(v, 120)),
     pending: array(raw.pending, TASK_LIMITS.pending).map(parseTaskInput), accepted: array(raw.accepted, 256).map((v) => taskString(v, 120)), operations,
     activity: array(raw.activity, 100).map((v) => { const a = taskObject(v); return { at: taskString(a.at, 40), text: taskString(a.text, 1000) }; }),
     ...(schedule ? { schedule } : {}),
-    ...(approval ? { approval: { id: taskString(approval.id, 120), server: taskString(approval.server, 120), tool: taskString(approval.tool, 240), title: taskString(approval.title, 1000), args: approval.args, expires: taskString(approval.expires, 40), capabilityRevision: integer(approval.capabilityRevision ?? 0, Number.MAX_SAFE_INTEGER) } } : {}),
+    ...(approval ? { approval: { id: taskString(approval.id, 120), server: taskString(approval.server, 120), tool: taskString(approval.tool, 240), title: taskString(approval.title, 1000), args: approval.args, expires: taskString(approval.expires, 40), capabilityRevision: integer(approval.capabilityRevision, Number.MAX_SAFE_INTEGER) } } : {}),
   };
 }
 
@@ -110,4 +138,20 @@ export function parseTaskSummaries(value: unknown): TaskSummary[] {
     if (!/^[\w-]+$/.test(id) || id !== session) throw new Error("Invalid task identity");
     return { id, session, revision: integer(raw.revision, Number.MAX_SAFE_INTEGER), goal: taskString(raw.goal, 120), state: raw.state, updated: taskString(raw.updated, 40), note: typeof raw.note === "string" ? raw.note : "", ...(raw.schedule === undefined ? {} : { schedule: parseSchedule(raw.schedule) }) };
   });
+}
+
+
+function parseTaskRun(value: unknown): TaskRun {
+  const raw = taskObject(value);
+  if (typeof raw.state !== "string" || !Object.hasOwn(TASK_RUN_LABELS, raw.state) || (raw.inputKind !== "message" && raw.inputKind !== "action")) throw new Error("Invalid run state or input kind");
+  const timestamp = (value: unknown): string => {
+    const at = taskString(value, 40);
+    if (!Number.isFinite(Date.parse(at))) throw new Error("Invalid run timestamp");
+    return at;
+  };
+  const sequence = integer(raw.sequence, 32);
+  if (sequence < 1) throw new Error("Invalid run sequence");
+  const started = timestamp(raw.started), ended = raw.ended === undefined ? undefined : timestamp(raw.ended), recovered = raw.recovered === undefined ? undefined : timestamp(raw.recovered);
+  if ((raw.state === "running" && (ended || recovered)) || (["review", "accepted", "failed", "cancelled"].includes(raw.state) && !ended) || (raw.state !== "interrupted" && recovered) || (ended && Date.parse(ended) < Date.parse(started))) throw new Error("Run timestamps do not match its state");
+  return { id: taskString(raw.id, 120), sequence, inputId: taskString(raw.inputId, 120), inputKind: raw.inputKind, state: raw.state as TaskRunState, started, activeMs: integer(raw.activeMs, TASK_LIMITS.activeMs), toolCalls: integer(raw.toolCalls, TASK_LIMITS.tools), note: typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "", ...(ended ? { ended } : {}), ...(recovered ? { recovered } : {}), ...(raw.stop === undefined ? {} : { stop: taskString(raw.stop, 120) }) };
 }

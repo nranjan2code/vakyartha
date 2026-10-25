@@ -1,4 +1,4 @@
-import { TASK_LABELS, TASK_LIMITS, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../task-contract.ts";
+import { TASK_LABELS, TASK_RUN_LABELS, TASK_LIMITS, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../task-contract.ts";
 import { scheduleLabel } from "../schedule.ts";
 import { $, api, ask, el } from "./core.ts";
 import { icon } from "./icons.ts";
@@ -168,6 +168,16 @@ export class SchedulePage {
       body.append(actions, el("p", { className: "schedule-status-note", role: "status", textContent: task.note }));
       const layout = el("div", { className: "schedule-detail-grid" });
       const main = el("div", {}, this.section("Instructions", el("p", { className: "schedule-instructions", textContent: task.goal })), this.section("The finish line", el("p", { textContent: task.criteria })), this.section("Activity", task.activity.length ? el("ol", { className: "schedule-timeline" }, ...task.activity.slice(-24).reverse().map((a) => el("li", {}, el("time", { dateTime: a.at, textContent: date(a.at) }), el("span", { textContent: a.text })))) : el("p", { className: "hint", textContent: "Your first run will appear here. No model work happens while waiting for a scheduled time." })));
+      const history = el("div", { className: "schedule-run-history" });
+      for (const run of [...task.runHistory].reverse()) {
+        const timing = run.ended ? `Finished ${date(run.ended)}` : run.recovered ? `Recovery recorded ${date(run.recovered)} · end time unknown` : "In progress";
+        const item = el("details", { className: "schedule-run" }, el("summary", {}, el("span", { className: "schedule-run-sequence", textContent: String(run.sequence).padStart(2, "0") }), el("span", {}, el("strong", { textContent: run.inputKind === "action" ? "Surface interaction" : run.sequence === 1 ? "Initial run" : "Continuation" }), el("small", { textContent: date(run.started) })), el("span", { className: `schedule-badge ${run.state === "review" ? "needs_input" : run.state === "accepted" ? "completed" : run.state}`, textContent: TASK_RUN_LABELS[run.state] })));
+        item.append(el("p", { textContent: run.note }), el("p", { className: "hint", textContent: `${timing} · ${run.state === "running" || run.recovered ? "Active time incomplete" : `${(run.activeMs / 1000).toFixed(1)}s active`} · ${run.toolCalls} tool ${run.toolCalls === 1 ? "call" : "calls"}${run.stop ? ` · Stop: ${run.stop}` : ""}` }), el("code", { className: "schedule-run-id", textContent: `Run ${run.id} · Input ${run.inputId}` }));
+        history.append(item);
+      }
+      if (!task.runs) history.append(el("p", { className: "hint", textContent: "No runs yet. Waiting for a scheduled time uses no model work." }));
+      history.append(el("p", { className: "hint", textContent: "Runs share the live workspace. This history records execution; earlier surface versions are not snapshotted." }));
+      main.append(this.section("Run history", history));
       const facts = el("dl", { className: "schedule-facts" });
       for (const [label, value] of [["When", scheduleLabel(task.schedule)], ["Timing", task.schedule ? `Once · ${task.schedule.status === "dispatched" ? "Dispatched" : task.schedule.status === "paused" ? "Paused" : "Upcoming"}` : "Started manually"], ["Model", task.model], ["Capabilities", task.integrations.join(", ") || "None selected"], ["Runs", String(task.runs)], ["Created", date(task.created)]]) facts.append(el("dt", { textContent: label }), el("dd", { textContent: value }));
       const aside = el("aside", {}, this.section("At a glance", facts), this.section("Your control", el("p", { textContent: "Each run is bounded. Changes follow your integration permissions, and results wait for your review." }), button("Manage integrations", () => void openSettings("integrations"))));

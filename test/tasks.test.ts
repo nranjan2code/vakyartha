@@ -124,7 +124,7 @@ test("task admission fails closed for invalid input and unavailable capabilities
 test("typed input and journal boundaries reject invalid combinations and unsupported versions", () => {
   assert.throws(() => parseTaskInput({ id: "x", message: "hi", action: { surface: "s", source: "a", data: {} }, revision: 1 }));
   assert.throws(() => parseTaskInput({ id: "x", action: { surface: "s", source: "a", data: {} }, revision: -1 }));
-  assert.throws(() => parseTaskView({ version: 2 }));
+  assert.throws(() => parseTaskView({ version: 3 }));
   assert.throws(() => parseTaskView({ version: 1, state: "__proto__" }));
 });
 
@@ -208,6 +208,7 @@ for (const outcome of ["allow", "revoked", "cancel"] as const) {
       await until(() => tasks.get(first.id).state === "queued");
       assert.equal(effects, 0);
       await assert.rejects(tasks.remove(first.id, { revision: tasks.get(first.id).revision }), /Cancel/);
+      await new Promise((resolve) => setTimeout(resolve, 40));
       if (outcome === "revoked") revision++;
       if (outcome === "cancel") await tasks.cancel(first.id);
       release();
@@ -217,6 +218,10 @@ for (const outcome of ["allow", "revoked", "cancel"] as const) {
       assert.equal(effects, outcome === "allow" ? 1 : 0);
       assert.equal(starts, 1);
       assert.equal(tasks.get(first.id).runs, 1);
+      const run = tasks.get(first.id).runHistory[0]!;
+      assert.equal(run.toolCalls, 1);
+      assert.equal(tasks.get(first.id).operations[0]!.runId, run.id);
+      assert.ok(Date.parse(run.ended!) - Date.parse(run.started) - run.activeMs >= 30, "review/slot waits counted as active time");
       tasks = await Tasks.open(tasksDeps);
       assert.equal(starts, 1);
       assert.equal(tasks.get(first.id).approval, undefined);
@@ -250,5 +255,80 @@ test("shutdown aborts suspended approvals and a running peer without replaying e
     assert.equal(tasks.get(second.id).state, "interrupted");
     assert.equal(calls, 2);
     await assert.rejects(tasks.answer(first.id, "stop-permission", "allow"));
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("run history retains distinct input identities and outcomes without copying canonical content", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-run-history-"));
+  const deps = { dir, ready: () => {}, warn: () => {}, instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), tools: async () => [], view: async (id: string) => ({ id, title: "", updated: "", timeline: [{ kind: "assistant" as const, text: "Result", surfaces: [], notes: [], status: "end", at: new Date().toISOString() }], surfaces: [] }), run: async () => ({ stop: "end" }) };
+  let tasks = await Tasks.open(deps);
+  try {
+    const t = await tasks.create({ goal: "First", criteria: "Review", provider: "p", model: "m", integrations: [] });
+    await until(() => tasks.get(t.id).state === "needs_input");
+    await tasks.input(t.id, { id: "continuation", message: "Check it again" });
+    await until(() => tasks.get(t.id).state === "needs_input");
+    await tasks.complete(t.id);
+    await tasks.close();
+    const saved = parseTaskView(JSON.parse(await readFile(path.join(dir, `${t.id}.json`), "utf8")));
+    assert.deepEqual(saved.runHistory.map((r) => r.sequence), [1, 2]);
+    assert.deepEqual(saved.runHistory.map((r) => r.state), ["review", "accepted"]);
+    assert.notEqual(saved.runHistory[0]!.id, saved.runHistory[1]!.id);
+    assert.equal(saved.runHistory[1]!.inputId, "continuation");
+    assert.ok(saved.runHistory.every((r) => r.ended && r.stop === "end" && r.toolCalls === 0));
+    assert.equal("messages" in saved.runHistory[0]!, false);
+    assert.equal("surfaces" in saved.runHistory[0]!, false);
+    assert.throws(() => parseTaskView({ ...saved, runHistory: [saved.runHistory[1], saved.runHistory[0]] }), /order/);
+    assert.throws(() => parseTaskView({ ...saved, version: 1 }), /version/);
+    assert.throws(() => parseTaskView({ ...saved, runHistory: undefined }), /collection/);
+    assert.throws(() => parseTaskView({ ...saved, runHistory: [{ ...saved.runHistory[0], ended: undefined }] }), /timestamps/);
+    tasks = await Tasks.open(deps);
+    assert.deepEqual(tasks.get(t.id).runHistory, saved.runHistory);
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("run admission reserves queued capacity and refuses continuations past the bounded run limit", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-run-limit-"));
+  let gate = Promise.resolve(), release = () => {};
+  const deps = { dir, ready: () => {}, warn: () => {}, instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), tools: async () => [], view: async (id: string) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }), run: async () => { await gate; return { stop: "end" }; } };
+  let tasks = await Tasks.open(deps);
+  try {
+    const t = await tasks.create({ goal: "Bounded", criteria: "Review", provider: "p", model: "m", integrations: [] });
+    await until(() => tasks.get(t.id).state === "needs_input");
+    for (let i = 0; i < 30; i++) {
+      await tasks.input(t.id, { id: `prior-${i}`, message: "Continue" });
+      await until(() => tasks.get(t.id).state === "needs_input");
+    }
+    gate = new Promise<void>((resolve) => { release = resolve; });
+    await tasks.input(t.id, { id: "last-run", message: "Last continuation" });
+    await until(() => tasks.get(t.id).state === "running");
+    await assert.rejects(tasks.input(t.id, { id: "overflow", message: "Must not queue" }), /limit/);
+    release(); await until(() => tasks.get(t.id).state === "needs_input");
+    await assert.rejects(tasks.input(t.id, { id: "overflow-finalizing", message: "Must not queue during final save" }), /limit/);
+    await tasks.close();
+    tasks = await Tasks.open(deps);
+    assert.equal(tasks.get(t.id).runs, 32);
+    assert.equal(tasks.get(t.id).runHistory[31]!.sequence, 32);
+    assert.equal(tasks.get(t.id).runHistory.length, 32);
+    await assert.rejects(tasks.input(t.id, { id: "overflow", message: "Must not run" }), /limit/);
+  } finally { release(); await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("unfinished run records recover with an unknown end time and never invented completion", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-recover-runs-"));
+  const deps = { dir, ready: () => {}, warn: () => {}, instructions: () => "", observe: async (_session: string, work: () => Promise<void>) => work(), tools: async () => [], view: async (id: string) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }), run: async () => ({ stop: "end" }) };
+  let tasks = await Tasks.open(deps);
+  try {
+    const t = await tasks.create({ goal: "Recover", criteria: "Review", provider: "p", model: "m", integrations: [] });
+    await until(() => tasks.get(t.id).state === "needs_input"); await tasks.close();
+    const file = path.join(dir, `${t.id}.json`), saved = JSON.parse(await readFile(file, "utf8"));
+    saved.runHistory[0].state = "running"; delete saved.runHistory[0].ended; delete saved.runHistory[0].stop;
+    await writeFile(file, JSON.stringify(saved));
+    tasks = await Tasks.open(deps);
+    const recovered = tasks.get(t.id);
+    assert.equal(recovered.state, "interrupted");
+    assert.equal(recovered.runHistory[0]!.state, "interrupted");
+    assert.equal(recovered.runHistory[0]!.ended, undefined);
+    assert.ok(recovered.runHistory[0]!.recovered);
+    assert.equal(recovered.runs, 1);
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });

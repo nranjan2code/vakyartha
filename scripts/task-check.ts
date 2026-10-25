@@ -93,6 +93,12 @@ const steps = [
    await wait(async()=>(await task()).runs===3);await wait(async()=>(await task()).state==='needs_input');
    await new Promise(r=>setTimeout(r,2200));flush();check(pick('second')===b,'status refresh recreated an interactive surface');
    check(document.documentElement.scrollWidth<=innerWidth,'page overflow');return 'reviewed completion and interactive continuation';`,
+  `document.getElementById('open-schedule').click();await wait(()=>document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]'));document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]').click();
+   await wait(()=>document.querySelectorAll('.schedule-run').length===3);
+   const history=await task();check(history.runHistory.length===3,'run records missing');check(history.runHistory[1].state==='accepted','review decision absent from run history');
+   document.querySelector('.schedule-run summary').click();check(document.querySelector('.schedule-run').open,'run receipt will not expand');check(document.querySelector('.schedule-run-id').textContent.includes(history.runHistory[2].id),'wrong run receipt');
+   check(document.documentElement.scrollWidth<=innerWidth,'run history overflow');
+   return 'distinct run history, accepted outcome and expandable receipts';`,
   `document.getElementById('open-schedule').click();document.getElementById('create-schedule').click();
    await wait(()=>!document.getElementById('schedule-compose').hidden&&!document.getElementById('task-create-start').disabled);
    document.getElementById('task-goal').value='Future review';document.getElementById('task-criteria').value='An explicit reviewed result';

@@ -6,6 +6,9 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 Built on Projection `c8e7245`.
 
+- **Schedule workspace:** calendar navigation, full-page creation, lifecycle filters/search, starter ideas, activity, permissions and result access. Immediate and one-time future runs share the task dispatcher; pause/resume, reschedule, Run now and guarded deletion are available. Missed times require review. Existing multiple interactive surfaces stay in the canonical workspace.
+- **Task execution:** permission waits release the execution slot and resume the same call after fresh authority checks. Expandable run history records distinct attempts, outcomes, active time, tool counts and user acceptance. Task journal schema v2 is strict, with no prelaunch compatibility migration or automatic data deletion. Repeating schedules, chains and sustained retention remain planned.
+
 - **Graph view:** asking to see something "as a graph" (your memory, an org chart, dependencies) draws an interactive node-and-edge diagram in the canvas: drag to pan, pinch or Ctrl/⌘-scroll to zoom, Fit, keyboard, draggable nodes, and selecting a node shows its notes. It fits split, full-screen and narrow windows, and reads as a list of connections on Telegram and in text.
 - **Tavily integration:** Tavily's hosted MCP server joins Settings → Integrations: web search, page extraction, site map and crawl, and research reports. Add a Tavily API key (kept in the Keychain, sent as a header); every call asks first, as for any tool that reaches the internet. From Projection `c8e7245`: MCP servers whose event streams end lines in CRLF (Tavily's does) no longer hang.
 - **Richer components on the local model:** the 4B model now gets the timeline, steps, map, code, gallery or graph component when you ask for one by name, instead of falling back to cards.

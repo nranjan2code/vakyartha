@@ -84,7 +84,7 @@ Owner: Vakyartha for policies and records; general enforcement gaps through D7. 
 - [ ] P3.7. Show completion, failure, input and approval attention without unchanged repeat notifications.
 - [ ] P3.8. Detect unavailable models/tools, lost authorization and unsupported inputs with actionable next steps.
 - [x] P3.9. Keep native supervision/platform/file operations in Rust where justified; do not add native relays for task commands, surface streaming or field edits. Core task behavior remains available through the shared app server without the native window.
-- [ ] P3.10. Segment task identity, per-run history and trigger state before sustained long-term operation; replace temporary lifetime journal guards with retention and durable deduplication policies.
+- [ ] P3.10. Segment task identity, per-run history and trigger state before sustained long-term operation; replace temporary lifetime journal guards with retention and durable deduplication policies. First typed per-run metadata records are implemented (ADR-009); long-term retention/deduplication remains open.
 - [ ] P3.11. Add trigger admission and dependency-aware result handoffs through the same dispatcher; define missed runs, time zones, pause/resume, cumulative limits, cancellation and safe deletion before enabling schedules or chains.
 
 ## P4 — Outcome and regression gates
@@ -118,7 +118,7 @@ These boxes track future candidates only. Do not start them simply because they 
 
 - [ ] L1. Reusable, reviewed skills with validation and permission boundaries.
 - [ ] L2. User-controlled memory/context across tasks through selectable MCP integrations, with inspect, edit and delete capabilities where supported; no parallel built-in knowledge database.
-- [ ] L3. Scheduled routines and event triggers with time zones, missed-run handling and run history.
+- [ ] L3. Repeating routines and event triggers with wall-clock/DST rules, cumulative budgets and long-term run retention. One-time triggers and bounded run records are implemented.
 - [ ] L3a. Task chains: verified sequential dependencies, typed artifact handoffs, per-step permissions and budgets, partial failure handling and deletion without cascades.
 - [ ] L4. Additional connectors, authorization methods and document formats.
 - [ ] L5. Browser/computer interaction and isolated command execution.
@@ -150,3 +150,10 @@ Evidence for the completed items above: `sidecar/tasks.ts`, `task-contract.ts`, 
 Validation: 24 app tests, 232 pinned framework tests, typecheck, UI build, native export test and sidecar bundle. Existing canvas smoke and the new task smoke run in wide/narrow layouts. The task smoke exercises two forms and a table, validates before dispatch, preserves drafts through navigation/library access, checks background continuation and completed-task interaction, and verifies exactly six scripted model calls across six intentional runs; local controls trigger none. Unit/HTTP checks include malformed inputs, duplicate commands, restart, revoked approval, tool-call limits, authentication, guarded deletion and transcript cleanup.
 
 This first checkpoint did not close the remaining composite gates. Approval-slot release was subsequently completed (P1.3); run history is not segmented for long-term schedules/chains. Automatic outcome verification, cumulative spend, complete shared-log retention, comprehensive accessibility/performance evidence and installed-window review remain open. A live primary-local-model task completed a run in about 30 seconds but returned one combined interactive surface instead of the requested two; record this as a failed outcome check, not a passing multi-surface evaluation. Generic output/execution fixes belong in Projection; do not split or patch model surfaces in the app.
+
+
+## Schedule and dispatcher checkpoints (2026-10-26)
+
+- `f5130ec`: permanent Schedule destination, full-page creation/overview/detail, one-time timing and guarded lifecycle controls. 28 app tests, typecheck/build, wide/light and narrow/dark task and canvas WebKit checks. No new dependency or framework change.
+- `5aa1534`: approval review yields the execution slot; the same call resumes through the dispatcher with dispatch-time authority revalidation. 32 app tests, 235 pinned framework tests, typecheck/build and task WebKit checks.
+- Run-history slice: typed execution records reference inputs and operations without copying canonical surfaces, messages or shared memory. Outcome, stop reason, recorded active time and user acceptance are visible in expandable detail rows. Schema v2 requires complete run records without legacy fallbacks; crash recovery never invents an end time. 35 app tests cover these boundaries and the run admission limit. P3.10 remains open until retention and durable deduplication support sustained long-term operation.

@@ -5,7 +5,7 @@ import path from "node:path";
 import type { AgentEvent } from "@vak/core";
 import type { HostRunOptions, HostTurn, SessionView } from "@vak/host";
 import type { AgentTool } from "@vak/providers";
-import { TASK_LIMITS, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView } from "../task-contract.ts";
+import { TASK_LIMITS, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskRun } from "../task-contract.ts";
 import { parseSchedule, SCHEDULE_GRACE_MS } from "../schedule.ts";
 
 interface Dependencies {
@@ -21,7 +21,7 @@ interface Dependencies {
   permitted?(server: string, tool: string): boolean;
   warn(message: string): void;
 }
-type Execution = { task: TaskView; ctrl: AbortController; remaining: number; since: number; timer?: ReturnType<typeof setTimeout> };
+type Execution = { task: TaskView; inputId: string; ctrl: AbortController; remaining: number; since: number; timer?: ReturnType<typeof setTimeout> };
 const text = (v: unknown, max: number) => typeof v === "string" && v.trim().length <= max ? v.trim() : "";
 const identifier = (v: unknown) => typeof v === "string" && /^[\w-]{1,120}$/.test(v);
 
@@ -51,7 +51,13 @@ export class Tasks {
       if (!/^[\w-]{1,120}\.json$/.test(file)) continue;
       const t = parseTaskView(JSON.parse(await readFile(path.join(deps.dir, file), "utf8")));
       if (file !== `${t.id}.json`) throw new Error("Task identity does not match its journal");
-      if (["queued", "running", "needs_approval"].includes(t.state)) {
+      let recovered = false;
+      for (const run of t.runHistory) if (run.state === "running") {
+        run.state = "interrupted"; run.recovered = new Date().toISOString();
+        run.note = "Execution stopped before a final record was saved. End time and external effects may be unknown.";
+        recovered = true;
+      }
+      if (["queued", "running", "needs_approval"].includes(t.state) || recovered) {
         t.state = "interrupted";
         t.note = "Execution was interrupted. Check any external effects before starting a continuation.";
         delete t.approval;
@@ -111,7 +117,7 @@ export class Tasks {
     const schedule = body.schedule === undefined ? undefined : parseSchedule(body.schedule);
     if (schedule && (schedule.status !== "armed" || Date.parse(schedule.at) <= Date.now())) throw new Error("Choose a future date and time");
     const id = randomUUID(), at = new Date().toISOString();
-    const t: TaskView = { version: 1, revision: 0, id, session: id, goal, criteria, provider, model, integrations, confirmedFree, state: "queued", created: at, updated: at, note: "Waiting to start", runs: 0, pending: [{ id: randomUUID(), kind: "message", message: goal }], activity: [], operations: [], accepted: [] };
+    const t: TaskView = { version: 2, revision: 0, id, session: id, goal, criteria, provider, model, integrations, confirmedFree, state: "queued", created: at, updated: at, note: "Waiting to start", runs: 0, runHistory: [], pending: [{ id: randomUUID(), kind: "message", message: goal }], activity: [], operations: [], accepted: [] };
     if (schedule) { t.schedule = schedule; t.state = "scheduled"; t.note = "Will run once at the selected time while this app is running and the computer is awake."; }
     await this.persist(t);
     this.tasks.set(id, t);
@@ -128,7 +134,7 @@ export class Tasks {
     if (t.state === "scheduled" || t.state === "paused") throw new Error("Use Run now or change the schedule before adding inputs");
     if (!identifier(body.id)) throw new Error("Input identity required");
     if (t.pending.some((p) => p.id === body.id) || t.accepted.includes(body.id as string)) return this.copy(t);
-    if (t.accepted.length >= 256 || t.runs >= 32) throw new Error("Task continuation limit reached; start a new task");
+    if (t.accepted.length >= 256 || t.runs + t.pending.filter((p) => p.id !== this.running.get(id)?.inputId).length >= 32) throw new Error("Task continuation limit reached; start a new task");
     if (this.closed || t.state === "needs_approval" || t.pending.length >= TASK_LIMITS.pending) throw new Error("Resolve the pending approval or wait for queued inputs");
     if (t.operations.some((o) => o.state === "uncertain") && body.reconciled !== true) throw new Error("Review uncertain external effects before continuing");
     if (body.reconciled === true) for (const op of t.operations) if (op.state === "uncertain") op.state = "reviewed";
@@ -164,6 +170,8 @@ export class Tasks {
     if (!view.timeline.some((e) => e.kind === "assistant")) throw new Error("No saved result to review");
     t.state = "completed";
     t.note = "You confirmed that the saved result meets the completion criteria.";
+    const latest = t.runHistory.at(-1);
+    if (latest?.state === "review") { latest.state = "accepted"; latest.note = "You accepted the saved result against the completion criteria."; }
     this.activity(t, "Result accepted by the user");
     await this.persist(t);
     return this.copy(t);
@@ -251,7 +259,7 @@ export class Tasks {
     }
     const t = [...this.tasks.values()].find((t) => t.state === "queued" && t.pending.length && !this.running.has(t.id));
     if (!t) return;
-    const e: Execution = { task: t, ctrl: new AbortController(), remaining: TASK_LIMITS.activeMs, since: Date.now() };
+    const e: Execution = { task: t, inputId: t.pending[0]!.id, ctrl: new AbortController(), remaining: TASK_LIMITS.activeMs, since: Date.now() };
     this.execution = e;
     this.running.set(t.id, e);
     const work = this.execute(e).catch((err) => this.deps.warn(`Task persistence/execution failed: ${(err as Error).message}`)).finally(() => {
@@ -284,15 +292,17 @@ export class Tasks {
 
   private async execute(e: Execution): Promise<void> {
     const t = e.task;
+    const input = t.pending[0]!;
+    const run: TaskRun = { id: randomUUID(), sequence: ++t.runs, inputId: input.id, inputKind: input.kind, state: "running", started: new Date().toISOString(), activeMs: 0, toolCalls: 0, note: "Working" };
+    t.runHistory.push(run);
     try {
       this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
-      const input = t.pending[0]!;
       if (input.action) {
         const view = await this.deps.view(t.session);
         if (view.surfaces.find((s) => s.id === input.action!.surface)?.version !== input.revision) throw new Error("This surface changed. Review it and submit again.");
       }
       if (e.ctrl.signal.aborted || t.state === "cancelled") throw new Error("Task stopped before execution");
-      t.state = "running"; t.note = "Working"; t.runs++;
+      t.state = "running"; t.note = "Working";
       this.activity(t, input.action ? `Form action: ${input.action.source}` : "Started a run");
       await this.persist(t);
       this.arm(e);
@@ -303,7 +313,8 @@ export class Tasks {
           execute: async (args, ctx) => {
             this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree);
             if (e.ctrl.signal.aborted || t.state === "cancelled" || ++calls > TASK_LIMITS.tools) { e.ctrl.abort(new Error("Tool-call limit reached or task stopped")); throw new Error("Tool-call limit reached or task stopped"); }
-            const op = { id: ctx.callId ?? randomUUID(), tool: tool.spec.name, state: "started" as const };
+            const op = { id: ctx.callId ?? randomUUID(), tool: tool.spec.name, runId: run.id, state: "started" as const };
+            run.toolCalls++;
             t.operations.push(op);
             await this.persist(t);
             try {
@@ -326,6 +337,7 @@ export class Tasks {
             if (event.type === "error") t.note = event.message.slice(0, 2000);
           },
         });
+        run.stop = result.stop;
         t.pending.shift();
         if (e.ctrl.signal.aborted) throw e.ctrl.signal.reason ?? new Error("Run stopped");
         if (["error", "max_steps", "aborted"].includes(result.stop)) throw new Error(t.note === "Working" ? `Run ended: ${result.stop}` : t.note);
@@ -339,6 +351,9 @@ export class Tasks {
       }
       for (const op of t.operations) if (op.state === "started") op.state = "uncertain";
     } finally {
+      run.activeMs = Math.min(TASK_LIMITS.activeMs, Math.max(0, TASK_LIMITS.activeMs - e.remaining + (e.timer ? Date.now() - e.since : 0)));
+      run.state = t.state === "cancelled" ? "cancelled" : t.state === "interrupted" ? "interrupted" : t.state === "failed" ? "failed" : "review";
+      run.ended = new Date().toISOString(); run.note = t.note;
       clearTimeout(e.timer);
       delete t.approval;
       await this.persist(t);
@@ -350,7 +365,7 @@ export class Tasks {
     if (!e || signal?.aborted) return "deny";
     signal ??= e.ctrl.signal;
     const t = e.task;
-    clearTimeout(e.timer); e.remaining -= Date.now() - e.since;
+    clearTimeout(e.timer); delete e.timer; e.remaining -= Date.now() - e.since;
     t.approval = { ...structuredClone(req), expires: new Date(Date.now() + TASK_LIMITS.approvalMs).toISOString(), capabilityRevision: this.deps.permissionRevision?.(req.server) ?? 0 };
     t.state = "needs_approval"; t.note = "Review the exact operation before it runs";
     const waiting = new Promise<"allow" | "deny">((resolve) => {
