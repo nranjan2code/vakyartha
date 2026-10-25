@@ -89,12 +89,12 @@ body.collapsed .sidebar { visibility: hidden; }
 .canvas-expanded > .main, .canvas-expanded > .canvas-resize { display: none; }
 .canvas-expanded > .canvas { width: 100%; }
 body.collapsed .canvas-expanded .canvas-head { padding-left: 84px; }
-.surface-home { min-width: 0; }
-.surface-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.surface-home { min-width: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); padding: 12px; }
+/* Park the live element without showing artifact content in the conversation. */
+.surface-home > vak-surface { display: none; }
+.surface-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .surface-head > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; color: var(--muted); }
 .surface-head > button { flex: none; }
-.surface-home.in-canvas { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); padding: 12px; }
-.surface-home.in-canvas .surface-head { margin: 0; }
 @container workspace (max-width: 720px) {
   .canvas-open > .main, .canvas-open > .canvas-resize { display: none; }
   .canvas-open > .canvas { width: 100%; }

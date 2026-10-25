@@ -29,17 +29,19 @@ const setup = `
 const steps = [
   `document.getElementById('settings-back').click();
    await project('vak_render', {surface:'signup',title:'Newsletter signup',nodes:[{id:'root',type:'form',props:{submit:'subscribe',submitLabel:'Subscribe'},children:[{id:'name',type:'input',props:{label:'Name',bind:'/name',checks:['required']}},{id:'email',type:'input',props:{label:'Email',bind:'/email',checks:['required','email']}}]}]});
-   check(document.getElementById('canvas').hidden, 'small form should stay inline'); return 'small form inline';`,
+   check(document.getElementById('canvas').hidden, 'small artifact should wait for Open');
+   check(getComputedStyle(document.querySelector('.surface-home vak-surface')).display === 'none', 'artifact content leaked into chat'); return 'artifact reference only';`,
   `const s = document.querySelector('vak-surface'); window.qaSurface = s;
    const field = s.shadowRoot.querySelector('input'); field.value='Draft name'; field.dispatchEvent(new Event('input',{bubbles:true}));
    document.querySelector('.surface-head button').click(); flush();
-   check(s === document.querySelector('#canvas-content vak-surface'), 'surface was duplicated');
+   check(s === document.querySelector('#canvas-content vak-surface') && !s.hidden, 'live surface did not open');
    check(s.shadowRoot.querySelector('input').value === 'Draft name', 'draft lost on open');
    document.getElementById('canvas-expand').click();
    check(document.getElementById('canvas').clientWidth === document.getElementById('workspace').clientWidth, 'full view failed');
    document.getElementById('canvas-close').click();
-   check(s === document.querySelector('.surface-home vak-surface'), 'surface not returned inline');
-   check(s.shadowRoot.querySelector('input').value === 'Draft name', 'draft lost on close'); return 'live draft and full view';`,
+   check(s === document.querySelector('.surface-home vak-surface'), 'surface not parked after close');
+   check(s.shadowRoot.querySelector('input').value === 'Draft name', 'draft lost on close');
+   check(s.hidden && getComputedStyle(s).display === 'none', 'closing canvas exposed content inline'); return 'live draft and full view';`,
   `await project('vak_render', {surface:'sales',title:'Sales overview',nodes:[{id:'root',type:'stack',children:[{id:'heading',type:'text',props:{content:'Monthly sales'}},{id:'table',type:'table',props:{columns:['Month','Revenue'],rows:[['January','$4,200'],['February','$5,100']]}}]}]});
    check(document.querySelector('#canvas-content vak-surface')?.surfaceId === 'sales', 'large surface did not auto-open');
    check(document.querySelector('#canvas-pick').options.length === 2, 'picker missing surfaces');

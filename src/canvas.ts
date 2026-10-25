@@ -1,5 +1,6 @@
 // The app owns where an interface is shown. Move its live element rather than
 // rendering a second form: validation, drafts and local table views stay intact.
+// The thread holds a reference card; closed surfaces stay parked there hidden.
 import { projectMarkdown, projectText, type SurfaceSnapshot, type SurfaceStore } from "@vak/core";
 import type { VakSurfaceElement } from "@vak/web";
 import { $, prefs } from "./core.ts";
@@ -170,6 +171,7 @@ export class Canvas {
       button.addEventListener("click", () => this.open(snap.id, true));
       head.append(title, button);
       home.append(head, surface);
+      surface.hidden = true;
       parent.append(home);
       const option = new Option("", snap.id);
       this.#picker.add(option);
@@ -192,6 +194,7 @@ export class Canvas {
       this.#returnHome();
       this.#active = id;
       this.#last = id;
+      entry.surface.hidden = false;
       this.#content.append(entry.surface);
       this.#content.scrollTop = 0;
       this.#view(false);
@@ -211,6 +214,7 @@ export class Canvas {
     const entry = this.#active ? this.#entries.get(this.#active) : undefined;
     if (!entry) return;
     entry.home.append(entry.surface);
+    entry.surface.hidden = true;
     entry.home.classList.remove("in-canvas");
     entry.button.textContent = "Open in canvas";
     entry.button.setAttribute("aria-expanded", "false");

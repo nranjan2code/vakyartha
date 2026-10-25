@@ -12,10 +12,12 @@ framework continues to own surfaces, rendering, bindings, validation and actions
   forms or expose field values in previews. No extra copies of surfaces are saved.
 - Opening a card returns to its chat and opens that surface in the canvas.
   Opening an artifact from the current chat preserves its live form draft.
-- Small interfaces stay inline, with Open in canvas. Tables, charts, tabs,
+- The chat shows a compact artifact card with Open in canvas; full content
+  appears exclusively in the canvas. Closing the canvas keeps the content hidden
+  and preserves its live draft. Tables, charts, tabs,
   long code, forms with more than five fields, and large node trees open in the
   canvas on first creation. Updates do not reopen a panel the user closed.
-- One live element moves between the thread and canvas. Drafts, validation,
+- One live element moves between hidden storage in the thread and the canvas. Drafts, validation,
   local filters and actions remain attached to it. The thread keeps a reference.
 - The canvas provides a surface picker, Preview/Text, Copy as text, Markdown
   download, resizing, full/split view, close, and narrow-window full-width layout.
