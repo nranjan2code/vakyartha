@@ -31,22 +31,22 @@ framework continues to own surfaces, rendering, bindings, validation and actions
   Markdown filename only and creating a new file in Downloads. Repeated names
   get a suffix; existing files and symlinks are never overwritten.
 
-## Reference research (2026-10-25)
+## Design decisions
 
-These are interaction patterns adapted to vak, rather than a copy of either UI.
+Work opens beside the conversation in a resizable canvas, with a dedicated
+Artifacts page for discovery. Labelled controls support keyboard access and
+return focus to the reference when closed. Sidebar toggling, canvas visibility,
+full/split view and layout cycling keep their existing shortcuts.
 
-| Official source | Documented pattern | vak decision |
-| --- | --- | --- |
-| [Claude artifacts](https://support.claude.com/en/articles/17153992-what-are-artifacts-and-how-do-i-use-them) | Work opens beside the conversation; a sidebar Artifacts destination collects saved work; content can be exported | Dedicated Artifacts page and a live canvas beside the chat |
-| [Claude artifact keyboard navigation](https://support.claude.com/en/articles/17457950-use-artifacts-with-a-keyboard-or-screen-reader) | Header controls, keyboard entry and focus return on close | Labelled controls, keyboard access, focus returns to the thread reference |
-| [Codex workspace commands](https://learn.chatgpt.com/docs/reference/commands) | Sidebar toggle, show/hide tabs, full/split layouts and layout cycling | ⌘B (plus existing ⌘\\), ⌘⌥B, ⌘⇧F and ⌘⇧B |
-| [Desktop browser layout](https://learn.chatgpt.com/docs/browser) | A workspace can expand or sit beside chat | Resizable split view and full view |
+Multiple surfaces remain independently interactive. The picker changes which
+live surface is visible; it does not flatten them into text or duplicate their
+forms. Preview, text representation and Markdown export are the supported views.
+Arbitrary code execution, document editing, publishing, collaboration and version
+history are separate capabilities, not implied by the canvas shell.
 
-Claude's documentation distinguishes new artifacts from legacy artifacts; their
-content/code/export controls differ. vak exposes the formats it actually supports:
-live surface preview, a text representation and Markdown export. Arbitrary HTML
-execution, document editing, publishing, collaboration and version history are
-separate capabilities, not implied by the canvas shell.
+Agent planning in [MVP-SPECS.md](MVP-SPECS.md) builds on this design. Preserving
+live drafts within a mounted conversation is existing behavior; draft durability
+across conversation changes and restart remains a tracked MVP requirement.
 
 ## Discovery and checks
 

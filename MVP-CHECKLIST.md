@@ -1,0 +1,129 @@
+# Agent MVP checklist
+
+Planning baseline: 2026-10-25. Scope and acceptance contract: [MVP-SPECS.md](MVP-SPECS.md). Current app: [SPECS.md](SPECS.md). This checklist tracks documentation, existing foundations, implementation and later scope separately.
+
+Check an implementation item only after its acceptance behavior is verified. Append the change reference and evidence to that item. Use `Blocked: <reason>` for a dependency, without checking it. An existing foundation does not mark a new MVP requirement complete. No unchecked item authorizes implementation by itself.
+
+## Planning and design
+
+- [x] D1. Draft MVP scope, existing capability inventory and later boundaries — `MVP-SPECS.md`.
+- [x] D2. Create this tracker with ownership and acceptance gates.
+- [x] D3. Independent design review completed; findings incorporated into spec sections 3, 4, 6 and 9 and the gates below. See evidence log.
+- [ ] D4. Confirm initial audience, three outcome scenarios and supported inputs.
+- [ ] D5. Review a concrete workspace design: task entry, conversation, compact activity, existing canvas, multiple surface selection, narrow layout and keyboard flow.
+- [ ] D6. Set run limits, draft/update conflict rules and recovery/deletion expectations.
+- [ ] D7. Prove the public-API composition for one canonical session/surface store, detached execution and durable action ownership. Review each proposed framework gap and record the smallest needed change or that no change is needed. No repeated chat requests or volatile inbox may be passed off as durable execution.
+- [ ] D8. Assign runtime/data ownership before coding. Prefer no new IPC; justify any native boundary with a concrete benefit, define its narrow contract, and measure message count, payload/serialization cost and UI responsiveness. Establish a regression budget and one persistence writer per entity.
+- [ ] D9. Plan against zero new third-party dependencies. Reuse public APIs and standard libraries; identify small owned implementations. Any unavoidable SDK/package/crate/tool exception needs a concrete justification and user approval before installation or adoption.
+
+## Existing foundations to retain
+
+These are present today, not newly implemented agent capabilities. Baseline evidence is source inspection and the existing canvas checks; expanded regression gates below remain open.
+
+- [x] B1. Multiple identified surfaces with render, update and removal behavior.
+- [x] B2. Bound inputs, form validation, submissions and button actions.
+- [x] B3. Local table sorting, filtering, pagination and calculated totals.
+- [x] B4. Live canvas placement, surface picker, full/split view, text view and export.
+- [x] B5. Saved conversation surfaces and metadata-only artifact library.
+- [x] B6. Integration policies, approval controls, secret storage and usage tracking.
+- [x] B7. Outside-agent projection and action delivery.
+
+## P0 — Preserve interaction and establish boundaries
+
+Owner: Vakyartha for product behavior; framework fixes only after D7. Acceptance: MVP-SPECS sections 2, 3 and 6.
+
+- [ ] P0.1. Map the current render → field edit → validation → submission → update path and record which public APIs will be reused.
+- [ ] P0.2. Define task/session/run/surface identities and additive linkage for existing conversations and artifacts; no second artifact store.
+- [ ] P0.3. Protect local interactions from model calls and protect every surface's interactivity during task progress.
+- [ ] P0.4. Preserve independent drafts across canvas closing, surface/task switches and restart; expose conflicts with incoming updates.
+- [ ] P0.5. Replace implicit cancellation by follow-up submissions with explicit queue/rejection behavior and separate cancellation.
+- [ ] P0.6. Make complete approval arguments inspectable, define scope/revocation, and keep permission decisions outside generated surfaces.
+- [ ] P0.7. Define deletion and transcript retention together; verify deletion removes raw content within the stated scope.
+
+## P1 — Bounded task execution
+
+Owner: Vakyartha; any missing general execution contract goes through D7. Acceptance: M1–M4.
+
+- [ ] P1.1. Create and persist a task with goal, inputs, completion conditions, model, tool scope, output destination and limits.
+- [ ] P1.2. Implement persisted lifecycle states and allowed transitions, including waiting, interruption and explicit continuation.
+- [ ] P1.3. Execute one task at a time with a durable queue; release the slot during user waits.
+- [ ] P1.4. Keep execution alive across view changes, hidden windows and event-stream disconnects while the app remains running.
+- [ ] P1.5. Separate progress/surface publication from task completion without breaking existing framework clients.
+- [ ] P1.6. Record operation identity and outcome; reconcile uncertain effects before retrying. Repeated submissions do not duplicate external effects.
+- [ ] P1.7. Stop new work on cancellation and report completed or uncertain in-flight effects honestly.
+- [ ] P1.8. Persist pending approval identity and scope; enforce task tool restrictions and fresh checks for delayed, changed or resumed operations. Existing chat-wide grants do not silently transfer.
+- [ ] P1.9. Verify completion conditions with evidence and retain useful partial results on failure.
+
+## P2 — Task workspace and results
+
+Owner: Vakyartha. Reuse framework rendering and actions. Acceptance: M5 and M8.
+
+- [ ] P2.1. Add task discovery, clear start controls, current status and attention-needed states while preserving ordinary conversation use.
+- [ ] P2.2. Add compact activity with factual steps, tool outcomes, sources, requested input and recoverable errors.
+- [ ] P2.3. Reuse the existing multi-surface canvas and picker for inputs, intermediate work and results; no duplicate interactive renderings.
+- [ ] P2.4. Route any surface's action to its owning task/outside agent, independently of which task is visible.
+- [ ] P2.5. Preserve all supported interactions after completion; additional work becomes an explicit continuation with its own record.
+- [ ] P2.6. Prevent background updates from stealing focus, opening another task's canvas or changing the user's selection unexpectedly.
+- [ ] P2.7. Link evidence and output receipts to artifacts; distinguish real, sample, missing and stale information.
+- [ ] P2.8. Verify keyboard, assistive-technology status announcements, focus return and wide/narrow layouts.
+
+## P3 — Limits, data and recovery
+
+Owner: Vakyartha for policies and records; general enforcement gaps through D7. Acceptance: M6–M7.
+
+- [ ] P3.1. Enforce finite elapsed-time, model-call, tool-call and retry limits with understandable stop reasons.
+- [ ] P3.2. Attribute usage to tasks/runs; identify unknown costs and prevent silent paid-model switching.
+- [ ] P3.3. Define behavior when a required monetary ceiling cannot be conservatively enforced.
+- [ ] P3.4. Checkpoint safely, expose failed saves and recover interrupted tasks without blindly repeating writes.
+- [ ] P3.5. Store necessary drafts/content separately from numeric telemetry and credentials; apply retention controls.
+- [ ] P3.6. Delete task-owned records, drafts and applicable diagnostics; retain shared/external data only according to the explained scope.
+- [ ] P3.7. Show completion, failure, input and approval attention without unchanged repeat notifications.
+- [ ] P3.8. Detect unavailable models/tools, lost authorization and unsupported inputs with actionable next steps.
+- [ ] P3.9. Keep native supervision/platform/file operations in Rust where justified; do not add native relays for task commands, surface streaming or field edits. Core task behavior remains available through the shared app server without the native window.
+
+## P4 — Outcome and regression gates
+
+Owners: Vakyartha end-to-end; Projection verifies any changed framework contract in its own repository. Record environment, change references and evidence. Use the primary local model; paid evaluation requires explicit approval.
+
+- [ ] P4.1. Research comparison completes with cited evidence and an interactive criteria form plus comparison surface.
+- [ ] P4.2. Workspace report completes from supported scoped files, with checked values, independent surfaces and requested output receipt.
+- [ ] P4.3. Connected work review prepares a concrete change, waits for approval, applies only the approved operation and verifies the outcome.
+- [ ] P4.4. Multi-surface regression: keep two independently edited forms and a sortable/filterable/pageable table; update another surface, switch selections/tasks and restart. Drafts persist, local operations make no model calls and exact validated payloads reach the right owner. Within a mounted task, picker, close/reopen, Preview/Text, full/split and library opening preserve live element identity. Test with an active task and pending approval too.
+- [ ] P4.5. Interaction regression: invalid/stale submissions, duplicate clicks, queued actions and actions after completion have defined outcomes; failure/cancellation releases affected controls.
+- [ ] P4.6. Ownership regression: outside-agent actions stay outside-owned and background task events do not contaminate the visible task.
+- [ ] P4.7. Recovery regression: event disconnect, app quit/restart, engine failure, uncertain write, expired approval, save failure and limit exhaustion preserve truthful state without duplicate effects.
+- [ ] P4.8. Permission regression: generated content cannot authorize itself; denied/revoked access remains blocked, and changed targets require fresh review.
+- [ ] P4.9. Establish and run a repeatable outcome evaluation set; report completions, failures, correctness, duration and intervention counts. Agree release thresholds before claiming readiness.
+- [ ] P4.10. Run app tests, tests against the pinned framework, typecheck, build, canvas smoke and native tests; add targeted checks for new contracts.
+- [ ] P4.11. Inspect the actual app window for setup, multiple interactive surfaces, waiting, cancellation, recovery and deletion. A rendering test alone does not close this gate.
+- [ ] P4.12. Verify unavoidable process contracts: malformed/incompatible messages, stale IDs, duplicate commands, disconnect and reconnect. Check message counts, payload size, bounded queues and interaction latency against D8 without weakening authorization or isolation.
+
+## Release readiness
+
+- [ ] R1. Every MVP requirement and regression gate has linked evidence; unresolved risks are explicitly reviewed.
+- [ ] R2. Required framework changes are tested and pushed in Projection; the app pin is deliberately updated and checked. No dependency-checkout edits or internal imports.
+- [ ] R3. Documentation distinguishes current behavior from later scope and explains local execution availability, permissions, data deletion and cost limits.
+- [ ] R4. Follow the existing release procedure; distribution, signing, new dependencies and paid runs retain their existing approval requirements.
+- [ ] R5. Review dependency and lockfile diffs, including transitive additions, provenance, integrity and install/build scripts. Record approval for every exception; no floating/ad hoc installs, unreviewed vendoring or remote executable downloads. Existing pins and package-age rules alone do not close this gate.
+
+## Later — not required for MVP completion
+
+These boxes track future candidates only. Do not start them simply because they appear here.
+
+- [ ] L1. Reusable, reviewed skills with validation and permission boundaries.
+- [ ] L2. User-controlled memory across tasks with inspect, edit and delete controls.
+- [ ] L3. Scheduled routines and event triggers with time zones, missed-run handling and run history.
+- [ ] L4. Additional connectors, authorization methods and document formats.
+- [ ] L5. Browser/computer interaction and isolated command execution.
+- [ ] L6. Multiple agent roles, delegation and concurrent execution.
+- [ ] L7. Remote execution, remote notifications and cross-device channels.
+- [ ] L8. Artifact history, collaboration and publishing.
+- [ ] L9. Additional platforms and automatic updates.
+
+## Evidence log
+
+| Date | Item | Evidence | Remaining limits |
+| --- | --- | --- | --- |
+| 2026-10-25 | D1–D2; B1–B7 | Draft documents; source inspection of surface mounting, canvas, library, bound edits, validation, local interactions, host dispatch and outside ownership. Earlier review ran existing suites and deterministic multi-surface canvas checks. | Foundations only; all new task behavior and expanded interaction/recovery gates remain open. |
+| 2026-10-25 | D3 | Independent read-only design review: public execution primitives, private host state, volatile external action inbox, navigation cancellation, transient drafts, approval lifetime/scope and actual work limits. Findings incorporated into spec and checklist. | Public-API architecture proof, concrete workspace design and product decisions remain open. |
+| 2026-10-25 | D3; D8 | Follow-up design review supports native Rust responsibilities, a single data authority and persistence writer, no duplicated surface schemas, and shared-server correctness. Runtime/IPC constraints incorporated into spec section 6. | Runtime placement proof and performance measurements are not completed. |

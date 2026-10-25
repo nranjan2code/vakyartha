@@ -2,6 +2,8 @@
 
 What the app is and how it is built. Rules: [AGENTS.md](AGENTS.md). State of work: [HANDOVER.md](HANDOVER.md). Releasing: [RELEASING.md](RELEASING.md).
 
+Agent MVP planning: [MVP-SPECS.md](MVP-SPECS.md) defines the proposed task experience and preserves the existing interactive, multi-surface design. [MVP-CHECKLIST.md](MVP-CHECKLIST.md) tracks existing foundations, design decisions, MVP gates and later scope. These are planning documents; the implementation described below remains the current baseline.
+
 Vakyartha is a desktop app (macOS first) where a model's answers are interfaces: cards, tables, charts, forms and buttons. It is a product built on the [Projection framework](https://github.com/nranjan2code/Projection) (the `@vak/*` packages); the engine, catalog, projectors, providers, host and MCP client are the framework's, and are specified in [Projection's SPECS.md](https://github.com/nranjan2code/Projection/blob/main/SPECS.md). This document covers only what the app adds.
 
 ## 1. The framework dependency

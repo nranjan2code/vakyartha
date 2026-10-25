@@ -111,6 +111,7 @@ Each folder holds `sessions/`, `integrations/`, `integrations.json`, `channels.j
 ## Documentation
 
 - [SPECS.md](SPECS.md): what the app is, its framework dependency and identity.
+- [MVP-SPECS.md](MVP-SPECS.md) and [MVP-CHECKLIST.md](MVP-CHECKLIST.md): proposed agent MVP, preserved interactive surfaces, ownership, progress gates and later scope.
 - [RELEASING.md](RELEASING.md): releasing the app and updating Projection.
 - [AGENTS.md](AGENTS.md) and [HANDOVER.md](HANDOVER.md): working rules and where work stands.
 - [SECURITY.md](SECURITY.md), [CANVAS.md](CANVAS.md), [FINOPS.md](FINOPS.md) and [CHANGELOG.md](CHANGELOG.md).
