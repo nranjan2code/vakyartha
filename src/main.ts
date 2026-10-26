@@ -40,7 +40,20 @@ const artifacts = new ArtifactsPage(async (id, surface) => {
   artifacts.close();
   canvas.open(surface, true);
 }, newChat, toggleSidebar);
-let running: AbortController | undefined;
+// One turn per chat, several chats at once. The window's stream of a turn is
+// `streams`; leaving a chat only detaches it (the engine keeps the turn going and
+// the chat's event stream shows it on return). `busy` also holds chats the
+// engine reports running that this window did not start or has detached from.
+const streams = new Map<string, AbortController>();
+const detaching = new WeakSet<AbortController>();
+const busy = new Set<string>();
+const isRunning = (id: string) => streams.has(id) || busy.has(id);
+/** Stop a chat's turn: in the engine (it outlives the window), then the stream. */
+function stopRun(id: string): void {
+  // The engine releases the turn just after it acknowledges the stop: refresh the list then.
+  void api(`/api/sessions/${encodeURIComponent(id)}/stop`, { method: "POST", body: "{}" }).then(() => setTimeout(() => void loadChats(), 600)).catch(() => {});
+  streams.get(id)?.abort();
+}
 const tasksPanel = new TasksPanel(() => session, (id) => openChat(id), () => artifacts.close(), toggleSidebar);
 document.getElementById("open-artifacts")!.addEventListener("click", () => tasksPanel.page.close(), { capture: true });
 const drafts = new Drafts(localStorage, (message) => tasksPanel.error(message));
@@ -153,9 +166,20 @@ function groupOf(iso: string): string {
   return "Older";
 }
 
+let polling: ReturnType<typeof setTimeout> | undefined;
 async function loadChats(): Promise<void> {
   const list = await api<SessionSummary[]>("/api/sessions");
   artifacts.update(list);
+  // The engine is the record of what runs; this window's own streams count until they end.
+  const wasBusy = busy.has(session);
+  busy.clear();
+  for (const c of list) if (c.running && !streams.has(c.id)) busy.add(c.id);
+  // The open chat's background turn ended before its run_end reached us: redraw it.
+  if (wasBusy && !busy.has(session) && outsideTurn && !tasksPanel.owns(session)) void openChat(session, false, true);
+  updateSend();
+  // While anything runs in the background, refresh so its row settles when it ends.
+  clearTimeout(polling);
+  if (busy.size) polling = setTimeout(() => void loadChats(), 4000);
   chatsNav.replaceChildren();
   let group = "";
   for (const c of list) {
@@ -165,7 +189,7 @@ async function loadChats(): Promise<void> {
       chatsNav.append(Object.assign(document.createElement("div"), { className: "group", textContent: group }));
     }
     const row = document.createElement("div");
-    row.className = "chat";
+    row.className = `chat${isRunning(c.id) ? " running" : ""}`;
     row.dataset.id = c.id;
     row.setAttribute("aria-current", String(c.id === session));
     row.innerHTML = '<button type="button" class="open"></button><button type="button" class="del" aria-label="Delete chat" title="Delete">×</button>';
@@ -186,7 +210,13 @@ async function loadChats(): Promise<void> {
 
 function clearThread(): void {
   drafts.flush();
-  running?.abort();
+  // Leaving the chat detaches its running turn; the engine finishes it.
+  const leaving = streams.get(session);
+  if (leaving) {
+    detaching.add(leaving);
+    busy.add(session);
+    leaving.abort();
+  }
   canvas.reset();
   mounted.clear();
   remoteVersions.clear();
@@ -208,11 +238,11 @@ function newChat(): void {
 }
 
 /** Redraw a saved conversation from its timeline and final surfaces. */
-async function openChat(id: string, keepLibrary = false): Promise<void> {
+async function openChat(id: string, keepLibrary = false, redraw = false): Promise<void> {
   tasksPanel.page.close();
   if (!keepLibrary) artifacts.close();
   // Returning from a product page must retain live form elements and their controls.
-  if (id === session && mounted.size) { canvas.restore(); tasksPanel.selectionChanged(); return; }
+  if (id === session && mounted.size && !redraw) { canvas.restore(); tasksPanel.selectionChanged(); return; }
   clearThread();
   session = id;
   drafts.begin(session);
@@ -238,6 +268,19 @@ async function openChat(id: string, keepLibrary = false): Promise<void> {
       setStatus(turn, entry.status, entry.error ? "error" : "done");
     }
   }
+  if (view.running) {
+    // Still working (started here earlier, then left): show the reply so far; watch() follows the rest.
+    busy.add(id);
+    outsideTurn = newTurn("Working…", false);
+    outsideTurn.text.dataset.text = view.pending?.text ?? "";
+    outsideTurn.text.replaceChildren(renderMarkdown(outsideTurn.text.dataset.text));
+    for (const sid of view.pending?.surfaces ?? []) {
+      const snap = client.store.snapshot(sid);
+      if (snap && !mounted.has(sid)) mount(outsideTurn, snap, false);
+    }
+    canvas.beginTurn();
+  }
+  updateSend();
   canvas.restore();
   tasksPanel.selectionChanged();
   thread.scrollTop = thread.scrollHeight;
@@ -325,21 +368,24 @@ function mount(turn: Turn, snap: SurfaceSnapshot, scroll = true): void {
 }
 
 function updateSend(): void {
-  send.classList.toggle("stop", Boolean(running));
-  send.setAttribute("aria-label", running ? "Stop" : "Send");
-  send.disabled = !running && (!input.value.trim() || !current.model);
+  const runningHere = isRunning(session);
+  send.classList.toggle("stop", runningHere);
+  send.setAttribute("aria-label", runningHere ? "Stop" : "Send");
+  send.disabled = !runningHere && (!input.value.trim() || !current.model);
 }
 
 async function runTurn(req: { message?: string; action?: VakActionDetail["action"] & { data: Record<string, unknown> } }): Promise<void> {
-  if (running) {
+  if (isRunning(session)) {
     const note = newTurn("Wait for the current response, or stop it before starting another.");
     setStatus(note, "The current response is still running", "done");
     if (req.action) mounted.get(req.action.surface)?.releaseAction();
     return;
   }
   const ctrl = new AbortController();
-  running = ctrl;
+  streams.set(session, ctrl);
   canvas.beginTurn();
+  // The sidebar marks the chat as running at once (refreshed again when it ends).
+  setTimeout(() => void loadChats(), 300);
   updateSend();
   const turnSession = session;
   const turn = newTurn("Thinking…");
@@ -357,7 +403,7 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
   const { provider, model } = current;
 
   const onEvent = (e: AgentEvent) => {
-    if (session !== turnSession || running !== ctrl) return;
+    if (session !== turnSession || streams.get(turnSession) !== ctrl) return;
     switch (e.type) {
       case "text_delta":
         text += e.delta;
@@ -422,13 +468,19 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
       ctrl.signal,
     );
   } catch (err) {
+    if (detaching.has(ctrl)) return void clearInterval(ticker);
     if (ctrl.signal.aborted) setStatus(turn, "Stopped", "done");
     else setStatus(turn, (err as Error).message, "error");
   } finally {
     clearInterval(ticker);
-    if (running === ctrl) {
-      canvas.endTurn();
-      running = undefined;
+    if (streams.get(turnSession) === ctrl) {
+      streams.delete(turnSession);
+      if (session === turnSession) canvas.endTurn();
+    }
+    if (detaching.has(ctrl)) {
+      updateSend();
+      void loadChats();
+      return;
     }
     updateSend();
     if (frame) cancelAnimationFrame(frame);
@@ -446,7 +498,7 @@ function submit(text: string): void {
     void tasksPanel.input(t).then(() => { input.value = ""; autosize(); }).catch((err) => tasksPanel.error((err as Error).message));
     return;
   }
-  if (running) return;
+  if (isRunning(session)) return;
   if (!current.model) return void openSettings();
   userBubble(t);
   input.value = "";
@@ -490,7 +542,7 @@ input.addEventListener("keydown", (e) => {
 });
 $<HTMLFormElement>("composer").addEventListener("submit", (e) => {
   e.preventDefault();
-  if (running) running.abort();
+  if (isRunning(session)) stopRun(session);
   else submit(input.value);
 });
 $<HTMLButtonElement>("new-chat").addEventListener("click", newChat);
@@ -518,7 +570,7 @@ function toggleSidebar(): void {
 document.body.classList.toggle("collapsed", prefs.get("collapsed") === "true");
 document.addEventListener("keydown", (e) => {
   if (e.defaultPrevented) return;
-  if (e.key === "Escape" && running && !settingsOpen() && !document.body.classList.contains("in-artifacts") && !tasksPanel.page.visible()) return running.abort();
+  if (e.key === "Escape" && isRunning(session) && !settingsOpen() && !document.body.classList.contains("in-artifacts") && !tasksPanel.page.visible()) return stopRun(session);
   if (!(e.metaKey || e.ctrlKey)) return;
   const actions: Record<string, () => void> = {
     n: () => (closeSettings(), newChat()),
@@ -644,6 +696,29 @@ function watch(id: string): void {
           if (session !== id) return;
           const e = JSON.parse(msg.data) as AgentEvent;
           if (e.type === "surface" && mounted.has(e.snapshot.id) && remoteVersions.get(e.snapshot.id) === e.snapshot.version) continue;
+          // A scheduled task's run, or this chat's own turn left running in the background.
+          const background = !tasksPanel.owns(id) && busy.has(id);
+          if (background) {
+            if (e.type === "text_delta") {
+              outsideTurn ??= newTurn("Working…");
+              outsideTurn.text.dataset.text = (outsideTurn.text.dataset.text ?? "") + e.delta;
+              outsideTurn.text.replaceChildren(renderMarkdown(outsideTurn.text.dataset.text));
+            } else if (e.type === "tool_start" && (e.name === "vak_render" || e.name === "vak_update")) canvas.beginWork();
+            else if (e.type === "approval") approvalCard(outsideTurn ??= newTurn("Working…"), e);
+            else if (e.type === "approval_done") settleApproval(e.id, e.decision);
+            else if (e.type === "run_end") {
+              busy.delete(id);
+              canvas.endTurn();
+              const done = outsideTurn;
+              outsideTurn = undefined;
+              updateSend();
+              void api<SessionView>(`/api/sessions/${encodeURIComponent(id)}`).then((v) => {
+                const last = v.timeline.findLast((t) => t.kind === "assistant");
+                if (done && last?.kind === "assistant") setStatus(done, last.status || "Done", last.error ? "error" : "done");
+              }).catch(() => {});
+              void loadChats();
+            }
+          }
           if (tasksPanel.owns(id)) {
             if (e.type === "plan") { canvas.beginTurn(); outsideTurn = newTurn("Working…"); }
             else if (e.type === "text_delta") {
@@ -666,7 +741,8 @@ function watch(id: string): void {
             }
             else {
               outsideTurn ??= newTurn("");
-              setStatus(outsideTurn, tasksPanel.owns(id) ? "Working on this task" : "projected by an outside agent", "done");
+              if (background) setStatus(outsideTurn, "Working…");
+              else setStatus(outsideTurn, tasksPanel.owns(id) ? "Working on this task" : "projected by an outside agent", "done");
               mount(outsideTurn, e.snapshot);
             }
             remoteVersions.set(e.snapshot.id, e.snapshot.version);

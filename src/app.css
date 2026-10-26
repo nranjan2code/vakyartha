@@ -131,6 +131,10 @@ body.collapsed .canvas-expanded .canvas-head { padding-left: 84px; }
 .chat > button.open { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 6px 10px; cursor: pointer; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat:hover { background: var(--hover); }
 .chat[aria-current="true"] { background: var(--hover); }
+/* A chat whose turn is still running (here or in the background). */
+.chat.running > button.open::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--accent, #4f46e5); vertical-align: 1px; animation: chat-run 1.2s ease-in-out infinite; }
+@keyframes chat-run { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .chat.running > button.open::before { animation: none; } }
 .chat .del { visibility: hidden; flex: none; width: 24px; height: 24px; margin-right: 4px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
 .chat:hover .del, .chat:focus-within .del { visibility: visible; }
 .chat .del:hover { color: var(--danger); }
