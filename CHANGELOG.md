@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Interface font:** the app and generated interfaces use Inter 4.1 (variable upright and italic, SIL OFL, bundled under `public/fonts/` with its licence; no network font), with tabular numbers in answer tables.
+
 - **Response typography:** text answers style headings, lists, links, inline code, code blocks, quotes, rules and tables with one rhythm instead of browser defaults.
 
 - **Composer:** the model picker sits below the input bar on the right and opens a compact menu grouped by provider, with numbered shortcuts, keyboard navigation and More models; the conversation and the input bar share one column width so their edges line up.
