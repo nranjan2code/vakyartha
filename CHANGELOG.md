@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Minimal surfaces:** Projection pin `0b59e6f` brings quieter cards, lighter type, compact actions, natural-height grids and inherited theme tokens. Existing app color themes and text-size preferences continue to control surfaces.
+
 - **Exact comparison checks:** optional caller-supplied expected rows now check displayed identities, columns and typed scalar claims within the same run. Setup and details expose the fixed assertions. Form changes do not recalculate them; extra prose and provenance still need review.
 
 - **Outcome evaluation:** passing automated checks now require semantic review. Reports show independent constraint references beside canonical visible rows; hidden/unused data no longer supplies output evidence. This does not certify generated recommendations.
