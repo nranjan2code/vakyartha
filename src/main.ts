@@ -266,6 +266,7 @@ async function openChat(id: string, keepLibrary = false, redraw = false): Promis
       for (const u of entry.used ?? []) usedChip(turn, u.name, u.ok);
       for (const note of entry.notes) if (note.name.startsWith("vak_")) addNote(turn, note.name, note.result);
       setStatus(turn, entry.status, entry.error ? "error" : "done");
+      if (entry.limit && entry === view.timeline.at(-1)) limited(turn, entry.limit);
     }
   }
   if (view.running) {
@@ -334,6 +335,25 @@ function newTurn(label: string, scroll = true): Turn {
   return { root, text, surfaces, status };
 }
 
+/**
+ * A turn a budget ended or cut short stays visibly marked (finished statuses
+ * otherwise show only on hover) and offers to carry on from its results.
+ */
+function limited(turn: Turn, limit: "steps" | "tools"): void {
+  turn.status.classList.add("limited");
+  const go = document.createElement("button");
+  go.type = "button";
+  go.className = "continue";
+  go.textContent = "Continue";
+  go.title = limit === "steps" ? "This response stopped at its step limit: carry on from here" : "This response used its tool budget: gather more and finish";
+  go.addEventListener("click", () => {
+    if (isRunning(session)) return;
+    go.remove();
+    void runTurn({ continue: true });
+  });
+  turn.status.append(go);
+}
+
 function setStatus(turn: Turn, text: string, state?: "done" | "error"): void {
   turn.status.className = `status ${state ?? ""}`;
   turn.status.querySelector(".label")!.textContent = text;
@@ -374,7 +394,7 @@ function updateSend(): void {
   send.disabled = !runningHere && (!input.value.trim() || !current.model);
 }
 
-async function runTurn(req: { message?: string; action?: VakActionDetail["action"] & { data: Record<string, unknown> } }): Promise<void> {
+async function runTurn(req: { message?: string; continue?: boolean; action?: VakActionDetail["action"] & { data: Record<string, unknown> } }): Promise<void> {
   if (isRunning(session)) {
     const note = newTurn("Wait for the current response, or stop it before starting another.");
     setStatus(note, "The current response is still running", "done");
@@ -388,7 +408,9 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
   setTimeout(() => void loadChats(), 300);
   updateSend();
   const turnSession = session;
-  const turn = newTurn("Thinking…");
+  // Only the chat's latest turn can be continued.
+  for (const b of thread.querySelectorAll(".status .continue")) b.remove();
+  const turn = newTurn(req.continue ? "Continuing…" : "Thinking…");
   const started = performance.now();
   // Local models deliver a tool call whole at the end (Ollama does not stream
   // its arguments; 20-50 s on a 4B model), so show that time is passing.
@@ -444,8 +466,9 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
         break;
       case "run_end":
         if (!turn.status.classList.contains("error")) {
-          setStatus(turn, `${model} · ${((performance.now() - started) / 1000).toFixed(1)}s${e.stop === "max_steps" ? " · step limit" : ""}`, "done");
+          setStatus(turn, `${model} · ${((performance.now() - started) / 1000).toFixed(1)}s${e.limit === "steps" ? " · step limit" : e.limit === "tools" ? " · tool budget" : ""}`, "done");
         }
+        if (e.limit) limited(turn, e.limit);
         break;
     }
   };
@@ -714,7 +737,10 @@ function watch(id: string): void {
               updateSend();
               void api<SessionView>(`/api/sessions/${encodeURIComponent(id)}`).then((v) => {
                 const last = v.timeline.findLast((t) => t.kind === "assistant");
-                if (done && last?.kind === "assistant") setStatus(done, last.status || "Done", last.error ? "error" : "done");
+                if (done && last?.kind === "assistant") {
+                  setStatus(done, last.status || "Done", last.error ? "error" : "done");
+                  if (last.limit) limited(done, last.limit);
+                }
               }).catch(() => {});
               void loadChats();
             }

@@ -232,6 +232,10 @@ body.collapsed .artifacts-sidebar { display: grid; margin-left: 58px; }
 .msg.assistant:hover .status.done { opacity: 1; }
 .status.done .dot { display: none; }
 .status.error { color: var(--danger); }
+/* A budget ended this turn: keep its reason in view, with the way to continue. */
+.status.done.limited { opacity: 1; }
+.status .continue { margin-left: 4px; padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
+.status .continue:hover { background: var(--hover); }
 .status.error .dot { background: var(--danger); animation: none; }
 @keyframes pulse { 50% { opacity: 0.3; } }
 details.diag { font-size: 0.8rem; color: var(--muted); }

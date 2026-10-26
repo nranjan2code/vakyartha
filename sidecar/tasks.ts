@@ -398,7 +398,9 @@ export class Tasks {
           },
         }));
         const result = await this.deps.run({ session: t.session, provider: t.provider, model: t.model, message: input.message, action: input.action, history: 10 }, {
-          completion: "response", validateCompletion: t.resultPolicy ? (result) => reviewTaskResult(t.resultPolicy!, result, e.sources) : undefined, signal: e.ctrl.signal, tools, maxSteps: TASK_LIMITS.rounds, maxTokens: TASK_LIMITS.outputTokens,
+          completion: "response", validateCompletion: t.resultPolicy ? (result) => reviewTaskResult(t.resultPolicy!, result, e.sources) : undefined, signal: e.ctrl.signal, tools, maxSteps: TASK_LIMITS.rounds,
+          // Gathering never takes the last model request: the engine keeps it for the closing answer.
+          toolRounds: TASK_LIMITS.rounds - 1, maxTokens: TASK_LIMITS.outputTokens,
           instructions: `${this.deps.instructions()}\nYou are working on a task. Goal: ${t.goal}\nCompletion criteria: ${t.criteria}\nKeep every existing surface interactive. Use evidence from the available tools; do not claim an external effect without a receipt. The user reviews your result before marking the task complete.\n${resultInstructions(t.resultPolicy)}`,
           emit: (event) => {
             if (event.type === "tool_start") this.activity(t, `Using ${event.name}`);

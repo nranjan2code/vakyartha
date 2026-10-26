@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Research turns always answer:** searches no longer use up the steps a reply needs. When the tool budget runs out the model answers from what it gathered; a turn a limit ended stays marked ("step limit" or "tool budget") with a Continue button that carries on from its results. Task runs keep their last model request for that answer. Uses Projection `10e0d90`.
+
 - **Visible notices:** checked result layouts can require bounded user-supplied labels such as fictional-data notices. Setup and details retain them; completion checks require their actual display. Labels do not verify provenance or factual correctness. Real-model evaluation still reports semantic contradictions as failures.
 
 - **Independent outputs:** typed result layouts allow titles/layout wrappers around the separate form and table. Combined or ambiguous outputs still fail. Corrections name obsolete surplus surface IDs and report blank comparison cells with their column/row keys, without inventing values.
