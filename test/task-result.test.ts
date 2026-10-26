@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { basicCatalog, SurfaceStore, type AgentEvent } from "@vak/core";
 import { runAgent, type Provider } from "@vak/providers";
-import { checkTaskResult, parseTaskResultPolicy, reviewTaskResult } from "../shared/task-result.ts";
+import { resultInstructions, checkTaskResult, parseTaskResultPolicy, reviewTaskResult } from "../shared/task-result.ts";
 
 function result(tableId: string, rows: unknown[], columns: (string | { key: string; label: string })[]) {
   const store = new SurfaceStore(basicCatalog);
@@ -118,4 +118,25 @@ test("quote correction hints use only a contiguous actual source span and never 
   assert.equal(matchingExcerpt("Heading - " + source, source), source);
   assert.equal(matchingExcerpt("An unrelated unsupported recommendation", source), undefined);
   assert.ok(matchingExcerpt("x".repeat(1000), "x".repeat(20000))!.length <= 240);
+});
+
+test("caller-declared initial fields are checked without writing model output", () => {
+  const policy = parseTaskResultPolicy({ kind: "comparison", labels: ["One"], initialValues: { "/budget": 20 } });
+  assert.match(resultInstructions(policy), /Required data fragment: \{"budget":20\}/);
+  const value = result("report", [{ name: "One" }], ["name"]);
+  assert.deepEqual(checkTaskResult(policy, value, new Map()), []);
+  value.resolved[0]!.data.budget = "20";
+  assert.ok(checkTaskResult(policy, value, new Map()).some((issue) => issue.includes("caller-supplied 20 (number)")));
+  assert.equal(value.resolved[0]!.data.budget, "20");
+  for (const initialValues of [{ "../budget": 20 }, { "/__proto__/x": 1 }, { "/budget": {} }, { "/budget": Infinity }, { "/a": 1, "/a/b": 2 }, { "/a/b": 2, "/a": 1 }, {}]) assert.throws(() => parseTaskResultPolicy({ kind: "comparison", initialValues }));
+  assert.throws(() => parseTaskResultPolicy({ kind: "comparison", explanation: true }));
+});
+
+test("ambiguous result roles report layout without falsely claiming existing contents are absent", () => {
+  const candidate = result("comparison", [{ name: "One" }], ["name"]);
+  candidate.resolved[0]!.root!.children.push(candidate.resolved[1]!.root!);
+  candidate.resolved.pop(); candidate.surfaces.pop();
+  const issues = checkTaskResult({ kind: "comparison", initialValues: { "/budget": 20 } }, candidate, new Map());
+  assert.equal(issues.length, 1);
+  assert.match(issues[0]!, /two separate surfaces/);
 });

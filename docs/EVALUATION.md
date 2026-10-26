@@ -1,5 +1,37 @@
 # Agent outcome evaluation
 
+## File-report correction repairs — 2026-10-26
+
+Projection `e4eec18` replays the exact retained `d335ae6a` calls. Lint previously accepted inputs anywhere on a surface if any form existed; it now follows canonical submission scope, so a sibling/empty form cannot mask omitted action values. The publisher holds a scope-breaking correction and restores the usable form. A small child-ID patch regression preserves original data and exact submitted values. Inline child identity/update-ID schemas and a bounded parent-edge/binding inventory prevent anonymous rewrite patterns without inventing facts. Custom summary rows are distinguished from automatic column sums. One historical job-application replay score is explicitly corrected from 1.0 to 0.8 for genuinely stranded inputs; the existing recording and reason are retained.
+
+The first local rerun, `2026-10-26T16-55-13.931Z-beca336f` (task `b18ebeb6`), passes all original mechanical checks in 3 requests/91.2 seconds, with correct independent form/report, 36/34/70 displayed rows, budget 100 and remaining 30, source/date/missing labels and a verified 1,022-byte Markdown file. **Semantic review fails** an invented extra deadline `2026-10-29`. The source hash prefixes match the actual input receipts; abbreviated citations are not full receipts. Preserve the original `needs-semantic-review` verdict and the failure in `review.json`.
+
+Projection `764cf01` explicitly leaves unspecified defaults blank. The evaluator now independently rejects populated unsupported fields (regression covers an invented date) and the fixture requests only its supplied budget input. Rerun `2026-10-26T16-58-47.796Z-f36b2c81` passes those checks and visible values in 12 requests/185.7 seconds, but **semantic review fails** the omitted requested budget-position explanation. Unused stale data also contains an incorrect 78; it is not displayed evidence. No task accepted.
+
+A bounded review continuation of the first task, `2026-10-26T17-02-37.433Z-file-review`, preserves the valid report but fails to delete the deadline: omission from deep-merged data correctly leaves it intact. The new check rejects it. No limits reset: two runs/six cumulative requests. Projection `6934c61` clarifies explicit `vak_remove` node deletion and JSON Patch data removal; the runtime never infers deletion. The fixture also spells out the already-required budget explanation (total, budget, remaining and within-budget conclusion). Subsequent trial evidence follows below; none of these repairs alone proves broad reliability.
+
+## Design review and frozen correction — 2026-10-27
+
+Independent Astra source/evidence review found a control-flow mismatch: complete-result checks ran after each single surface operation, while the experimental schema envelope admitted only one operation. A valid first surface necessarily received incomplete-result complaints. Ambiguous topology also generated misleading dependent errors; grammar decoding forced flat references instead of negotiated inline construction. A prescribed explanation data path checked a representation rather than its meaning. The feature remains selected-file work with editable results; accumulating corrections around one fixture is not a reliability strategy. See ADR-031.
+
+Retained unsuccessful experiments (all unchanged request/time limits, no paid calls or acceptance):
+
+| Report suffix (2026-10-26) | Requests / seconds | Outcome |
+| --- | --- | --- |
+| `17-05-36.773Z-69d804c6` | 12 / 165.6 | Native correction lost complete structure. |
+| `17-13-21.829Z-2ae3d344` | 4 / 152.2 | Schema encoding obtained correct rows/separate outputs, but omitted initialized budget/date/explanation. |
+| `17-18-50.327Z-746cbffd` | 12 / 300.6 | Additional initial/explanation assertions; time limit, incomplete output. |
+| `17-26-16.352Z-58ad3368` | 12 / 86.8 | Single schema operation still fails complete outcome. |
+| `17-29-10.950Z-141e5632` | 12 / 113.9 | Nested default instructions still fail; prose includes wrong arithmetic. |
+| `17-34-57.875Z-3e2d14d1` | 12 / 199.1 | Frozen repeat fails; root pointer keys do not initialize bound controls. |
+| `17-40-38.659Z-cf77d009` | 12 / 103.8 | Referenced-pointer repair does not repair whole authoring. Final five requests repeat prose without useful edits. |
+
+These changed single trials do not isolate a causal performance effect. Preserve their raw reports in `.vak/evaluations/agent-mvp/results/`; do not interpret mechanical candidates as semantic passes. The final pointer trial is explicitly failed. Its input arithmetic survives in narrative while interface assembly fails.
+
+The bounded correction checks whole results only at completion, suppresses dependent topology errors, keeps supplied-default/factual checks, removes the explanation-path API and withdraws automatic constrained encoding. Projection `a21cba1` stops identical rejected content/response/issues after one repair opportunity; this is representation equality, not semantic progress. The app fails closed on every stop other than known success. Deterministic regressions cover sequential authoring, completion rejection, original-response changes, revision-only churn, and stalled/unknown stops that cannot export or request review. Checks: 153 app tests, 344 framework tests/replay and both typechecks pass. Live evidence follows after one frozen trial; no more tuning in this checkpoint.
+
+The removed experimental explanation field was persisted only in isolated trial tasks. Old evidence is retained unchanged; the new trial uses a fresh evaluation data directory rather than a compatibility adapter or data deletion.
+
 ## Selected-file outcomes and keyboard/focus checks — 2026-10-26
 
 The new `selected-file-report` case sends actual bounded `inventory.csv` and `notes.md` snapshots through task admission. The evaluator independently derives two item totals (36 and 34) and a grand total of 70, checks actual displayed cells, input hashes, budget binding, source/date/missing/freshness labels and saved-output references/read-back. Expected arithmetic is not supplied to the model. The checked rerun uses the existing comparison layout policy with row identities, without precomputed numeric assertions. No external tools are authorized.

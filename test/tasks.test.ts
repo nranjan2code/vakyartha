@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { createHost, type HostRunOptions, type HostTurn } from "@vak/host";
 import { ProfileCache, type Provider, type AgentTool } from "@vak/providers";
 import { comparisonExpectedRows } from "../shared/comparison-contract.ts";
+import { TaskFiles } from "../sidecar/task-files.ts";
 import { Tasks } from "../sidecar/tasks.ts";
 import { parseTaskInput, parseTaskView } from "../shared/task-contract.ts";
 import { COMPARISON_FIXTURE, interactiveComparisonContract, comparisonClaimIssues } from "../scripts/evaluation-reference.ts";
@@ -60,7 +61,7 @@ test("submitted criteria recompute checked claims without changing facts or expr
   const deps = { dir: path.join(dir, "tasks"), run: host.run, view: host.view, tools: async () => [], instructions: () => "test", observe: async (_session: string, work: () => Promise<void>) => work(), ready: () => {}, warn: () => {} };
   let tasks = await Tasks.open(deps);
   try {
-    const task = await tasks.create({ goal: "Compare fixture", criteria: "Checked caller facts and submitted criteria", provider: "scripted", model: "fake", integrations: [], spending: { kind: "local_only" }, resultPolicy: { kind: "comparison", table: contract } });
+    const task = await tasks.create({ goal: "Compare fixture", criteria: "Checked caller facts and submitted criteria", provider: "scripted", model: "fake", integrations: [], spending: { kind: "local_only" }, resultPolicy: { kind: "comparison", table: contract, initialValues: { "/criteria/budget": 20 } } });
     await until(() => tasks.get(task.id).state === "needs_input");
     const form = (await host.view(task.id)).surfaces.find((surface) => surface.id === "criteria")!;
     await tasks.input(task.id, { id: "changed-criteria", action: { surface: form.id, source: "root", data: { criteria: { budget: 10, seats: 8 } } }, revision: form.version });
@@ -73,13 +74,13 @@ test("submitted criteria recompute checked claims without changing facts or expr
     assert.deepEqual(comparisonClaimIssues(view, changed), []);
     assert.ok(comparisonClaimIssues(view, COMPARISON_FIXTURE).length > 0);
     await tasks.close(); tasks = await Tasks.open(deps);
-    assert.deepEqual(tasks.get(task.id).resultPolicy, { kind: "comparison", table: interactiveComparisonContract(changed) });
+    assert.deepEqual(tasks.get(task.id).resultPolicy, { kind: "comparison", table: interactiveComparisonContract(changed), initialValues: { "/criteria/budget": 20 } });
     assert.equal(tasks.get(task.id).state, "needs_input");
     const current = (await host.view(task.id)).surfaces.find((surface) => surface.id === "criteria")!;
     await tasks.input(task.id, { id: "forged-criterion", action: { surface: current.id, source: "budget", data: { criteria: { budget: 999, seats: 1 } } }, revision: current.version });
     await until(() => tasks.get(task.id).state === "failed");
     assert.equal(requests, 6);
-    assert.deepEqual(tasks.get(task.id).resultPolicy, { kind: "comparison", table: interactiveComparisonContract(changed) });
+    assert.deepEqual(tasks.get(task.id).resultPolicy, { kind: "comparison", table: interactiveComparisonContract(changed), initialValues: { "/criteria/budget": 20 } });
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -498,4 +499,51 @@ test("checked task output repairs in the same run and withholds rejected complet
     assert.ok(!JSON.stringify(view.timeline).includes("Unsupported result summary."));
     assert.ok(JSON.stringify(view.timeline).includes("Ready for review."));
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("task authoring can create independent surfaces sequentially before completion validation", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-sequential-authoring-"));
+  let requests = 0;
+  const provider: Provider = { id: "scripted", capabilities: { constrainedOutput: true }, async *stream(req) {
+    requests++;
+    assert.equal(req.responseSchema, undefined, "retain negotiated native/inline authoring");
+    if (requests === 2) {
+      assert.equal(req.messages.at(-1)?.role, "tool");
+      assert.ok(!JSON.stringify(req.messages).includes("Current output constraints after this edit"));
+    }
+    if (requests <= 2) {
+      const args = requests === 1
+        ? { surface: "criteria", data: { budget: 20 }, nodes: [{ id: "root", type: "form", props: { submit: "apply" }, children: [{ id: "budget", type: "input", props: { label: "Budget", bind: "/budget" } }] }] }
+        : { surface: "report", nodes: [{ id: "root", type: "table", props: { columns: ["name"], rows: [{ name: "One" }] } }] };
+      yield { type: "tool_start", id: `step-${requests}`, name: "vak_render" };
+      yield { type: "tool_args", id: `step-${requests}`, delta: JSON.stringify(args) };
+      yield { type: "tool_end", id: `step-${requests}` };
+      yield { type: "done", stop: "tool_use" }; return;
+    }
+    yield { type: "text", delta: "Ready." }; yield { type: "done", stop: "end" };
+  } };
+  const host = createHost({ providers: () => [{ id: "scripted", label: "Scripted", available: true, make: () => provider }], profiles: new ProfileCache(path.join(dir, "profiles.json")), instructions: "test", sessionsDir: path.join(dir, "sessions"), log: () => {} });
+  const tasks = await Tasks.open({ dir: path.join(dir, "tasks"), run: host.run, view: host.view, tools: async () => [], instructions: () => "test", observe: async (_session, work) => work(), ready: () => {}, warn: () => {} });
+  try {
+    const task = await tasks.create({ goal: "Compare", criteria: "Separate form and report", provider: "scripted", model: "fake", integrations: [], spending: { kind: "local_only" }, resultPolicy: { kind: "comparison", labels: ["One"], initialValues: { "/budget": 20 } } });
+    await until(() => tasks.get(task.id).state === "needs_input");
+    assert.equal(requests, 3);
+    assert.equal((await host.view(task.id)).surfaces.length, 2);
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("stalled and unknown generation stops never export or present a rejected result for review", async () => {
+  for (const stop of ["validation_stalled", "unexpected_stop"]) {
+    const dir = await mkdtemp(path.join(tmpdir(), "vak-rejected-stop-"));
+    const tasks = await Tasks.open({ dir, files: new TaskFiles(path.join(dir, "outputs"), path.join(dir, "transcripts")), run: async () => ({ stop }), view: async (id) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }), tools: async () => [], instructions: () => "", observe: async (_session, work) => work(), ready: () => {}, warn: () => {} });
+    try {
+      const task = await tasks.create({ goal: "Report", criteria: "Verified result", provider: "scripted", model: "fake", integrations: [], spending: { kind: "local_only" }, output: { kind: "markdown" } });
+      await until(() => tasks.get(task.id).state === "failed");
+      const failed = tasks.get(task.id);
+      assert.equal(failed.runHistory[0]!.stop, stop);
+      assert.equal(failed.runHistory[0]!.state, "failed");
+      assert.match(failed.note, new RegExp(stop));
+      assert.equal(failed.runHistory[0]!.output, undefined);
+    } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+  }
 });
