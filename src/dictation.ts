@@ -22,7 +22,9 @@ interface Recognition {
 type RecognitionCtor = new () => Recognition;
 const Recognizer = (globalThis as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor }).SpeechRecognition
   ?? (globalThis as { webkitSpeechRecognition?: RecognitionCtor }).webkitSpeechRecognition;
-export const systemDictation = Boolean(Recognizer);
+// The app window's WebKit has the recognizer but it ends without results (2026-10-26,
+// macOS with speech recognition allowed), so only a browser offers it.
+export const systemDictation = Boolean(Recognizer) && !("__TAURI_INTERNALS__" in globalThis);
 
 export const dictationPrefs = {
   get enabled(): boolean { return prefs.get("dictation:enabled") !== "false"; },
@@ -36,7 +38,7 @@ export const dictationPrefs = {
   get choice(): DictationChoice | undefined {
     try {
       const c = JSON.parse(prefs.get("dictation:choice") ?? "null") as DictationChoice | null;
-      if (c && typeof c.provider === "string") return c;
+      if (c && typeof c.provider === "string" && (c.provider !== "system" || systemDictation)) return c;
     } catch {
       /* fall through */
     }
@@ -75,8 +77,8 @@ const RECOGNITION_ERRORS: Record<string, string> = {
 
 export async function startDictation(h: DictationHandlers): Promise<void> {
   if (state !== "idle") return;
-  const c = dictationPrefs.choice;
-  if (!c) return h.onError("Choose how to transcribe in Settings → Voice.");
+  const c = dictationPrefs.choice ?? (await firstHosted());
+  if (!c) return h.onError("Dictation needs a transcription model here: add an OpenAI or Gemini key in Integrations → Voice.");
   if (c.provider === "system") return listenSystem(h);
   return record(c, h);
 }
@@ -99,6 +101,14 @@ export function mergeResults(parts: string[]): string {
     else if (!a.includes(b)) out = `${out} ${part}`;
   }
   return out;
+}
+
+/** With no choice made and no system recognizer: the first provider with a key that transcribes. */
+async function firstHosted(): Promise<DictationChoice | undefined> {
+  const { loadVoices } = await import("./voice.ts");
+  const list = await loadVoices().catch(() => []);
+  const p = list.find((x) => x.stt?.length && !(x.keyVar && x.reason?.includes("API key")));
+  return p ? { provider: p.id, model: p.stt![0]!.id } : undefined;
 }
 
 function listenSystem(h: DictationHandlers): void {
