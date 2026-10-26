@@ -19,6 +19,7 @@ export function workspaceChecks(task: Pick<TaskView, "inputs"> & { runHistory: P
     inputSnapshotsMatch: task.inputs?.length === WORKSPACE_INPUTS.length && WORKSPACE_INPUTS.every((input) => task.inputs?.some((snapshot) => snapshot.name === input.name && snapshot.content === input.content && snapshot.bytes === Buffer.byteLength(input.content) && snapshot.sha256 === createHash("sha256").update(input.content).digest("hex"))) || false,
     independentSurfaces: separateFormAndTable(view),
     exactVisibleValues: tables.length === 1 && checkComparisonContract(contract, tables[0]!).length === 0,
+    unsupportedDefaultsAbsent: boundFieldValues(view).every((field) => /budget/i.test(field.label) || field.value === undefined || field.value === null || field.value === "" || field.value === false),
     budgetInitialized: boundFieldValues(view).some((field) => /budget/i.test(field.label) && field.value === 100),
     sourcesNamed: WORKSPACE_INPUTS.every((input) => text.includes(input.name)),
     sampleLabel: /fictional/i.test(text),

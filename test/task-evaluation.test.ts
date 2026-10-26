@@ -95,3 +95,11 @@ test("selected-file outcome checks reject hidden facts, changed snapshots and wr
   assert.equal(workspaceChecks(task, view).inputSnapshotsMatch, false);
   assert.equal(workspaceChecks(task, view).outputReferencesCurrentSurfaces, false);
 });
+
+test("file report review rejects invented defaults in extra fields", async () => {
+  const { workspaceChecks } = await import("../scripts/workspace-reference.ts");
+  const view: SessionView = { id: "extra", title: "", updated: "", timeline: [], surfaces: [{ id: "form", version: 1, nodes: [{ id: "root", type: "form", children: ["date"] }, { id: "date", type: "date", props: { label: "Project deadline", bind: "/deadline" } }], data: { deadline: "2026-10-29" } }] };
+  assert.equal(workspaceChecks({ runHistory: [] }, view).unsupportedDefaultsAbsent, false);
+  view.surfaces[0]!.data.deadline = "";
+  assert.equal(workspaceChecks({ runHistory: [] }, view).unsupportedDefaultsAbsent, true);
+});
