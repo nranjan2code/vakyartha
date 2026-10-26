@@ -62,7 +62,7 @@ export async function voiceSection(open: (id: string) => void): Promise<HTMLElem
     card.addEventListener("click", () => open(p.id));
     return card;
   }));
-  return [el("h2", { className: "market-heading", textContent: "Voice" }), el("p", { className: "row-hint market-sub", textContent: "Read replies aloud. Pick a provider, set it up once, then choose a voice." }), grid];
+  return [el("h2", { className: "market-heading", textContent: "Voice" }), el("p", { className: "row-hint market-sub", textContent: "Read replies aloud and dictate messages. Pick a provider and set it up once." }), grid];
 }
 
 /** One voice provider: setup, voice packs, model and voice, and making it the one that reads. */
@@ -88,7 +88,7 @@ export async function voicePage(id: string, settings: Setting[], back: () => voi
         b.disabled = true;
         b.textContent = "Installing…";
         note.textContent = "";
-        api("/api/voice/ollama/pull", { method: "POST", body: JSON.stringify({ model: pack.id }) }).then(reload, (err: Error) => {
+        api("/api/voice/install", { method: "POST", body: JSON.stringify({ provider: p.id, pack: pack.id }) }).then(reload, (err: Error) => {
           note.textContent = err.message;
           b.disabled = false;
           b.textContent = `Install · ${pack.size}`;
@@ -96,12 +96,13 @@ export async function voicePage(id: string, settings: Setting[], back: () => voi
       });
       control = b;
     }
-    setup.push(row(`Phonon · ${pack.label}`, `${pack.id} · ${pack.license}`, control));
+    setup.push(row(pack.label, `${pack.id} · ${pack.license}`, control));
   }
   if (p.reason) setup.unshift(el("div", { className: "row stack" }, el("p", { className: "row-hint", textContent: p.reason })));
   if (setup.length) parts.push(group(p.packs ? "Voice packs" : "Setup", ...setup));
 
-  if (p.available) {
+  // A provider that only listens (Whistle) has nothing to read aloud with.
+  if (p.available && p.models.some((m) => m.voices.length)) {
     const saved = voicePrefs.choice?.provider === p.id ? voicePrefs.choice : undefined;
     let c = resolveChoice([p], saved ?? { provider: p.id, model: "", voice: "" })!;
     const model = () => p.models.find((m) => m.id === c.model)!;
@@ -149,7 +150,8 @@ export async function voicePage(id: string, settings: Setting[], back: () => voi
   parts.push(group("Speech to text", el("div", { className: "row stack" }, el("p", {
     className: "row-hint",
     textContent: p.stt?.length
-      ? `Dictation can use ${p.stt.map((m) => m.label).join(", ")}. Choose it in Settings → Voice. ${p.local ? "" : "Recordings are sent to " + p.publisher + " and billed."}`
+      ? `Dictation can use ${p.stt.map((m) => m.label).join(", ")}. Choose it in Settings → Voice. ${p.local ? "Recordings stay on this Mac." : "Recordings are sent to " + p.publisher + " and billed."}`
+      : p.transcribes ? "Set it up above, then choose it for dictation in Settings → Voice."
       : `${p.label} has no transcription model yet. Dictation uses this Mac's speech recognition or a hosted provider.`,
   }))));
   parts.push(note);
@@ -191,13 +193,17 @@ function dictationGroup(list: VoiceProvider[]): HTMLElement {
   if (systemDictation) options.push([JSON.stringify({ provider: "system", model: "" }), "This Mac · free"]);
   for (const p of list) {
     if (!p.stt || (p.keyVar && p.reason?.includes("API key"))) continue;
-    for (const m of p.stt) options.push([JSON.stringify({ provider: p.id, model: m.id }), `${m.label} · ${p.label}`]);
+    for (const m of p.stt) options.push([JSON.stringify({ provider: p.id, model: m.id }), `${m.label === p.label ? m.label : `${m.label} · ${p.label}`}${p.local ? " · free" : ""}`]);
   }
   const chosen = dictationPrefs.choice;
   let hint: Element | null = null;
   const describe = (provider?: string) => {
     if (!hint) return;
-    hint.textContent = provider === "system" ? "Free. Words appear as you speak (macOS speech recognition)." : provider ? "Sent to the provider when you stop; billed per minute." : "Add a hosted provider's key in Integrations → Voice to dictate.";
+    const local = list.find((p) => p.id === provider)?.local;
+    hint.textContent = provider === "system" ? "Free. Words appear as you speak (macOS speech recognition)."
+      : local ? "Free. Transcribed on this Mac when you stop; the recording never leaves it."
+      : provider ? "Sent to the provider when you stop; billed per minute."
+      : "Install Whistle, or add a hosted provider's key, in Integrations → Voice to dictate.";
   };
   const pick = options.length
     ? select(options, chosen ? JSON.stringify({ provider: chosen.provider, model: chosen.model }) : options[0]![0], (v) => { const c = JSON.parse(v) as { provider: string; model: string }; dictationPrefs.choice = c; describe(c.provider); })

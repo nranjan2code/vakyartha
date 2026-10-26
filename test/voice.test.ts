@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SETTINGS } from "../sidecar/settings.ts";
-import { MAX_SPEECH_CHARS, pullOllamaPack, speak, SpeechError, transcribe, voiceProviders, wav } from "../sidecar/voice.ts";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { installVoicePack, MAX_SPEECH_CHARS, pullOllamaPack, speak, SpeechError, transcribe, voiceProviders, wav } from "../sidecar/voice.ts";
+import { WHISTLE_PACK, whistleDir, whistleSupported } from "../sidecar/whistle.ts";
 import { downsample, mergeResults, wav16k } from "../src/dictation.ts";
 import { speakable, speechChunks } from "../src/speech-text.ts";
 
@@ -46,7 +50,7 @@ test("Ollama lists installed speech models with their voices, default first", as
     "/api/tags": () => Response.json({ models: [{ name: "phonon:latest", capabilities: ["speech"] }, { name: "qwen3.5:4b-mlx", capabilities: ["completion"] }] }),
     "/api/show": () => Response.json({ voices: ["Zoey", "default", "Easton"] }),
   });
-  const [ollama, openai, gemini, eleven] = await voiceProviders({}, f);
+  const [ollama, , openai, gemini, eleven] = await voiceProviders({}, f);
   assert.equal(ollama!.available, true);
   assert.deepEqual(ollama!.models.map((m) => m.id), ["phonon:latest"]);
   assert.deepEqual(ollama!.models[0]!.voices.map((v) => v.id), ["default", "Zoey", "Easton"]);
@@ -67,8 +71,8 @@ test("Ollama without a speech model, or not running, says what to do", async () 
 test("hosted providers become available with a key; ElevenLabs lists the library's voices", async () => {
   const { f, calls } = fake({ "/api/tags": () => Response.json({ models: [] }), "api.elevenlabs.io/v1/voices": () => Response.json({ voices: [{ voice_id: "abc", name: "Rachel" }] }), "/v1beta/models?": () => Response.json({ models: [] }) });
   const list = await voiceProviders({ OPENAI_API_KEY: "k", GEMINI_API_KEY: "k", ELEVENLABS_API_KEY: "e" }, f);
-  assert.deepEqual(list.map((p) => p.available), [false, true, true, true]);
-  assert.deepEqual(list[3]!.models[0]!.voices, [{ id: "abc", name: "Rachel" }]);
+  assert.deepEqual(list.map((p) => p.available), [false, false, true, true, true]);
+  assert.deepEqual(list[4]!.models[0]!.voices, [{ id: "abc", name: "Rachel" }]);
   assert.equal((calls.find((c) => c.url.includes("elevenlabs"))!.init!.headers as Record<string, string>)["xi-api-key"], "e");
 });
 
@@ -194,6 +198,39 @@ test("dictation reaches each provider in its own form", async () => {
   assert.equal((body(calls[2]!) as { contents: { parts: unknown[] }[] }).contents[0]!.parts.length, 1);
   assert.equal(await transcribe({ provider: "gemini", model: "gemini-flash-latest", audio: recording }, env, f), "general");
   assert.equal((body(calls[3]!) as { contents: { parts: unknown[] }[] }).contents[0]!.parts.length, 2);
+});
+
+const appleSilicon = { skip: !whistleSupported() && "Whistle runs on Apple Silicon Macs" };
+
+test("Whistle only listens, and asks for its pack before dictation can use it", appleSilicon, async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "vak-voice-"));
+  const w = (await voiceProviders({}, fake({}).f, dir)).find((p) => p.id === "whistle")!;
+  assert.equal(w.local, true);
+  assert.equal(w.transcribes, true);
+  assert.equal(w.available, false);
+  assert.deepEqual(w.stt, []);
+  assert.deepEqual(w.models, []);
+  assert.deepEqual(w.packs!.map((p) => [p.id, p.installed]), [[WHISTLE_PACK.id, false]]);
+  assert.match(w.reason!, /Install the Whistle pack/);
+  await assert.rejects(speak({ provider: "whistle", model: "whistle", voice: "x", text: "hi" }, {}), /does not read aloud/);
+});
+
+test("the Whistle pack installs only its pinned files, checked by SHA-256", appleSilicon, async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "vak-voice-"));
+  const { f, calls } = fake({ "huggingface.co": () => new Response(new Uint8Array(WHISTLE_PACK.files[0]!.bytes)) });
+  await assert.rejects(installVoicePack("whistle", "whistle@latest", {}, dir, f), /not a listed/);
+  await assert.rejects(installVoicePack("openai", "x", {}, dir, f), /no packs/);
+  await assert.rejects(installVoicePack("whistle", WHISTLE_PACK.id, {}, dir, f), /does not match its pinned checksum/);
+  assert.ok(calls.every((c) => /^https:\/\/huggingface\.co\/Cactus-Compute\/[\w]+\/resolve\/[0-9a-f]{40}\//.test(c.url)));
+  assert.equal(existsSync(whistleDir(dir)), false);
+  assert.equal(existsSync(`${whistleDir(dir)}.part`), false);
+});
+
+test("Whistle refuses a language it was not trained on, and a missing pack, before running", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "vak-voice-"));
+  const ok = Buffer.from(wav16k(new Int16Array(10))).toString("base64");
+  await assert.rejects(transcribe({ provider: "whistle", model: "whistle", language: "hi-IN", audio: ok }, {}, fake({}).f, undefined, dir), /does not transcribe this language/);
+  await assert.rejects(transcribe({ provider: "whistle", model: "whistle", language: "en-IN", audio: ok }, {}, fake({}).f, undefined, dir), /Install the Whistle pack/);
 });
 
 test("dictation input is checked before anything is sent", async () => {

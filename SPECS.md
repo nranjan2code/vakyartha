@@ -41,8 +41,12 @@ Tauri 2 shell, Vite + plain TypeScript UI, the engine as a Node sidecar. **The b
 
 - **Read aloud** is for the person, not a tool the model calls, so it is not an MCP integration: `sidecar/voice.ts` holds one adapter per voice provider (models, voices, the controls each model accepts, one synthesis call). Adding a provider is adding an adapter; its key, if new, is declared there and stored like any other secret.
 - The engine asks every provider for 16-bit 24 kHz mono PCM and writes the WAV header itself; requests are capped at 4,096 characters and validated before anything is sent. The window splits a reply's prose (not code or interfaces) into sentence-aligned pieces, plays one while fetching the next, and keeps speed in the player.
-- **Dictation** uses the same adapters (`transcribe`): the window records 16 kHz mono WAV, the engine forwards it (8 MB cap) and returns text. The system recognizer built into the window is the free default and needs no engine call. Gemini model lists come from its API.
-- Local first: a speech model on this Mac is the default and costs nothing; voice packs install only from a fixed list. Hosted voices are opt-in and say that the text leaves the Mac and is billed. Voice choice, speed and auto-read are per window.
+- **Dictation** uses the same adapters (`transcribe`): the window records 16 kHz mono WAV, the engine forwards it (8 MB cap) and returns text. The same path serves the browser and the app window. In a browser, the recognizer built into the window is the free default and needs no engine call. The app window's WebKit recognizer returns nothing, so there the first provider ready to transcribe is the default: Whistle, once installed. Gemini model lists come from its API.
+- **Whistle** (`sidecar/whistle.ts`) only transcribes, on this Mac's CPU, in seven languages (en, de, fr, es, it, nl, pl), and refuses others. Its engine is a prebuilt binary with no published source, so it is handled as untrusted:
+  - its pack (the macOS arm64 engine plus weights, both Apache 2.0) is pinned to Hugging Face commits at least 14 days old and to each file's SHA-256;
+  - it is checked before it is moved into `<data>/voice/whistle/<engine>-<weights>/`;
+  - each recording runs as one process with an empty environment and, on macOS, with networking denied.
+- Local first: a speech model on this Mac is the default and costs nothing; voice packs install only from a fixed list, through each adapter's own `install` (`POST /api/voice/install`). Hosted voices are opt-in and say that the text leaves the Mac and is billed. Voice choice, speed and auto-read are per window.
 
 ## 5. FinOps
 

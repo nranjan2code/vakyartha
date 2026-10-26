@@ -1,6 +1,7 @@
 // Dictation: speak instead of typing. "system" is the speech recognition built
-// into the window's WebKit (free, words appear as they are said); a hosted
-// provider gets a 16 kHz mono WAV recording when you stop. Anything showing
+// into the window's WebKit (free, words appear as they are said); any other
+// provider (Whistle on this Mac, or a hosted one) gets a 16 kHz mono WAV
+// recording when you stop. Anything showing
 // dictation hears "vak:dictation".
 
 import { engine, prefs } from "./core.ts";
@@ -77,8 +78,8 @@ const RECOGNITION_ERRORS: Record<string, string> = {
 
 export async function startDictation(h: DictationHandlers): Promise<void> {
   if (state !== "idle") return;
-  const c = dictationPrefs.choice ?? (await firstHosted());
-  if (!c) return h.onError("Dictation needs a transcription model here: add an OpenAI or Gemini key in Integrations → Voice.");
+  const c = dictationPrefs.choice ?? (await firstReady());
+  if (!c) return h.onError("Dictation needs a transcription model here: install Whistle (free, on this Mac) or add an OpenAI or Gemini key in Integrations → Voice.");
   if (c.provider === "system") return listenSystem(h);
   return record(c, h);
 }
@@ -103,8 +104,8 @@ export function mergeResults(parts: string[]): string {
   return out;
 }
 
-/** With no choice made and no system recognizer: the first provider with a key that transcribes. */
-async function firstHosted(): Promise<DictationChoice | undefined> {
+/** With no choice made and no system recognizer: the first provider ready to transcribe (local ones come first). */
+async function firstReady(): Promise<DictationChoice | undefined> {
   const { loadVoices } = await import("./voice.ts");
   const list = await loadVoices().catch(() => []);
   const p = list.find((x) => x.stt?.length && !(x.keyVar && x.reason?.includes("API key")));

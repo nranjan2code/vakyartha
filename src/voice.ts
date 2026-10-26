@@ -13,7 +13,7 @@ export interface VoiceModel { id: string; label: string; voices: Voice[]; note?:
 export interface VoicePack { id: string; label: string; size: string; license: string; installed: boolean }
 export interface VoiceProvider {
   id: string; label: string; publisher: string; summary: string; description: string; icon: string;
-  local: boolean; cost: string; keyVar?: string; available: boolean; reason?: string; models: VoiceModel[]; packs?: VoicePack[]; stt?: { id: string; label: string }[];
+  local: boolean; cost: string; keyVar?: string; available: boolean; reason?: string; models: VoiceModel[]; packs?: VoicePack[]; stt?: { id: string; label: string }[]; transcribes: boolean;
 }
 
 /** `options`: values for the model's declared options (style, stability…). */

@@ -18,7 +18,7 @@ import { TaskFiles } from "./task-files.ts";
 import { fileSecrets, keychainStore, Settings, SettingsError } from "./settings.ts";
 import { checkTaskSpending } from "./task-policy.ts";
 import { Tasks } from "./tasks.ts";
-import { MAX_RECORDING_BYTES, pullOllamaPack, speak, SpeechError, transcribe, voiceProviders } from "./voice.ts";
+import { installVoicePack, MAX_RECORDING_BYTES, speak, SpeechError, transcribe, voiceProviders } from "./voice.ts";
 
 export interface AppServerOptions {
   /** Conversations, settings, channels, logs (and profiles/transcripts unless given). */
@@ -59,6 +59,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   // A release app has no terminal: engine output goes to logs/engine.log
   // (one previous file kept), as well as stderr for `npm run desktop`.
   const logFile = path.join(dataDir, "logs", "engine.log");
+  const voiceDir = path.join(dataDir, "voice");
   function log(line: string): void {
     console.error(line);
     try {
@@ -119,12 +120,13 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   /** Voice: the providers, installing a listed local voice pack, one sentence-sized piece of audio, and dictation. */
   async function voiceRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     if (url.pathname === "/api/voice" && req.method === "GET") {
-      json(res, 200, await voiceProviders(process.env));
+      json(res, 200, await voiceProviders(process.env, fetch, voiceDir));
       return true;
     }
-    if (url.pathname === "/api/voice/ollama/pull" && req.method === "POST") {
+    if (url.pathname === "/api/voice/install" && req.method === "POST") {
       try {
-        await pullOllamaPack(String((await readJson(req)).model ?? ""), process.env);
+        const body = await readJson(req);
+        await installVoicePack(String(body.provider ?? ""), String(body.pack ?? ""), process.env, voiceDir);
         json(res, 200, { ok: true });
       } catch (err) {
         json(res, err instanceof SpeechError ? err.status : 500, { error: (err as Error).message });
@@ -145,7 +147,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
       res.on("close", () => abort.abort());
       try {
         const body = JSON.parse(raw || "{}") as Record<string, unknown>;
-        const text = await transcribe({ provider: String(body.provider), model: String(body.model), language: typeof body.language === "string" ? body.language : undefined, audio: body.audio as string }, process.env, fetch, abort.signal);
+        const text = await transcribe({ provider: String(body.provider), model: String(body.model), language: typeof body.language === "string" ? body.language : undefined, audio: body.audio as string }, process.env, fetch, abort.signal, voiceDir);
         json(res, 200, { text });
       } catch (err) {
         if (abort.signal.aborted) return true;

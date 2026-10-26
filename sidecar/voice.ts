@@ -5,6 +5,8 @@
 // mono PCM and the WAV header is written here: Ollama streams WAV with
 // placeholder sizes, which a player cannot seek, and Gemini only returns PCM.
 
+import { installWhistle, runWhistle, WHISTLE_LANGUAGES, WHISTLE_PACK, whistleInstalled, whistleSupported } from "./whistle.ts";
+
 export interface Voice { id: string; name: string }
 /** A control a model accepts beyond the voice: a style instruction, or a 0–1 setting. */
 export type VoiceOption =
@@ -30,8 +32,10 @@ export interface VoiceProviderView {
   reason?: string;
   models: VoiceModel[];
   packs?: VoicePack[];
-  /** Speech-to-text models, when the provider also transcribes. */
+  /** Speech-to-text models ready now, when the provider transcribes. */
   stt?: { id: string; label: string }[];
+  /** Whether it can transcribe at all, once set up. */
+  transcribes: boolean;
 }
 
 export interface SpeechRequest { provider: string; model: string; voice: string; text: string; options?: Record<string, unknown> }
@@ -42,7 +46,8 @@ const RATE = 24_000;
 
 type Env = Record<string, string | undefined>;
 type Fetch = typeof fetch;
-interface Ctx { env: Env; f: Fetch; signal?: AbortSignal }
+/** `dir` is where local packs live (the engine's data folder/voice). */
+interface Ctx { env: Env; f: Fetch; signal?: AbortSignal; dir: string }
 
 interface VoiceAdapter {
   id: string;
@@ -56,8 +61,10 @@ interface VoiceAdapter {
   keyLabel?: string;
   /** Models and voices, or why there are none. */
   list(ctx: Ctx): Promise<{ models: VoiceModel[]; reason?: string; packs?: VoicePack[]; stt?: { id: string; label: string }[] }>;
-  /** One request's PCM. */
-  synth(req: SpeechRequest, ctx: Ctx): Promise<Uint8Array>;
+  /** One request's PCM; absent for a provider that only transcribes. */
+  synth?(req: SpeechRequest, ctx: Ctx): Promise<Uint8Array>;
+  /** Install one of the packs it lists. */
+  install?(pack: string, ctx: Ctx): Promise<void>;
   /** Dictation: a WAV recording to text. */
   transcribe?: { models: { id: string; label: string }[]; run(audio: Uint8Array, model: string, language: string | undefined, ctx: Ctx): Promise<string> };
 }
@@ -128,12 +135,12 @@ export function ollamaBase(env: Env): string {
 const NC = "CC BY-NC 4.0 (non-commercial)";
 /** The Phonon tags offered for one-click install; sizes from the Ollama library. */
 export const OLLAMA_PACKS: Omit<VoicePack, "installed">[] = [
-  { id: "phonon:latest", label: "English", size: "113 MB", license: "Apache 2.0" },
-  { id: "phonon:multilingual", label: "Five languages", size: "123 MB", license: NC },
-  { id: "phonon:fr", label: "French", size: "123 MB", license: NC },
-  { id: "phonon:de", label: "German", size: "123 MB", license: NC },
-  { id: "phonon:es", label: "Spanish", size: "123 MB", license: NC },
-  { id: "phonon:pt", label: "Portuguese", size: "123 MB", license: NC },
+  { id: "phonon:latest", label: "Phonon · English", size: "113 MB", license: "Apache 2.0" },
+  { id: "phonon:multilingual", label: "Phonon · Five languages", size: "123 MB", license: NC },
+  { id: "phonon:fr", label: "Phonon · French", size: "123 MB", license: NC },
+  { id: "phonon:de", label: "Phonon · German", size: "123 MB", license: NC },
+  { id: "phonon:es", label: "Phonon · Spanish", size: "123 MB", license: NC },
+  { id: "phonon:pt", label: "Phonon · Portuguese", size: "123 MB", license: NC },
 ];
 
 const ollama: VoiceAdapter = {
@@ -166,7 +173,7 @@ const ollama: VoiceAdapter = {
       const pack = OLLAMA_PACKS.find((p) => p.id === m.name);
       return {
         id: m.name,
-        label: pack ? `Phonon · ${pack.label}` : m.name.replace(/:latest$/, ""),
+        label: pack ? pack.label : m.name.replace(/:latest$/, ""),
         // "default" first: it is what the model uses when none is named.
         voices: [{ id: "default", name: "Default" }, ...named(voices.filter((v) => v !== "default"))],
         note: pack?.license === NC ? "Non-commercial licence" : undefined,
@@ -178,6 +185,9 @@ const ollama: VoiceAdapter = {
     // Phonon refuses speed and instructions; playback speed is the player's.
     const res = await post("Ollama", ctx, `${ollamaBase(ctx.env)}/v1/audio/speech`, {}, { model: req.model, input: req.text, voice: req.voice || "default", response_format: "pcm" });
     return new Uint8Array(await res.arrayBuffer());
+  },
+  install(pack, ctx) {
+    return pullOllamaPack(pack, ctx.env, ctx.f);
   },
 };
 
@@ -192,6 +202,38 @@ export async function pullOllamaPack(model: string, env: Env, f: Fetch = fetch):
   }
   if (!res.ok) throw await failure("Ollama", res);
 }
+
+// --- Whistle (Cactus Compute) -------------------------------------------------------
+
+const whistle: VoiceAdapter = {
+  id: "whistle",
+  label: "Whistle",
+  publisher: "Cactus Compute",
+  summary: "Dictation that runs on this Mac. Free and private.",
+  description: `Whistle is a small speech-to-text model that runs on this Mac's processor, so recordings never leave this computer. It transcribes ${Object.values(WHISTLE_LANGUAGES).join(", ")}. It only listens: it does not read replies aloud.`,
+  local: true,
+  cost: "Free · runs on this Mac",
+  async list({ dir }) {
+    if (!whistleSupported()) return { models: [], reason: "Whistle runs on Apple Silicon Macs." };
+    const { files: _f, ...pack } = WHISTLE_PACK;
+    const installed = await whistleInstalled(dir);
+    return installed
+      ? { models: [], packs: [{ ...pack, installed }], stt: this.transcribe!.models }
+      : { models: [], packs: [{ ...pack, installed }], stt: [], reason: "Install the Whistle pack below to dictate on this Mac." };
+  },
+  install(pack, { dir, f }) {
+    if (pack !== WHISTLE_PACK.id) throw new SpeechError("not a listed voice pack");
+    return installWhistle(dir, f).catch((err: Error) => { throw new SpeechError(err.message, 502); });
+  },
+  transcribe: {
+    models: [{ id: "whistle", label: "Whistle" }],
+    async run(audio, _model, language, { dir, signal }) {
+      if (language && !WHISTLE_LANGUAGES[language]) throw new SpeechError(`Whistle does not transcribe this language. Choose ${Object.values(WHISTLE_LANGUAGES).join(", ")} or "Same as this Mac" in Settings → Voice, or a hosted model.`);
+      if (!(await whistleInstalled(dir))) throw new SpeechError("Install the Whistle pack in Integrations → Voice → Whistle.");
+      return runWhistle(dir, audio, language, signal);
+    },
+  },
+};
 
 const STYLE_PRESETS = ["Warm and friendly", "Calm, measured narrator", "Cheerful and upbeat", "Clear newsreader", "Soft and gentle", "Confident presenter"];
 const style = (hint: string): VoiceOption => ({ id: "style", kind: "text", label: "Style", hint, presets: STYLE_PRESETS, max: 300 });
@@ -354,20 +396,21 @@ const elevenlabs: VoiceAdapter = {
   },
 };
 
-/** Local first: a new install reads aloud for free. */
-export const VOICES: VoiceAdapter[] = [ollama, openai, gemini, elevenlabs];
+/** Local first: a new install reads aloud and dictates for free, and the first that transcribes is dictation's default. */
+export const VOICES: VoiceAdapter[] = [ollama, whistle, openai, gemini, elevenlabs];
 
 /** Keys voice providers need that no chat provider already declares (for Settings to store). */
 export const VOICE_KEYS = [{ name: "ELEVENLABS_API_KEY", label: "ElevenLabs API key", owner: "elevenlabs" }];
 
-export async function voiceProviders(env: Env, f: Fetch = fetch): Promise<VoiceProviderView[]> {
+export async function voiceProviders(env: Env, f: Fetch = fetch, dir = ""): Promise<VoiceProviderView[]> {
   return Promise.all(VOICES.map(async (a): Promise<VoiceProviderView> => {
-    const { list: _l, synth: _s, keyLabel: _k, transcribe, ...info } = a;
-    const listed = await a.list({ env, f });
+    const { list: _l, synth: _s, install: _i, keyLabel: _k, transcribe, ...info } = a;
+    const listed = await a.list({ env, f, dir });
     const missingKey = a.keyVar && !env[a.keyVar];
     const reason = missingKey ? `Add your ${a.keyLabel ?? a.label} API key below.` : listed.reason;
-    const available = !reason && listed.models.some((m) => m.voices.length > 0);
-    return { ...info, icon: "voice", available, reason, models: listed.models, packs: listed.packs, stt: listed.stt ?? transcribe?.models };
+    // Ready when it can read aloud or, for a listener only, transcribe.
+    const available = !reason && (listed.models.some((m) => m.voices.length > 0) || (!a.synth && Boolean(listed.stt?.length)));
+    return { ...info, icon: "voice", available, reason, models: listed.models, packs: listed.packs, stt: listed.stt ?? transcribe?.models, transcribes: Boolean(transcribe) };
   }));
 }
 
@@ -398,15 +441,22 @@ function checkOptions(raw: unknown): Record<string, string | number> {
   return out;
 }
 
+/** Install a pack a provider lists (never a name typed in: each adapter checks its own list). */
+export async function installVoicePack(provider: string, pack: string, env: Env, dir: string, f: Fetch = fetch): Promise<void> {
+  const a = VOICES.find((x) => x.id === provider);
+  if (!a?.install) throw new SpeechError("this provider has no packs");
+  await a.install(pack, { env, f, dir });
+}
+
 /** One request's audio as a WAV file. */
 export async function speak(req: SpeechRequest, env: Env, f: Fetch = fetch, signal?: AbortSignal): Promise<Uint8Array> {
   const a = VOICES.find((x) => x.id === req.provider);
-  if (!a) throw new SpeechError("unknown voice provider");
+  if (!a?.synth) throw new SpeechError(a ? "this provider does not read aloud" : "unknown voice provider");
   if (typeof req.model !== "string" || !/^[\w.:/-]{1,100}$/.test(req.model)) throw new SpeechError("invalid voice model");
   if (typeof req.voice !== "string" || req.voice.length > 80) throw new SpeechError("invalid voice");
   if (typeof req.text !== "string" || !req.text.trim()) throw new SpeechError("nothing to read");
   if (req.text.length > MAX_SPEECH_CHARS) throw new SpeechError(`text over ${MAX_SPEECH_CHARS} characters`);
-  return wav(await a.synth({ ...req, options: checkOptions(req.options) }, { env, f, signal }));
+  return wav(await a.synth({ ...req, options: checkOptions(req.options) }, { env, f, signal, dir: "" }));
 }
 
 /** A recording's size limit: about four minutes of 16 kHz mono WAV. */
@@ -415,7 +465,7 @@ export const MAX_RECORDING_BYTES = 8_000_000;
 export interface TranscribeRequest { provider: string; model: string; language?: string; audio: string }
 
 /** Dictation: base64 WAV in, text out. */
-export async function transcribe(req: TranscribeRequest, env: Env, f: Fetch = fetch, signal?: AbortSignal): Promise<string> {
+export async function transcribe(req: TranscribeRequest, env: Env, f: Fetch = fetch, signal?: AbortSignal, dir = ""): Promise<string> {
   const a = VOICES.find((x) => x.id === req.provider);
   if (!a?.transcribe) throw new SpeechError("this provider does not transcribe");
   // Gemini's models come from its API, so a well-formed name is enough here.
@@ -425,5 +475,5 @@ export async function transcribe(req: TranscribeRequest, env: Env, f: Fetch = fe
   const audio = new Uint8Array(Buffer.from(req.audio, "base64"));
   if (audio.length > MAX_RECORDING_BYTES) throw new SpeechError("the recording is too long");
   if (audio.length < 44 || Buffer.from(audio.subarray(0, 4)).toString() !== "RIFF" || Buffer.from(audio.subarray(8, 12)).toString() !== "WAVE") throw new SpeechError("the recording is not a WAV file");
-  return a.transcribe.run(audio, req.model, req.language?.split("-")[0] || undefined, { env, f, signal });
+  return a.transcribe.run(audio, req.model, req.language?.split("-")[0] || undefined, { env, f, signal, dir });
 }
