@@ -4,6 +4,7 @@
 // Kept deliberately quiet: the window is the conversation and a composer with
 // a model picker; everything else is on the Settings page.
 
+import { modelMenu } from "./model-menu.ts";
 import { type AgentEvent, getAt, projectText, readSse, type SurfaceSnapshot, titleRepeated } from "@vak/core";
 import type { SessionSummary, SessionView } from "@vak/host";
 import { defineVakElements, renderMarkdown, type VakActionDetail, VakClient, type VakSurfaceElement } from "@vak/web";
@@ -30,6 +31,7 @@ const thread = $<HTMLElement>("thread");
 const input = $<HTMLTextAreaElement>("input");
 const send = $<HTMLButtonElement>("send");
 const modelPick = $<HTMLSelectElement>("model-pick");
+modelMenu(modelPick);
 const chatsNav = $<HTMLElement>("chats");
 
 let client: VakClient;
