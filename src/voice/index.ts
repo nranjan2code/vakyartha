@@ -10,4 +10,5 @@ export { spokenSurface, textLanguage } from "./speech-text.ts";
 export { setVoiceOn, voicePage, voiceSection, voiceSettingsPage } from "./settings-page.ts";
 export { voiceMaster } from "./master.ts";
 export { VoiceApprovals } from "./approvals.ts";
+export { VoiceDecisions } from "./decisions.ts";
 export { conversationPrefs, conversationState, type ConversationState, startConversation, stopConversation } from "./conversation.ts";

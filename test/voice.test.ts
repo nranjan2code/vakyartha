@@ -496,3 +496,52 @@ test("approvals by voice: consent names the operation, and nothing else decides"
   await f.v.hear("allow create");
   assert.deepEqual(f.decided, ["a2:allow"]);
 });
+
+test("choices by voice: matched by meaning, read back, then activated like a click", async () => {
+  const { VoiceDecisions } = await import("../src/voice/decisions.ts");
+  const { SurfaceStore, basicCatalog } = await import("@vak/core");
+  const store = new SurfaceStore(basicCatalog);
+  store.render({ surface: "hotels", nodes: [{ id: "root", type: "compare", props: { title: "Kyoto hotels", action: "book_hotel", best: "Ryokan Sakura", options: [
+    { name: "Hilton Kyoto", price: "¥32,000" }, { name: "Ryokan Sakura", price: "¥18,000" }, { name: "Park Hyatt Kyoto", price: "¥54,000" },
+  ] } }] });
+  store.render({ surface: "note", nodes: [{ id: "root", type: "text", props: { content: "No choice here" } }] });
+  const said: string[] = [];
+  const clicked: string[] = [];
+  const v = new VoiceDecisions({ store: () => store, say: (t) => void said.push(t), activate: (s, k) => (clicked.push(`${s}/${k}`), true) });
+
+  assert.equal(v.offer(["note", "hotels"]), "Kyoto hotels: Hilton Kyoto, ¥32,000; Ryokan Sakura, ¥18,000; Park Hyatt Kyoto, ¥54,000. Which one?");
+  assert.equal(v.hear("the cheaper one"), true);
+  assert.equal(said.at(-1), "Book hotel: Ryokan Sakura. Shall I?");
+  assert.deepEqual(clicked, [], "nothing happens before the read-back is agreed");
+  assert.equal(v.hear("no, the hilton"), true);
+  assert.equal(said.at(-1), "Book hotel: Hilton Kyoto. Shall I?");
+  assert.equal(v.hear("yes"), true);
+  assert.deepEqual(clicked, ["hotels/root#0"], "the same control key a click on that option uses");
+  assert.equal(v.waiting, false);
+
+  // A no without a new choice asks again; cancel drops it, leaving it on screen.
+  v.offer(["hotels"]);
+  v.hear("second");
+  v.hear("no");
+  assert.match(said.at(-1)!, /^Which one, then\?/);
+  v.hear("cancel");
+  assert.equal(v.waiting, false);
+
+  // A longer sentence that names no option is the person talking: it goes to the model.
+  v.offer(["hotels"]);
+  assert.equal(v.hear("which of these has breakfast included and a pool"), false);
+  assert.equal(v.waiting, false);
+
+  // A short unclear answer is asked once more, then left on screen.
+  v.offer(["hotels"]);
+  v.hear("hmm");
+  assert.match(said.at(-1)!, /^Sorry, which one\?/);
+  v.hear("erm");
+  assert.equal(said.at(-1), "It is waiting on screen for you.");
+
+  // Shared words are ambiguous, not a guess.
+  v.offer(["hotels"]);
+  v.hear("the kyoto one");
+  assert.equal(said.at(-1), "Sorry, which one? Kyoto hotels: Hilton Kyoto, ¥32,000; Ryokan Sakura, ¥18,000; Park Hyatt Kyoto, ¥54,000. Which one?");
+  assert.equal(v.offer(["note"]), undefined);
+});

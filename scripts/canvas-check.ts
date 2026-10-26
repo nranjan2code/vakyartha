@@ -32,6 +32,15 @@ const steps = [
    check(document.getElementById('canvas').hidden, 'small form should stay in the conversation');
    const inline = document.querySelector('.surface-home vak-surface');
    check(document.querySelector('.surface-home').classList.contains('inline') && !inline.hidden && getComputedStyle(inline).display !== 'none', 'small form not shown inline'); return 'small interface inline';`,
+  `await project('vak_render', {surface:'hotels',title:'Hotels',nodes:[{id:'root',type:'compare',props:{action:'book_hotel',options:[{name:'Hilton',price:'¥32,000'},{name:'Ryokan',price:'¥18,000'}]}}]});
+   const s=[...document.querySelectorAll('vak-surface')].find(x => x.surfaceId === 'hotels'); check(s, 'compare not mounted');
+   const seen=[]; s.addEventListener('vak-action', e => {seen.push(e.detail.action); e.stopPropagation();});
+   check(s.activate('root#1') === true, 'activate did not send');
+   check(s.activate('root#0') === false, 'a second activation went through while busy');
+   s.releaseAction(); flush();
+   const click=[...s.shadowRoot.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Choose Ryokan'); check(click, 'no button for Ryokan'); click.click();
+   check(seen.length === 2 && JSON.stringify(seen[0]) === JSON.stringify(seen[1]) && seen[0].data.option === 'Ryokan', 'activate differs from a click: '+JSON.stringify(seen));
+   s.releaseAction(); await project('vak_remove', {surface:'hotels'}); return 'activate equals a click';`,
   `const s = document.querySelector('vak-surface'); window.qaSurface = s;
    const field = s.shadowRoot.querySelector('input'); field.value='Draft name'; field.dispatchEvent(new Event('input',{bubbles:true}));
    document.querySelector('.surface-head button').click(); flush();

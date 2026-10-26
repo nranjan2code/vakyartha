@@ -18,7 +18,7 @@ import { closeSettings, openSettings, settingsOpen } from "./settings.ts";
 import { applyAppearance, surfaceMode } from "./theme.ts";
 import { TasksPanel } from "./tasks-panel.ts";
 import { Drafts } from "./drafts.ts";
-import { VoiceApprovals, cancelDictation, conversationPrefs, conversationState, type ConversationState, startConversation, stopConversation, dictationPrefs, dictationState, lastError, readAloud, replyText, spokenSurface, startDictation, stopDictation, stopReading, textLanguage, voicePrefs, voiceState } from "./voice/index.ts";
+import { VoiceApprovals, VoiceDecisions, cancelDictation, conversationPrefs, conversationState, type ConversationState, startConversation, stopConversation, dictationPrefs, dictationState, lastError, readAloud, replyText, spokenSurface, startDictation, stopDictation, stopReading, textLanguage, voicePrefs, voiceState } from "./voice/index.ts";
 
 applyAppearance();
 defineVakElements();
@@ -590,8 +590,11 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         if (e.limit) limited(turn, e.limit);
         recordVersions(turn);
         tidySurfaces();
-        // Conversation mode always answers aloud: that is the point of it.
-        if (voicePrefs.enabled && (voicePrefs.auto || conversationState() !== "off") && turnSession === session && !turn.status.classList.contains("error")) toggleReading(turn.root, () => turnSpeech(turn));
+        // Conversation mode always answers aloud, and then asks any choice the reply left.
+        if (conversationState() !== "off" && turnSession === session && !turn.status.classList.contains("error")) {
+          const ask = voiceDecisions.offer(turnSurfaces(turn));
+          toggleReading(turn.root, () => [turnSpeech(turn), ask].filter(Boolean).join("\n\n"));
+        } else if (voicePrefs.enabled && voicePrefs.auto && turnSession === session && !turn.status.classList.contains("error")) toggleReading(turn.root, () => turnSpeech(turn));
         break;
     }
   };
@@ -824,6 +827,11 @@ const voiceApprovals = new VoiceApprovals({
   },
   say(text) { void readAloud(text, voiceApprovals); },
 });
+const voiceDecisions = new VoiceDecisions({
+  store: () => client.store,
+  say(text) { void readAloud(text, voiceDecisions); },
+  activate: (surface, key) => mounted.get(surface)?.activate(key) ?? false,
+});
 const talk = $<HTMLButtonElement>("talk");
 const talkStatus = $<HTMLElement>("talk-status");
 talk.append(icon("talk", 17));
@@ -837,6 +845,7 @@ function toggleConversation(): void {
     async onUtterance(text) {
       // A tool waiting for an answer hears it first; only these heard words can decide it.
       if (voiceApprovals.waiting && (await voiceApprovals.hear(text))) return;
+      if (voiceDecisions.waiting && voiceDecisions.hear(text)) return;
       // A turn still running keeps its place; the words wait in the box rather than cutting it off.
       if (isRunning(session)) {
         input.value = input.value.trim() ? `${input.value.replace(/\s*$/, " ")}${text}` : text;
@@ -873,7 +882,9 @@ function paintTalk(): void {
   if (s !== "hearing") talkStatus.textContent = s === "off" ? "Conversation mode off" : TALK_LABEL[s];
 }
 window.addEventListener("vak:conversation", paintTalk);
-window.addEventListener("vak:conversation", () => { if (conversationState() === "off") voiceApprovals.clear(); });
+window.addEventListener("vak:conversation", () => { if (conversationState() === "off") { voiceApprovals.clear(); voiceDecisions.clear(); } });
+// A click (or a spoken choice, which is one) answers the choice: stop asking about it.
+document.addEventListener("vak-action", () => voiceDecisions.clear());
 window.addEventListener("vak:voice", paintTalk);
 paintTalk();
 
