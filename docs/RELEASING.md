@@ -159,3 +159,12 @@ Artifact SHA-256:
 - Disk image: `435f03705d8469be5a012e1b2c390e460a66fa4635db174215d3d993db227a71`
 
 Version remains 0.2.0, unsigned/unnotarized. No tag or public release created. Subsequent installation-record documentation does not change compiled source.
+
+
+## Authoring design correction — installed 2026-10-27
+
+Built app code `a6ffcfe4ffca441df3eea90b1ca3fff291e572c7` with pushed Projection `a21cba1cef936be0cfacf71b00e600aee8d84b5f`, from exact git archives in a new source directory and a previously absent Rust target. Fresh `npm ci`, 153 app tests and typecheck pass inside that snapshot; current pinned framework passes 344 tests/replay. Native export, wide/narrow task/canvas and retained-output WebKit checks pass. Release compilation completes from scratch in 2m 11s and produces app + DMG. Node 24.22.1 passes the release signature/current-LTS check. No dependency changes, branch, tag or public release.
+
+The complete bundle replaces the standard build artifact and `/Applications/Vakyartha.app`; all 1,931 regular files/symlinks match the clean bundle. Manifest SHA-256: `7850f5a784156fe05eeda07a363e03fa8a07ff2efd90d0600f178b0f535b8fdc`. Source/target and recoverable prior-install backup paths are in ignored `.vak/builds/2026-10-27-authoring-design-install.json`. User data and credentials are preserved. The installed app was closed, then relaunched explicitly from `/Applications/Vakyartha.app`; native About confirms 0.2.0 / Node 24.22.1 and Schedule navigation works. No installed model call or channel restart test was performed.
+
+The binary contains the completion-boundary correction and caller-default assertions. The frozen local report has correct structure/values/export integrity but fails semantic review for missing budget interpretation and assumed currency; EVALUATION.md/ADR-031 retain this open gate. This installation is not a claim of completed report reliability. Subsequent documentation-only provenance commits do not change executable contents. Concurrent planning/research document edits are preserved outside this build snapshot.
