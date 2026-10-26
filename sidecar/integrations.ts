@@ -9,6 +9,7 @@
 
 import path from "node:path";
 import { type CatalogEntry, Integrations, type IntegrationsOptions, timeServer, webFetchServer } from "@vak/mcp/client";
+import { ollamaOcrServer } from "./ocr.ts";
 
 /** Versions picked on 2026-10-25: each the newest published at least 14 days before. */
 export const CATALOG: CatalogEntry[] = [
@@ -36,6 +37,19 @@ export const CATALOG: CatalogEntry[] = [
     icon: "clock",
     access: ["Nothing outside this computer"],
     source: { kind: "builtin", server: () => timeServer() },
+    config: [],
+  },
+  {
+    id: "ocr",
+    name: "OCR (local)",
+    publisher: "vak",
+    trust: "built-in",
+    summary: "Read the text in images with a local OCR model.",
+    description: "Reads text, tables and formulas from image files using an OCR model in your local Ollama (GLM-OCR: ollama pull glm-ocr). Images never leave this computer for recognition.",
+    homepage: "https://ollama.com/library/glm-ocr",
+    icon: "image",
+    access: ["Image files you point it at", "Your local Ollama only"],
+    source: { kind: "builtin", server: () => ollamaOcrServer() },
     config: [],
   },
   {
