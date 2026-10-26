@@ -298,6 +298,9 @@ body:not(.notes) details.diag { display: none; }
 /* Recording: red, with a ring that follows the voice. */
 .mic.listening { color: #fff; background: var(--danger); box-shadow: 0 0 0 calc(var(--level, 0) * 7px) color-mix(in srgb, var(--danger) 30%, transparent); }
 .mic.transcribing { animation: pulse 1s ease-in-out infinite; cursor: default; }
+.talk.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.talk.hearing { color: #fff; background: var(--accent); }
+.talk.understanding { animation: pulse 1s ease-in-out infinite; }
 .mic-time { font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .composer-note { margin: 6px 4px 0; font-size: 0.8rem; color: var(--danger); }
 .send.stop { background: var(--muted); }

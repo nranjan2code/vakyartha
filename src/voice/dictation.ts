@@ -201,6 +201,29 @@ function base64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
+/** A recording's words, from the chosen model in the dictation language. Shorter than 0.3 s is nothing. */
+export async function transcribeWav(c: DictationChoice, audio: Uint8Array, signal?: AbortSignal): Promise<string> {
+  if (audio.length < 44 + RATE * 2 * 0.3) throw new Error("Nothing was heard.");
+  const { loadVoices } = await import("./read-aloud.ts");
+  const model = (await loadVoices().catch(() => [])).find((p) => p.id === c.provider)?.stt?.find((m) => m.id === c.model);
+  const language = dictationLanguage(dictationPrefs.language || navigator.language, model?.languages);
+  const res = await fetch(`${engine().url}/api/transcribe`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${engine().token}` },
+    body: JSON.stringify({ provider: c.provider, model: c.model, language, audio: base64(audio) }),
+    signal,
+  });
+  const body = (await res.json()) as { text?: string; error?: string };
+  if (!res.ok) throw new Error(body.error ?? `transcription failed (${res.status})`);
+  return body.text?.trim() ?? "";
+}
+
+/** A model that takes recordings: the chosen one, else the first ready. The system recognizer streams instead, so it is never this. */
+export async function recordingChoice(): Promise<DictationChoice | undefined> {
+  const c = dictationPrefs.choice;
+  return c && c.provider !== "system" ? c : firstReady();
+}
+
 async function record(c: DictationChoice, h: DictationHandlers): Promise<void> {
   if (!navigator.mediaDevices?.getUserMedia) return h.onError("This window cannot use the microphone.");
   let stream: MediaStream;
@@ -239,19 +262,8 @@ async function record(c: DictationChoice, h: DictationHandlers): Promise<void> {
     release();
     announce("transcribing");
     try {
-      const audio = wav16k(downsample(chunks, rate));
-      if (audio.length < 44 + RATE * 2 * 0.3) throw new Error("Nothing was heard.");
-      const { loadVoices } = await import("./read-aloud.ts");
-      const model = (await loadVoices().catch(() => [])).find((p) => p.id === c.provider)?.stt?.find((m) => m.id === c.model);
-      const language = dictationLanguage(dictationPrefs.language || navigator.language, model?.languages);
-      const res = await fetch(`${engine().url}/api/transcribe`, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${engine().token}` },
-        body: JSON.stringify({ provider: c.provider, model: c.model, language, audio: base64(audio) }),
-      });
-      const body = (await res.json()) as { text?: string; error?: string };
-      if (!res.ok) throw new Error(body.error ?? `transcription failed (${res.status})`);
-      if (body.text) h.onText(body.text, true);
+      const text = await transcribeWav(c, wav16k(downsample(chunks, rate)));
+      if (text) h.onText(text, true);
       else h.onError("Nothing was heard.");
     } catch (err) {
       h.onError((err as Error).message);

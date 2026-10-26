@@ -389,3 +389,44 @@ test("the master switch turns read aloud and dictation off and keeps their own s
     Object.assign(g, saved);
   }
 });
+
+test("end of speech follows the noise floor, and interrupting the app takes more", async () => {
+  const { Endpointer } = await import("../src/voice/endpoint.ts");
+  const e = new Endpointer();
+  const run = (level: number, ms: number, speaking = false) => {
+    const out: string[] = [];
+    for (let t = 0; t < ms; t += 40) { const ev = e.feed(level, 40, speaking); if (ev) out.push(ev); }
+    return out;
+  };
+  assert.deepEqual(run(0.004, 2000), [], "a quiet room is silence");
+  assert.deepEqual(run(0.08, 80), [], "a click is too short to be speech");
+  assert.deepEqual(run(0.004, 400), []);
+  assert.deepEqual(run(0.08, 1000), ["start"]);
+  assert.deepEqual(run(0.004, 400), [], "a pause between words does not end the sentence");
+  assert.deepEqual(run(0.08, 400), []);
+  assert.deepEqual(run(0.004, 900), ["end"]);
+  // A steady fan raises the floor; a level that was speech in a quiet room is then not.
+  const fan = new Endpointer();
+  for (let t = 0; t < 30_000; t += 40) fan.feed(0.004 + (t > 1000 ? 0.012 : 0), 40, false);
+  assert.equal(fan.feed(0.03, 40, false), undefined);
+  // While the app speaks, echo at a speech-like level for a moment is not an interruption.
+  const app = new Endpointer();
+  for (let t = 0; t < 2000; t += 40) app.feed(0.004, 40, true);
+  const loud = (ms: number) => {
+    const out: string[] = [];
+    for (let t = 0; t < ms; t += 40) { const ev = app.feed(0.08, 40, true); if (ev) out.push(ev); }
+    return out;
+  };
+  assert.deepEqual(loud(200), []);
+  assert.deepEqual(loud(200), ["start"], "a deliberate interruption is heard");
+});
+
+test("only a whole sentence ends or hushes conversation mode", async () => {
+  const { modeCommand } = await import("../src/voice/commands.ts");
+  assert.equal(modeCommand("Stop listening."), "end");
+  assert.equal(modeCommand("Goodbye!"), "end");
+  assert.equal(modeCommand("That's all"), "end");
+  assert.equal(modeCommand("stop"), "hush");
+  assert.equal(modeCommand("Stop the server on port 80"), undefined);
+  assert.equal(modeCommand("say goodbye to Ada for me"), undefined);
+});

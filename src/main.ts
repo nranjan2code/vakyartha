@@ -18,7 +18,7 @@ import { closeSettings, openSettings, settingsOpen } from "./settings.ts";
 import { applyAppearance, surfaceMode } from "./theme.ts";
 import { TasksPanel } from "./tasks-panel.ts";
 import { Drafts } from "./drafts.ts";
-import { cancelDictation, dictationPrefs, dictationState, lastError, readAloud, replyText, spokenSurface, startDictation, stopDictation, stopReading, textLanguage, voicePrefs, voiceState } from "./voice/index.ts";
+import { cancelDictation, conversationPrefs, conversationState, type ConversationState, startConversation, stopConversation, dictationPrefs, dictationState, lastError, readAloud, replyText, spokenSurface, startDictation, stopDictation, stopReading, textLanguage, voicePrefs, voiceState } from "./voice/index.ts";
 
 applyAppearance();
 defineVakElements();
@@ -590,7 +590,8 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         if (e.limit) limited(turn, e.limit);
         recordVersions(turn);
         tidySurfaces();
-        if (voicePrefs.enabled && voicePrefs.auto && turnSession === session && !turn.status.classList.contains("error")) toggleReading(turn.root, () => turnSpeech(turn));
+        // Conversation mode always answers aloud: that is the point of it.
+        if (voicePrefs.enabled && (voicePrefs.auto || conversationState() !== "off") && turnSession === session && !turn.status.classList.contains("error")) toggleReading(turn.root, () => turnSpeech(turn));
         break;
     }
   };
@@ -723,6 +724,11 @@ function toggleSidebar(): void {
 document.body.classList.toggle("collapsed", prefs.get("collapsed") === "true");
 document.addEventListener("keydown", (e) => {
   if (e.defaultPrevented) return;
+  if (e.key === "Escape" && conversationState() !== "off") {
+    e.preventDefault();
+    stopReading();
+    return stopConversation();
+  }
   if (e.key === "Escape" && dictationState().state === "listening") {
     e.preventDefault();
     input.value = dictationBase;
@@ -735,7 +741,7 @@ document.addEventListener("keydown", (e) => {
     n: () => (closeSettings(), newChat()),
     ",": () => void (settingsOpen() ? closeSettings() : openSettings()),
     "\\": toggleSidebar,
-    d: () => { if (!e.shiftKey && !e.altKey && !settingsOpen()) toggleDictation(); },
+    d: () => { if (!e.altKey && !settingsOpen()) (e.shiftKey ? toggleConversation : toggleDictation)(); },
     b: () => { if (!e.altKey && !e.shiftKey) toggleSidebar(); },
   };
   if ((e.altKey || e.shiftKey) && e.key.toLowerCase() === "b") return;
@@ -767,6 +773,7 @@ function toggleDictation(): void {
   const { state } = dictationState();
   if (state === "listening") return stopDictation();
   if (state === "transcribing" || !dictationPrefs.enabled) return;
+  stopConversation();
   stopReading();
   dictationBase = input.value;
   composerHint("");
@@ -809,6 +816,57 @@ function paintMic(): void {
 window.addEventListener("vak:dictation", paintMic);
 window.addEventListener("vak:dictation-level", () => mic.style.setProperty("--level", dictationState().level.toFixed(2)));
 paintMic();
+
+// --- conversation mode -------------------------------------------------------------------
+const talk = $<HTMLButtonElement>("talk");
+const talkStatus = $<HTMLElement>("talk-status");
+talk.append(icon("talk", 17));
+
+function toggleConversation(): void {
+  if (conversationState() !== "off") return stopConversation();
+  if (!conversationPrefs.enabled) return;
+  if (dictationState().state !== "idle") cancelDictation();
+  composerHint("");
+  void startConversation({
+    onUtterance(text) {
+      // A turn still running keeps its place; the words wait in the box rather than cutting it off.
+      if (isRunning(session)) {
+        input.value = input.value.trim() ? `${input.value.replace(/\s*$/, " ")}${text}` : text;
+        autosize();
+        return composerHint("Still working on the last message; your words are in the message box.");
+      }
+      submit(text);
+    },
+    onError(message) {
+      composerHint(message);
+      report(`conversation (${dictationPrefs.choice?.provider ?? "none"}): ${message}`);
+    },
+  });
+}
+talk.addEventListener("click", toggleConversation);
+
+const TALK_LABEL: Record<ConversationState, string> = {
+  off: "Conversation mode (⌘⇧D)",
+  listening: "Listening. Esc or \"stop listening\" ends conversation mode",
+  hearing: "Hearing you",
+  understanding: "Understanding…",
+  speaking: "Speaking. Talk to interrupt",
+};
+function paintTalk(): void {
+  const s = conversationState();
+  talk.hidden = !conversationPrefs.enabled;
+  talk.classList.toggle("on", s !== "off");
+  talk.classList.toggle("hearing", s === "hearing");
+  talk.classList.toggle("understanding", s === "understanding");
+  talk.title = TALK_LABEL[s];
+  talk.setAttribute("aria-label", TALK_LABEL[s]);
+  talk.setAttribute("aria-pressed", String(s !== "off"));
+  // Announced once per change; "hearing" is left out so a screen reader does not talk over the person.
+  if (s !== "hearing") talkStatus.textContent = s === "off" ? "Conversation mode off" : TALK_LABEL[s];
+}
+window.addEventListener("vak:conversation", paintTalk);
+window.addEventListener("vak:voice", paintTalk);
+paintTalk();
 
 // --- integrations in the chat ----------------------------------------------------------
 // Tool names are "<integration>__<tool>"; the chat shows the integration's own name and icon.

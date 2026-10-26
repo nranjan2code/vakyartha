@@ -22,6 +22,8 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
+- **Conversation mode (2026-10-26, MVP-CHECKLIST V3):** implemented and unit-tested, but not yet heard with a live microphone: try it in the dev window (⌘⇧D), check that a sentence ends after a pause, that talking over a reply stops it, and that the reply's own sound does not trigger a turn. Tune `ENDPOINT` in `src/voice/endpoint.ts` from that. Words said while a turn is still running wait in the message box. `task-files` test failed once on timing and passed on rerun.
+
 - **Voice module and master switch (2026-10-26, MVP-CHECKLIST V1):** voice lives in `src/voice/` and `sidecar/voice/`, each behind an `index.ts` entry point; the engine's voice routes moved out of `server.ts`. Settings → Voice → Use voice (`voice:on`, default on) gates read aloud and dictation without changing their own settings. No other behavior change. Next: V2, the voice projector in Projection (MVP-SPECS M9 and its framework record). Off-screen WebKit shows a stale `:checked` color after a scripted click on any settings switch (pre-existing, also on the old toggles); the state itself is right.
 - **Voice: Whistle dictation, spoken form and languages (2026-10-26):** Whistle (Cactus Compute) is a local speech-to-text adapter (`sidecar/whistle.ts`), committed in `ae5ed24`. Its engine binary and weights are pinned (needle3 `93e88ed`, whistle `ca52876`), SHA-256 checked, and run per recording with no environment and networking denied.
   - Read aloud now uses `turnSpeech`/`spokenSurface` (content only, with language-aware numbers) and sends a regional language to the voices that take one. Dictation narrows languages to what each model honours.

@@ -7,6 +7,7 @@ import { tile } from "../icons.ts";
 import { group, pill, row, secretField, segmented, select, type Setting, title, toggle } from "../ui.ts";
 import { cancelDictation, dictationLanguage, dictationPrefs, systemDictation } from "./dictation.ts";
 import { voiceMaster } from "./master.ts";
+import { conversationPrefs, stopConversation } from "./conversation.ts";
 import { type VoiceOption, lastError, loadVoices, readAloud, resolveChoice, SPEEDS, stopReading, voicePrefs, voiceState, type VoiceChoice, type VoiceProvider } from "./read-aloud.ts";
 
 const inUse = (p: VoiceProvider) => voicePrefs.choice?.provider === p.id && resolveChoice([p]) !== undefined;
@@ -164,6 +165,7 @@ export function setVoiceOn(on: boolean): void {
   if (!on) {
     stopReading();
     cancelDictation();
+    stopConversation();
   }
   voiceMaster.on = on;
 }
@@ -190,6 +192,10 @@ export async function voiceSettingsPage(openProvider: (id: string) => void): Pro
       row("Speed", null, segmented(SPEEDS, voicePrefs.speed as (typeof SPEEDS)[number][0], (s) => { voicePrefs.speed = s; })),
     ),
     dictationGroup(list),
+    group(
+      "Conversation",
+      row("Conversation button", "Talk and listen without touching anything: ⌘⇧D or the waves in the message box. Replies are read aloud; speak over one to stop it. Say \"stop listening\" or press Esc to end. Uses the dictation model and the current voice.", toggle(conversationPrefs.own, (on) => { conversationPrefs.enabled = on; })),
+    ),
     group("Voice", row("Current voice", current, controls), el("div", { className: "row stack" }, el("p", { className: "row-hint", textContent: p ? p.cost : "Install a free voice pack under Integrations → Voice → Ollama." }))),
     note,
   );
