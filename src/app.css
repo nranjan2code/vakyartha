@@ -80,6 +80,9 @@ body.collapsed .sidebar { visibility: hidden; }
 .canvas-progress[hidden], #canvas-pick[hidden], .canvas-step[hidden] { display: none; }
 .canvas-step { font-size: 1.2rem; line-height: 1; }
 .canvas-step:disabled { opacity: .35; cursor: default; }
+.canvas-versions { display: inline-flex; align-items: center; gap: 2px; font-size: .78rem; color: var(--muted); }
+.canvas-versions[hidden] { display: none; }
+.canvas-old-note { margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; background: var(--hover); font-size: .82rem; color: var(--muted); }
 .canvas-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
 .canvas-toolbar .seg { background: var(--bg); }
 .canvas-feedback { flex: 1; min-width: 0; text-align: right; font-size: .75rem; color: var(--muted); }

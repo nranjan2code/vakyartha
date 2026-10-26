@@ -2,12 +2,13 @@
 // rendering a second form: validation, drafts and local table views stay intact.
 // Small interfaces live in the conversation; large ones (placement.ts) leave a
 // reference card there and open in the canvas. Any can be opened in the canvas.
-import { projectMarkdown, projectText, type SurfaceSnapshot, type SurfaceStore } from "@vak/core";
+import { basicCatalog, projectMarkdown, projectText, type SurfaceSnapshot, SurfaceStore } from "@vak/core";
 import type { VakSurfaceElement } from "@vak/web";
 import { $, prefs } from "./core.ts";
 import { icon } from "./icons.ts";
 import { downloadMarkdown } from "./backend.ts";
 import { canvasReason } from "./placement.ts";
+import { surfaceMode } from "./theme.ts";
 
 /** large: placed in the canvas; once large it stays so, and nothing jumps back into the chat. */
 interface Entry { surface: VakSurfaceElement; home: HTMLElement; button: HTMLButtonElement; title: HTMLElement; option: HTMLOptionElement; large: boolean }
@@ -28,6 +29,10 @@ export class Canvas {
   #resize = $<HTMLElement>("canvas-resize");
   #expand = $<HTMLButtonElement>("canvas-expand");
   #picker = $<HTMLSelectElement>("canvas-pick");
+  /** Each surface as earlier replies left it (oldest first); the live one is always the latest. */
+  #versions = new Map<string, SurfaceSnapshot[]>();
+  /** An earlier version on show: its own store and a read-only element, the live one stays untouched. */
+  #old?: { id: string; version: number; store: SurfaceStore; el: HTMLElement };
 
   beginTurn(): void {
     this.#inTurn = true;
@@ -67,6 +72,13 @@ export class Canvas {
       b.hidden = !many;
       b.disabled = to < 0 || to >= n;
     }
+    // Versions of the one on show: earlier replies' copies, then the live one.
+    const older = this.#active ? this.#older(this.#active) : [];
+    const at = this.#old?.id === this.#active ? older.findIndex((v) => v.version === this.#old!.version) : older.length;
+    $("canvas-versions").hidden = !older.length;
+    $("canvas-version-label").textContent = at === older.length ? `Latest · ${older.length + 1} versions` : `Version ${at + 1} of ${older.length + 1}`;
+    $<HTMLButtonElement>("canvas-older").disabled = at <= 0;
+    $<HTMLButtonElement>("canvas-newer").disabled = at >= older.length;
     for (const id of ["canvas-copy", "canvas-download", "canvas-preview", "canvas-text"]) $<HTMLButtonElement>(id).disabled = !this.#active;
   }
 
@@ -75,6 +87,14 @@ export class Canvas {
     this.#store = store;
     for (const [id, name] of [["canvas-close", "close"], ["canvas-expand", "maximize"], ["canvas-copy", "copy"], ["canvas-download", "download"]] as const) $(id).append(icon(name, 16));
     this.#picker.addEventListener("change", () => this.open(this.#picker.value));
+    for (const [id, by] of [["canvas-older", -1], ["canvas-newer", 1]] as const) {
+      $(id).addEventListener("click", () => {
+        if (!this.#active) return;
+        const older = this.#older(this.#active);
+        const at = this.#old?.id === this.#active ? older.findIndex((v) => v.version === this.#old!.version) : older.length;
+        this.showVersion(this.#active, older[at + by]?.version);
+      });
+    }
     for (const [id, by] of [["canvas-prev", -1], ["canvas-next", 1]] as const) {
       $(id).addEventListener("click", () => {
         const o = this.#picker.options[this.#picker.selectedIndex + by];
@@ -164,8 +184,62 @@ export class Canvas {
 
   #updateText(): void {
     if (!this.#text || !this.#active) return;
-    const resolved = this.#store().resolve(this.#active);
+    const resolved = this.#resolved();
     $("canvas-text-content").textContent = resolved ? projectText(resolved) : "";
+  }
+
+  #resolved() {
+    if (!this.#active) return undefined;
+    return this.#old?.id === this.#active ? this.#old.store.resolve(this.#active) : this.#store().resolve(this.#active);
+  }
+
+  /** Remember a surface as a reply left it; the same version twice is kept once. */
+  addVersion(snap: SurfaceSnapshot): void {
+    const list = this.#versions.get(snap.id) ?? [];
+    if (list.at(-1)?.version === snap.version) return;
+    list.push(structuredClone(snap));
+    this.#versions.set(snap.id, list.slice(-10));
+    if (this.#active === snap.id) this.#controls();
+  }
+
+  /** Versions older than the live surface, oldest first. */
+  #older(id: string): SurfaceSnapshot[] {
+    const live = this.#store().snapshot(id)?.version ?? Infinity;
+    return (this.#versions.get(id) ?? []).filter((v) => v.version < live);
+  }
+
+  /** Show a surface as it was at `version` (read-only), or the live one when that is the latest. */
+  showVersion(id: string, version?: number): void {
+    if (this.#active !== id) this.open(id);
+    const snap = version === undefined ? undefined : this.#older(id).find((v) => v.version === version);
+    this.#old?.el.remove();
+    this.#old = undefined;
+    const live = this.#entries.get(id)?.surface;
+    if (live) live.hidden = Boolean(snap);
+    if (snap) {
+      const store = new SurfaceStore(basicCatalog);
+      store.load(structuredClone(snap));
+      const el = document.createElement("div");
+      el.className = "canvas-old";
+      const note = document.createElement("div");
+      note.className = "canvas-old-note";
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "link";
+      back.textContent = "Back to latest";
+      back.addEventListener("click", () => this.showVersion(id));
+      note.append(document.createTextNode("Earlier version · "), back);
+      const surface = document.createElement("vak-surface") as VakSurfaceElement;
+      surfaceMode(surface);
+      surface.attach(store, id);
+      // What it showed, not something to act on: its controls belong to a past state.
+      surface.inert = true;
+      el.append(note, surface);
+      this.#content.prepend(el);
+      this.#old = { id, version: snap.version, store, el };
+    }
+    this.#controls();
+    this.#updateText();
   }
 
   #feedback(message: string): void {
@@ -175,7 +249,7 @@ export class Canvas {
   }
 
   async #copy(): Promise<void> {
-    const resolved = this.#active ? this.#store().resolve(this.#active) : undefined;
+    const resolved = this.#resolved();
     if (!resolved) return;
     try {
       await navigator.clipboard.writeText(projectText(resolved));
@@ -188,7 +262,7 @@ export class Canvas {
   }
 
   async #download(): Promise<void> {
-    const resolved = this.#active ? this.#store().resolve(this.#active) : undefined;
+    const resolved = this.#resolved();
     if (!resolved) return;
     const filename = `${(resolved.title || "canvas").replace(/[^\p{L}\p{N} _-]/gu, "").trim().slice(0, 60) || "canvas"}.md`;
     try {
@@ -262,6 +336,7 @@ export class Canvas {
   }
 
   #returnHome(): void {
+    if (this.#old) this.showVersion(this.#old.id);
     const entry = this.#active ? this.#entries.get(this.#active) : undefined;
     if (!entry) return;
     entry.home.append(entry.surface);
@@ -312,6 +387,7 @@ export class Canvas {
     this.#panel.removeAttribute("aria-busy");
     this.#entries.clear();
     this.#last = undefined;
+    this.#versions.clear();
     this.#picker.replaceChildren();
   }
 }

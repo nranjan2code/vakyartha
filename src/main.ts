@@ -268,6 +268,7 @@ async function openChat(id: string, keepLibrary = false, redraw = false): Promis
         else if (snap) surfaceUpdated(turn, snap);
       }
       for (const u of entry.used ?? []) usedChip(turn, u.name, u.ok);
+      recordVersions(turn, entry.versions ?? []);
       for (const note of entry.notes) if (note.name.startsWith("vak_")) addNote(turn, note.name, note.result);
       setStatus(turn, entry.status, entry.error ? "error" : "done");
       if (entry.limit && entry === view.timeline.at(-1)) limited(turn, entry.limit);
@@ -575,6 +576,7 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
           setStatus(turn, `${model} · ${((performance.now() - started) / 1000).toFixed(1)}s${e.limit === "steps" ? " · step limit" : e.limit === "tools" ? " · tool budget" : ""}`, "done");
         }
         if (e.limit) limited(turn, e.limit);
+        recordVersions(turn);
         if (voicePrefs.enabled && voicePrefs.auto && turnSession === session && !turn.status.classList.contains("error")) toggleReading(turn.root, () => turnText(turn));
         break;
     }
@@ -878,12 +880,29 @@ function surfaceUpdated(turn: Turn, snap: SurfaceSnapshot): void {
   open.type = "button";
   open.className = "link";
   open.textContent = `${snap.title || "Interface"} · changed`;
-  open.addEventListener("click", () => canvas.open(snap.id, true));
+  // The version this reply left, once it ends; until then, the live one.
+  open.addEventListener("click", () => canvas.showVersion(snap.id, li.dataset.version ? Number(li.dataset.version) : undefined));
   li.lastChild!.replaceWith(open);
 }
 
 function usedChip(turn: Turn, name: string, ok: boolean): void {
   addStep(turn, labels[splitTool(name).server]?.icon ?? "tool", toolLabel(name), !ok);
+}
+
+/**
+ * The surfaces a reply made or changed, as it left them: the canvas keeps them
+ * as versions, and the reply's "changed" step opens its own. History passes the
+ * saved copies; a live turn takes the store's at its end.
+ */
+function recordVersions(turn: Turn, saved?: SurfaceSnapshot[]): void {
+  const changed = [...turn.root.querySelectorAll<HTMLElement>(".steps li[data-surface]")];
+  const ids = new Set([...turnSurfaces(turn), ...changed.map((li) => li.dataset.surface!)]);
+  for (const id of ids) {
+    const snap = saved ? saved.find((v) => v.id === id) : client.store.snapshot(id);
+    if (!snap) continue;
+    canvas.addVersion(snap);
+    for (const li of changed) if (li.dataset.surface === id) li.dataset.version = String(snap.version);
+  }
 }
 
 // A surface action is answered by the next turn: it becomes that turn's first step.
@@ -975,6 +994,7 @@ function watch(id: string): void {
               canvas.endTurn();
               const done = outsideTurn;
               outsideTurn = undefined;
+              if (done) recordVersions(done);
               updateSend();
               void api<SessionView>(`/api/sessions/${encodeURIComponent(id)}`).then((v) => {
                 const last = v.timeline.findLast((t) => t.kind === "assistant");

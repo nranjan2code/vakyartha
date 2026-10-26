@@ -87,6 +87,26 @@ const steps = [
    window.qaEmit({type:'error',message:'Scripted failure'}); window.qaEmit({type:'run_end',stop:'error'}); window.qaController.close(); await new Promise(r=>setTimeout(r,30));
    check(document.getElementById('canvas-progress').hidden,'failed generation left progress showing');
    window.fetch=window.qaRealFetch; return 'snapshot placement, progress, manual close and failure cleanup';`,
+  `window.fetch=async (url, init) => String(url).endsWith('/api/chat')
+     ? new Response(new ReadableStream({start(c){window.qaController=c}}),{headers:{'content-type':'text/event-stream'}})
+     : window.qaRealFetch(url,init);
+   const turn=async (snap)=>{ window.qaSubmit(); await new Promise(r=>setTimeout(r,30)); window.qaEmit({type:'surface',snapshot:snap}); window.qaEmit({type:'run_end',stop:'done'}); window.qaController.close(); await new Promise(r=>setTimeout(r,60)); flush(); };
+   await turn(window.qaSnapshot);
+   const next=JSON.parse(JSON.stringify(window.qaSnapshot).replace('Updated monthly sales','Revised monthly sales')); next.version=window.qaSnapshot.version+1;
+   await turn(next);
+   check(!document.getElementById('canvas-versions').hidden,'rewritten surface shows no versions');
+   check(document.getElementById('canvas-version-label').textContent.startsWith('Latest'),'live version not shown as latest');
+   document.getElementById('canvas-older').click(); flush();
+   const old=document.querySelector('#canvas-content .canvas-old vak-surface');
+   check(old && old.inert,'earlier version is not shown read-only');
+   document.getElementById('canvas-text').click();
+   check(document.getElementById('canvas-text-content').textContent.includes('Updated monthly sales'),'text view does not follow the earlier version');
+   document.getElementById('canvas-preview').click();
+   document.querySelector('.canvas-old-note button').click(); flush();
+   check(!document.querySelector('.canvas-old') && document.getElementById('canvas-version-label').textContent.startsWith('Latest'),'back to latest failed');
+   // Leave the live surface as the server has it for the steps that follow.
+   await turn({...window.qaSnapshot, version: next.version+1});
+   window.fetch=window.qaRealFetch; return 'versions of a surface rewritten in place';`,
   `document.getElementById('open-artifacts').click(); await new Promise(r => setTimeout(r, 250));
    check(!document.getElementById('artifacts-page').hidden && document.getElementById('workspace').hidden, 'library did not open');
    check(document.querySelectorAll('.artifact-card').length === 2, 'library missing saved surfaces'); return 'artifact library rendered';`,
