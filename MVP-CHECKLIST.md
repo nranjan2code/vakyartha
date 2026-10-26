@@ -194,6 +194,11 @@ ADR-021: reconciled app `8f2d6dd`/Projection `a1537c3` changes, including backgr
 
 ADR-022: opt-in expected visible rows are bounded, persisted and inspectable. Exact scalar/type, identity and column checks feed corrections into the existing bounded run. Deterministic tests cover wrong booleans, numeric/string mismatch, missing/duplicate rows, hidden data, invalid/oversized inputs and same-run repair. Setup and scheduled persistence are checked in WebKit. 89 app/277 pinned framework tests, typecheck/build/bundle, native and task/canvas checks pass. Local report `2026-10-26T06-27-59.817Z-e242767d` fails after 12 requests/140.2s; the checker correctly rejects missing Atlas and wrong Birch claims. No automatic task acceptance, new dependency, framework pin change or IPC. P1.9/P4.9 remain open for reliable end-to-end outcomes and arbitrary prose review.
 
+
+## Token-parser and styling integration checkpoint — 2026-10-26
+
+Projection `05c9d59` (draft PR #1) combines the isolated token-based primitive-key repair with committed styling `0b59e6f`; a changelog overlap was resolved preserving both. Exact raw render/update and stream tests retain both rows and deliberately incorrect facts, with finalized-input guards and standard JSON primitive validation. No compound regex repair, schema/version adapters, dependency or app fact synthesis. 89 app/281 framework tests, typecheck/build/bundle and task/canvas WebKit checks pass. Local report `2026-10-26T06-52-18.822Z-72d38ec0` on preceding combined commit `4156e8f` passes declared numeric/default/layout/notice/claim checks in two requests/38.1s, but remains review-required; no causal reliability claim or automatic acceptance. P1.9/P4.1/P4.9 remain open for changed-criterion, research and semantic evidence. See EVALUATION.md for exact pin/trial scope.
+
 ## Vakyartha identity checkpoint — 2026-10-26
 
 - Applied the original Songbird, outlined full-name wordmark and complete existing desktop/tray icon set from `Vak/code`; About uses the Vakyartha name without sibling wording. Asset provenance and font license are retained in `public/brand/`.
