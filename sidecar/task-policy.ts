@@ -1,5 +1,5 @@
 import { PROVIDER_SETTINGS, type ProviderEntry } from "@vak/providers";
-import type { TaskSpending } from "../task-contract.ts";
+import type { TaskSpending } from "../shared/task-contract.ts";
 
 /** App admission policy; a local service may still have its own costs or upstreams. */
 export function checkTaskSpending(provider: ProviderEntry, spending: TaskSpending, env: Record<string, string | undefined>): void {

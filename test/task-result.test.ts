@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { basicCatalog, SurfaceStore, type AgentEvent } from "@vak/core";
 import { runAgent, type Provider } from "@vak/providers";
-import { checkTaskResult, parseTaskResultPolicy, reviewTaskResult } from "../task-result.ts";
+import { checkTaskResult, parseTaskResultPolicy, reviewTaskResult } from "../shared/task-result.ts";
 
 function result(tableId: string, rows: unknown[], columns: (string | { key: string; label: string })[]) {
   const store = new SurfaceStore(basicCatalog);
@@ -113,7 +113,7 @@ test("visible notices are optional, bounded and supported for either checked lay
 });
 
 test("quote correction hints use only a contiguous actual source span and never rewrite a claim", async () => {
-  const { matchingExcerpt } = await import("../research-contract.ts");
+  const { matchingExcerpt } = await import("../shared/research-contract.ts");
   const source = "A number of domains are maintained for documentation purposes without coordination.";
   assert.equal(matchingExcerpt("Heading - " + source, source), source);
   assert.equal(matchingExcerpt("An unrelated unsupported recommendation", source), undefined);

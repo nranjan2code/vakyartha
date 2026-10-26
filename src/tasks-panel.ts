@@ -1,4 +1,4 @@
-import { TASK_LABELS, parseTaskSummaries, parseTaskView, type TaskSummary, type TaskView } from "../task-contract.ts";
+import { TASK_LABELS, parseTaskSummaries, parseTaskView, type TaskSummary, type TaskView } from "../shared/task-contract.ts";
 import { $, api, ask, el } from "./core.ts";
 import { SchedulePage } from "./schedule-page.ts";
 

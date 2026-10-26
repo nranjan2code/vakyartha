@@ -1,6 +1,6 @@
 # SECURITY.md: Vakyartha
 
-What the app protects, from whom, and how. Rules for changing code are in [AGENTS.md](AGENTS.md); the architecture is in [SPECS.md](SPECS.md). The engine's own defences (Host/Origin checks, tool-output wrapping, approvals, SSRF, MCP server environments, projector escaping) come from the [Projection framework](https://github.com/nranjan2code/Projection/blob/main/SECURITY.md) and apply here unchanged.
+What the app protects, from whom, and how. Rules for changing code are in [AGENTS.md](AGENTS.md); the architecture is in [SPECS.md](docs/SPECS.md). The engine's own defences (Host/Origin checks, tool-output wrapping, approvals, SSRF, MCP server environments, projector escaping) come from the [Projection framework](https://github.com/nranjan2code/Projection/blob/main/SECURITY.md) and apply here unchanged.
 
 ## What there is to protect
 

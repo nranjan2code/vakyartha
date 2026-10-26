@@ -1,7 +1,7 @@
-import { checkTaskResult, parseTaskResultPolicy, resultInstructions, reviewTaskResult } from "../task-result.ts";
-import { reviseComparisonCriteria } from "../comparison-contract.ts";
-import type { ResearchRead } from "../research-contract.ts";
-import { parseTaskFiles, parseTaskOutput, parseDiagnosticDays } from "../task-files.ts";
+import { checkTaskResult, parseTaskResultPolicy, resultInstructions, reviewTaskResult } from "../shared/task-result.ts";
+import { reviseComparisonCriteria } from "../shared/comparison-contract.ts";
+import type { ResearchRead } from "../shared/research-contract.ts";
+import { parseTaskFiles, parseTaskOutput, parseDiagnosticDays } from "../shared/task-files.ts";
 import { TaskFiles, digest, inputInstructions, taskMarkdown } from "./task-files.ts";
 import { MAX_TOOL_OUTPUT } from "@vak/mcp/client";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -11,8 +11,8 @@ import path from "node:path";
 import { basicCatalog, SurfaceStore, walk, type AgentEvent } from "@vak/core";
 import type { HostRunOptions, HostTurn, SessionView } from "@vak/host";
 import type { AgentTool } from "@vak/providers";
-import { TASK_LIMITS, TASK_BUDGET_DEFAULTS, parseTaskLimits, parseTaskSpending, type TaskSpending, parseReviewSnapshot, type ReviewSnapshot, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskRun, type TaskRunIdentity } from "../task-contract.ts";
-import { parseSchedule, SCHEDULE_GRACE_MS } from "../schedule.ts";
+import { TASK_LIMITS, TASK_BUDGET_DEFAULTS, parseTaskLimits, parseTaskSpending, type TaskSpending, parseReviewSnapshot, type ReviewSnapshot, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskRun, type TaskRunIdentity } from "../shared/task-contract.ts";
+import { parseSchedule, SCHEDULE_GRACE_MS } from "../shared/schedule.ts";
 
 interface Dependencies {
   files?: TaskFiles;

@@ -56,7 +56,7 @@ Then install the bundle (quit a running copy first: `osascript -e 'quit app "Vak
 ditto src-tauri/target/release/bundle/macos/Vakyartha.app /Applications/Vakyartha.app
 ```
 
-Builds are not code-signed or notarized yet: install only what you built yourself. Add hosted provider keys in **Settings → Providers**. The release procedure is in [RELEASING.md](RELEASING.md).
+Builds are not code-signed or notarized yet: install only what you built yourself. Add hosted provider keys in **Settings → Providers**. The release procedure is in [RELEASING.md](docs/RELEASING.md).
 
 ## Your control
 
@@ -78,7 +78,7 @@ npm run test:framework   # Projection's tests against the pinned framework
 npm run typecheck
 ```
 
-For development, provider keys can also go in a local `.env` (see [`.env.example`](.env.example)). Changes to the engine belong in [Projection](https://github.com/nranjan2code/Projection), never in `framework/`; [RELEASING.md](RELEASING.md) explains how to pull them in. Working rules: [AGENTS.md](AGENTS.md).
+For development, provider keys can also go in a local `.env` (see [`.env.example`](.env.example)). Changes to the engine belong in [Projection](https://github.com/nranjan2code/Projection), never in `framework/`; [RELEASING.md](docs/RELEASING.md) explains how to pull them in. Working rules: [AGENTS.md](AGENTS.md).
 
 ### How it fits together
 
@@ -89,9 +89,9 @@ For development, provider keys can also go in a local `.env` (see [`.env.example
 | Engine | `sidecar/main.ts` → `sidecar/server.ts` | `@vak/host` plus settings, channels, integrations, client-log and info routes; token-protected for the window, loopback-only for `npm run web` |
 | Settings store | `sidecar/settings.ts` | provider and channel keys in the Keychain; plain values in `settings.env` |
 | Integrations | `sidecar/integrations.ts` | the app's catalog (which servers, pinned versions); installing and running them is Projection's `Integrations` |
-| FinOps | `sidecar/finops.ts`, `src/finops-page.ts` | local usage ledger, model rates, per-turn charts and CSV export ([FINOPS.md](FINOPS.md)) |
+| FinOps | `sidecar/finops.ts`, `src/finops-page.ts` | local usage ledger, model rates, per-turn charts and CSV export ([FINOPS.md](docs/FINOPS.md)) |
 | Channels | `sidecar/channels.ts` | Telegram (`runTelegram`); Slack and Discord slots |
-| UI | `src/` | chats, thread, composer, approvals, canvas and Artifacts ([CANVAS.md](CANVAS.md)), Settings, themes, right-click menus |
+| UI | `src/` | chats, thread, composer, approvals, canvas and Artifacts ([CANVAS.md](docs/CANVAS.md)), Settings, themes, right-click menus |
 | Release | `scripts/bundle-sidecar.ts`, `src-tauri/tauri.release.conf.json`, `scripts/version.ts` | the engine as one module with Node and npm; one version everywhere |
 
 ### Data
@@ -112,11 +112,11 @@ Each folder holds `sessions/`, `integrations/`, `integrations.json`, `channels.j
 
 ## Documentation
 
-- [SPECS.md](SPECS.md): what the app is, its framework dependency and identity.
-- [MVP-SPECS.md](MVP-SPECS.md), [MVP-CHECKLIST.md](MVP-CHECKLIST.md) and [ADR.md](ADR.md): agent MVP implementation, preserved interactive surfaces, architecture decisions, progress gates and later scope.
-- [RELEASING.md](RELEASING.md): releasing the app and updating Projection.
-- [AGENTS.md](AGENTS.md) and [HANDOVER.md](HANDOVER.md): working rules and where work stands.
-- [SECURITY.md](SECURITY.md), [CANVAS.md](CANVAS.md), [FINOPS.md](FINOPS.md) and [CHANGELOG.md](CHANGELOG.md).
+- [SPECS.md](docs/SPECS.md): what the app is, its framework dependency and identity.
+- [MVP-SPECS.md](docs/MVP-SPECS.md), [MVP-CHECKLIST.md](docs/MVP-CHECKLIST.md) and [ADR.md](docs/ADR.md): agent MVP implementation, preserved interactive surfaces, architecture decisions, progress gates and later scope.
+- [RELEASING.md](docs/RELEASING.md): releasing the app and updating Projection.
+- [AGENTS.md](AGENTS.md) and [HANDOVER.md](docs/HANDOVER.md): working rules and where work stands.
+- [SECURITY.md](SECURITY.md), [CANVAS.md](docs/CANVAS.md), [FINOPS.md](docs/FINOPS.md) and [CHANGELOG.md](CHANGELOG.md).
 - The framework: [Projection](https://github.com/nranjan2code/Projection).
 
 ## Contributions and license

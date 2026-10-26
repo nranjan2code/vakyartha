@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { TaskFiles, digest, inputInstructions } from "../sidecar/task-files.ts";
-import { parseTaskFiles, parseOutputReceipt, parseDiagnosticDays } from "../task-files.ts";
+import { parseTaskFiles, parseOutputReceipt, parseDiagnosticDays } from "../shared/task-files.ts";
 import { Tasks } from "../sidecar/tasks.ts";
 import { createHost, type HostTurn, type HostRunOptions } from "@vak/host";
 import { ProfileCache, type Provider } from "@vak/providers";

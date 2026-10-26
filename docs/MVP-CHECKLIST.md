@@ -157,7 +157,7 @@ These boxes track future candidates only. Do not start them simply because they 
 
 ## First implementation checkpoint
 
-Evidence for the completed items above: `sidecar/tasks.ts`, `task-contract.ts`, `src/tasks-panel.ts`, `src/drafts.ts`, their tests and `scripts/task-check.ts`. Public host execution, ownership protection, action release and idle deletion were made in Projection first and introduced through pushed commit `caef74e`; the current app pin `8bd736e` also retains the later interactive graph capability. Product task state and UI remain here.
+Evidence for the completed items above: `sidecar/tasks.ts`, `shared/task-contract.ts`, `src/tasks-panel.ts`, `src/drafts.ts`, their tests and `scripts/task-check.ts`. Public host execution, ownership protection, action release and idle deletion were made in Projection first and introduced through pushed commit `caef74e`; the current app pin `8bd736e` also retains the later interactive graph capability. Product task state and UI remain here.
 
 - D6: initial limits are 12 model rounds, 24 tool calls, five active minutes and separate five-minute approval expiry per run. Draft conflicts preserve edits pending an explicit choice. Deletion requires stopped execution, a current monotonic revision and additional acknowledgement of uncertain effects.
 - D7/P0.1–P0.3: one canonical host/session/surface store; detached in-process execution and existing event delivery. No loopback execution relay, second renderer or native IPC path.

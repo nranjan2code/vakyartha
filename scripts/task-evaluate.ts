@@ -9,10 +9,10 @@ import { execFileSync } from "node:child_process";
 import type { SessionView } from "@vak/host";
 import type { IntegrationView, ToolPolicy } from "@vak/mcp/client";
 import { boundFieldValues, resultText, separateFormAndTable, tableOutputText, tableRows, tablePayloads, visibleTextValues } from "./evaluation-checks.ts";
-import { parseResearchSummary } from "../research-contract.ts";
+import { parseResearchSummary } from "../shared/research-contract.ts";
 import { CATALOG } from "../sidecar/integrations.ts";
 import { startAppServer } from "../sidecar/server.ts";
-import { parseTaskView, taskObject, type TaskView, type TaskApproval } from "../task-contract.ts";
+import { parseTaskView, taskObject, type TaskView, type TaskApproval } from "../shared/task-contract.ts";
 
 const args = process.argv.slice(2);
 if (!args.includes("--run-local") && !args.includes("--inspect")) throw new Error("Use --run-local for real local-model calls, or --inspect to view retained evaluations without starting new work.");

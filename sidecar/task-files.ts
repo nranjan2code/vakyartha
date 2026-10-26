@@ -4,7 +4,7 @@ import { lstat, mkdir, open, unlink } from "node:fs/promises";
 import path from "node:path";
 import { basicCatalog, projectMarkdown, SurfaceStore } from "@vak/core";
 import type { SessionView } from "@vak/host";
-import { type OutputReceipt, type TaskFileInput } from "../task-files.ts";
+import { type OutputReceipt, type TaskFileInput } from "../shared/task-files.ts";
 
 export const digest = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 const identity = (id: string) => { if (!/^[\w-]{1,120}$/.test(id)) throw new Error("Invalid task or run identity"); return id; };

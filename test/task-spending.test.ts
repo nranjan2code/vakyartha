@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { providersFromEnv } from "@vak/providers";
-import { parseTaskSpending } from "../task-contract.ts";
+import { parseTaskSpending } from "../shared/task-contract.ts";
 import { checkTaskSpending } from "../sidecar/task-policy.ts";
 import { Tasks } from "../sidecar/tasks.ts";
 

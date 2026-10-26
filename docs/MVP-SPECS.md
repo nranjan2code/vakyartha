@@ -1,6 +1,6 @@
 # Vakyartha agent MVP
 
-Planning baseline: 2026-10-25. Status: implementation in progress; the checklist distinguishes working behavior from planned requirements. Progress and release evidence: [MVP-CHECKLIST.md](MVP-CHECKLIST.md). Current implementation: [SPECS.md](SPECS.md). Working rules: [AGENTS.md](AGENTS.md).
+Planning baseline: 2026-10-25. Status: implementation in progress; the checklist distinguishes working behavior from planned requirements. Progress and release evidence: [MVP-CHECKLIST.md](MVP-CHECKLIST.md). Current implementation: [SPECS.md](SPECS.md). Working rules: [AGENTS.md](../AGENTS.md).
 
 Architecture decisions: [ADR.md](ADR.md). Implementation is now authorized; the checklist records which parts actually work.
 

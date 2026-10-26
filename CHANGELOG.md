@@ -1,6 +1,6 @@
 # Changelog: Vakyartha
 
-What changed in the app, newest first. Each release names the [Projection](https://github.com/nranjan2code/Projection) version it was built on; framework changes themselves are in Projection's CHANGELOG. Procedure: [RELEASING.md](RELEASING.md).
+What changed in the app, newest first. Each release names the [Projection](https://github.com/nranjan2code/Projection) version it was built on; framework changes themselves are in Projection's CHANGELOG. Procedure: [RELEASING.md](docs/RELEASING.md).
 
 ## 0.2.0 (2026-10-26)
 

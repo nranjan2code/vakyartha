@@ -1,6 +1,6 @@
 # RELEASING.md: Vakyartha
 
-How Vakyartha is versioned, how it takes framework updates from Projection, and how a release is built, checked, installed and published. Rules for any change: [AGENTS.md](AGENTS.md).
+How Vakyartha is versioned, how it takes framework updates from Projection, and how a release is built, checked, installed and published. Rules for any change: [AGENTS.md](../AGENTS.md).
 
 ## Versions
 

@@ -12,7 +12,7 @@ import type { Integrations } from "@vak/mcp/client";
 import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, providersFromEnv } from "@vak/providers";
 import { Channels, CHANNELS } from "./channels.ts";
 import { createIntegrations } from "./integrations.ts";
-import { runUsage } from "../finops.ts";
+import { runUsage } from "../shared/finops.ts";
 import { Finops } from "./finops.ts";
 import { TaskFiles } from "./task-files.ts";
 import { fileSecrets, keychainStore, Settings, SettingsError } from "./settings.ts";

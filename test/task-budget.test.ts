@@ -7,7 +7,7 @@ import type { HostRunOptions } from "@vak/host";
 import { basicCatalog, SurfaceStore } from "@vak/core";
 import { runAgent, ToolGenerationError, type Provider } from "@vak/providers";
 import { Tasks } from "../sidecar/tasks.ts";
-import { parseTaskView, parseTaskLimits, type TaskLimits } from "../task-contract.ts";
+import { parseTaskView, parseTaskLimits, type TaskLimits } from "../shared/task-contract.ts";
 
 async function until(check: () => boolean): Promise<void> {
   const end = Date.now() + 3000;

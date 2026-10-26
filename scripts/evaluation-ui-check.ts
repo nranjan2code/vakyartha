@@ -6,7 +6,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startAppServer } from "../sidecar/server.ts";
-import { taskObject } from "../task-contract.ts";
+import { taskObject } from "../shared/task-contract.ts";
 
 const report = path.resolve(process.argv[2] ?? "");
 if (!process.argv[2] || !report.includes(`${path.sep}.vak${path.sep}evaluations${path.sep}`)) throw new Error("Pass a retained evaluation report directory under .vak/evaluations");

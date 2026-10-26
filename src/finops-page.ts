@@ -1,4 +1,4 @@
-import { estimateCost, shapeTotal, type FinopsView, type Shape, type Turn } from "../finops.ts";
+import { estimateCost, shapeTotal, type FinopsView, type Shape, type Turn } from "../shared/finops.ts";
 import { api, el } from "./core.ts";
 import { select, title } from "./ui.ts";
 

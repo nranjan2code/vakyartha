@@ -5,9 +5,9 @@ import path from "node:path";
 import { test } from "node:test";
 import { createHost, type HostRunOptions, type HostTurn } from "@vak/host";
 import { ProfileCache, type Provider, type AgentTool } from "@vak/providers";
-import { comparisonExpectedRows } from "../comparison-contract.ts";
+import { comparisonExpectedRows } from "../shared/comparison-contract.ts";
 import { Tasks } from "../sidecar/tasks.ts";
-import { parseTaskInput, parseTaskView } from "../task-contract.ts";
+import { parseTaskInput, parseTaskView } from "../shared/task-contract.ts";
 import { COMPARISON_FIXTURE, interactiveComparisonContract, comparisonClaimIssues } from "../scripts/evaluation-reference.ts";
 
 async function until(check: () => boolean): Promise<void> {

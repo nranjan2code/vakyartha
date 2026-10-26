@@ -21,6 +21,7 @@
   },
   "include": [
     "*.ts",
+    "shared/**/*.ts",
     "src/**/*.ts",
     "sidecar/**/*.ts",
     "scripts/**/*.ts",

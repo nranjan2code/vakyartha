@@ -4,8 +4,8 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 import { Tasks } from "../sidecar/tasks.ts";
-import { parseSchedule, scheduleLabel } from "../schedule.ts";
-import { parseTaskView } from "../task-contract.ts";
+import { parseSchedule, scheduleLabel } from "../shared/schedule.ts";
+import { parseTaskView } from "../shared/task-contract.ts";
 
 const schedule = (ms: number) => ({ kind: "once", at: new Date(Date.now() + ms).toISOString(), timezone: "Asia/Kolkata", status: "armed", missed: "review" });
 const input = { goal: "Synthetic scheduled work", criteria: "Review result", provider: "local", model: "fake", spending: { kind: "local_only" }, integrations: [] };

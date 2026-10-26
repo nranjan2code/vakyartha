@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkComparisonContract, comparisonExpectedRows, parseComparisonContract, reviseComparisonCriteria } from "../comparison-contract.ts";
-import { parseTaskResultPolicy, reviewTaskResult } from "../task-result.ts";
+import { checkComparisonContract, comparisonExpectedRows, parseComparisonContract, reviseComparisonCriteria } from "../shared/comparison-contract.ts";
+import { parseTaskResultPolicy, reviewTaskResult } from "../shared/task-result.ts";
 import { COMPARISON_FIXTURE, comparisonClaimContract, interactiveComparisonContract } from "../scripts/evaluation-reference.ts";
 import { basicCatalog, SurfaceStore } from "@vak/core";
 import { runAgent, type Provider } from "@vak/providers";

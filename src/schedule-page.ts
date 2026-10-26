@@ -1,8 +1,8 @@
-import { parseTaskResultPolicy } from "../task-result.ts";
-import { parseTaskFiles } from "../task-files.ts";
-import { parseRunUsage } from "../finops.ts";
-import { TASK_LABELS, TASK_RUN_LABELS, TASK_LIMITS, TASK_BUDGET_DEFAULTS, TASK_BUDGET_MAX, parseTaskLimits, parseReviewSnapshot, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../task-contract.ts";
-import { scheduleLabel } from "../schedule.ts";
+import { parseTaskResultPolicy } from "../shared/task-result.ts";
+import { parseTaskFiles } from "../shared/task-files.ts";
+import { parseRunUsage } from "../shared/finops.ts";
+import { TASK_LABELS, TASK_RUN_LABELS, TASK_LIMITS, TASK_BUDGET_DEFAULTS, TASK_BUDGET_MAX, parseTaskLimits, parseReviewSnapshot, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../shared/task-contract.ts";
+import { scheduleLabel } from "../shared/schedule.ts";
 import { $, api, ask, el } from "./core.ts";
 import { icon } from "./icons.ts";
 import { current } from "./models.ts";

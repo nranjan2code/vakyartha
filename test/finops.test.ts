@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import type { Message, Provider } from "@vak/providers";
-import { emptyShape, estimateCost, runUsage, parseRunUsage, type Turn } from "../finops.ts";
+import { emptyShape, estimateCost, runUsage, parseRunUsage, type Turn } from "../shared/finops.ts";
 import { Finops } from "../sidecar/finops.ts";
 
 function manager(t: { after(fn: () => void): void }) {
@@ -139,7 +139,7 @@ test("authenticated app HTTP chats record real request metrics and replace recon
   assert.equal(((await (await fetch(`${app.url}/api/finops`, { headers })).json()) as { turns: Turn[] }).turns.length, 1);
   const created = await fetch(`${app.url}/api/tasks`, { method: "POST", headers, body: JSON.stringify({ goal: "Synthetic task", criteria: "Review synthetic result", provider: "compatible", model: "fake", spending: { kind: "api_allowed", acknowledged: true }, integrations: ["time"] }) });
   assert.equal(created.status, 201);
-  const { parseTaskView } = await import("../task-contract.ts");
+  const { parseTaskView } = await import("../shared/task-contract.ts");
   const task = parseTaskView(await created.json());
   let finished = task;
   for (let i = 0; i < 100; i++) {

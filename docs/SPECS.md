@@ -1,6 +1,6 @@
 # SPECS.md: Vakyartha
 
-What the app is and how it is built. Rules: [AGENTS.md](AGENTS.md). State of work: [HANDOVER.md](HANDOVER.md). Releasing: [RELEASING.md](RELEASING.md).
+What the app is and how it is built. Rules: [AGENTS.md](../AGENTS.md). State of work: [HANDOVER.md](HANDOVER.md). Releasing: [RELEASING.md](RELEASING.md).
 
 Agent MVP planning: [MVP-SPECS.md](MVP-SPECS.md) defines the proposed task experience and preserves the existing interactive, multi-surface design. [MVP-CHECKLIST.md](MVP-CHECKLIST.md) tracks existing foundations, design decisions, MVP gates and later scope. These are planning documents; the implementation described below remains the current baseline.
 

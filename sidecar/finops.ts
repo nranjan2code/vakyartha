@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Message, Provider, ProviderEntry } from "@vak/providers";
-import type { TaskRunIdentity } from "../task-contract.ts";
-import { emptyShape, type FinopsView, type Rate, type Shape, type Step, type Turn } from "../finops.ts";
+import type { TaskRunIdentity } from "../shared/task-contract.ts";
+import { emptyShape, type FinopsView, type Rate, type Shape, type Step, type Turn } from "../shared/finops.ts";
 
 type Context = { task?: TaskRunIdentity; turn?: Turn; session?: string; at: string; started: number };
 export function messageShape(messages: Message[]): Shape {

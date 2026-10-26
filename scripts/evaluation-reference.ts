@@ -1,4 +1,4 @@
-import { checkComparisonContract, parseComparisonContract } from "../comparison-contract.ts";
+import { checkComparisonContract, parseComparisonContract } from "../shared/comparison-contract.ts";
 import type { SessionView } from "@vak/host";
 import { tablePayloads, tableRows } from "./evaluation-checks.ts";
 
