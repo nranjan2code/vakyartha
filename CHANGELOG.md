@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Projection parser PR #1 is merged; pin `fb63ede` names the main-branch merge of `05c9d59`. Added a canonical-host regression for changed criteria with fixed assertions. Complete-outcome review records remaining stale-claim and research explanation/receipt gaps; no readiness claim.
+
 - From Projection `05c9d59`: token-based recovery of a missing key quote before a complete JSON primitive preserves table rows. Standard JSON validates primitive tokens; uncertain streaming prefixes are deferred. Schema/claim checks still reject incorrect facts. Reconciled with the concurrent surface styling changes; framework review is PR #1.
 
 - **Minimal surfaces:** Projection pin `05c9d59` (including styling commit `0b59e6f`) brings quieter cards, lighter type, compact actions, natural-height grids and inherited theme tokens. Existing app color themes and text-size preferences continue to control surfaces.

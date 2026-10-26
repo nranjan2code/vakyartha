@@ -7,6 +7,7 @@ import { createHost, type HostRunOptions } from "@vak/host";
 import { ProfileCache, type Provider, type AgentTool } from "@vak/providers";
 import { Tasks } from "../sidecar/tasks.ts";
 import { parseTaskInput, parseTaskView } from "../task-contract.ts";
+import { COMPARISON_FIXTURE, comparisonClaimContract, comparisonClaimIssues } from "../scripts/evaluation-reference.ts";
 
 async function until(check: () => boolean): Promise<void> {
   const end = Date.now() + 3000;
@@ -26,6 +27,55 @@ const scripted: Provider = {
     yield { type: "done", stop: "tool_use" };
   },
 };
+
+test("changed form criteria reach the host while caller assertions remain fixed across repair and restart", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-fixed-criteria-"));
+  const contract = comparisonClaimContract(COMPARISON_FIXTURE);
+  const changed = { ...COMPARISON_FIXTURE, budget: 10, minimumSeats: 8 };
+  let requests = 0;
+  const provider: Provider = { id: "scripted", async *stream(req) {
+    requests++;
+    const rows = requests === 3 ? comparisonClaimContract(changed).rows : contract.rows;
+    // The second run first offers correct claims for changed criteria. The fixed
+    // task contract must reject those claims instead of silently changing policy.
+    if (requests === 1 || requests === 3 || requests === 5) {
+      const output = requests === 1 ? [
+        { surface: "criteria", data: { budget: 20, seats: 6 }, nodes: [{ id: "root", type: "form", props: { submit: "apply" }, children: [{ id: "budget", type: "input", props: { label: "Budget", bind: "/budget" } }, { id: "seats", type: "input", props: { label: "Seats", bind: "/seats" } }] }] },
+        { surface: "comparison", nodes: [{ id: "root", type: "table", props: { columns: Object.keys(contract.rows[0]!), rows } }] },
+      ] : [{ surface: "comparison", nodes: [{ id: "root", type: "table", props: { columns: Object.keys(contract.rows[0]!), rows } }] }];
+      if (requests === 3) assert.ok(req.messages.some((message) => typeof message.content === "string" && message.content.includes('"budget":10')));
+      if (requests === 5) assert.ok(JSON.stringify(req.messages.at(-1)).includes("caller-supplied"));
+      for (const args of output) {
+        yield { type: "tool_start", id: args.surface, name: "vak_render" };
+        yield { type: "tool_args", id: args.surface, delta: JSON.stringify(args) };
+        yield { type: "tool_end", id: args.surface };
+      }
+      yield { type: "done", stop: "tool_use" }; return;
+    }
+    yield { type: "text", delta: "Ready for review." };
+    yield { type: "done", stop: "end" };
+  } };
+  const host = createHost({ providers: () => [{ id: "scripted", label: "Scripted", available: true, make: () => provider }], profiles: new ProfileCache(path.join(dir, "profiles.json")), instructions: "test", sessionsDir: path.join(dir, "sessions"), log: () => {} });
+  const deps = { dir: path.join(dir, "tasks"), run: host.run, view: host.view, tools: async () => [], instructions: () => "test", observe: async (_session: string, work: () => Promise<void>) => work(), ready: () => {}, warn: () => {} };
+  let tasks = await Tasks.open(deps);
+  try {
+    const task = await tasks.create({ goal: "Compare fixture", criteria: "Fixed caller assertions", provider: "scripted", model: "fake", integrations: [], spending: { kind: "local_only" }, resultPolicy: { kind: "comparison", table: contract } });
+    await until(() => tasks.get(task.id).state === "needs_input");
+    const form = (await host.view(task.id)).surfaces.find((surface) => surface.id === "criteria")!;
+    await tasks.input(task.id, { id: "changed-criteria", action: { surface: form.id, source: "root", data: { budget: 10, seats: 8 } }, revision: form.version });
+    await until(() => tasks.get(task.id).state === "needs_input");
+    const view = await host.view(task.id);
+    assert.equal(requests, 6);
+    assert.equal(tasks.get(task.id).runs, 2);
+    assert.equal(view.timeline.filter((entry) => entry.kind === "action").length, 1);
+    assert.deepEqual(view.surfaces.find((surface) => surface.id === "criteria")!.data, { budget: 10, seats: 8 });
+    assert.deepEqual(comparisonClaimIssues(view, COMPARISON_FIXTURE), []);
+    assert.ok(comparisonClaimIssues(view, changed).length > 0);
+    await tasks.close(); tasks = await Tasks.open(deps);
+    assert.deepEqual(tasks.get(task.id).resultPolicy, { kind: "comparison", table: contract });
+    assert.equal(tasks.get(task.id).state, "needs_input");
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
 
 test("tasks run through one canonical host, retain multiple interactive surfaces, and require explicit review", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "vak-tasks-"));

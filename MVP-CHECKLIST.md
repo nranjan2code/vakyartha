@@ -203,3 +203,8 @@ Projection `05c9d59` (draft PR #1) combines the isolated token-based primitive-k
 
 - Applied the original Songbird, outlined full-name wordmark and complete existing desktop/tray icon set from `Vak/code`; About uses the Vakyartha name without sibling wording. Asset provenance and font license are retained in `public/brand/`.
 - Validation: typecheck and UI build pass; WebKit checks light/dark branding, loaded images, sidebar fit and About identity. All 18 native icon files match the source exports. No framework, dependency, native IPC or installed-app change is included.
+
+
+## Merged parser and full-outcome review checkpoint — 2026-10-26
+
+Projection PR #1 merged as `fb63ede` (app pin; same tree as `05c9d59`). 90 app/281 framework tests and typecheck pass; the new canonical-host test verifies submitted changed criteria, unchanged assertions, bounded correction and restart persistence. Live report `2026-10-26T07-07-21.090Z-criteria` fails changed-criterion correctness: three old boolean claims conflict with the new controls. Research report `2026-10-26T07-05-32.151Z-a7ce5796` passes fetch/citation/layout checks but fails explanatory-answer, retrieval-date and missing-verification requirements on review. Both pass wide/narrow retained-output WebKit controls without dispatch. Neither task accepted. P1.9/P4.1/P4.9 remain open. Next: explicit typed criterion revision and complete research interpretation/receipt contracts, preserving multiple interactive surfaces; see EVALUATION.md and HANDOVER.md.
