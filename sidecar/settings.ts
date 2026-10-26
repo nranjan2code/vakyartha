@@ -8,17 +8,19 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { PROVIDER_SETTINGS, type ProviderSetting } from "@vak/providers";
 import { CHANNELS } from "./channels.ts";
+import { VOICE_KEYS } from "./voice.ts";
 
 export interface Setting extends Omit<ProviderSetting, "group" | "provider"> {
-  group: ProviderSetting["group"] | "channel";
+  group: ProviderSetting["group"] | "channel" | "voice";
   /** The provider or channel it configures. */
   owner: string;
 }
 
-/** The registry declares every provider variable and each channel its secrets; the screen lists exactly those. */
+/** The registry declares every provider variable, each channel and voice provider its secrets; the screen lists exactly those. */
 export const SETTINGS: Setting[] = [
   ...PROVIDER_SETTINGS.map(({ provider, ...s }) => ({ ...s, owner: provider })),
   ...CHANNELS.flatMap((c) => c.secrets.map((s) => ({ ...s, secret: true, group: "channel" as const, owner: c.id }))),
+  ...VOICE_KEYS.map((k) => ({ ...k, secret: true, group: "voice" as const })),
 ];
 
 export interface SettingView {

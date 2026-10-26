@@ -44,10 +44,15 @@
           <textarea id="input" rows="1" placeholder="Ask for anything" aria-label="Message"></textarea>
           <div class="composer-row">
             <select id="model-pick" class="model-pick" aria-label="Model" title="Model"></select>
-            <button type="submit" id="send" class="send" aria-label="Send">
-              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
+            <div class="composer-actions">
+              <span id="mic-time" class="mic-time" hidden></span>
+              <button type="button" id="mic" class="mic" aria-label="Dictate (⌘D)" title="Dictate (⌘D)"></button>
+              <button type="submit" id="send" class="send" aria-label="Send">
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
           </div>
+          <p id="composer-note" class="composer-note" role="status" hidden></p>
         </form>
       </section>
       <div id="canvas-resize" class="canvas-resize" role="separator" aria-label="Resize canvas" aria-orientation="vertical" tabindex="0" hidden></div>

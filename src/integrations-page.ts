@@ -65,14 +65,20 @@ function risk(t: Tool): HTMLElement[] {
   return out;
 }
 
-let filter: "all" | "installed" | Trust = "all";
+let filter: "all" | "installed" | "voice" | Trust = "all";
 let query = "";
 
 /** The marketplace grid. `open(id)` shows one integration's page. */
-export async function marketplace(open: (id: string) => void, addOwn: () => void): Promise<HTMLElement[]> {
+/** `voice`: the Voice category, shown under All and alone under its own filter. */
+export async function marketplace(open: (id: string) => void, addOwn: () => void, voice: HTMLElement[] = []): Promise<HTMLElement[]> {
   const list = await api<Integration[]>("/api/integrations");
   const grid = el("div", { className: "market" });
+  const voiceBox = el("div", {}, ...voice);
   const paint = () => {
+    // .market sets display, which the hidden attribute does not override.
+    grid.style.display = filter === "voice" ? "none" : "";
+    voiceBox.style.display = filter === "all" || filter === "voice" ? "" : "none";
+    if (filter === "voice") return;
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     const shown = list.filter((i) => (filter === "all" ? true : filter === "installed" ? i.installed && i.entry.sourceKind !== "builtin" ? true : i.enabled : i.entry.trust === filter)).filter((i) => words.every((w) => `${i.entry.name} ${i.entry.publisher} ${i.entry.summary}`.toLowerCase().includes(w)));
     grid.replaceChildren(
@@ -98,6 +104,7 @@ export async function marketplace(open: (id: string) => void, addOwn: () => void
       ["official", "Official"],
       ["vendor", "Vendors"],
       ["custom", "Yours"],
+      ...(voice.length ? [["voice", "Voice"] as const] : []),
     ] as const,
     filter,
     (v) => {
@@ -112,6 +119,7 @@ export async function marketplace(open: (id: string) => void, addOwn: () => void
     ...title("Integrations", "Tools the model can use to work with real data: your files, the web, your accounts. Each runs with only the access shown on its page, and anything that changes something asks you first."),
     el("div", { className: "market-bar" }, search, filters, add),
     grid,
+    voiceBox,
   ];
 }
 

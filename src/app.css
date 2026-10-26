@@ -228,12 +228,27 @@ body.collapsed .artifacts-sidebar { display: grid; margin-left: 58px; }
 /* Quiet once done: the time shows on hover; a running or failed turn always shows. */
 .status { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--muted); min-height: 1.2em; }
 .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1s ease-in-out infinite; }
-.status.done { opacity: 0; transition: opacity 120ms; }
-.msg.assistant:hover .status.done { opacity: 1; }
+/* Finished turns show their timing on hover; the read-aloud speaker stays in view. */
+.status.done > :not(.msg-actions) { opacity: 0; transition: opacity 120ms; }
+.msg.assistant:hover .status.done > * { opacity: 1; }
 .status.done .dot { display: none; }
 .status.error { color: var(--danger); }
 /* A budget ended this turn: keep its reason in view, with the way to continue. */
-.status.done.limited { opacity: 1; }
+.status.done.limited > * { opacity: 1; }
+/* Message actions: hover or focus shows them; the latest reply and one being read keep them. */
+.msg-actions { display: inline-flex; gap: 2px; opacity: 0; transition: opacity 120ms; }
+.msg:hover .msg-actions, .msg:focus-within .msg-actions, .msg.assistant:last-of-type .msg-actions, .status.speaking .msg-actions { opacity: 1; }
+.msg.user { flex-direction: column; align-items: flex-end; gap: 4px; }
+.act { display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+.act:hover, .status.speaking .speak { color: var(--fg); background: var(--hover); }
+.act:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; opacity: 1; }
+.act.loading { animation: pulse 1s ease-in-out infinite; }
+.msg.assistant:focus-within .status.done > * { opacity: 1; }
+.market-heading { margin: 28px 0 2px; font-size: 1rem; }
+.market-sub { margin: 0 0 12px; }
+.voice-style input { width: min(280px, 60vw); }
+.voice-value { min-width: 2.6em; text-align: right; font-size: 0.82rem; color: var(--muted); }
+.voice-use { justify-content: flex-end; margin: 12px 0; }
 .status .continue { margin-left: 4px; padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
 .status .continue:hover { background: var(--hover); }
 .status.error .dot { background: var(--danger); animation: none; }
@@ -256,6 +271,15 @@ body:not(.notes) details.diag { display: none; }
 .model-pick:hover { background: var(--hover); color: var(--fg); }
 .send { flex: none; width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--fg); color: var(--bg); cursor: pointer; display: grid; place-items: center; }
 .send:disabled { opacity: 0.3; cursor: default; }
+.composer-actions { display: flex; align-items: center; gap: 6px; }
+.mic { flex: none; width: 32px; height: 32px; border-radius: 50%; border: 0; background: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; transition: background 120ms, color 120ms, box-shadow 80ms; }
+.mic:hover { color: var(--fg); background: var(--hover); }
+.mic:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Recording: red, with a ring that follows the voice. */
+.mic.listening { color: #fff; background: var(--danger); box-shadow: 0 0 0 calc(var(--level, 0) * 7px) color-mix(in srgb, var(--danger) 30%, transparent); }
+.mic.transcribing { animation: pulse 1s ease-in-out infinite; cursor: default; }
+.mic-time { font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.composer-note { margin: 6px 4px 0; font-size: 0.8rem; color: var(--danger); }
 .send.stop { background: var(--muted); }
 
 /* buttons */

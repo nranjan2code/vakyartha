@@ -4,6 +4,12 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Dictation:** a mic in the message box (⌘D) turns speech into text. This Mac's speech recognition is the free default and shows words as you speak; a hosted model (OpenAI GPT Transcribe / GPT-4o Transcribe / Whisper, Gemini's transcribe models, ElevenLabs Scribe) gets a 16 kHz recording when you stop. Enter finishes, Esc discards; a timer and a ring that follows your voice show it is listening. Settings → Voice → Dictation picks the model and language and can send when dictation ends. Ollama has no transcription model yet; its card says so. The desktop app asks for microphone and speech recognition access (Info.plist).
+- **Message actions:** small icon buttons under each message, shown on hover and always on the latest reply: copy and read aloud on replies, copy and edit on your messages. Copy shows a check when done.
+- Gemini's speech and transcription models now come from its model list, so retired names never appear.
+
+- **Read aloud:** every finished reply has a speaker button (and Read aloud in its right-click menu); Settings → Voice turns it off, reads new replies automatically, and sets speed (0.75–2×, pitch kept). Voices are a new Voice category in Integrations, one card per provider: Ollama's Phonon on this Mac (free, private; one-click voice packs for English, five-language, French, German, Spanish and Portuguese, with their licences shown), OpenAI, Google Gemini and ElevenLabs. Each model shows only the controls it accepts: a style line with presets (OpenAI gpt-4o-mini-tts, Gemini), stability/similarity/style (ElevenLabs). Speech starts after the first sentence; the next piece is fetched while one plays. Hosted voices say they are paid and that the text leaves the Mac. A voice provider is one adapter in `sidecar/voice.ts`.
+
 - **Research turns always answer:** searches no longer use up the steps a reply needs. When the tool budget runs out the model answers from what it gathered; a turn a limit ended stays marked ("step limit" or "tool budget") with a Continue button that carries on from its results. Task runs keep their last model request for that answer. Uses Projection `10e0d90`.
 
 - **Visible notices:** checked result layouts can require bounded user-supplied labels such as fictional-data notices. Setup and details retain them; completion checks require their actual display. Labels do not verify provenance or factual correctness. Real-model evaluation still reports semantic contradictions as failures.

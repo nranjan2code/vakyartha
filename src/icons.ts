@@ -28,6 +28,11 @@ const GLYPHS: Record<string, string> = {
   maximize: '<path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"/>',
   split: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  voice: '<path d="M4.5 9.5h3l4-3.5v12l-4-3.5h-3z"/><path d="M15 9.2a4 4 0 0 1 0 5.6M17.6 6.8a7.5 7.5 0 0 1 0 10.4"/>',
+  edit: '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  mic: '<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5"/>',
+  stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="2"/>',
   tool: '<path d="M14.5 5.5a4 4 0 0 0-5.3 5l-5 5a1.8 1.8 0 0 0 2.5 2.5l5-5a4 4 0 0 0 5-5.3l-2.4 2.4-2.2-.6-.6-2.2z"/>',
 };
 
@@ -42,6 +47,7 @@ const TINT: Record<string, [string, string]> = {
   page: ["#1f2937", "#e5e7eb"],
   book: ["#15803d", "#4ade80"],
   plug: ["#4b5563", "#9ca3af"],
+  voice: ["#c2410c", "#fdba74"],
 };
 
 export function icon(name: string, size = 18): SVGSVGElement {

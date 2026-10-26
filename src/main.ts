@@ -18,6 +18,8 @@ import { closeSettings, openSettings, settingsOpen } from "./settings.ts";
 import { applyAppearance, surfaceMode } from "./theme.ts";
 import { TasksPanel } from "./tasks-panel.ts";
 import { Drafts } from "./drafts.ts";
+import { cancelDictation, dictationPrefs, dictationState, startDictation, stopDictation } from "./dictation.ts";
+import { lastError, readAloud, replyText, stopReading, voicePrefs, voiceState } from "./voice.ts";
 
 applyAppearance();
 defineVakElements();
@@ -210,6 +212,7 @@ async function loadChats(): Promise<void> {
 
 function clearThread(): void {
   drafts.flush();
+  stopReading();
   // Leaving the chat detaches its running turn; the engine finishes it.
   const leaving = streams.get(session);
   if (leaving) {
@@ -303,8 +306,47 @@ function userBubble(text: string): void {
   const b = document.createElement("div");
   b.className = "bubble";
   b.textContent = text;
-  m.append(b);
+  m.append(b, messageActions([
+    copyAction(() => text, "Copy message"),
+    action("edit", "Edit as new message", () => {
+      input.value = text;
+      autosize();
+      input.focus();
+    }),
+  ]));
   add(m, false);
+}
+
+// --- message actions --------------------------------------------------------------
+// A row of small icon buttons under a message: shown on hover or focus, and
+// always on the latest reply.
+function action(name: string, label: string, run: (b: HTMLButtonElement) => void): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = `act act-${name}`;
+  b.title = label;
+  b.setAttribute("aria-label", label);
+  b.append(icon(name, 15));
+  b.addEventListener("click", () => run(b));
+  return b;
+}
+
+/** Copy, then a check mark for a moment so the click is seen. */
+function copyAction(text: () => string, label: string): HTMLButtonElement {
+  return action("copy", label, (b) => {
+    void copy(text()).then(() => {
+      b.replaceChildren(icon("check", 15));
+      b.title = "Copied";
+      setTimeout(() => { b.replaceChildren(icon("copy", 15)); b.title = label; }, 1400);
+    });
+  });
+}
+
+function messageActions(buttons: HTMLElement[]): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "msg-actions";
+  row.append(...buttons);
+  return row;
 }
 
 function eventChip(text: string): void {
@@ -357,7 +399,41 @@ function limited(turn: Turn, limit: "steps" | "tools"): void {
 function setStatus(turn: Turn, text: string, state?: "done" | "error"): void {
   turn.status.className = `status ${state ?? ""}`;
   turn.status.querySelector(".label")!.textContent = text;
+  if (state === "done" && !turn.status.querySelector(".msg-actions") && replyText(turn.text)) {
+    turn.status.prepend(messageActions([copyAction(() => turn.text.innerText, "Copy reply"), speakButton(turn)]));
+  }
+  paintSpeak();
 }
+
+// --- read aloud ---------------------------------------------------------------------
+function speakButton(turn: Turn): HTMLButtonElement {
+  const b = action("voice", "Read aloud", () => toggleReading(turn.root, turn.text));
+  b.classList.add("speak");
+  return b;
+}
+
+function toggleReading(root: HTMLElement, text: HTMLElement): void {
+  if (voiceState().target === root) return stopReading();
+  void readAloud(replyText(text), root).then(() => {
+    if (lastError) eventChip(`Read aloud: ${lastError}`);
+  });
+}
+
+/** One state for every reply's speaker: hidden when reading aloud is off, stop on the reply being read. */
+function paintSpeak(): void {
+  const { state, target } = voiceState();
+  for (const b of thread.querySelectorAll<HTMLButtonElement>(".status .speak")) {
+    const mine = b.closest(".msg") === target;
+    b.hidden = !voicePrefs.enabled;
+    b.replaceChildren(icon(mine ? "stop" : "voice", 15));
+    b.classList.toggle("loading", mine && state === "loading");
+    b.closest(".status")?.classList.toggle("speaking", mine);
+    const label = mine ? "Stop reading" : "Read aloud";
+    b.title = label;
+    b.setAttribute("aria-label", label);
+  }
+}
+window.addEventListener("vak:voice", paintSpeak);
 
 function addNote(turn: Turn, name: string, result: string): void {
   const d = document.createElement("details");
@@ -408,6 +484,7 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
   setTimeout(() => void loadChats(), 300);
   updateSend();
   const turnSession = session;
+  stopReading();
   // Only the chat's latest turn can be continued.
   for (const b of thread.querySelectorAll(".status .continue")) b.remove();
   const turn = newTurn(req.continue ? "Continuing…" : "Thinking…");
@@ -469,6 +546,7 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
           setStatus(turn, `${model} · ${((performance.now() - started) / 1000).toFixed(1)}s${e.limit === "steps" ? " · step limit" : e.limit === "tools" ? " · tool budget" : ""}`, "done");
         }
         if (e.limit) limited(turn, e.limit);
+        if (voicePrefs.enabled && voicePrefs.auto && turnSession === session && !turn.status.classList.contains("error")) toggleReading(turn.root, turn.text);
         break;
     }
   };
@@ -560,11 +638,14 @@ input.addEventListener("input", autosize);
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
+    if (dictationState().state !== "idle") return void stopDictation();
     submit(input.value);
   }
 });
 $<HTMLFormElement>("composer").addEventListener("submit", (e) => {
   e.preventDefault();
+  // Enter while dictating finishes the dictation; the next Enter sends.
+  if (dictationState().state !== "idle") return void stopDictation();
   if (isRunning(session)) stopRun(session);
   else submit(input.value);
 });
@@ -593,12 +674,19 @@ function toggleSidebar(): void {
 document.body.classList.toggle("collapsed", prefs.get("collapsed") === "true");
 document.addEventListener("keydown", (e) => {
   if (e.defaultPrevented) return;
+  if (e.key === "Escape" && dictationState().state === "listening") {
+    e.preventDefault();
+    input.value = dictationBase;
+    autosize();
+    return cancelDictation();
+  }
   if (e.key === "Escape" && isRunning(session) && !settingsOpen() && !document.body.classList.contains("in-artifacts") && !tasksPanel.page.visible()) return stopRun(session);
   if (!(e.metaKey || e.ctrlKey)) return;
   const actions: Record<string, () => void> = {
     n: () => (closeSettings(), newChat()),
     ",": () => void (settingsOpen() ? closeSettings() : openSettings()),
     "\\": toggleSidebar,
+    d: () => { if (!e.shiftKey && !e.altKey && !settingsOpen()) toggleDictation(); },
     b: () => { if (!e.altKey && !e.shiftKey) toggleSidebar(); },
   };
   if ((e.altKey || e.shiftKey) && e.key.toLowerCase() === "b") return;
@@ -608,6 +696,67 @@ document.addEventListener("keydown", (e) => {
     act();
   }
 });
+
+// --- dictation ------------------------------------------------------------------------
+const mic = $<HTMLButtonElement>("mic");
+const micTime = $<HTMLElement>("mic-time");
+const composerNote = $<HTMLElement>("composer-note");
+mic.append(icon("mic", 17));
+/** The message box before dictation began; spoken words go after it. */
+let dictationBase = "";
+let noteTimer: ReturnType<typeof setTimeout> | undefined;
+let clock: ReturnType<typeof setInterval> | undefined;
+
+function composerHint(text: string): void {
+  composerNote.textContent = text;
+  composerNote.hidden = !text;
+  clearTimeout(noteTimer);
+  if (text) noteTimer = setTimeout(() => { composerNote.hidden = true; }, 7000);
+}
+
+function toggleDictation(): void {
+  const { state } = dictationState();
+  if (state === "listening") return stopDictation();
+  if (state === "transcribing" || !dictationPrefs.enabled) return;
+  stopReading();
+  dictationBase = input.value;
+  composerHint("");
+  input.focus();
+  void startDictation({
+    onText(text, final) {
+      input.value = dictationBase.trim() ? `${dictationBase.replace(/\s*$/, " ")}${text}` : text;
+      autosize();
+      input.setSelectionRange(input.value.length, input.value.length);
+      if (final && dictationPrefs.send && input.value.trim() && !isRunning(session)) submit(input.value);
+    },
+    onError: composerHint,
+  });
+}
+mic.addEventListener("click", toggleDictation);
+
+function paintMic(): void {
+  const { state, startedAt } = dictationState();
+  mic.hidden = !dictationPrefs.enabled;
+  mic.classList.toggle("listening", state === "listening");
+  mic.classList.toggle("transcribing", state === "transcribing");
+  mic.disabled = state === "transcribing";
+  const label = state === "listening" ? "Stop dictation (Enter); Esc discards" : state === "transcribing" ? "Transcribing…" : "Dictate (⌘D)";
+  mic.title = label;
+  mic.setAttribute("aria-label", label);
+  mic.setAttribute("aria-pressed", String(state === "listening"));
+  clearInterval(clock);
+  micTime.hidden = state === "idle";
+  const tick = () => {
+    const s = Math.floor((Date.now() - startedAt) / 1000);
+    micTime.textContent = state === "transcribing" ? "Transcribing…" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+  tick();
+  if (state === "listening") clock = setInterval(tick, 500);
+  if (state === "idle") mic.style.removeProperty("--level");
+}
+window.addEventListener("vak:dictation", paintMic);
+window.addEventListener("vak:dictation-level", () => mic.style.setProperty("--level", dictationState().level.toFixed(2)));
+paintMic();
 
 // --- integrations in the chat ----------------------------------------------------------
 // Tool names are "<integration>__<tool>"; the chat shows the integration's own name and icon.
@@ -881,7 +1030,13 @@ onContextMenu((_t, path) => {
     return [{ label: "Copy as text", run: () => copy(projectText(resolved)) }];
   }
   const text = closest<HTMLElement>(path, ".msg.assistant .text");
-  if (text?.textContent?.trim()) return [{ label: "Copy reply", run: () => copy(text.innerText) }];
+  if (!text?.textContent?.trim()) return;
+  const root = text.closest<HTMLElement>(".msg")!;
+  const reading = voiceState().target === root;
+  return [
+    { label: "Copy reply", run: () => copy(text.innerText) },
+    ...(voicePrefs.enabled ? [{ label: reading ? "Stop reading" : "Read aloud", run: () => toggleReading(root, text) }] : []),
+  ];
 });
 
 // --- errors -------------------------------------------------------------------------

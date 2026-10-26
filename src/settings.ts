@@ -9,13 +9,14 @@ import { applyAppearance, appearance, MODES, SIZES, THEMES } from "./theme.ts";
 import { addOwnPage, integrationPage, marketplace } from "./integrations-page.ts";
 import { disposeFinops, finopsPage } from "./finops-page.ts";
 import { TASK_LIMITS, parseTaskSummaries } from "../task-contract.ts";
+import { voicePage, voiceSection, voiceSettingsPage } from "./voice-page.ts";
 import { group, pill, plainField, row, secretField, segmented, select, type Setting, title, toggle } from "./ui.ts";
 
 interface ChannelInfo { id: string; label: string; enabled: boolean; provider?: string; model?: string; ready: boolean; secrets: string[]; needs: string[]; state: string; detail: string }
 interface PlanInfo { generation: string; tier: string; examples: boolean; authoring?: string; maxSteps: number; reasons: string[] }
 interface Info { version: string; node: string; platform: string; dataDir: string; logFile: string; keys: string }
 
-type Section = "models" | "providers" | "integrations" | "integrations:add" | `integration:${string}` | "channel:telegram" | "channel:slack" | "channel:discord" | "appearance" | "chats" | "tasks" | "finops" | "general" | "about";
+type Section = "models" | "providers" | "integrations" | "integrations:add" | `integration:${string}` | "channel:telegram" | "channel:slack" | "channel:discord" | "voice" | `voice:${string}` | "appearance" | "chats" | "tasks" | "finops" | "general" | "about";
 
 /** Channels whose listeners are not built yet: shown so the place is known, marked as coming. */
 const COMING: Record<string, string> = {
@@ -30,6 +31,7 @@ const NAV: [Section, string, boolean?][] = [
   ["channel:telegram", "Telegram", true],
   ["channel:slack", "Slack", true],
   ["channel:discord", "Discord", true],
+  ["voice", "Voice"],
   ["appearance", "Appearance"],
   ["chats", "Chats"],
   ["tasks", "Schedule"],
@@ -73,7 +75,7 @@ function nav(): void {
       list.append(el("div", { className: "nav-group", textContent: "Channels" }));
     }
     const soon = id.startsWith("channel:") && COMING[id.slice(8)];
-    const current = id === section || (id === "integrations" && section.startsWith("integration"));
+    const current = id === section || (id === "integrations" && (section.startsWith("integration") || section.startsWith("voice:")));
     const b = el("button", { type: "button", className: `nav-item${sub ? " sub" : ""}`, "aria-current": String(current) }, label, soon ? el("span", { className: "soon", textContent: "soon" }) : null);
     b.addEventListener("click", () => void show(id));
     list.append(b);
@@ -89,7 +91,8 @@ async function show(to: Section, arg?: string): Promise<void> {
   settings = await api<Setting[]>("/api/settings").catch(() => []);
   const integration = to.startsWith("integration:") ? to.slice("integration:".length) : undefined;
   const render: Record<string, () => Promise<HTMLElement[]>> = {
-    integrations: () => marketplace((id) => void show(`integration:${id}`), () => void show("integrations:add")),
+    integrations: async () => marketplace((id) => void show(`integration:${id}`), () => void show("integrations:add"), await voiceSection((id) => void show(`voice:${id}`))),
+    voice: () => voiceSettingsPage((id) => void show(`voice:${id}`)),
     "integrations:add": async () => addOwnPage(() => void show("integrations"), (id) => void show(`integration:${id}`)),
     models: () => modelsPage(arg),
     providers: providersPage,
@@ -109,7 +112,8 @@ async function show(to: Section, arg?: string): Promise<void> {
     general: generalPage,
     about: aboutPage,
   };
-  const parts = integration ? await integrationPage(integration, () => void show("integrations"), () => void show(to)) : await (render[to] ?? render.models!)();
+  const voiceId = to.startsWith("voice:") ? to.slice("voice:".length) : undefined;
+  const parts = voiceId ? await voicePage(voiceId, settings, () => void show("integrations"), () => void show(to)) : integration ? await integrationPage(integration, () => void show("integrations"), () => void show(to)) : await (render[to] ?? render.models!)();
   if (section !== to) return;
   content().replaceChildren(...parts);
   content().scrollTop = 0;

@@ -3,7 +3,7 @@
 
 import { api, ask, el } from "./core.ts";
 
-export interface Setting { name: string; label: string; secret: boolean; placeholder?: string; group: "main" | "more" | "channel"; owner: string; set: boolean; value?: string }
+export interface Setting { name: string; label: string; secret: boolean; placeholder?: string; group: "main" | "more" | "channel" | "voice"; owner: string; set: boolean; value?: string }
 
 export const title = (text: string, sub?: string) => [el("h1", { textContent: text }), sub ? el("p", { className: "lead", textContent: sub }) : null].filter(Boolean) as HTMLElement[];
 
