@@ -103,7 +103,7 @@ try {
       integrations = await request<IntegrationView[]>("/api/integrations");
       if (scenario.integrations.some((id) => !integrations.some((i) => i.entry.id === id && i.status === "ready"))) { results.push({ case: scenario.id, verdict: "blocked", reason: "Required installed integration is not ready" }); continue; }
       const started = Date.now();
-      const made = parseTaskView(await request("/api/tasks", { goal: scenario.goal, criteria: scenario.criteria, provider: "ollama", model, ...(scenario.id === "interactive-comparison" ? { resultPolicy: { kind: "comparison", labels: ["Atlas", "Birch"] } } : scenario.id === "public-source-research" ? { resultPolicy: { kind: "research", sources: urls } } : {}), integrations: scenario.integrations, spending: { kind: "local_only" }, limits: { runs: 2, modelRequests: 12, toolCalls: 6, activeMs: 300000 } }));
+      const made = parseTaskView(await request("/api/tasks", { goal: scenario.goal, criteria: scenario.criteria, provider: "ollama", model, ...(scenario.id === "interactive-comparison" ? { resultPolicy: { kind: "comparison", labels: ["Atlas", "Birch"], notices: ["Fictional"] } } : scenario.id === "public-source-research" ? { resultPolicy: { kind: "research", sources: urls } } : {}), integrations: scenario.integrations, spending: { kind: "local_only" }, limits: { runs: 2, modelRequests: 12, toolCalls: 6, activeMs: 300000 } }));
       active = made.id; let task = made, nextLog = 0; const decisions: { tool: string; decision: string }[] = [], answered = new Set<string>();
       while (["queued", "running", "needs_approval"].includes(task.state)) {
         if (task.approval && !answered.has(task.approval.id)) {

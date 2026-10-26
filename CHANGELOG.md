@@ -4,6 +4,14 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Visible notices:** checked result layouts can require bounded user-supplied labels such as fictional-data notices. Setup and details retain them; completion checks require their actual display. Labels do not verify provenance or factual correctness. Real-model evaluation still reports semantic contradictions as failures.
+
+- **Independent outputs:** typed result layouts allow titles/layout wrappers around the separate form and table. Combined or ambiguous outputs still fail. Corrections name obsolete surplus surface IDs and report blank comparison cells with their column/row keys, without inventing values.
+
+- **Result review:** the app now supplies the neutral review acknowledgement after substantive layout/source checks. A different final sentence no longer forces another generation that can damage valid output. Unverified provider prose remains private; source checks and explicit user acceptance still apply. Uses Projection `9d44982`'s compatible trusted-response callback.
+
+- From Projection `ff9bfaa`: malformed keyless property groups no longer create extra inputs; explicit stringified list bindings retain live data references. Bound container mismatches are reported. Authoring/correction guidance preserves supplied values and patches existing IDs, with a bounded saved-surface inventory. Full render replacements and explicit empty lists keep their existing semantics; these repairs do not certify factual accuracy.
+
 - From Projection `399a3a9`: tool generations rejected for malformed XML can recover within the existing run/request/time budgets before any call or text is received. Each retry passes through task admission and preserves earlier tool receipts. Partial streams, cancellation and unrelated provider failures still stop normally; unknown token usage stays unknown. Output correctness remains a separate check.
 
 - From Projection `9c6a0ae`: schema-declared wrapped list references such as `rows: ["data/evidence"]` resolve to existing array data and retain live bindings. Literal paths and unresolved/scalar targets remain unchanged. Real outcome failures remain tracked separately.
@@ -18,7 +26,7 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 - **Task usage:** run-level model usage in Schedule, task/run attribution and filtering in FinOps, and matching CSV columns. Missing costs remain unknown; model estimates exclude tool/server charges and do not enforce a spending ceiling.
 
-Built on Projection `399a3a9`.
+Built on Projection `9d44982`.
 
 - **Schedule workspace:** calendar navigation, full-page creation, lifecycle filters/search, starter ideas, activity, permissions and result access. Immediate and one-time future runs share the task dispatcher; pause/resume, reschedule, Run now and guarded deletion are available. Missed times require review. Existing multiple interactive surfaces stay in the canonical workspace.
 - **Task execution:** permission waits release the execution slot and resume the same call after fresh authority checks. Expandable run history records distinct attempts, outcomes, active time, tool counts and user acceptance. Task journal schema v2 is strict, with no prelaunch compatibility migration or automatic data deletion. Repeating schedules, chains and sustained retention remain planned.

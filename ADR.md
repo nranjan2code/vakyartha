@@ -158,7 +158,7 @@ Projection `dbae5c2` implements the public option and passes 238 tests. Local tr
 
 Status: implemented enforcement slice, 2026-10-26; real-output reliability remains open.
 
-A task may choose a flexible workspace, a comparison with declared option names, or source excerpts with declared public HTTPS URLs. The latter two require separate root-form/root-table surfaces, preserving the canonical interactive workspace. Surface IDs remain author choices. Comparison checks visible option identities; it does not certify numeric accuracy or inferred recommendations. Source-excerpt rows contain only source and quote; whitespace-normalized excerpts must match a successful page-tool response in the same execution, and cover declared/read pages. A matched excerpt establishes response provenance, not independent truth or correctness of an inference. Supplied form defaults and arbitrary semantic completion criteria still need review.
+A task may choose a flexible workspace, a comparison with declared option names, or source excerpts with declared public HTTPS URLs. The latter two require separate form/table surfaces, preserving the canonical interactive workspace; the initial root-only restriction is superseded by ADR-019. Surface IDs remain author choices. Comparison checks visible option identities; it does not certify numeric accuracy or inferred recommendations. Source-excerpt rows contain only source and quote; whitespace-normalized excerpts must match a successful page-tool response in the same execution, and cover declared/read pages. A matched excerpt establishes response provenance, not independent truth or correctness of an inference. Supplied form defaults and arbitrary semantic completion criteria still need review.
 
 Use Projection's public `validateCompletion` callback to return concrete failures into the same bounded run. With a callback, rejected/intermediate prose stays out of the public response; accepted completion uses a neutral acknowledgement. Corrections consume existing model/time budgets and never create hidden tasks or grant tool permissions. A clean check ends execution at user review; it never accepts the task automatically. Surfaces can still show partial work while running or after failure.
 
@@ -176,3 +176,49 @@ The public host already supports bounded execution, response completion and appl
 Projection adds a public `ToolGenerationError` classification and handles it in the existing tool loop. Only a rejection before any text or tool call may retry; the provider adapter performs no hidden retry. Each attempt re-enters the same provider wrapper and consumes the existing run/request/time allowance. Earlier operations and receipts remain in history without being replayed by the runner. Cancellation, partial streams and unrelated errors retain their prior behavior. Existing projection and response completion policies remain available; no app surface rewriting, process, IPC or dependency is added.
 
 Vakyartha keeps its existing reservation writer and records rejected attempts against cumulative request limits. `test/task-budget.test.ts` verifies exhaustion and persisted counters after restart; the framework tests cover the exact rejected generation, classification, partial output, cancellation, step exhaustion and preserved tool receipts. Missing token measurements remain unknown. The recovery mechanism does not verify outputs or make retries of uncertain external writes safe; P1.6/P1.9/P3.4/P4.7 remain open. Real outcomes and the next authoring work are recorded in EVALUATION.md.
+
+
+## ADR-017 — Repair authoring syntax without rewriting facts or replacement intent
+
+Status: framework repairs adopted, 2026-10-26. Projection `ff9bfaa` (implementation `5ea729a`, strict regression-test fix `ff9bfaa`).
+
+The public host already owns bounded execution, canonical surfaces, completion checks and correction feedback. The latest retained comparison demonstrates malformed keyless property groups becoming extra inputs, a stringified explicit list binding losing its pointer during JSON coercion, and replacements sending empty data. These are parser/normalizer/authoring responsibilities. App composition cannot safely repair them without rewriting canonical surfaces; no new app store or host API is needed.
+
+Projection replays the verbatim fictional calls, repairs only syntax established by structure/schema, and retains live list bindings. Keyless groups require an extra containing closer, an object-valued prior member and noncolliding keys; normal anonymous/sibling nodes stay separate. Exact explicit bracket-wrapped bindings normalize only on array/binding props. Literal source/cell arrays remain unchanged. Bound container shape mismatches are diagnosed without rejecting harmless numeric formatting within actual lists.
+
+Guidance initializes supplied controls at their exact data bind paths, preserves numbers/units/requested labels and uses distinct calls for independent outputs. Corrections receive a bounded existing-surface ID/root inventory and use patches; complete render replacement and explicit empty arrays keep their existing meaning. Do not silently restore deleted data, infer missing facts/defaults, rescale numeric values or synthesize extra app surfaces. Unit replays deliberately retain the recorded wrong numbers so a rendering repair cannot masquerade as factual verification.
+
+No new public signatures, dependencies, IPC or permissions. Raw comparison/research trials and remaining limitations are recorded in EVALUATION.md. Structural authoring regression success does not close semantic completion, provenance, saved-output receipt, recovery/retention or installed-window gates.
+
+
+## ADR-018 — Neutral review acknowledgement without wording-only retries
+
+Status: implemented, 2026-10-26. Projection `9d44982` includes the additive mechanism introduced in `0b8bee3`.
+
+The `ff9bfaa` comparison trial twice passed the structural checks but failed only because its final sentence was not exactly the requested acknowledgement. That stylistic failure consumed generation budget and later rewrites dropped requested columns. The app must withhold unverified final prose without asking a model to rewrite correct surfaces just to change a sentence.
+
+The existing public completion callback could reject output but could not supply accepted UI prose. Projection therefore allows the existing issue array or `{issues, response?}`. A trusted callback can substitute a neutral acknowledgement only after its substantive checks pass; invalid decisions and any issues still withhold final text. Existing array callbacks remain compatible. Original provider prose stays diagnostic conversation/transcript data; only the supplied acknowledgement is emitted. No extra model invocation, persistence authority, process, IPC or dependency.
+
+The app's `reviewTaskResult` returns its existing structure/source issues plus `Ready for review.`; wording is no longer an acceptance condition. Permission and source scope, structural checks, budget limits and the separate evidence-bound user acceptance remain unchanged. This does not extend the checker to numeric calculations, supplied defaults or arbitrary semantic completion. Regression tests cover one-request review without leaked provider claims, rejected/malformed decisions and continued source-check enforcement. Local outcomes and remaining limits are in EVALUATION.md.
+
+
+## ADR-019 — Independent output roles, explicit blanks and precise surplus cleanup
+
+Status: implemented, 2026-10-26. Owner: Vakyartha; existing public surface snapshots/resolved trees are sufficient.
+
+Real comparison corrections retained separate interactive surfaces, but a layout wrapped around the comparison table failed the initial root-only policy. The user-visible requirement is independent form/table surfaces, not a specific layout root. Accept one form with no table on one surface, and one table with no form on another; title/layout wrappers are allowed. Combined surfaces, ambiguous multiple roles and surplus outputs still fail. When valid independent outputs coexist with an obsolete combined attempt, feedback names the kept IDs and the exact obsolete surface-removal arguments. Removal remains a model-authored surface operation, not automatic app rewriting or authority over external data.
+
+The same report had a displayed `monthly_cost` column with only `cost` in each row and blank recommendations. Comparison checks now report blank displayed cells with column names and available row fields; known values or explicit missing-data labels are required. Zero/false remain actual values. The checker never guesses a renamed field, computes missing numbers, copies unused values into a surface, or treats a missing-data label as proof of completeness. Evaluation still checks requested associated numeric values separately; arithmetic, supplied defaults and arbitrary criteria remain open.
+
+No framework API change beyond ADR-018, no new store, dependency, IPC or permission. Unit regressions cover layout wrappers, mixed-role refusal, exact surplus cleanup, blank-cell/key mismatch feedback and missing/zero/false values. Manual evidence review still determines product acceptance.
+
+
+## ADR-020 — Explicit visible notices in the existing result manifest
+
+Status: implemented, 2026-10-26. Owner: Vakyartha.
+
+A comparison retained correct associated numbers/defaults and independent surfaces but omitted the requested fictional-data label. Add an optional `notices` array to the existing result policy: up to eight user-supplied nonempty labels of at most 120 characters. Setup exposes the field for checked layouts, persists it with the task and shows it in details. Flexible work ignores this checked-layout field. No journal-version migration is needed for the optional additive field.
+
+Instructions copy notices into visible surface titles/content. Completion checks match normalized, case-insensitive whole phrases in resolved text; unused or hidden data and larger negated word fragments do not count. A failed notice returns concrete feedback into the same budget. No app renderer inserts or edits the generated surface, and no notice grants tools, establishes source provenance or proves semantic correctness. The evaluation explicitly supplies `Fictional` for its fictional fixture rather than inferring it from arbitrary prose. Numeric/default/recommendation checks remain separate; in particular, the latest machine candidate is overturned because its recommendation contradicts its correct numbers (EVALUATION.md).
+
+Boundary/unit tests cover bounds, deduplication, both policies, visible vs unused data and word boundaries. Wide/narrow WebKit checks cover the field, flexible-layout hiding, persisted scheduled-task notices/details and existing interaction paths. No dependency, IPC or new persistence writer.

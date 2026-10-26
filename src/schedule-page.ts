@@ -237,6 +237,7 @@ export class SchedulePage {
       main.append(this.section("Run history", history));
       const facts = el("dl", { className: "schedule-facts" });
       for (const [label, value] of [["Result layout", task.resultPolicy?.kind === "research" ? "Criteria + checked source excerpts" : task.resultPolicy?.kind === "comparison" ? "Criteria + named comparison" : "Flexible workspace"], ["Task budget", `${task.runs} / ${task.limits.runs} runs · ${task.budget.modelRequests} / ${task.limits.modelRequests} model requests · ${task.budget.toolCalls} / ${task.limits.toolCalls} tool attempts`], ["Time charged", `${(task.budget.activeMs / 60000).toFixed(2)} / ${task.limits.activeMs / 60000} active minutes (includes unfinished reservations)`], ["Spending", task.spending.kind === "local_only" ? "Local provider only" : task.spending.kind === "api_allowed" ? "Model API charges allowed · no monetary ceiling" : `Required ceiling $${task.spending.usd}`], ["When", scheduleLabel(task.schedule)], ["Timing", task.schedule ? `Once · ${task.schedule.status === "dispatched" ? "Dispatched" : task.schedule.status === "paused" ? "Paused" : "Upcoming"}` : "Started manually"], ["Model", task.model], ["Capabilities", task.integrations.join(", ") || "None selected"], ["Runs", String(task.runs)], ["Created", date(task.created)]]) facts.append(el("dt", { textContent: label }), el("dd", { textContent: value }));
+      if (task.resultPolicy?.notices?.length) facts.append(el("dt", { textContent: "Required visible notices" }), el("dd", { textContent: task.resultPolicy.notices.join(" · ") }));
       const aside = el("aside", {}, this.section("At a glance", facts), this.section("Your control", el("p", { textContent: "Each run is bounded. Changes follow your integration permissions, and results wait for your review." }), button("Manage integrations", () => void openSettings("integrations"))));
       if (task.state === "scheduled" || task.state === "paused") {
         const value = new Date(task.schedule!.at); const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
@@ -309,6 +310,7 @@ export class SchedulePage {
   private updateResultLayout(): void {
     const kind = $<HTMLSelectElement>("task-result-layout").value;
     $("task-result-inputs-row").hidden = !kind;
+    $("task-result-notices-row").hidden = !kind;
     $("task-result-inputs-label").textContent = kind === "research" ? "Public source URLs, one per line (up to 8)" : "Option names, one per line (up to 16)";
     $<HTMLTextAreaElement>("task-result-inputs").required = Boolean(kind);
     $("task-result-help").textContent = kind === "research" ? "Select Web pages below. This layout checks verbatim excerpts against successful reads and keeps interpretations for your review." : kind === "comparison" ? "Requires two separate outputs: an editable criteria form and a comparison with named rows. It checks structure, not the truth of every value." : "Flexible work still needs your evidence review.";
@@ -341,7 +343,8 @@ export class SchedulePage {
     try {
       const layout = $<HTMLSelectElement>("task-result-layout").value;
       const entries = $<HTMLTextAreaElement>("task-result-inputs").value.split("\n").map((value) => value.trim()).filter(Boolean);
-      const resultPolicy = layout ? parseTaskResultPolicy({ kind: layout, ...(layout === "research" ? { sources: entries } : { labels: entries }) }) : undefined;
+      const notices = $<HTMLTextAreaElement>("task-result-notices").value.split("\n").map((value) => value.trim()).filter(Boolean);
+      const resultPolicy = layout ? parseTaskResultPolicy({ kind: layout, ...(layout === "research" ? { sources: entries } : { labels: entries }), ...(notices.length ? { notices } : {}) }) : undefined;
       const limits = parseTaskLimits({ runs: Number($<HTMLInputElement>("task-budget-runs").value), modelRequests: Number($<HTMLInputElement>("task-budget-model").value), toolCalls: Number($<HTMLInputElement>("task-budget-tools").value), activeMs: Number($<HTMLInputElement>("task-budget-minutes").value) * 60000 });
       const chosen = [...$("task-capabilities").querySelectorAll<HTMLInputElement>("input:checked")];
       const confirmedFree = chosen.filter((c) => c.dataset.free !== "true").map((c) => c.value);

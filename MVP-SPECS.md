@@ -228,3 +228,23 @@ Setup offers a flexible workspace, separate editable criteria and comparison, or
 ### Rejected-generation recovery checkpoint (2026-10-26)
 
 A tool generation rejected before any usable text/call may retry in the same bounded execution (ADR-016). Attempts re-enter provider admission and consume durable request/time limits; earlier tool receipts remain without runner replay. Partial output, cancellation and unrelated failures stop normally. This is syntax recovery only: independent output authoring, completion evidence and uncertain external-effect reconciliation remain separate gates. No new task, store, process, IPC or dependency is introduced.
+
+
+### Authoring/data fidelity checkpoint (2026-10-26)
+
+General parser/normalizer repairs and correction guidance come from Projection `ff9bfaa` (ADR-017). Keyless property fragments remain on their node, explicit stringified list bindings retain live references, and bound container shape mismatches are diagnosed. Corrections receive an existing-ID/root inventory and use patches that preserve omitted data. Render replacement and explicit empty arrays remain intentional replacements; no data is silently restored and no supplied facts are rewritten. Real numerical/default/label correctness still requires separate outcome evidence, recorded in EVALUATION.md.
+
+
+### Review acknowledgement checkpoint (2026-10-26)
+
+Substantive layout/source checks now return a trusted neutral acknowledgement through Projection's additive completion decision (ADR-018). Different model wording alone cannot trigger more work or destructive output rewrites. Unverified final prose stays private; any content/source failure still requires correction, and product acceptance still requires user evidence review. This does not add numerical/default verification or certify arbitrary completion conditions.
+
+
+### Independent layout and blank-value checkpoint (2026-10-26)
+
+Typed form/table layouts accept ordinary title/layout wrappers while enforcing independent surface identities and roles (ADR-019). Feedback identifies obsolete extra surfaces separately from the outputs to keep. Comparison cells require real visible values or explicit missing-data labels, with field-key mismatches reported rather than guessed. Zero/false remain valid values; missing labels do not certify completion or numerical accuracy. Semantic/default/calculation and full research requirements remain outcome gates.
+
+
+### Explicit visible-notice checkpoint (2026-10-26)
+
+Checked layouts optionally retain up to eight user-supplied visible notices (120 characters each), configured in setup and shown in task details (ADR-020). Resolved titles/content must display these notices; unused metadata does not count. Labels do not grant authority or certify provenance, numerical correctness or reasoning. The final diagnostic comparison passed numeric/default/layout/notice checks but was manually classified as a failed full outcome because its recommendation contradicted the displayed facts.
