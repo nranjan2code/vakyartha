@@ -12,10 +12,11 @@ const HUSH = ["stop", "quiet", "be quiet", "shush", "enough", "okay stop", "ok s
 const APP: Record<string, readonly string[]> = {
   repeat: ["repeat", "repeat that", "say that again", "say again", "read it again", "again"],
   new: ["new conversation", "new chat", "start over", "start a new chat"],
+  details: ["more", "details", "tell me more", "the details", "read the table", "read it all", "read everything", "the rest"],
   canvas: ["show it", "show me", "open it", "show it on the canvas", "open the canvas", "put it on the canvas"],
 };
 
-export type VoiceCommand = "end" | "hush" | "repeat" | "new" | "canvas";
+export type VoiceCommand = "end" | "hush" | "repeat" | "new" | "details" | "canvas";
 
 /** What a short sentence means for voice or the app itself, or nothing (it is a message). */
 export function modeCommand(text: string): VoiceCommand | undefined {

@@ -435,7 +435,12 @@ function turnText(turn: Turn): string {
 }
 
 /** A reply as speech: its prose, then what each interface says, in the reply's language. */
-function turnSpeech(turn: Turn): string {
+/**
+ * A reply as speech. "gist" (conversation mode) keeps each interface to its
+ * headlines and says when there is more; when the reply drew on tools, it says
+ * so first, so what was found outside is not heard as the app's own word.
+ */
+function turnSpeech(turn: Turn, as: "gist" | "details" | "screen" = "screen"): string {
   const prose = replyText(turn.text);
   const surfaces = turnSurfaces(turn).flatMap((id) => {
     const resolved = client.store.resolve(id);
@@ -443,7 +448,11 @@ function turnSpeech(turn: Turn): string {
   });
   // Prose says the most about the language; an interface alone is judged by its own text.
   const lang = textLanguage(prose) ?? textLanguage(surfaces.map((s) => projectText(s)).join("\n"));
-  return [prose, ...surfaces.map((s) => spokenSurface(s, lang))].filter((p) => p.trim()).join("\n\n");
+  const more = { left: false };
+  const spoken = surfaces.map((s) => { const m = { left: false }; const t = spokenSurface(s, lang, as, m); more.left ||= m.left; return t; });
+  const tools = as !== "screen" && turn.root.querySelector(".steps li[data-tool]") ? "Based on what I found:" : "";
+  const tail = as === "gist" && more.left ? "Say details for the rest." : "";
+  return [tools, prose, ...spoken, tail].filter((p) => p.trim()).join("\n\n");
 }
 
 // --- read aloud ---------------------------------------------------------------------
@@ -537,6 +546,8 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
     if (turn.status.classList.contains("done") || turn.status.classList.contains("error")) return;
     const secs = Math.round((performance.now() - started) / 1000);
     if (secs >= 3 && !turn.root.querySelector(".approval:not(.settled)")) setStatus(turn, `${phase}… ${secs}s`);
+    // In conversation, silence during long work sounds like nothing is happening.
+    if (secs === 8 && conversationState() === "listening" && voiceState().state === "idle") void readAloud(`Still working: ${phase.toLowerCase()}.`, voiceDecisions);
   }, 1000);
   let text = "";
   let frame = 0;
@@ -593,7 +604,8 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         // Conversation mode always answers aloud, and then asks any choice the reply left.
         if (conversationState() !== "off" && turnSession === session && !turn.status.classList.contains("error")) {
           const ask = voiceDecisions.offer(turnSurfaces(turn));
-          toggleReading(turn.root, () => [turnSpeech(turn), ask].filter(Boolean).join("\n\n"));
+          lastSpokenTurn = turn;
+          toggleReading(turn.root, () => [turnSpeech(turn, "gist"), ask].filter(Boolean).join("\n\n"));
         } else if (voicePrefs.enabled && voicePrefs.auto && turnSession === session && !turn.status.classList.contains("error")) toggleReading(turn.root, () => turnSpeech(turn));
         break;
     }
@@ -821,6 +833,8 @@ window.addEventListener("vak:dictation-level", () => mic.style.setProperty("--le
 paintMic();
 
 // --- conversation mode -------------------------------------------------------------------
+/** The reply last read in conversation, for "details". */
+let lastSpokenTurn: Turn | undefined;
 const voiceApprovals = new VoiceApprovals({
   async decide(id, decision) {
     await api(`/api/approvals/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ decision }) }).catch(() => settleApproval(id, "deny"));
@@ -865,6 +879,7 @@ function toggleConversation(): void {
     onCommand(command) {
       if (command === "repeat") return void readAloud(recentlySaid(120_000).at(-1) ?? "There is nothing to repeat.", voiceDecisions);
       if (command === "new") return void (voiceDecisions.clear(), newChat());
+      if (command === "details") return lastSpokenTurn ? toggleReading(lastSpokenTurn.root, () => turnSpeech(lastSpokenTurn!, "details")) : void readAloud("There is nothing more to read.", voiceDecisions);
       const last = [...thread.querySelectorAll<HTMLElement>(".surface-home[data-surface]")].at(-1)?.dataset.surface;
       if (last) canvas.open(last, true);
       else void readAloud("There is nothing to show yet.", voiceDecisions);
@@ -992,7 +1007,8 @@ function surfaceUpdated(turn: Turn, snap: SurfaceSnapshot): void {
 }
 
 function usedChip(turn: Turn, name: string, ok: boolean): void {
-  addStep(turn, labels[splitTool(name).server]?.icon ?? "tool", toolLabel(name), !ok);
+  // Marked so speech can say a reply drew on what tools returned.
+  addStep(turn, labels[splitTool(name).server]?.icon ?? "tool", toolLabel(name), !ok).dataset.tool = name;
 }
 
 /**

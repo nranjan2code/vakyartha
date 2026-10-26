@@ -9,6 +9,15 @@ const FIRST = 160;
 const REST = 420;
 /** A table is summarised after this many rows: nobody listens to a spreadsheet. */
 const TABLE_ROWS = 6;
+/** Spoken as a gist: this many rows or items, then how many more. */
+const GIST_ROWS = 3;
+/** Rows read when the person asks for the details. */
+const DETAIL_ROWS = 50;
+// Set for one synchronous spokenSurface call: the gist, or everything the person asked for.
+let mode: "gist" | "details" | "screen" = "screen";
+/** Something was left out of a gist, so the person can ask for the rest. */
+let left = false;
+const rowsFor = () => (mode === "gist" ? GIST_ROWS : mode === "details" ? DETAIL_ROWS : TABLE_ROWS);
 
 /** The words a voice needs for numbers and the few phrases this file adds, per reply language. */
 interface Words { point?: string; percent: string; plus: string; minus: string; to: string; from: string; up: string; down: string; more: (n: number) => string; warning: string; important: string; currency?: Record<string, string> }
@@ -132,28 +141,41 @@ function say(node: ResolvedNode, out: string[], w?: Words): void {
       return;
     case "card":
       put(p.title, p.subtitle, p.badge);
-      put(p.body);
+      // A gist keeps a card to its headline; its body is a detail.
+      if (mode === "gist" && str(p.body)) left = true;
+      else put(p.body);
       return kids();
-    case "text":
-      return put(p.content);
+    case "text": {
+      const content = str(p.content);
+      const first = mode === "gist" ? /^[^.!?…।]*[.!?…।]/.exec(content)?.[0] : undefined;
+      if (first && first.length < content.length) left = true;
+      return put(first ?? content);
+    }
     case "stat":
       return put(p.label, p.value, p.delta ? delta(str(p.delta), w) : "");
     case "table": {
       const cols = (Array.isArray(p.columns) ? p.columns : []) as Record<string, unknown>[];
       const rows = Array.isArray(p.rows) ? p.rows : [];
       const cell = (r: unknown, c: Record<string, unknown>, i: number) => str(Array.isArray(r) ? r[i] : r && typeof r === "object" ? (r as Record<string, unknown>)[str(c.key)] : r);
-      for (const r of rows.slice(0, TABLE_ROWS)) {
+      for (const r of rows.slice(0, rowsFor())) {
         const [first, ...rest] = cols.map((c, i) => [str(c.label ?? c.key), cell(r, c, i)] as const);
         if (!first) continue;
         const pairs = rest.filter(([, v]) => v).map(([k, v]) => (k ? `${k} ${v}` : v));
         out.push(sentence(`${first[1]}${pairs.length ? `: ${pairs.join(", ")}` : ""}`));
       }
-      if (rows.length > TABLE_ROWS && w) out.push(w.more(rows.length - TABLE_ROWS));
+      if (rows.length > rowsFor()) {
+        left ||= mode === "gist";
+        if (w) out.push(w.more(rows.length - rowsFor()));
+      }
       return;
     }
-    case "list":
-      (Array.isArray(p.items) ? p.items : []).forEach((item) => put(item));
+    case "list": {
+      const items = Array.isArray(p.items) ? p.items : [];
+      const n = mode === "gist" ? GIST_ROWS : items.length;
+      items.slice(0, n).forEach((item) => put(item));
+      if (items.length > n) left = true;
       return;
+    }
     case "chart": {
       const labels = (Array.isArray(p.labels) ? p.labels : []).map(str).filter(Boolean);
       const to = w ? ` ${w.to} ` : " – ";
@@ -178,8 +200,24 @@ function say(node: ResolvedNode, out: string[], w?: Words): void {
   }
 }
 
-/** An interface as speech in `lang`: what it says, not what kind of component it is or which controls it has. */
-export function spokenSurface(surface: ResolvedSurface, lang?: string): string {
+/**
+ * An interface as speech in `lang`: what it says, not what kind of component
+ * it is or which controls it has. "gist" is for conversation: headlines,
+ * stats, alerts, a chart's range and the first rows; "details" is everything,
+ * when asked. `more` reports whether a gist left anything out.
+ */
+export function spokenSurface(surface: ResolvedSurface, lang?: string, as: "gist" | "details" | "screen" = "screen", more?: { left: boolean }): string {
+  mode = as;
+  left = false;
+  try {
+    return spokenNow(surface, lang);
+  } finally {
+    if (more) more.left = left;
+    mode = "screen";
+  }
+}
+
+function spokenNow(surface: ResolvedSurface, lang?: string): string {
   const lowered = lowerSurface(surface);
   const out: string[] = [];
   if (lowered.title) out.push(sentence(lowered.title));

@@ -589,3 +589,22 @@ test("forms by voice: missing fields asked, checks explained, values shown, read
   v.hear("yes");
   assert.deepEqual(clicked, ["join/root"], "submitted through the form's own control");
 });
+
+test("a gist keeps an interface to its headlines and says when there is more", () => {
+  const surface: ResolvedSurface = { id: "s", version: 1, data: {}, root: { key: "root", id: "root", type: "stack", props: {}, children: [
+    { key: "a", id: "a", type: "stat", props: { label: "Revenue", value: "$1.2M", delta: "+12%" }, children: [] },
+    { key: "c", id: "c", type: "card", props: { title: "Ryokan", body: "A long description nobody wants read aloud." }, children: [] },
+    { key: "t", id: "t", type: "table", props: { columns: [{ key: "city", label: "City" }, { key: "n", label: "Orders" }], rows: ["A", "B", "C", "D", "E"].map((c, i) => ({ city: c, n: i })) }, children: [] },
+  ] } };
+  const more = { left: false };
+  const gist = spokenSurface(surface, "en", "gist", more);
+  assert.match(gist, /Revenue, \$1\.2M, up 12%/);
+  assert.doesNotMatch(gist, /long description/);
+  assert.match(gist, /^C: Orders 2\.$/m);
+  assert.doesNotMatch(gist, /^D:/m);
+  assert.equal(more.left, true);
+  const all = spokenSurface(surface, "en", "details");
+  assert.match(all, /long description/);
+  assert.match(all, /^E: Orders 4\.$/m);
+  assert.equal(spokenSurface(surface, "en"), spokenSurface(surface, "en", "screen"), "reading a reply aloud by hand is unchanged");
+});
