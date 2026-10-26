@@ -14,6 +14,7 @@ import type { Integrations } from "@vak/mcp/client";
 import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, providersFromEnv, pinnedFetch } from "@vak/providers";
 import { Channels, CHANNELS } from "./channels.ts";
 import { Marketplaces } from "./marketplaces.ts";
+import { Skills } from "./skills.ts";
 import { MARKETPLACES, type MarketplaceId } from "../shared/marketplaces.ts";
 import { CATALOG, createIntegrations } from "./integrations.ts";
 import { runUsage } from "../shared/finops.ts";
@@ -157,12 +158,13 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
     return true;
   }
 
+  const skills = new Skills(dataDir, opts.marketplaceFetch);
   const INSTRUCTIONS = () => `You are the assistant inside ${opts.appName ?? "Vakyartha, a desktop app"}.
 Today is ${new Date().toISOString().slice(0, 10)}.
 Answer with rich UI when the answer has structure the user will scan, compare or act on (options, comparisons, metrics, steps, forms); keep the accompanying text to one short sentence, the UI carries the content.
 Answer conversation and short answers in plain text, without UI: greetings, thanks, small talk, a fact or an explanation of a few sentences, or whatever the user asks for as text.
 When the user asks for examples or you lack real data, use realistic sample data and say it is sample data in a caption.
-When you receive a "[ui action]" message, the user interacted with your UI: respond to it, usually by updating that surface (vak_update) or rendering a confirmation.`;
+When you receive a "[ui action]" message, the user interacted with your UI: respond to it, usually by updating that surface (vak_update) or rendering a confirmation.${skills.index()}`;
 
   const profiles = new ProfileCache(opts.profilesPath ?? path.join(dataDir, "models.json"));
   const finops = new Finops(dataDir, log);
@@ -219,7 +221,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
   const host = createHost({
     tools: async ({ session }) => {
       finops.session(session);
-      return (await integrations?.toolsFor(session) ?? []).map((tool) => ({ ...tool, execute: (args, ctx) => media.withSession(session, () => tool.execute(args, ctx)) }));
+      return withSkill((await integrations?.toolsFor(session) ?? []).map((tool) => ({ ...tool, execute: (args, ctx) => media.withSession(session, () => tool.execute(args, ctx)) })));
     },
     providers: () => modelProviders(),
     profiles,
@@ -232,7 +234,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     origins: ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420", "http://127.0.0.1:1420"],
     // Outside agents get a link to watch what they projected (only when this server serves the UI).
     viewerUrl: opts.uiDir ? (session) => `http://127.0.0.1:${listening}/?session=${encodeURIComponent(session)}` : undefined,
-    routes: async (req, res, url) => (await attachRoute(req, res, url)) || (await media.route(req, res, url)) || (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await voiceRoute(req, res, url)) || infoRoute(req, res, url),
+    routes: async (req, res, url) => (await attachRoute(req, res, url)) || (await media.route(req, res, url)) || (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await skillsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await voiceRoute(req, res, url)) || infoRoute(req, res, url),
     log,
   });
 
@@ -248,7 +250,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
   tasks = await Tasks.open({
     files: new TaskFiles(path.join(dataDir, "outputs"), opts.transcriptsDir ?? path.join(dataDir, "transcripts")),
     dir: path.join(dataDir, "tasks"), run: host.run, view: host.view, remove: host.remove,
-    tools: (session) => integrations!.toolsFor(session), instructions: INSTRUCTIONS,
+    tools: async (session) => withSkill(await integrations!.toolsFor(session)), instructions: INSTRUCTIONS,
     observe: (session, work, run) => finops.chat(async () => { finops.session(session); await work(); }, run), warn: log,
     permissionRevision: (server) => integrationRevisions.get(server) ?? 0,
     permitted: (server, tool) => integrations!.view().some((i) => i.entry.id === server && i.enabled && i.status === "ready" && i.tools.some((t) => t.name === tool && t.policy !== "off")),
@@ -302,6 +304,29 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
         const result = operation === "input" ? await tasks!.input(id, body) : operation === "cancel" ? await tasks!.cancel(id) : operation === "complete" ? await tasks!.complete(id, body) : operation === "schedule" ? await tasks!.changeSchedule(id, body) : await tasks!.answer(id, String(body.approval), body.decision);
         json(res, 200, result);
       } else json(res, 405, { error: "method not allowed" });
+    } catch (err) { json(res, 400, { error: (err as Error).message }); }
+    return true;
+  }
+
+  function withSkill<T>(tools: T[]): T[] {
+    const tool = skills.tool();
+    return tool ? [...tools, tool as T] : tools;
+  }
+
+  async function skillsRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+    const p = url.pathname;
+    if (!p.startsWith("/api/skills")) return false;
+    try {
+      const m = /^\/api\/skills(?:\/(catalog|review|add)|\/([a-z0-9-]+))?$/.exec(p);
+      if (!m) json(res, 404, { error: "Unknown skill route" });
+      else if (m[1] === "catalog" && req.method === "GET") json(res, 200, await skills.search(url.searchParams.get("repo") ?? ""));
+      else if (m[1] === "review" && req.method === "POST") { const b = await readJson(req); json(res, 200, await skills.review(String(b.repo ?? ""), String(b.path ?? ""))); }
+      else if (m[1] === "add" && req.method === "POST") { const b = await readJson(req); json(res, 200, { name: skills.add(String(b.fingerprint ?? ""), b.acknowledged === true) }); }
+      else if (!m[1] && !m[2] && req.method === "GET") json(res, 200, skills.view());
+      else if (!m[1] && !m[2] && req.method === "POST") { const b = await readJson(req); json(res, 200, skills.save(String(b.text ?? ""))); }
+      else if (m[2] && req.method === "PUT") { const b = await readJson(req); if (typeof b.enabled === "boolean") skills.setEnabled(m[2], b.enabled); else skills.save(String(b.text ?? ""), m[2]); json(res, 200, skills.view()); }
+      else if (m[2] && req.method === "DELETE") { skills.remove(m[2]); json(res, 200, skills.view()); }
+      else json(res, 405, { error: "method not allowed" });
     } catch (err) { json(res, 400, { error: (err as Error).message }); }
     return true;
   }

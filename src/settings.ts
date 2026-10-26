@@ -6,6 +6,8 @@ import { autostart, inTauri, revealPath, setKeepRunning } from "./backend.ts";
 import { $, api, ask, el, engine, prefs } from "./core.ts";
 import { choose, current, labelOf, listModels, loadProviders, modelOptions, parseChoice, type ProviderInfo, providers } from "./models.ts";
 import { applyAppearance, appearance, MODES, SIZES, THEMES } from "./theme.ts";
+import { icon } from "./icons.ts";
+import { skillsPage } from "./skills-page.ts";
 import { addOwnPage, integrationPage, marketplace } from "./integrations-page.ts";
 import { disposeFinops, finopsPage } from "./finops-page.ts";
 import { TASK_LIMITS, parseTaskSummaries } from "../shared/task-contract.ts";
@@ -18,7 +20,7 @@ interface ChannelInfo { id: string; label: string; enabled: boolean; provider?: 
 interface PlanInfo { generation: string; tier: string; examples: boolean; authoring?: string; maxSteps: number; reasons: string[] }
 interface Info { version: string; node: string; platform: string; dataDir: string; logFile: string; keys: string }
 
-type Section = "models" | "providers" | "integrations" | "integrations:add" | `integration:${string}` | "channel:telegram" | "channel:slack" | "channel:discord" | "voice" | `voice:${string}` | "appearance" | "chats" | "tasks" | "finops" | "general" | "about";
+type Section = "models" | "providers" | "integrations" | "skills" | "integrations:add" | `integration:${string}` | "channel:telegram" | "channel:slack" | "channel:discord" | "voice" | `voice:${string}` | "appearance" | "chats" | "tasks" | "finops" | "general" | "about";
 
 /** Channels whose listeners are not built yet: shown so the place is known, marked as coming. */
 const COMING: Record<string, string> = {
@@ -26,20 +28,22 @@ const COMING: Record<string, string> = {
   discord: "Discord answers in servers and DMs through the Gateway. The Components V2 projector and paged modal forms are built (@vak/discord); the listener is next.",
 };
 
-const NAV: [Section, string, boolean?][] = [
-  ["models", "Models"],
-  ["providers", "Providers"],
-  ["integrations", "Integrations"],
-  ["channel:telegram", "Telegram", true],
-  ["channel:slack", "Slack", true],
-  ["channel:discord", "Discord", true],
-  ["voice", "Voice"],
-  ["appearance", "Appearance"],
-  ["chats", "Chats"],
-  ["tasks", "Schedule"],
-  ["finops", "FinOps"],
-  ["general", "General"],
-  ["about", "About"],
+/** Section, label, icon, and the group a sub-item sits under. */
+const NAV: [Section, string, string, string?][] = [
+  ["models", "Models", "cpu"],
+  ["providers", "Providers", "key"],
+  ["integrations", "MCP", "plug", "Integrations"],
+  ["skills", "Skills", "spark", "Integrations"],
+  ["channel:telegram", "Telegram", "send", "Channels"],
+  ["channel:slack", "Slack", "bubble", "Channels"],
+  ["channel:discord", "Discord", "bubble", "Channels"],
+  ["voice", "Voice", "voice"],
+  ["appearance", "Appearance", "palette"],
+  ["chats", "Chats", "bubble"],
+  ["tasks", "Schedule", "calendar"],
+  ["finops", "FinOps", "chart"],
+  ["general", "General", "sliders"],
+  ["about", "About", "info"],
 ];
 
 const page = () => $<HTMLElement>("settings");
@@ -72,15 +76,13 @@ export function closeSettings(): void {
 function nav(): void {
   const list = $<HTMLElement>("settings-nav-list");
   list.replaceChildren();
-  let channels = false;
-  for (const [id, label, sub] of NAV) {
-    if (sub && !channels) {
-      channels = true;
-      list.append(el("div", { className: "nav-group", textContent: "Channels" }));
-    }
+  let heading: string | undefined;
+  for (const [id, label, glyph, sub] of NAV) {
+    if (sub && sub !== heading) list.append(el("div", { className: "nav-group", textContent: sub }));
+    heading = sub;
     const soon = id.startsWith("channel:") && COMING[id.slice(8)];
     const current = id === section || (id === "integrations" && (section.startsWith("integration") || section.startsWith("voice:")));
-    const b = el("button", { type: "button", className: `nav-item${sub ? " sub" : ""}`, "aria-current": String(current) }, label, soon ? el("span", { className: "soon", textContent: "soon" }) : null);
+    const b = el("button", { type: "button", className: `nav-item${sub ? " sub" : ""}`, "aria-current": String(current) }, el("span", { className: "nav-label" }, icon(glyph, 16), label), soon ? el("span", { className: "soon", textContent: "soon" }) : null);
     b.addEventListener("click", () => void show(id));
     list.append(b);
   }
@@ -97,6 +99,7 @@ async function show(to: Section, arg?: string): Promise<void> {
   const integration = to.startsWith("integration:") ? to.slice("integration:".length) : undefined;
   const render: Record<string, () => Promise<HTMLElement[]>> = {
     integrations: async () => marketplace((id) => void show(`integration:${id}`), () => void show("integrations:add"), await voiceSection((id) => void show(`voice:${id}`))),
+    skills: () => skillsPage(),
     voice: () => voiceSettingsPage((id) => void show(`voice:${id}`)),
     "integrations:add": async () => addOwnPage(() => void show("integrations"), (id) => void show(`integration:${id}`)),
     models: () => modelsPage(arg),

@@ -133,7 +133,9 @@ export class Marketplaces {
     writeFileSync(`${this.file}.tmp`, JSON.stringify(this.imports, null, 2), { mode: 0o600 }); renameSync(`${this.file}.tmp`, this.file);
   }
   private async json(url: string): Promise<unknown> {
-    const response = await this.fetcher(url, { headers: { accept: "application/json" }, redirect: "error", signal: AbortSignal.timeout(15_000) });
+    const response = await this.fetcher(url, { headers: { accept: "application/json" }, redirect: "error", signal: AbortSignal.timeout(15_000) }).catch((err: Error) => {
+      throw err.name === "TimeoutError" ? new Error("This catalog took too long to answer. Its search can be slow; try again, or search another catalog.") : err;
+    });
     if (!response.ok) throw new Error(`Catalog request failed (${response.status}). Try again later.`);
     const reader = response.body?.getReader(); if (!reader) throw new Error("Empty catalog response");
     let bytes = 0; const chunks: Uint8Array[] = [];
@@ -156,7 +158,7 @@ export class Marketplaces {
       if (!pending) {
         pending = (async () => {
           const u = new URL(ENDPOINTS[source]);
-          if (source !== "docker") { u.searchParams.set("limit", "24"); u.searchParams.set("version", "latest"); if (query) u.searchParams.set("search", query); if (cursor) u.searchParams.set("cursor", cursor); }
+          if (source !== "docker") { u.searchParams.set("limit", "24"); u.searchParams.set("version", "latest"); if (query) u.searchParams.set("search", query.split(/\s+/).reduce((a, b) => b.length > a.length ? b : a, "")); if (cursor) u.searchParams.set("cursor", cursor); }
           const data = await this.json(u.href);
           const next = str(obj(obj(data).metadata).nextCursor, 1000);
           const result: MarketplacePage = { source, items: normalizeListings(source, data), nextCursor: next || undefined, fetchedAt: new Date().toISOString(), stale: false };
@@ -176,9 +178,10 @@ export class Marketplaces {
       catch (err) { if (!cached) throw err; page = { ...cached, stale: true, warning: "This catalog is unavailable. Showing saved results; adding is disabled until it reconnects." }; }
       finally { this.pending.delete(cacheKey); }
     }
-    if (source !== "docker") return page;
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    const filtered = page.items.filter(i => words.every(w => `${i.title} ${i.description} ${i.publisher}`.toLowerCase().includes(w)));
+    const matches = (i: MarketplaceListing) => { const text = `${i.name} ${i.title} ${i.description} ${i.publisher}`.toLowerCase(); return words.every(w => text.includes(w)) || text.replace(/[\s_-]+/g, "").includes(words.join("")); };
+    if (source !== "docker") return words.length > 1 ? { ...page, items: page.items.filter(matches) } : page;
+    const filtered = page.items.filter(matches);
     const start = Number(cursor || 0); if (!Number.isSafeInteger(start) || start < 0 || start > 3000) throw new Error("Invalid page");
     return { ...page, items: filtered.slice(start, start + 24), nextCursor: start + 24 < filtered.length ? String(start + 24) : undefined };
   }

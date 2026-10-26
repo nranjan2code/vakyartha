@@ -138,7 +138,7 @@ export async function marketplace(open: (id: string) => void, addOwn: () => void
   tabs.setAttribute("role", "group");
   tabs.setAttribute("aria-label", "Integration views");
   return [el("div", { className: "integrations-layout" },
-    ...title("Integrations", "Tools the model can use to work with real data: your files, the web, your accounts. Each runs with only the access shown on its page, and anything that changes something asks you first."),
+    ...title("MCP", "Tools the model can use to work with real data: your files, the web, your accounts. Each runs with only the access shown on its page, and anything that changes something asks you first."),
     tabs, own, external.node,
   )];
 }

@@ -308,3 +308,9 @@ A required general safety correction makes unreviewed tools default to Ask even 
 
 
 ADR-027 identity/layout follow-up (2026-10-26): preserve source/publisher identity through local original assets and source-supplied thumbnails, separate from trust badges. Thumbnail URLs come only from known listing/import records, use authenticated bounded public-image fetching and passive rendering, and never carry app credentials upstream. A single layout owner aligns header/navigation/toolbar/grid; real external-card buttons share a bottom baseline. Live image fetching proved a missing general dual-stack callback correction in the framework's existing public fetch, fixed upstream before moving the pin. No new runtime, dependency, marketplace or native boundary.
+
+## ADR-028 — Skills as reviewed instructions loaded on demand
+
+Status: implemented, 2026-10-26. Skills are app-owned: storage, catalog, review and prompt index live in the app; Projection's public `instructions` and tool hooks are enough, so no framework change.
+
+A skill is text only. The prompt carries enabled skills' names and descriptions; a `use_skill` tool returns the instructions when needed, keeping the prompt small for the local 4B model and letting skills chain. Skills cannot grant tools or bypass approvals. Catalog skills are read from public repositories at a commit at least 14 days old, reviewed as exact text, bound by fingerprint, stored with their commit and added off. Bundled scripts are listed and never imported; running them would need a separate decision.

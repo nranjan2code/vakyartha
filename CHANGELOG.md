@@ -4,6 +4,12 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Skills:** Settings → Skills installs, writes, edits and toggles `SKILL.md` instruction skills. Enabled skills are indexed in the system instructions and loaded on demand with `use_skill`, so they chain with each other and with integration tools without granting access. A catalog of six publisher repositories (plus any `owner/repository`) reads skills at a commit at least 14 days old; review shows the exact text and bundled files (never imported); added skills start off. Twelve everyday built-in skills ship on. [Guide](docs/SKILLS.md).
+
+- **Settings navigation:** Integrations is now a group holding **MCP** and **Skills**; every settings item has an icon.
+
+- **External catalog search:** multi-word queries send the longest word upstream and match every word locally (registries match one name substring); a catalog that times out says so instead of showing a raw abort error. No new dependency or native IPC.
+
 - **Imported setup alignment:** one detail-page container aligns provenance notices with header, access and credential sections; three-width WebKit assertions cover their exact bounds.
 
 - **Integration layout and identity:** aligned headings/tabs/toolbars/grids, consistent bottom card actions, official source/publisher assets with provenance, and authenticated bounded listing thumbnails with passive SVG rendering. Active card actions are visually distinct from status badges. Three-width WebKit checks cover the reported faults. Projection `da49065` fixes the checked DNS callback shape discovered by live icon requests.

@@ -135,7 +135,7 @@ Owner: Projection for the voice projector; Vakyartha for the `voice/` module. Ac
 
 These boxes track future candidates only. Do not start them simply because they appear here. One-time clock triggers are now implemented; repeating/event triggers remain below.
 
-- [ ] L1. Reusable, reviewed skills with validation and permission boundaries.
+- [x] L1. Reusable, reviewed skills with validation and permission boundaries. [SKILLS.md](SKILLS.md)
 - [ ] L2. User-controlled memory/context across tasks through selectable MCP integrations, with inspect, edit and delete capabilities where supported; no parallel built-in knowledge database.
 - [ ] L3. Repeating routines and event triggers with wall-clock/DST rules, cumulative budgets and long-term run retention. One-time triggers and bounded run records are implemented.
 - [ ] L3a. Task chains: verified sequential dependencies, typed artifact handoffs, per-step permissions and budgets, partial failure handling and deletion without cascades.

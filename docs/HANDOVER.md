@@ -22,6 +22,8 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
+- **Skills (2026-10-26):** Settings → Integrations → Skills beside MCP. Enabled skills are indexed in the system instructions and loaded with `use_skill` (chat and tasks); twelve built-ins ship on; six publisher catalogs plus any `owner/repository`, read at a ≥14-day-old commit, reviewed and added off. Settings nav has icons. Verified with tests, a live catalog run and local 4B chats. [SKILLS.md](SKILLS.md). Next: per-skill tool requirements, if needed.
+
 - **Imported setup alignment follow-up (2026-10-26):** the provenance notice's horizontal margins overrode settings direct-child centering. The whole integration detail view now has one width owner; breadcrumbs/header/notice/activation/access/credential/tool sections share its axis. Extended WebKit checks exercise required credentials and exact section bounds at all three widths. No framework/dependency/lifecycle change. Clean local replacement provenance follows in RELEASING.md.
 
 - **Clean catalog UI installation verified (2026-10-26):** compiled pushed app `9f192f5` / Projection `da49065` from an exact export and absent Rust target with fresh dependencies/UI/sidecar. 144 app/327 framework tests, typecheck, native and three-width catalog plus canvas WebKit checks pass. All 1,949 installed files/symlinks match; actual installed About, aligned catalog, official/source-supplied identity images and active bottom-aligned card actions inspected. Existing data/settings preserved; prior bundle backed up. App and DMG retained at the conventional bundle path; exact hashes/receipt in RELEASING.md. No paid/model/microphone run, new tag or public release.

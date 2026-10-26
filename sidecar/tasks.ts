@@ -479,7 +479,7 @@ export class Tasks {
       if (!this.available(e)) throw e.ctrl.signal.reason ?? new Error("Task stopped before execution");
       await this.scope.run(e, () => this.deps.observe(t.session, async () => {
         let calls = 0;
-        const tools = (await this.deps.tools(t.session)).filter((tool) => t.integrations.includes(tool.spec.name.split("__")[0]!)).map((tool): AgentTool => ({
+        const tools = (await this.deps.tools(t.session)).filter((tool) => tool.spec.name === "use_skill" || t.integrations.includes(tool.spec.name.split("__")[0]!)).map((tool): AgentTool => ({
           spec: tool.spec,
           execute: async (args, ctx) => {
             this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree, t.spending);

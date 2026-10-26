@@ -807,3 +807,9 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 .integration-detail-layout .int-head > div { min-width: 0; }
 .integration-detail-layout .int-head h1, .integration-detail-layout .int-meta { overflow-wrap: anywhere; }
 .integration-detail-layout .row-actions.spread { flex-wrap: wrap; }
+
+.skill-editor { width: 100%; box-sizing: border-box; font: 13px/1.5 ui-monospace, monospace; padding: 10px; border-radius: 8px; border: 1px solid var(--border, #8884); background: transparent; color: inherit; resize: vertical; }
+.skill-body { max-height: 320px; overflow: auto; white-space: pre-wrap; font-size: 12px; padding: 10px; border-radius: 8px; border: 1px solid var(--border, #8884); }
+.nav-label { display: inline-flex; align-items: center; gap: 9px; }
+.nav-label svg { flex: none; opacity: 0.75; }
+.nav-item[aria-current="true"] .nav-label svg { opacity: 1; }
