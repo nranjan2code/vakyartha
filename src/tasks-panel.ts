@@ -56,7 +56,13 @@ export class TasksPanel {
     if (!t) { this.drawn = ""; return; }
     const key = `${t.id}:${t.revision}`;
     if (this.drawn === key) return;
-    // Do not replace an approval button or details panel while the person is reading it.
+    // Keep a focused control mounted while polling publishes status changes.
+    if (bar.contains(document.activeElement)) {
+      const status = bar.querySelector(".task-state");
+      if (status) status.textContent = TASK_LABELS[t.state];
+      return;
+    }
+    // Preserve the expanded activity panel across an idle refresh.
     const expanded = bar.querySelector("details")?.open;
     this.drawn = key;
     const status = el("span", { className: `task-state ${t.state}`, role: "status", textContent: TASK_LABELS[t.state] });

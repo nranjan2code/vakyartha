@@ -15,7 +15,7 @@ type View = { kind: "list" } | { kind: "create" } | { kind: "detail"; id: string
 const ATTENTION = new Set(["needs_input", "needs_approval", "interrupted", "failed"]);
 const TEMPLATES = [
   { title: "Research brief", glyph: "book", description: "Compare sources and turn a question into a clear, cited brief.", goal: "Research this topic using the public sources I provide. Compare the evidence and prepare an interactive brief with source links and missing information clearly labelled.", criteria: "A cited brief with a comparison, source dates and any gaps clearly shown." },
-  { title: "Workspace review", glyph: "folder", description: "Review files in a folder you choose and surface what needs attention.", goal: "Review the readable files in the folder I authorize. Summarize the important changes and show an interactive table of items needing attention. Ask before changing files.", criteria: "A traceable summary and a usable table, with unsupported files and uncertainties listed." },
+  { title: "Workspace review", glyph: "folder", description: "Review selected text snapshots and surface what needs attention.", goal: "Review only the input snapshots I select. Summarize the important changes and show an interactive table of items needing attention. Ask before changing files.", criteria: "A traceable summary and a usable table, with unsupported files and uncertainties listed." },
   { title: "Plan the next step", glyph: "form", description: "Turn a goal into a plan you can review and refine.", goal: "Help me plan this goal. Collect missing information with an interactive form, then create a practical checklist and a separate plan I can refine.", criteria: "A usable input form and an actionable plan. No external action without approval." },
 ] as const;
 
@@ -86,7 +86,11 @@ export class SchedulePage {
     this.request++; this.page.hidden = true; $("workspace").hidden = false;
     document.body.classList.remove("in-schedule", "schedule-show-sidebar");
     $("open-schedule").setAttribute("aria-current", "false");
-    if (focus) $("open-schedule").focus();
+    if (focus) {
+      // A narrow/full canvas can hide both the sidebar and composer.
+      const target = ["open-schedule", "input", "canvas-close", "expand"].map((id) => $(id)).find((node) => node.getClientRects().length && getComputedStyle(node).visibility === "visible");
+      target?.focus();
+    }
   }
   update(summaries: TaskSummary[]): void {
     this.summaries = summaries;
@@ -134,7 +138,10 @@ export class SchedulePage {
     for (const b of this.page.querySelectorAll<HTMLButtonElement>("[data-tab]")) b.setAttribute("aria-pressed", String(b.dataset.tab === this.tab));
     for (const b of this.page.querySelectorAll<HTMLButtonElement>("[data-filter]")) b.setAttribute("aria-pressed", String(b.dataset.filter === this.filter));
     $("schedule-search-row").hidden = $("schedule-filters").hidden = this.tab === "templates" || !this.summaries.length;
-    const results = $("schedule-results"); results.replaceChildren();
+    const results = $("schedule-results");
+    // A background update must not remove the keyboard/screen-reader target.
+    if (results.contains(document.activeElement)) { this.key = ""; return; }
+    results.replaceChildren();
     if (this.tab === "templates") { $("schedule-count").textContent = "Start with an idea, then choose the inputs, access and time."; results.append(this.templates()); return; }
     const shown = this.summaries.filter((t) => (!this.query.trim() || `${t.goal} ${t.note}`.toLocaleLowerCase().includes(this.query.trim().toLocaleLowerCase())) && (this.filter === "all" || this.filter === "upcoming" && ["scheduled", "paused"].includes(t.state) || this.filter === "attention" && ATTENTION.has(t.state) || this.filter === "active" && ["queued", "running"].includes(t.state) || this.filter === "history" && ["completed", "cancelled"].includes(t.state)));
     shown.sort((a, b) => this.sort === "next" ? (a.state === "scheduled" ? Date.parse(a.schedule!.at) : Infinity) - (b.state === "scheduled" ? Date.parse(b.schedule!.at) : Infinity) || b.updated.localeCompare(a.updated) : b.updated.localeCompare(a.updated));
@@ -196,7 +203,12 @@ export class SchedulePage {
 
   private async showDetail(id: string, focus = true): Promise<void> {
     if (this.busy || this.page.hidden) return;
-    if (!focus && this.page.contains(document.activeElement) && document.activeElement instanceof HTMLInputElement) return;
+    if (!focus && this.page.contains(document.activeElement) && document.activeElement?.matches("button, input, textarea, select, summary, a")) {
+      const summary = this.summaries.find((task) => task.id === id);
+      const status = this.page.querySelector(".schedule-status-note");
+      if (summary && status) status.textContent = `${TASK_LABELS[summary.state]} · ${summary.note}`;
+      return;
+    }
     const request = ++this.request;
     try {
       const task = parseTaskView(await api<unknown>(`/api/tasks/${encodeURIComponent(id)}`));

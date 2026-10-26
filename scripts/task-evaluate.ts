@@ -1,3 +1,4 @@
+import { WORKSPACE_INPUTS, workspaceChecks, workspaceRows } from "./workspace-reference.ts";
 // Opt-in real local-model outcome checks. Reuses installed settings/runtime; retains dev evidence.
 import { COMPARISON_FIXTURE, interactiveComparisonContract, comparisonClaimIssues, comparisonReference, comparisonReview, evaluationVerdict } from "./evaluation-reference.ts";
 import { copyFile, mkdir, readFile, writeFile, symlink } from "node:fs/promises";
@@ -14,6 +15,8 @@ import { CATALOG } from "../sidecar/integrations.ts";
 import { startAppServer } from "../sidecar/server.ts";
 import { parseTaskView, taskObject, type TaskView, type TaskApproval } from "../shared/task-contract.ts";
 
+const revision = (cwd?: string) => execFileSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" }).trim();
+const sourceAtStart = { app: revision(), framework: revision("framework"), workingTreeModified: execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim().length > 0 };
 const args = process.argv.slice(2);
 if (!args.includes("--run-local") && !args.includes("--inspect")) throw new Error("Use --run-local for real local-model calls, or --inspect to view retained evaluations without starting new work.");
 const option = (name: string, fallback: string) => args.find((s) => s.startsWith(`--${name}=`))?.slice(name.length + 3) || fallback;
@@ -32,6 +35,7 @@ for (const line of settings.split("\n")) {
 }
 const configurations: Record<string, unknown> = {};
 for (const id of ["time", "web", "memory"]) {
+  if (["selected-file-report", "interactive-comparison"].includes(option("case", "all"))) continue;
   const state = saved[id] === undefined ? undefined : taskObject(saved[id]);
   if (state?.enabled !== true) continue;
   if (id === "memory") {
@@ -61,9 +65,13 @@ await mkdir(reportDir, { recursive: true });
 const urls = ["https://example.com", "https://www.iana.org/help/example-domains"];
 const entity = `vakyartha-evaluation-${runId}`;
 const marker = `verified-local-marker-${randomUUID()}`;
-type Case = { id: string; goal: string; criteria: string; integrations: string[]; approve(req: TaskApproval): boolean; check(task: TaskView, view: SessionView, integrations: IntegrationView[]): Promise<Record<string, boolean>> };
+type Case = { inputs?: { name: string; content: string }[]; output?: boolean; id: string; goal: string; criteria: string; integrations: string[]; approve(req: TaskApproval): boolean; check(task: TaskView, view: SessionView, integrations: IntegrationView[]): Promise<Record<string, boolean>> };
 const types = (view: SessionView) => new Set(view.surfaces.flatMap((s) => s.nodes.map((n) => n.type)));
 const cases: Case[] = [
+  { id: "selected-file-report", inputs: WORKSPACE_INPUTS, output: true, integrations: [], approve: () => false,
+    goal: "Read only the two selected input snapshots. Prepare a fictional inventory report with TWO independent surfaces: a bound editable budget criteria form initialized from notes.md, and a separate report with a searchable sortable table. Use columns item, quantity, unit_cost, line_total. Calculate each item's line_total, then add a Grand total row with quantity and unit_cost both labelled Not applicable. Explain the budget position. Name the source filenames and snapshot date. Explicitly label missing delivery dates and unverified current file freshness; do not invent them. Save the complete result as the selected Markdown output. No external tools or file changes are authorized.",
+    criteria: "Correct quantities, unit costs, line totals and grand total derived from inventory.csv; budget form initialized from notes.md; separate interactive surfaces, source filenames/date, fictional/missing/freshness labels and a verified saved Markdown output with current surface references. User review required.",
+    check: async (task, view) => workspaceChecks(task, view) },
   { id: "interactive-comparison", integrations: [], approve: () => false,
     goal: `Use this fictional fixture only: ${COMPARISON_FIXTURE.options.map((option) => `${option.name} costs ${option.monthlyCost} per month for ${option.seats} seats.`).join(" ")} Budget is ${COMPARISON_FIXTURE.budget} and at least ${COMPARISON_FIXTURE.minimumSeats} seats are needed. Create TWO INDEPENDENT SURFACES with distinct IDs: an editable criteria form with budget and seats inputs, and a searchable sortable comparison table showing monthly cost, seats, cost per seat and explicit boolean claims within_budget, enough_seats and meets_both. Label the data fictional. Explain which option fits. Do not combine the form and table into one surface.`,
     criteria: `Two separate interactive surfaces: editable criteria form and comparison table. ${comparisonReference(COMPARISON_FIXTURE).map((option) => `${option.name}: cost per seat ${option.costPerSeat}, meets both criteria ${option.meetsBoth}`).join("; ")}. Fictional data labelled. No automatic completion.`,
@@ -109,7 +117,7 @@ try {
       integrations = await request<IntegrationView[]>("/api/integrations");
       if (scenario.integrations.some((id) => !integrations.some((i) => i.entry.id === id && i.status === "ready"))) { results.push({ case: scenario.id, verdict: "blocked", reason: "Required installed integration is not ready" }); continue; }
       const started = Date.now();
-      const made = parseTaskView(await request("/api/tasks", { goal: scenario.goal, criteria: scenario.criteria, ...(args.includes("--save-output") ? { output: { kind: "markdown" } } : {}), provider: "ollama", model, ...(scenario.id === "interactive-comparison" ? { resultPolicy: { kind: "comparison", labels: COMPARISON_FIXTURE.options.map((option) => option.name), table: interactiveComparisonContract(COMPARISON_FIXTURE), notices: ["Fictional"] } } : scenario.id === "public-source-research" ? { resultPolicy: { kind: "research", sources: urls } } : {}), integrations: scenario.integrations, spending: { kind: "local_only" }, limits: { runs: 2, modelRequests: 12, toolCalls: 6, activeMs: 300000 } }));
+      const made = parseTaskView(await request("/api/tasks", { goal: scenario.goal, criteria: scenario.criteria, ...(scenario.inputs ? { inputs: scenario.inputs } : {}), ...(scenario.output || args.includes("--save-output") ? { output: { kind: "markdown" } } : {}), provider: "ollama", model, ...(scenario.id === "selected-file-report" ? { resultPolicy: { kind: "comparison", labels: workspaceRows().map((row) => row.item), notices: ["Fictional"] } } : scenario.id === "interactive-comparison" ? { resultPolicy: { kind: "comparison", labels: COMPARISON_FIXTURE.options.map((option) => option.name), table: interactiveComparisonContract(COMPARISON_FIXTURE), notices: ["Fictional"] } } : scenario.id === "public-source-research" ? { resultPolicy: { kind: "research", sources: urls } } : {}), integrations: scenario.integrations, spending: { kind: "local_only" }, limits: { runs: 2, modelRequests: 12, toolCalls: 6, activeMs: 300000 } }));
       active = made.id; let task = made, nextLog = 0; const decisions: { tool: string; decision: string }[] = [], answered = new Set<string>();
       while (["queued", "running", "needs_approval"].includes(task.state)) {
         if (task.approval && !answered.has(task.approval.id)) {
@@ -123,7 +131,7 @@ try {
       active = undefined;
       const view = await request<SessionView>(`/api/sessions/${task.id}`);
       integrations = await request<IntegrationView[]>("/api/integrations");
-      const checks = { awaitingUserReview: task.state === "needs_input", ...await scenario.check(task, view, integrations), ...(args.includes("--save-output") ? { savedOutputVerified: await (async () => { const receipt = task.runHistory.at(-1)?.output; if (!receipt || receipt.state !== "saved") return false; const content = await readFile(path.join(root, "outputs", receipt.filename)); const { createHash } = await import("node:crypto"); return content.length === receipt.bytes && createHash("sha256").update(content).digest("hex") === receipt.sha256; })() } : {}) };
+      const checks = { awaitingUserReview: task.state === "needs_input", ...await scenario.check(task, view, integrations), ...(scenario.output || args.includes("--save-output") ? { savedOutputVerified: await (async () => { const receipt = task.runHistory.at(-1)?.output; if (!receipt || receipt.state !== "saved") return false; const content = await readFile(path.join(root, "outputs", receipt.filename)); const { createHash } = await import("node:crypto"); return content.length === receipt.bytes && createHash("sha256").update(content).digest("hex") === receipt.sha256; })() } : {}) };
       const result = { case: scenario.id, task: task.id, verdict: evaluationVerdict(checks), checks, ...(scenario.id === "interactive-comparison" ? { comparisonReview: comparisonReview(view, COMPARISON_FIXTURE) } : {}), decisions, state: task.state, note: task.note, seconds: (Date.now() - started) / 1000, budget: task.budget, surfaces: view.surfaces.map((s) => ({ id: s.id, types: [...new Set(s.nodes.map((n) => n.type))] })), manualReviewRequired: true };
       results.push(result); await writeFile(path.join(reportDir, `${scenario.id}.json`), JSON.stringify({ result, task, view }, null, 2), { mode: 0o600 }); console.log(`${scenario.id}: ${result.verdict}`);
       if (scenario.id === "interactive-comparison" && args.includes("--change-criteria") && task.state === "needs_input") {
@@ -149,7 +157,6 @@ try {
 } finally {
   if (active) await request(`/api/tasks/${active}/cancel`, {}).catch(() => {});
   await app.shutdown();
-  const revision = (cwd?: string) => execFileSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" }).trim();
-  await writeFile(path.join(reportDir, "summary.json"), JSON.stringify({ at: new Date().toISOString(), app: revision(), framework: revision("framework"), workingTreeModified: execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim().length > 0, model, settingsSource: installed, results, note: "Automated checks do not verify prose semantics. Passing checks require semantic review; consult review.json where present. No release readiness is established. No tasks were automatically accepted." }, null, 2), { mode: 0o600 });
+  await writeFile(path.join(reportDir, "summary.json"), JSON.stringify({ at: new Date().toISOString(), sourceAtStart, app: revision(), framework: revision("framework"), workingTreeModified: execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim().length > 0, model, settingsSource: installed, results, note: "Automated checks do not verify prose semantics. Passing checks require semantic review; consult review.json where present. No release readiness is established. No tasks were automatically accepted." }, null, 2), { mode: 0o600 });
   console.log(`Evidence: ${reportDir}`);
 }

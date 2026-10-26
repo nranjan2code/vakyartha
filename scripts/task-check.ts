@@ -134,10 +134,11 @@ const steps = [
    document.querySelector('.schedule-run-usage').click();await wait(()=>document.querySelector('.schedule-run [role="status"]').textContent.includes('Model API estimate'));
    check(document.querySelector('.schedule-run [role="status"]').textContent.includes('unknown'),'missing usage became zero');
    check(document.documentElement.scrollWidth<=innerWidth,'run history overflow');
+   const receiptButton=Array.from(document.querySelectorAll('.schedule-run button')).find(b=>b.textContent==='Verify saved file');receiptButton.closest('details').open=true;receiptButton.focus();window.qaReceiptButton=receiptButton;const stableStatus=document.querySelector('.schedule-status-note');window.qaStatus=stableStatus;
    const output=history.runHistory[2].output;check(output.state==='saved','latest output was not saved');
    const content=await(await fetch('/api/tasks/'+window.qaTask+'/runs/'+history.runHistory[2].id+'/output')).json();check(content.filename===output.filename&&content.content.includes('Row 0'),'saved output download did not read canonical Markdown');
    const verified=await fetch('/api/tasks/'+window.qaTask+'/runs/'+history.runHistory[2].id+'/output',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({operation:'verify',revision:history.revision})});check(verified.ok,'output verification failed');
-   check((await task()).budget.modelRequests===history.budget.modelRequests,'output verification dispatched model work');
+   check((await task()).budget.modelRequests===history.budget.modelRequests,'output verification dispatched model work');await new Promise(r=>setTimeout(r,2300));check(document.activeElement===window.qaReceiptButton&&window.qaReceiptButton.isConnected,'background receipt refresh removed keyboard focus');check(document.querySelector('.schedule-status-note')===window.qaStatus&&window.qaStatus.getAttribute('role')==='status','status announcement node was replaced');window.qaReceiptButton.blur();
    return 'distinct run history, accepted outcome and verified downloadable receipts';`,
   `Array.from(document.querySelectorAll('.schedule-run button')).find(b=>b.textContent==='Open FinOps').click();
    await wait(()=>document.querySelector('[aria-label="FinOps work type"]'));
@@ -177,19 +178,32 @@ const steps = [
    await wait(()=>document.querySelector('dialog.schedule-reconcile[open]'));const dialog=document.querySelector('dialog.schedule-reconcile');check(dialog.textContent.includes('effect-'+innerWidth),'exact operation ID missing');check(!dialog.querySelector('form').checkValidity(),'reconciliation accepts no evidence');check(dialog.getBoundingClientRect().width<=innerWidth,'reconciliation overflow');return 'exact operation reconciliation and required evidence note';`,
   `const dialog=document.querySelector('dialog.schedule-reconcile');dialog.querySelector('input[type="checkbox"]').checked=true;dialog.querySelector('textarea').value='Checked the service and confirmed the prior operation effect; no repeat requested.';dialog.querySelector('button[value="reviewed"]').click();
    await wait(async()=>(await(await fetch('/api/tasks/recovery-'+innerWidth)).json()).state==='needs_input');const checked=await(await fetch('/api/tasks/recovery-'+innerWidth)).json();check(checked.operations[0].state==='reviewed'&&checked.operations[0].reconciliation.note.includes('Checked the service'),'reconciliation evidence not persisted');check(checked.runs===2,'reconciliation did not continue exactly once');return 'reviewed operation evidence persists and continuation stays bounded';`,
+  `document.getElementById('open-schedule').click();await wait(()=>document.getElementById('schedule-title')?.textContent==='Schedule');check(document.activeElement.id==='schedule-title','Schedule did not receive heading focus');document.getElementById('create-schedule').focus();return 'keyboard start';`,
+  "key:Space",
+  `await wait(()=>!document.getElementById('schedule-compose').hidden&&!document.getElementById('task-create-start').disabled);check(document.activeElement.id==='task-goal','keyboard creation did not focus goal');return 'native Space activates creation';`,
+  "key:Tab",
+  `check(document.activeElement.id==='task-criteria','native Tab did not reach completion criteria');return 'native forward traversal';`,
+  "key:ShiftTab",
+  `check(document.activeElement.id==='task-goal','native Shift-Tab did not return to goal');document.getElementById('task-create-cancel').focus();return 'native reverse traversal';`,
+  "key:Escape",
+  `check(document.getElementById('schedule-title').textContent==='Schedule'&&document.activeElement.id==='schedule-title','Escape did not return focus to Schedule');return 'Escape returns to Schedule';`,
+  "key:Escape",
+  `check(document.getElementById('schedule-page').hidden&&['open-schedule','input','canvas-close','expand'].includes(document.activeElement.id)&&document.activeElement.getClientRects().length&&getComputedStyle(document.activeElement).visibility==='visible','Escape did not restore a visible workspace control');document.getElementById('open-schedule').click();await wait(()=>document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]'));document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]').click();await wait(()=>document.querySelector('.schedule-delete'));document.querySelector('.schedule-delete').focus();document.querySelector('.schedule-delete').click();await wait(()=>document.getElementById('ask').open);check(document.getElementById('ask').getAttribute('aria-labelledby')==='ask-text','delete dialog has no accessible name');check(document.getElementById('ask').contains(document.activeElement),'delete dialog did not take focus');return 'named delete dialog and initial focus';`,
+  "key:Escape",
+  `check(!document.getElementById('ask').open&&document.activeElement.classList.contains('schedule-delete'),'dialog Escape did not restore focus');check((await task()).state==='needs_input','dialog cancellation changed task');return 'dialog cancellation restores focus without deleting';`,
 ];
 try {
   const bin = path.join(out, "webkit-check");
   await run("swiftc", ["-O", path.join(root, "scripts/webkit-check.swift"), "-o", bin]);
   for (const width of [1100, 620]) {
-    const { stdout } = await run(bin, [`${app.url}/?session=task-start-${width}`, path.join(out, `width-${width}`), ...steps.map((s) => setup + s)], { env: { ...process.env, WK_WIDTH: String(width) }, timeout: 60_000 });
+    const { stdout } = await run(bin, [`${app.url}/?session=task-start-${width}`, path.join(out, `width-${width}`), ...steps.map((s) => s.startsWith("key:") ? s : setup + s)], { env: { ...process.env, WK_WIDTH: String(width) }, timeout: 60_000 });
     console.log(`${width}px: ${stdout.trim()}`);
     if (/step \d+ error:/.test(stdout) || !stdout.includes("interactive continuation")) throw new Error(`Task WebKit check failed at ${width}px`);
   }
   if (calls !== 16) throw new Error(`Unexpected model calls: ${calls}; local interaction must not call the model`);
   console.log(`Task WebKit checks passed. Screenshots: ${out}`);
 } catch (err) {
-  console.error(err); process.exitCode = 1;
+  console.error(err); console.error(`Screenshots: ${out}`); process.exitCode = 1;
 } finally {
   await app.shutdown(); fake.closeAllConnections(); fake.close();
   if (previous === undefined) delete process.env.OPENAI_COMPAT_BASE_URL; else process.env.OPENAI_COMPAT_BASE_URL = previous;

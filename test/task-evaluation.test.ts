@@ -78,3 +78,20 @@ test("multiline Markdown explanation is checked at canonical visible text nodes"
   view.surfaces[0]!.nodes[1]!.props!.visibleIf = false;
   assert.deepEqual(visibleTextValues(view), []);
 });
+
+test("selected-file outcome checks reject hidden facts, changed snapshots and wrong totals", async () => {
+  const { WORKSPACE_INPUTS, workspaceRows, workspaceChecks } = await import("../scripts/workspace-reference.ts");
+  const { createHash } = await import("node:crypto");
+  const task = { inputs: WORKSPACE_INPUTS.map((input) => ({ ...input, bytes: Buffer.byteLength(input.content), sha256: createHash("sha256").update(input.content).digest("hex") })), runHistory: [] };
+  const view: SessionView = { id: "files", title: "", updated: "", timeline: [], surfaces: [{ id: "table", version: 1, data: {}, nodes: [{ id: "root", type: "table", props: { columns: ["item", "quantity", "unit_cost", "line_total"], rows: workspaceRows() } }] }] };
+  assert.equal(workspaceChecks(task, view).exactVisibleValues, true);
+  assert.equal(workspaceChecks(task, view).inputSnapshotsMatch, true);
+  const rows = view.surfaces[0]!.nodes[0]!.props!.rows as Record<string, unknown>[];
+  rows[0]!.line_total = 360;
+  assert.equal(workspaceChecks(task, view).exactVisibleValues, false);
+  view.surfaces[0]!.nodes[0]!.props!.visibleIf = false;
+  assert.equal(workspaceChecks(task, view).exactVisibleValues, false);
+  task.inputs[0]!.content += "changed";
+  assert.equal(workspaceChecks(task, view).inputSnapshotsMatch, false);
+  assert.equal(workspaceChecks(task, view).outputReferencesCurrentSurfaces, false);
+});

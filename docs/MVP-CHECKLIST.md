@@ -69,7 +69,7 @@ Owner: Vakyartha. Reuse framework rendering and actions. Acceptance: M5 and M8.
 - [x] P2.5. Preserve all supported interactions after completion; additional work becomes an explicit continuation with its own record.
 - [x] P2.6. Prevent background updates from stealing focus, opening another task's canvas or changing the user's selection unexpectedly.
 - [ ] P2.7. Link evidence and output receipts to artifacts; distinguish real, sample, missing and stale information. User review now records run/surface version references and rejects stale results; output-file receipts now have hash/size/version references, verify/download and missing/modified states (ADR-026). Broader provenance classification remains open.
-- [ ] P2.8. Verify keyboard, assistive-technology status announcements, focus return and wide/narrow layouts.
+- [ ] P2.8. Verify keyboard, assistive-technology status announcements, focus return and wide/narrow layouts. Automated WebKit coverage now includes native Space/Tab/Shift-Tab/Escape, focused receipt retention through a persisted revision, named delete dialogs and cancellation focus return. Full screen-reader and installed-window coverage remain open; see EVALUATION.md.
 
 ## P3 — Limits, data and recovery
 
@@ -92,7 +92,7 @@ Owner: Vakyartha for policies and records; general enforcement gaps through D7. 
 Owners: Vakyartha end-to-end; Projection verifies any changed framework contract in its own repository. Record environment, change references and evidence. Use the primary local model; paid evaluation requires explicit approval.
 
 - [ ] P4.1. Research comparison completes with cited evidence and an interactive criteria form plus comparison surface.
-- [ ] P4.2. Workspace report completes from supported scoped files, with checked values, independent surfaces and requested output receipt.
+- [ ] P4.2. Workspace report completes from supported scoped files, with checked values, independent surfaces and requested output receipt. `selected-file-report` now exercises actual bounded CSV/Markdown snapshots and independently calculated visible totals. Both 2026-10-26 live trials failed authoring; hashes alone do not close this gate (EVALUATION.md).
 - [ ] P4.3. Connected work review prepares a concrete change, waits for approval, applies only the approved operation and verifies the outcome.
 - [ ] P4.4. Multi-surface regression: keep two independently edited forms and a sortable/filterable/pageable table; update another surface, switch selections/tasks and restart. Drafts persist, local operations make no model calls and exact validated payloads reach the right owner. Within a mounted task, picker, close/reopen, Preview/Text, full/split and library opening preserve live element identity. Test with an active task and pending approval too.
 - [ ] P4.5. Interaction regression: invalid/stale submissions, duplicate clicks, queued actions and actions after completion have defined outcomes; failure/cancellation releases affected controls.
@@ -242,3 +242,5 @@ Clean local install verified (2026-10-26): pushed code `2c71c44`/Projection main
 ## Research and scoped task-file checkpoint — 2026-10-26
 
 ADR-025/026 implemented. Projection main includes batch-level caller constraints (`11b9123`), serialized list-member repair (`4b1131d`) and temporary-session cleanup (`d1248e2`). 99 app/287 framework tests and typecheck pass; native test and wide/narrow task/canvas checks pass, including snapshot selection, output read-back/download, no extra generation for verification, and exact-ID reconciliation. Research report `2026-10-26T08-15-19.960Z-08795b1b` reaches user review with matching source receipts and a verified 1,656-byte Markdown export in 10 requests/194.6s. Original harness verdict is retained; `review.json` records the corrected Markdown-visibility false negative. No automatic acceptance or broad reliability threshold claim. P1.9/P2.7/P4.1/P4.2/P4.9 remain open beyond this bounded evidence slice.
+
+Live voice checks remain pending by user preference (2026-10-26); the concrete free/local procedure is [VOICE-CHECK.md](VOICE-CHECK.md).

@@ -9,7 +9,7 @@ import { Tasks } from "../sidecar/tasks.ts";
 import { createHost, type HostTurn, type HostRunOptions } from "@vak/host";
 import { ProfileCache, type Provider } from "@vak/providers";
 
-async function until(check: () => boolean) { for (let i = 0; i < 600; i++) { if (check()) return; await new Promise((resolve) => setTimeout(resolve, 5)); } throw new Error("Task did not settle"); }
+async function until(check: () => boolean | Promise<boolean>) { for (let i = 0; i < 600; i++) { if (await check()) return; await new Promise((resolve) => setTimeout(resolve, 5)); } throw new Error("Task did not settle"); }
 
 test("input snapshots are bounded text with server hashes and untrusted-data instructions", () => {
   const files = parseTaskFiles([{ name: "facts.csv", content: "name,seats\nOne,4" }]);
@@ -73,7 +73,12 @@ test("failed output saves can recover without repeating generation and deletion 
     assert.equal(requests, 2); let current = tasks.get(task.id), run = current.runHistory[0]!;
     assert.equal(run.output!.state, "failed"); assert.ok(current.note.includes("Output could not be saved"));
     await rm(files.outputsDir);
-    current = await tasks.output(task.id, run.id, { revision: current.revision, operation: "retry" });
+    // Terminal state is published before final cleanup releases the run slot.
+    // Exercise the same bounded retry as a caller rather than assuming that timing.
+    await until(async () => {
+      try { current = await tasks.output(task.id, run.id, { revision: tasks.get(task.id).revision, operation: "retry" }); return true; }
+      catch (error) { if (!(error instanceof Error) || error.message !== "Wait for work to stop and refresh the task before checking its output") throw error; return false; }
+    });
     assert.equal(current.state, "needs_input"); assert.equal(current.runHistory[0]!.output!.state, "saved"); assert.equal(requests, 2);
     const file = path.join(files.outputsDir, run.output!.filename);
     assert.match(await readFile(file, "utf8"), /Actual canonical output/);

@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Task workspace: preserve keyboard focus during background updates and return Escape to a visible control; label deletion confirmation for assistive technology. Add selected-file outcome evaluation and native WebKit keyboard checks. Live file-report reliability and hands-on voice checks remain open.
+
 - **Independent media plugins:** Images, Audio and Video have separate switches, per-tool provider/model choices and existing tool approvals. Keys are shared from provider settings and Voice. Current endpoint/model capabilities are reviewed for 26 October 2026; deprecated speech choices are excluded from new media narration. No SDK/server package/native IPC was added.
 - **Saved media and background work:** scoped image/audio/video inputs, immutable outputs, authenticated download/range reads, provider job receipts, explicit status recovery and conservative unknown-submission handling. Chat attachments now accept supported audio/video too. Tool charges remain unknown and separate from chat-token FinOps.
 - **Dedicated media projection:** screen image/player, captions/transcripts, text/channel fallback and local voice-addressable playback through the canonical host/store. Playback is never a model/tool action; clip-overlapping speech is discarded before transcription. Verification uses mocked providers plus the primary local conversation model, with no paid generation.

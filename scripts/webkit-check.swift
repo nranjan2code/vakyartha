@@ -26,6 +26,18 @@ final class Runner: NSObject, WKNavigationDelegate {
   func next() {
     if i >= steps.count { snap(); return }
     let js = steps[i]; i += 1
+    if js.hasPrefix("key:") {
+      let name = String(js.dropFirst(4))
+      let keys: [String: (UInt16, String, NSEvent.ModifierFlags)] = ["Tab": (48, "\t", []), "ShiftTab": (48, "\t", [.shift]), "Escape": (53, "\u{1b}", []), "Space": (49, " ", [])]
+      guard let (code, chars, flags) = keys[name] else { print("step \(i) error: unsupported key"); snapNamed("\(out)-\(i).png") { self.next() }; return }
+      for type in [NSEvent.EventType.keyDown, .keyUp] {
+        if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: view.window!.windowNumber, context: nil, characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code) {
+          if type == .keyDown { view.keyDown(with: event) } else { view.keyUp(with: event) }
+        }
+      }
+      print("step \(i): native key \(name)")
+      snapNamed("\(out)-\(i).png") { self.next() }; return
+    }
     view.callAsyncJavaScript(js, arguments: [:], in: nil, in: .page) { r in
       switch r {
       case .success(let v): print("step \(self.i): \(String(describing: v ?? "nil"))")
@@ -73,6 +85,7 @@ let height = Double(ProcessInfo.processInfo.environment["WK_HEIGHT"] ?? "760") ?
 let view = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: height), configuration: config)
 let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
 window.contentView = view
+window.makeFirstResponder(view)
 window.setFrameOrigin(NSPoint(x: -5000, y: -5000))
 window.orderBack(nil)
 let runner = Runner(view)
