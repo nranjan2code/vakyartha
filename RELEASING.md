@@ -85,3 +85,8 @@ Run the app and tests, then push the change to Projection and pin to the pushed 
 - **Signing and notarization** (Apple Developer ID), then **auto-update** (Tauri updater with signed update manifests). Ask before starting either.
 - **CI**: a GitHub Actions run of steps 4–5 on each tag, with `submodules: recursive` checkout.
 - **Windows/Linux builds:** unverified.
+
+
+## Latest local build checkpoint — 2026-10-26
+
+Clean build of pushed code `2c71c44`, pinned to Projection main `558ca0c`, used fresh target `/tmp/vakyartha-clean-release.K5cDXz` through `CARGO_TARGET_DIR=... npm run desktop:build`. The release hooks rebuilt frontend/sidecar, and Rust compiled fresh. Its app/DMG replaced the standard `src-tauri/target/release/bundle/` outputs. `/Applications/Vakyartha.app` was replaced as a complete bundle after quitting; the previous installed bundle remains in a temporary backup. All 1,949 installed files match. Native About/runtime/data path and new checked-comparison setup verified. This is a local unsigned/unnotarized build; `codesign --verify` did not validate the bundle signature. No signing, notarization, tag or GitHub release. Installed-model smoke was not performed while the user used the app. Full research outcome gates still fail, so installation is not a readiness claim. Hashes and local manifest are in EVALUATION.md.
