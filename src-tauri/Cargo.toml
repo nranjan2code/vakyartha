@@ -1,6 +1,6 @@
 [package]
 name = "vakyartha"
-version = "0.1.0"
+version = "0.2.0"
 description = "Vakyartha: ask any model, get an interface"
 authors = ["Nisheeth Ranjan"]
 edition = "2024"

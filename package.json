@@ -1,6 +1,6 @@
 {
   "name": "vakyartha",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Vakyartha: the desktop app built on the Projection framework (https://github.com/nranjan2code/Projection).",

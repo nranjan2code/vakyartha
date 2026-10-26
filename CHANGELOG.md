@@ -2,7 +2,9 @@
 
 What changed in the app, newest first. Each release names the [Projection](https://github.com/nranjan2code/Projection) version it was built on; framework changes themselves are in Projection's CHANGELOG. Procedure: [RELEASING.md](RELEASING.md).
 
-## Unreleased
+## 0.2.0 (2026-10-26)
+
+Built on Projection `2918883`. Unsigned and not notarized: build from source, or allow it in System Settings → Privacy & Security. No data moves; keys stay where they are.
 
 - **Conversation mode (⌘⇧D, or the waves in the message box):** talk and listen hands-free. The end of each sentence is found on this Mac from the microphone level; talking over a reply stops it; "stop listening", "goodbye" or Esc ends it. Replies are read as a gist (headlines, stats, first rows), with "details" for the rest. Voice commands: repeat, details, new chat, show it on the canvas.
 - **Answer by voice:** tools waiting for approval, choices ("the cheaper one", "the second", "Hilton") and forms are asked aloud and answered in your own words, in English, French, German, Spanish, Italian, Portuguese or Dutch. Choices and forms are read back first and then submitted exactly as a click. An approval needs its operation named ("allow write"), allows once only, and is never decided by a model; unclear answers leave it on screen. When the rules cannot place an answer, the chat's model maps it to what the surface allows.
