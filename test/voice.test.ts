@@ -510,38 +510,38 @@ test("choices by voice: matched by meaning, read back, then activated like a cli
   const v = new VoiceDecisions({ store: () => store, say: (t) => void said.push(t), activate: (s, k) => (clicked.push(`${s}/${k}`), true) });
 
   assert.equal(v.offer(["note", "hotels"]), "Kyoto hotels: Hilton Kyoto, ¥32,000; Ryokan Sakura, ¥18,000; Park Hyatt Kyoto, ¥54,000. Which one?");
-  assert.equal(v.hear("the cheaper one"), true);
+  assert.equal(await v.hear("the cheaper one"), true);
   assert.equal(said.at(-1), "Book hotel: Ryokan Sakura. Shall I?");
   assert.deepEqual(clicked, [], "nothing happens before the read-back is agreed");
-  assert.equal(v.hear("no, the hilton"), true);
+  assert.equal(await v.hear("no, the hilton"), true);
   assert.equal(said.at(-1), "Book hotel: Hilton Kyoto. Shall I?");
-  assert.equal(v.hear("yes"), true);
+  assert.equal(await v.hear("yes"), true);
   assert.deepEqual(clicked, ["hotels/root#0"], "the same control key a click on that option uses");
   assert.equal(v.waiting, false);
 
   // A no without a new choice asks again; cancel drops it, leaving it on screen.
   v.offer(["hotels"]);
-  v.hear("second");
-  v.hear("no");
+  await v.hear("second");
+  await v.hear("no");
   assert.match(said.at(-1)!, /^Which one, then\?/);
-  v.hear("cancel");
+  await v.hear("cancel");
   assert.equal(v.waiting, false);
 
   // A longer sentence that names no option is the person talking: it goes to the model.
   v.offer(["hotels"]);
-  assert.equal(v.hear("which of these has breakfast included and a pool"), false);
+  assert.equal(await v.hear("which of these has breakfast included and a pool"), false);
   assert.equal(v.waiting, false);
 
   // A short unclear answer is asked once more, then left on screen.
   v.offer(["hotels"]);
-  v.hear("hmm");
+  await v.hear("hmm");
   assert.match(said.at(-1)!, /^Sorry, which one\?/);
-  v.hear("erm");
+  await v.hear("erm");
   assert.equal(said.at(-1), "It is waiting on screen for you.");
 
   // Shared words are ambiguous, not a guess.
   v.offer(["hotels"]);
-  v.hear("the kyoto one");
+  await v.hear("the kyoto one");
   assert.equal(said.at(-1), "Sorry, which one? Kyoto hotels: Hilton Kyoto, ¥32,000; Ryokan Sakura, ¥18,000; Park Hyatt Kyoto, ¥54,000. Which one?");
   assert.equal(v.offer(["note"]), undefined);
 });
@@ -575,18 +575,18 @@ test("forms by voice: missing fields asked, checks explained, values shown, read
   const shown: string[] = [];
   const v = new VoiceDecisions({ store: () => store, say: (t) => void said.push(t), activate: (s, k) => (clicked.push(`${s}/${k}`), true), filled: (_s, p) => void shown.push(...p) });
   assert.equal(v.offer(["join"]), "Newsletter needs 3 things: Name, Email, Topic. Name?");
-  v.hear("Ada Lovelace");
+  await v.hear("Ada Lovelace");
   assert.equal(said.at(-1), "Email?");
-  v.hear("ada at example");
+  await v.hear("ada at example");
   assert.equal(said.at(-1), "Enter a valid email. Email?", "the field's own check, said aloud");
-  v.hear("ada at example dot com and I like engineering");
+  await v.hear("ada at example dot com and I like engineering");
   assert.deepEqual(shown, ["/j/name", "/j/email", "/j/topic"], "every heard value is shown on screen");
   assert.equal(said.at(-1), "Subscribe with Name Ada Lovelace, Email ada@example.com, Topic Engineering. Shall I?");
-  v.hear("no");
+  await v.hear("no");
   assert.equal(said.at(-1), "What should change? Name?");
-  v.hear("Ada King");
+  await v.hear("Ada King");
   assert.equal(said.at(-1), "Subscribe with Name Ada King, Email ada@example.com, Topic Engineering. Shall I?");
-  v.hear("yes");
+  await v.hear("yes");
   assert.deepEqual(clicked, ["join/root"], "submitted through the form's own control");
 });
 
@@ -607,4 +607,26 @@ test("a gist keeps an interface to its headlines and says when there is more", (
   assert.match(all, /long description/);
   assert.match(all, /^E: Orders 4\.$/m);
   assert.equal(spokenSurface(surface, "en"), spokenSurface(surface, "en", "screen"), "reading a reply aloud by hand is unchanged");
+});
+
+test("the model only fills what the rules cannot, and only with values the surface allows", async () => {
+  const { VoiceDecisions } = await import("../src/voice/decisions.ts");
+  const { SurfaceStore, basicCatalog } = await import("@vak/core");
+  const store = new SurfaceStore(basicCatalog);
+  store.render({ surface: "hotels", nodes: [{ id: "root", type: "compare", props: { action: "book_hotel", options: [{ name: "Hilton", price: "¥32,000" }, { name: "Ryokan", price: "¥18,000" }] } }] });
+  const said: string[] = [];
+  const asked: string[] = [];
+  let reply: unknown = { option: "Ryokan" };
+  const v = new VoiceDecisions({ store: () => store, say: (t) => void said.push(t), activate: () => true, model: async (_q, s) => (asked.push(s), reply) });
+  v.offer(["hotels"]);
+  await v.hear("the second one");
+  assert.deepEqual(asked, [], "the rules answered; no model call");
+  v.offer(["hotels"]);
+  await v.hear("the traditional inn");
+  assert.deepEqual(asked, ["the traditional inn"]);
+  assert.equal(said.at(-1), "Book hotel: Ryokan. Shall I?");
+  reply = { option: "Delete all files" };
+  v.offer(["hotels"]);
+  await v.hear("near the station");
+  assert.match(said.at(-1)!, /^Sorry, which one\?/, "a value outside the schema is dropped");
 });

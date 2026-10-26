@@ -7,7 +7,7 @@
 // checks explained aloud, the values shown on screen as they are heard, then
 // read back and submitted the same way.
 
-import { type AgendaItem, agenda, answerWords, fillAnswer, getAt, question, readBack, resolveAnswer, type SurfaceStore } from "@vak/core";
+import { type AgendaItem, agenda, answerSchema, answerWords, fillAnswer, getAt, question, readBack, readModelAnswer, type Resolution, resolveAnswer, type SurfaceStore } from "@vak/core";
 
 type Decision = AgendaItem & { kind: "decision" };
 type Form = AgendaItem & { kind: "form" };
@@ -19,6 +19,12 @@ export interface DecisionVoice {
   activate(surface: string, key: string): boolean;
   /** Values were written to these data paths: show them, and keep them as drafts. */
   filled?(surface: string, paths: string[]): void;
+  /**
+   * When the rules cannot place an answer: the model's JSON for `schema`, or
+   * undefined. Its result is read through readModelAnswer, so only values the
+   * surface allows are used. Never asked about approvals.
+   */
+  model?(question: string, said: string, schema: Record<string, unknown>): Promise<unknown>;
 }
 
 /** A short unclear answer is asked again once; after that the choice waits on screen. */
@@ -73,11 +79,13 @@ export class VoiceDecisions {
   }
 
   /** A sentence heard while a choice waits. True when it was about the choice, so it is not sent as a message. */
-  hear(said: string): boolean {
+  async hear(said: string): Promise<boolean> {
     const d = this.item;
     if (!d) return false;
     if (d.kind === "form") return this.hearForm(d, said);
-    const r = resolveAnswer(d, said);
+    let r = resolveAnswer(d, said);
+    if (r.kind === "unknown" && this.chosen === undefined) r = await this.ask(d, said, r);
+    if (this.item !== d) return true;
     if (r.kind === "choose") return this.pick(r.index), true;
     if (r.kind === "ambiguous") {
       this.io.say(`Did you mean ${r.indices.map((i) => d.options[i]!.label).join(" or ")}?`);
@@ -105,8 +113,13 @@ export class VoiceDecisions {
     return true;
   }
 
-  private hearForm(f: Form, said: string): boolean {
-    const r = resolveAnswer(f, said, { field: this.field });
+  private async hearForm(f: Form, said: string): Promise<boolean> {
+    let r = resolveAnswer(f, said, { field: this.field });
+    if (this.field !== undefined && (r.kind === "unknown" || (r.kind === "fill" && this.field in r.errors))) {
+      const m = await this.ask(f, said, r);
+      if (this.item !== f) return true;
+      if (m.kind === "fill" && this.field in m.values) r = m;
+    }
     const ask = () => this.io.say(question(f, this.field));
     if (r.kind === "cancel") return this.clear(), this.io.say("All right. The form stays on screen."), true;
     if (r.kind === "repeat") return (this.field ? ask() : this.io.say(readBack(this.io.store(), f))), true;
@@ -140,6 +153,18 @@ export class VoiceDecisions {
     if (this.field) this.asked.add(this.field);
     this.io.say(this.field ? question(f, this.field) : readBack(this.io.store(), f));
     return true;
+  }
+
+  /** The model's reading, constrained to the item's schema and checked like any answer; `fallback` when it has none. */
+  private async ask(item: Decision | Form, said: string, fallback: Resolution): Promise<Resolution> {
+    const schema = answerSchema(item);
+    if (!this.io.model || !schema) return fallback;
+    try {
+      const r = readModelAnswer(item, await this.io.model(question(item, this.field), said, schema));
+      return r.kind === "unknown" ? fallback : r;
+    } catch {
+      return fallback;
+    }
   }
 
   /** In reading order: a field failing its checks, else an empty optional one not yet asked. */

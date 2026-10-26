@@ -845,6 +845,12 @@ const voiceDecisions = new VoiceDecisions({
   store: () => client.store,
   say(text) { void readAloud(text, voiceDecisions); },
   activate: (surface, key) => mounted.get(surface)?.activate(key) ?? false,
+  // The chat's own model, as a turn would use it; its answer is checked against the surface before use.
+  async model(question, said, schema) {
+    if (!current.provider || !current.model) return undefined;
+    const r = await api<{ answer?: unknown }>("/api/voice/resolve", { method: "POST", body: JSON.stringify({ provider: current.provider, model: current.model, question, said, schema }) });
+    return r.answer;
+  },
   // As if typed: the surface shows the value and its draft is kept.
   filled(surface, paths) {
     const el = mounted.get(surface);
@@ -867,7 +873,7 @@ function toggleConversation(): void {
     async onUtterance(text) {
       // A tool waiting for an answer hears it first; only these heard words can decide it.
       if (voiceApprovals.waiting && (await voiceApprovals.hear(text))) return;
-      if (voiceDecisions.waiting && voiceDecisions.hear(text)) return;
+      if (voiceDecisions.waiting && (await voiceDecisions.hear(text))) return;
       // A turn still running keeps its place; the words wait in the box rather than cutting it off.
       if (isRunning(session)) {
         input.value = input.value.trim() ? `${input.value.replace(/\s*$/, " ")}${text}` : text;

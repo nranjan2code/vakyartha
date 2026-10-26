@@ -9,7 +9,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import path from "node:path";
 import { createHost, json, readJson } from "@vak/host";
 import type { Integrations } from "@vak/mcp/client";
-import { hardenNetwork, loadEnvFile, ProfileCache, providersFromEnv } from "@vak/providers";
+import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, providersFromEnv } from "@vak/providers";
 import { Channels, CHANNELS } from "./channels.ts";
 import { createIntegrations } from "./integrations.ts";
 import { runUsage } from "../finops.ts";
@@ -117,7 +117,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
     return true;
   }
 
-  const voiceRoute = voiceRoutes(voiceDir, log);
+  const voiceRoute = voiceRoutes(voiceDir, log, () => modelProviders());
 
   /** For the About page: where things are kept. */
   function infoRoute(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
@@ -170,28 +170,30 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
   let integrations: Integrations | undefined;
   let tasks: Tasks | undefined;
   const integrationRevisions = new Map<string, number>();
+  /** Model providers for turns and voice answers alike: task spending checks and FinOps see every request. */
+  function modelProviders(): ProviderEntry[] {
+    // Bind admission checks and provider construction to the same configuration.
+    const env = { ...process.env };
+    const entries = providersFromEnv(env).map((entry) => ({ ...entry, make: (options: Parameters<typeof entry.make>[0]) => {
+      const spending = tasks?.providerSpending(entry.id);
+      if (spending) checkTaskSpending(entry, spending, env);
+      return entry.make(options);
+    } }));
+    // Refused requests never reach either the provider or its usage observer.
+    return finops.providers(entries).map((entry) => ({ ...entry, make: (options) => {
+      const provider = entry.make(options);
+      return { ...provider, async *stream(request) {
+        await tasks?.beforeModelRequest(entry.id, request.model);
+        yield* provider.stream(tasks?.inTask() ? { ...request, maxTokens: Math.min(request.maxTokens ?? 4096, 4096) } : request);
+      } };
+    } }));
+  }
   const host = createHost({
     tools: ({ session }) => {
       finops.session(session);
       return integrations?.toolsFor(session) ?? [];
     },
-    providers: () => {
-      // Bind admission checks and provider construction to the same configuration.
-      const env = { ...process.env };
-      const entries = providersFromEnv(env).map((entry) => ({ ...entry, make: (options: Parameters<typeof entry.make>[0]) => {
-        const spending = tasks?.providerSpending(entry.id);
-        if (spending) checkTaskSpending(entry, spending, env);
-        return entry.make(options);
-      } }));
-      // Refused requests never reach either the provider or its usage observer.
-      return finops.providers(entries).map((entry) => ({ ...entry, make: (options) => {
-        const provider = entry.make(options);
-        return { ...provider, async *stream(request) {
-          await tasks?.beforeModelRequest(entry.id, request.model);
-          yield* provider.stream(tasks?.inTask() ? { ...request, maxTokens: Math.min(request.maxTokens ?? 4096, 4096) } : request);
-        } };
-      } }));
-    },
+    providers: () => modelProviders(),
     profiles,
     instructions: INSTRUCTIONS,
     transcripts: opts.transcriptsDir ?? path.join(dataDir, "transcripts"),
