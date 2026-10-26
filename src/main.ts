@@ -4,7 +4,7 @@
 // Kept deliberately quiet: the window is the conversation and a composer with
 // a model picker; everything else is on the Settings page.
 
-import { type AgentEvent, projectText, readSse, type SurfaceSnapshot } from "@vak/core";
+import { type AgentEvent, projectText, readSse, type SurfaceSnapshot, titleRepeated } from "@vak/core";
 import type { SessionSummary, SessionView } from "@vak/host";
 import { defineVakElements, renderMarkdown, type VakActionDetail, VakClient, type VakSurfaceElement } from "@vak/web";
 import { ArtifactsPage } from "./artifacts-page.ts";
@@ -418,7 +418,8 @@ function turnText(turn: Turn): string {
   const parts = [replyText(turn.text)];
   for (const id of turnSurfaces(turn)) {
     const resolved = client.store.resolve(id);
-    if (resolved) parts.push(projectText(resolved));
+    // Say and copy what is shown: a title the content repeats is not drawn.
+    if (resolved) parts.push(projectText(resolved.title && titleRepeated(resolved.title, resolved.root) ? { ...resolved, title: undefined } : resolved));
   }
   return parts.filter((p) => p.trim()).join("\n\n");
 }
