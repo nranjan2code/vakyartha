@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Workspace data connector:** remote MCP setup for governed data and workspace tools, with a user-selected HTTPS endpoint and secret-store bearer token. No local package is installed; the entry stays off until configured and enabled. Calls may incur service charges. Browser OAuth and hosted-app endpoints are not supported; authenticated workspace access remains unverified. [Setup guide](docs/DATABRICKS.md). Uses Projection `c147332` for general configuration-based HTTP endpoints.
+
 - Task workspace: preserve keyboard focus during background updates and return Escape to a visible control; label deletion confirmation for assistive technology. Add selected-file outcome evaluation and native WebKit keyboard checks. Live file-report reliability and hands-on voice checks remain open.
 
 - **Independent media plugins:** Images, Audio and Video have separate switches, per-tool provider/model choices and existing tool approvals. Keys are shared from provider settings and Voice. Current endpoint/model capabilities are reviewed for 26 October 2026; deprecated speech choices are excluded from new media narration. No SDK/server package/native IPC was added.

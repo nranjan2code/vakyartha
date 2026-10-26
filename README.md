@@ -25,7 +25,7 @@ The site describes where Vakyartha is going. Here is what this repository does t
 |---|---|
 | Ask, and get something you can use | **Works.** Answers project as live surfaces; chats are saved; an **Artifacts** library gathers every surface across chats and reopens it in the canvas. |
 | Your choice of models | **Works.** Local models through Ollama; 11 hosted providers with keys in the macOS Keychain. |
-| Connected tools and services | **Works.** A curated integrations catalog (Web pages, Time, local OCR, Files, Memory, Brave Search, Tavily, GitHub, Notion, Context7), each pinned, with per-tool policies and approvals. |
+| Connected tools and services | **Works.** A curated catalog for web reading/search, time, local OCR, scoped files, persistent memory, repositories, pages, library documentation and workspace data/tools. Local npm servers are pinned; remote services use HTTPS, with per-tool policies and approvals. Workspace connector setup is implemented; live account access remains unverified ([setup](docs/DATABRICKS.md)). |
 | Make and edit media | **Implemented.** Independent Images, Audio and Video plugins, provider/model selection per tool, shared provider keys, saved files, background job recovery and dedicated screen/voice projections. Hosted calls are opt-in and billed separately. See [media tools](docs/MEDIA-TOOLS.md) for supported operations and verification limits. |
 | In your everyday chat | **Telegram works**, answered from the menu bar while the window is closed. Slack and Discord are listed as coming. |
 | Spending limits and usage | **Usage works:** Settings → FinOps charts tokens, context and estimated cost per turn. Spending limits are not built yet. |
@@ -116,6 +116,7 @@ Each folder holds `sessions/`, `integrations/`, `integrations.json`, `channels.j
 - [SPECS.md](docs/SPECS.md): what the app is, its framework dependency and identity.
 - [MVP-SPECS.md](docs/MVP-SPECS.md), [MVP-CHECKLIST.md](docs/MVP-CHECKLIST.md) and [ADR.md](docs/ADR.md): agent MVP implementation, preserved interactive surfaces, architecture decisions, progress gates and later scope.
 - [RELEASING.md](docs/RELEASING.md): releasing the app and updating Projection.
+- [DATABRICKS.md](docs/DATABRICKS.md): workspace MCP endpoint/token setup, supported clouds, permissions, costs and verification limits.
 - [MEDIA-TOOLS.md](docs/MEDIA-TOOLS.md): media plugins, shared credentials, supported tools, projections and recovery; [research baseline](docs/MEDIA-TOOLS-RESEARCH.md).
 - [AGENTS.md](AGENTS.md) and [HANDOVER.md](docs/HANDOVER.md): working rules and where work stands.
 - [SECURITY.md](SECURITY.md), [CANVAS.md](docs/CANVAS.md), [FINOPS.md](docs/FINOPS.md) and [CHANGELOG.md](CHANGELOG.md).

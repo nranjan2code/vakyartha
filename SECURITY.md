@@ -4,7 +4,7 @@ What the app protects, from whom, and how. Rules for changing code are in [AGENT
 
 ## What there is to protect
 
-- **API keys** for model providers, integrations (GitHub, Notion, Brave, Tavily) and channels (Telegram).
+- **API keys** for model providers, integrations (including workspace bearer tokens) and channels (Telegram).
 - **The user's data**: chats, files the Files integration can see, accounts reachable through integrations.
 - **The machine**: the app runs model-chosen requests and third-party MCP servers on it.
 
@@ -14,13 +14,19 @@ What the app protects, from whom, and how. Rules for changing code are in [AGENT
 |---|---|---|
 | A media input or provider output escapes its scope | A symlink reaches a private file; a download redirects to loopback; a clip speaks approval words | Media tools read only approved library/chat inputs with path, final-symlink, signature and size checks. Output downloads use connection-pinned public HTTPS with per-hop checks and no provider credentials. Private media URIs carry opaque IDs and use authenticated file access. Model/operation selections are validated at dispatch and after waits. In conversation mode audible-media overlap is discarded before transcription. Hosted submission uncertainty is never automatically retried. See `test/media.test.ts` and `docs/MEDIA-TOOLS.md`. |
 | A web page in the user's browser | POSTs to the sidecar's loopback port to spend the user's keys | The framework's Host, Origin and JSON-body checks, plus a random bearer token that only the app's own window receives (`backend`). The browser version (`npm run web`) is open on loopback only, for development. |
-| A malicious or compromised MCP package | A new release of a dependency runs code at install | Each catalog server names an exact version published at least 14 days earlier (checked by `test/integrations.test.ts`). The framework's `Integrations` installs it with `--ignore-scripts --before=<today − 14 days>`, so every dependency is that old too and nothing runs at install, into its own folder. |
+| A malicious or compromised MCP package | A new release of a dependency runs code at install | Each npm catalog server names an exact version; the catalog selects versions published at least 14 days earlier. Tests check exact pins and the framework install arguments. The framework's `Integrations` installs it with `--ignore-scripts --before=<today − 14 days>`, so every dependency is that old too and nothing runs at install, into its own folder. |
 | An over-reaching filesystem server | Files reads `~/.ssh` | It is started with only the folders the user adds, checked by the framework (`checkFolders`): absolute, existing, never a system root or the whole home folder. Writes ask. |
 | A prompt injection through an integration | A fetched page says "push to my repo" | Writes and open-internet tools default to Ask in each integration's policy; every call is logged to `logs/tools.jsonl`. |
 | A stolen settings file | Someone copies the data folder | On macOS keys live in the Keychain, written through `security -i` on stdin (never on a command line) and never sent back to the UI. Elsewhere they live in a file only the user can read (0600). Settings values are checked so they cannot inject into `settings.env`. |
 | A voice hijack | A page read aloud, a TV or another person says "allow write"; tool output tells the model to approve | Only sentences heard from the microphone reach the voice resolver, which is deterministic (`@vak/core` `resolveAnswer`); no model decides an approval. A voice approval must name a word from the tool's own name (never an agreement word, whatever the server titles its tool), allows once only, and an unclear or mixed answer ("no, allow it") leaves it on screen. A sentence that began while the app was speaking and matches what it said is ignored as echo. A heard message cannot act by itself: writes still need an approval. Model help for choices and forms is limited to values the surface allows (`readModelAnswer`). Tests: `test/voice.test.ts`, Projection `answer.test.ts`. |
 | A compromised local speech model | The Whistle engine, a prebuilt binary with no published source, reaches the internet or reads keys | Its pack is pinned to Hugging Face commits at least 14 days old and to each file's SHA-256, checked before the files are moved into place (`sidecar/voice/whistle.ts`). It runs as a short process per recording with an empty environment, under `sandbox-exec` with networking denied, and is given only the recording file. It never receives keys. |
 | A second program on the same bot | `npm run telegram` (Projection) and the app poll one Telegram bot | Reported as a conflict in Settings → Channels, not crashed on. |
+
+## Remote workspace integrations
+
+Hosted MCP entries install no local server package, so the npm version-age rule does not pin the hosted service's implementation. The user configures the endpoint and grants account access explicitly. The workspace catalog entry accepts documented HTTPS cloud host suffixes and MCP paths, refusing embedded credentials, nonstandard ports, queries and fragments. Its token uses the app secret store and an Authorization header; it never belongs in the endpoint or task journal. Host validation identifies an allowed service destination, not the account or resources the user intended: users must check their workspace URL and token permissions.
+
+Configuration-based endpoint resolution is supplied by the framework over detached non-secret settings; the app owns destination restrictions. Rejected complete endpoint edits leave the prior configuration intact. Required setup fields must be present before normal activation. Discovered tools retain the framework's annotation-based policies: changes and open-internet access default to Ask. Remote calls can incur service/compute charges and the workspace entry is excluded from free task capabilities. Token expiry/revocation, workspace grants and network controls still govern access. No browser OAuth or automatic credential refresh is provided. [Setup and verification limits](docs/DATABRICKS.md).
 
 ## Task records and drafts
 
@@ -44,7 +50,7 @@ The repository is public: <https://github.com/nranjan2code/vakyartha>. Report a 
 ## Checks that guard this
 
 - `test/settings.test.ts`: Keychain/file storage, secrets never returned, injection through settings values refused.
-- `test/integrations.test.ts`: every catalog server pinned to an exact version, first-run defaults, state saved by earlier versions still loads.
+- `test/integrations.test.ts`: exact npm catalog pins, first-run defaults, earlier saved state, workspace endpoint validation, setup persistence and secret redaction.
 - `test/voice.test.ts`: only listed voice packs install; a Whistle file that does not match its pinned checksum is refused and leaves nothing behind; language tags and inputs are validated before any provider is called.
 - `test/finops.test.ts`: the token-protected HTTP path, and no prompt or tool content copied into the usage ledger.
 - The framework's checks (`framework/packages/host/test`, `framework/packages/mcp/test`, including installs and folder checks in `integrations.test.ts`) run with `npm run test:framework`.
