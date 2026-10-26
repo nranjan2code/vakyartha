@@ -115,6 +115,25 @@ Deletion states its scope and removes task-owned content, drafts and raw diagnos
 
 Setup checks readiness and offers an actionable recovery path. Keyboard and assistive-technology users can navigate tasks, select surfaces, edit fields, submit, inspect full approvals and cancel work. Announce meaningful status changes without repeatedly reading streaming content. Preserve focus while background work updates. Check wide and narrow layouts in the app's actual rendering engine.
 
+### M9. Voice interaction
+
+Voice is another projection of the same surfaces and approvals, not a remote control for the screen. The person answers what the task is waiting for in their own words ("two people, next Friday, the cheaper one"); they never name a button, list, dropdown or field. Everything a voice answer does is something a click or typed value could already do, through the same action, validation and authority checks.
+
+One master switch covers voice. Off: no microphone use, no spoken output, no speech requests. On: read aloud, dictation and conversation mode each keep their own setting beneath it.
+
+1. **Agenda.** At any moment voice derives what is waiting on the person, in order: pending approvals; then the most recently active surface with an unanswered form, action or choice. With nothing waiting, speech is a new message or an app command.
+2. **Asking.** Each agenda item becomes a spoken question built from its meaning: field labels, allowed options with the values that tell them apart, and the action's purpose. Controls are never described as controls.
+3. **Filling.** One answer may fill several fields; only missing or invalid fields are asked again. Field checks (required, email, ranges, dates) apply exactly as for typed input and are explained in speech. Heard values are written to the surface's bound data, so the screen shows them as they are filled and either input method can finish the form.
+4. **Read-back.** Before an action is sent, a short sentence states what will happen. Agreement sends the identical action a click would send. Local interactions (sort, filter, page) stay local, as today.
+5. **Understanding.** First, a deterministic resolver per language: yes/no/cancel/back/repeat words, option names, ordinals ("the second one"), comparisons against declared values ("the cheapest", "the earliest"), numbers and dates. Only when that is empty or ambiguous, and the item is not an approval, the model receives the answer and the agenda item and may return only values the item allows; its result passes the same validation. An answer still unresolved is asked once more, then left on screen.
+6. **Approvals.** Resolved only by the deterministic resolver, never by model output, so text in a page, tool result or reply cannot approve anything. A write or an internet operation needs a phrase naming the operation ("allow the write"); a plain yes suffices only for read-only operations. Silence, timeout, noise or ambiguity leaves the approval pending on screen; it is never approved by default. The applied decision is said back. M4 authority checks are unchanged.
+7. **Hands-free loop.** Conversation mode states: off, listening, hearing, understanding, asking, speaking, acting. End of speech is detected locally from the input level. Speaking stops as soon as the person talks. The microphone is echo-cancelled or paused while the app speaks, so it never hears itself. A fixed stop phrase and Escape end the mode. No always-listening wake phrase in this scope; a shortcut or control starts conversation mode.
+8. **Every placement.** The agenda produces the same action for inline, canvas and remote-channel surfaces. In conversation mode the canvas follows the item being discussed, but background tasks never take focus.
+9. **Language.** Questions and resolver words follow the person's language and the reply's language. Where a language has no resolver words, voice says so and the item stays on screen.
+10. **Data and cost.** Recordings are transient and never stored; a voice answer is recorded like typed input. Billed speech providers keep their existing consent; local ones are preferred.
+
+Accessibility: each state change is announced once, and every voice action remains available by keyboard.
+
 ## 5. Initial outcome scenarios
 
 These are proposed validation scenarios, not new standalone agents or guaranteed integrations.
@@ -138,6 +157,7 @@ Product features stay in Vakyartha. Existing framework capabilities are reused t
 | Execution continuity | App queue, checkpoints, recovery policy and user experience | Demonstrated gaps in run lifecycle, disconnect behavior, completion policy or replayable events. |
 | Integrations and permissions | Catalog choices, task access policy, permission UI and secret storage | Existing install/run machinery and general policy enforcement; additional scoped enforcement only if public APIs cannot support it. |
 | Accounting and data | Limits chosen by the product, usage attribution, retention, deletion UX and diagnostics | General cancellation, operation receipts or host deletion hooks when missing. |
+| Voice (M9) | One `src/voice/` and `sidecar/voice/` module: speech and transcription providers, local engines and voice packs, recording, end-of-speech, barge-in, echo safety, the conversation loop, master switch, settings, approval items supplied to the agenda, and app commands | The voice projector: agenda derivation from resolved surfaces, spoken questions, field model, deterministic resolver, constrained model-resolution contract and validated action construction. |
 | Future capabilities | Skills library, user memory, schedules, notifications and channels | General primitives only after a concrete requirement and API gap exist. |
 
 Before each proposed framework change, record the existing public capability, the precise missing behavior, why app composition is insufficient, the smallest additive framework contract, compatibility expectations and verification. Implement there in its own repository, test and push, then deliberately update the app's dependency pin. Never edit the dependency checkout here or import its internal files.
@@ -147,6 +167,15 @@ In particular, do not remove projection-oriented completion for existing clients
 An architecture proof must first establish one canonical session/surface store and durable action ownership using public exports. The public provider API already exposes execution, tool and event primitives; do not assume a new runner is needed. The current host privately owns session state, and its external-action inbox is volatile. Repeated HTTP chat requests or external projection alone do not establish durable task execution. Record the precise composition seam before choosing an app adapter or a minimal framework addition.
 
 Existing live-turn approvals are not durable task permissions: they expire, depend on the event emitter, and may allow a tool across a whole chat. Pending task requests need durable identities and exact scope; existing chat grants must not silently transfer into task authorization.
+
+### Voice projector framework record
+
+- **Existing public capability:** catalog roles (`form`, `action`, `choices`), bindings, field checks, `lowerSurface`, `VpsAction` and the text projectors. The app's `spokenSurface` reads content aloud and deliberately skips controls.
+- **Missing behavior:** a projector-neutral description of what a surface is waiting for (decision and choice items; fields with type, allowed options and checks), and a way to turn a text answer into validated field values or a `VpsAction`.
+- **Why app composition is insufficient:** the app would have to re-derive role, binding and check semantics from framework internals, duplicate validation, and the result would not serve other targets such as remote channels.
+- **Smallest additive contract:** exports that derive agenda items from a resolved surface, resolve an answer deterministically against an item (fill, choose, confirm, cancel or unknown), describe the constrained model-resolution schema for an item, and build the `VpsAction` from completed values. The app supplies approval items in the same shape. The package placement is decided in Projection.
+- **Compatibility:** additive only; existing projectors, action semantics and tool contracts are unchanged.
+- **Verification:** Projection tests per catalog type and per language's resolver words, including adversarial text that must never resolve an approval; app tests that a voice answer and a click produce identical actions; the WebKit canvas check.
 
 ### Runtime placement, performance and security
 

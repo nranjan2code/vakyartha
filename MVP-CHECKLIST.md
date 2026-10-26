@@ -104,6 +104,22 @@ Owners: Vakyartha end-to-end; Projection verifies any changed framework contract
 - [ ] P4.11. Inspect the actual app window for setup, multiple interactive surfaces, waiting, cancellation, recovery and deletion. A rendering test alone does not close this gate.
 - [ ] P4.12. Verify unavoidable process contracts: malformed/incompatible messages, stale IDs, duplicate commands, disconnect and reconnect. Check message counts, payload size, bounded queues and interaction latency against D8 without weakening authorization or isolation.
 
+## V — Voice interaction
+
+Owner: Projection for the voice projector; Vakyartha for the `voice/` module. Acceptance: MVP-SPECS M9 and the voice projector framework record in section 6. Phases go in order; each keeps existing read-aloud and dictation behavior working.
+
+- [x] V0. Voice interaction specified: M9, ownership row and framework record in `MVP-SPECS.md`.
+- [ ] V1. App `voice/` module with no behavior change: read aloud, dictation, speech text, settings page and the sidecar speech routes behind one entry point each in `src/voice/` and `sidecar/voice/`; one master switch over read aloud, dictation and conversation mode; app tests, typecheck and WebKit check.
+- [ ] V2. Voice projector in Projection: agenda items, field model, deterministic resolver, constrained-resolution schema and action construction; tested and pushed, then the app pin moved (R2).
+- [ ] V3. Conversation mode: local end-of-speech, barge-in, echo safety, stop phrase and Escape, announced states; no microphone use when off.
+- [ ] V4. Approvals by voice: approval items on the agenda; deterministic resolution only; operation phrase for writes and internet; unclear or silent leaves the request pending; decision said back. Adversarial tests: injected or model text never approves.
+- [ ] V5. Choices and actions by meaning: option names, ordinals and comparisons against declared values; read-back; same action as a click.
+- [ ] V6. Forms by conversation: several fields per answer, only missing or invalid fields asked again, field checks explained in speech, values shown on screen as filled.
+- [ ] V7. Constrained model resolution for non-approval items, evaluated on the local 4B model.
+- [ ] V8. App commands by voice (stop, repeat, cancel, new conversation, show on the canvas) and the canvas following the item under discussion without taking focus from background work.
+- [ ] V9. Resolver words for every language read aloud supports; others stay on screen with a note.
+- [ ] V10. Regression gates: recordings never stored; voice answers recorded like typed input; billed providers keep consent; keyboard parity for every voice action.
+
 ## Release readiness
 
 - [ ] R1. Every MVP requirement and regression gate has linked evidence; unresolved risks are explicitly reviewed.
