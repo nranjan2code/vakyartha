@@ -1,5 +1,6 @@
+import { checkComparisonContract, parseComparisonContract } from "../comparison-contract.ts";
 import type { SessionView } from "@vak/host";
-import { tableRows } from "./evaluation-checks.ts";
+import { tablePayloads, tableRows } from "./evaluation-checks.ts";
 
 export type ComparisonFixture = {
   options: readonly { name: string; monthlyCost: number; seats: number }[];
@@ -33,4 +34,19 @@ export function comparisonReview(view: SessionView, fixture: ComparisonFixture) 
 /** Passing structural/numeric checks never establishes the meaning of generated prose. */
 export function evaluationVerdict(checks: Record<string, boolean>): "failed" | "needs-semantic-review" {
   return Object.values(checks).length > 0 && Object.values(checks).every(Boolean) ? "needs-semantic-review" : "failed";
+}
+
+
+/** Formal visible claims are checked; narrative recommendations still require review. */
+export function comparisonClaimContract(fixture: ComparisonFixture) {
+  return parseComparisonContract({ identityColumn: "option", rows: comparisonReference(fixture).map((row) => ({
+    option: row.name, monthly_cost: row.monthlyCost, seats: row.seats, cost_per_seat: row.costPerSeat,
+    within_budget: row.withinBudget, enough_seats: row.enoughSeats, meets_both: row.meetsBoth,
+  })) });
+}
+
+
+export function comparisonClaimIssues(view: SessionView, fixture: ComparisonFixture): string[] {
+  const tables = tablePayloads(view);
+  return tables.length === 1 ? checkComparisonContract(comparisonClaimContract(fixture), tables[0]!) : ["Expected one visible table of declared claims."];
 }

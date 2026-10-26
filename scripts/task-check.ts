@@ -63,9 +63,10 @@ const steps = [
    check(!document.getElementById('task-result-notices-row').hidden,'visible notice input missing');
    document.getElementById('task-result-notices').value='Fictional data';
    check(document.documentElement.scrollWidth<=innerWidth,'result setup overflow');
-   check(innerWidth>720||document.getElementById('schedule-page').getBoundingClientRect().left===0,'collapsed sidebar leaves a blank gutter');document.getElementById('task-result-notices-row').scrollIntoView({block:'center'});return 'typed result layout, required source manifest and visible notices';`,
+   check(innerWidth>720||document.getElementById('schedule-page').getBoundingClientRect().left===0,'collapsed sidebar leaves a blank gutter');
+   layout.value='comparison';layout.dispatchEvent(new Event('change'));const exact=document.getElementById('task-comparison-checks-row');check(!exact.hidden,'exact comparison checks missing');exact.open=true;document.getElementById('task-comparison-checks').value=JSON.stringify({identityColumn:'option',rows:[{option:'First',eligible:false},{option:'Second',eligible:true}]});exact.scrollIntoView({block:'center'});return 'typed result layout, visible notices and exact comparison checks';`,
   `const layout=document.getElementById('task-result-layout');
-   layout.value='';layout.dispatchEvent(new Event('change'));check(document.getElementById('task-result-notices-row').hidden,'flexible work retained notice input');check(!document.getElementById('task-result-inputs').required,'flexible layout retained manifest requirement');
+   layout.value='';layout.dispatchEvent(new Event('change'));check(document.getElementById('task-result-notices-row').hidden,'flexible work retained notice input');check(document.getElementById('task-comparison-checks-row').hidden,'flexible work retained exact checks');check(!document.getElementById('task-result-inputs').required,'flexible layout retained manifest requirement');
    document.getElementById('task-spending').value='api_allowed';document.getElementById('task-spending').dispatchEvent(new Event('change'));document.getElementById('task-spending-ack').checked=true;
    window.dispatchEvent(new Event('vak:model'));check(!document.getElementById('task-spending-ack').checked,'model change retained spending acknowledgement');
    check(!document.getElementById('task-create-form').checkValidity(),'API charges require no acknowledgement');
@@ -138,6 +139,8 @@ const steps = [
    document.getElementById('task-goal').value='Future review';document.getElementById('task-criteria').value='An explicit reviewed result';
    const resultLayout=document.getElementById('task-result-layout');resultLayout.value='comparison';resultLayout.dispatchEvent(new Event('change'));
    document.getElementById('task-result-inputs').value='First\\nSecond';document.getElementById('task-result-notices').value='Fictional data';
+   check(!document.getElementById('task-comparison-checks-row').hidden,'exact comparison input missing');
+   document.getElementById('task-comparison-checks').value=JSON.stringify({identityColumn:'option',rows:[{option:'First',eligible:false},{option:'Second',eligible:true}]});
    const timing=document.getElementById('schedule-timing');timing.value='once';timing.dispatchEvent(new Event('change'));
    const d=new Date(Date.now()+3600000);document.getElementById('schedule-at').value=new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
    const before=(await(await fetch('/api/tasks')).json()).map(t=>t.id);
@@ -146,6 +149,8 @@ const steps = [
    await wait(()=>document.querySelector('#schedule-page .schedule-badge.scheduled'));
    check((await(await fetch('/api/tasks/'+window.qaScheduled)).json()).runs===0,'scheduled work ran early');
    check((await(await fetch('/api/tasks/'+window.qaScheduled)).json()).resultPolicy.notices[0]==='Fictional data','visible notice was not saved');
+   check((await(await fetch('/api/tasks/'+window.qaScheduled)).json()).resultPolicy.table.rows[0].eligible===false,'typed comparison assertion was not saved');
+   check(document.querySelector('.schedule-facts').textContent.includes('expected rows'),'exact comparison detail missing');
    check(document.querySelector('.schedule-facts').textContent.includes('Fictional data'),'saved notice absent from detail');
    Array.from(document.querySelectorAll('#schedule-page button')).find(b=>b.textContent==='Pause').click();
    await wait(()=>document.querySelector('#schedule-page .schedule-badge.paused'));

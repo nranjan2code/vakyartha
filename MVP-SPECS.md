@@ -248,3 +248,8 @@ Typed form/table layouts accept ordinary title/layout wrappers while enforcing i
 ### Explicit visible-notice checkpoint (2026-10-26)
 
 Checked layouts optionally retain up to eight user-supplied visible notices (120 characters each), configured in setup and shown in task details (ADR-020). Resolved titles/content must display these notices; unused metadata does not count. Labels do not grant authority or certify provenance, numerical correctness or reasoning. The final diagnostic comparison passed numeric/default/layout/notice checks but was manually classified as a failed full outcome because its recommendation contradicted the displayed facts.
+
+
+### Explicit comparison assertions (2026-10-26)
+
+Checked comparison layouts optionally accept bounded caller-supplied expected rows (ADR-022). Public resolved-table data and existing completion feedback enforce declared visible identities, column sets and exact scalar values/types, without inferring facts or rewriting outputs. Setup/details expose the fixed assertions; form edits do not recompute them. The evaluation independently derives fixture constraint booleans. This is a narrow formal-claim check, not general semantic or source verification; the new live trial fails and P1.9/P4.9 remain open.

@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Exact comparison checks:** optional caller-supplied expected rows now check displayed identities, columns and typed scalar claims within the same run. Setup and details expose the fixed assertions. Form changes do not recalculate them; extra prose and provenance still need review.
+
 - **Outcome evaluation:** passing automated checks now require semantic review. Reports show independent constraint references beside canonical visible rows; hidden/unused data no longer supplies output evidence. This does not certify generated recommendations.
 
 - **Inline or canvas, by size:** small interfaces stay in the conversation again; tables, charts, tabs, maps, boards, long code, forms with more than five fields and large or long surfaces leave a reference card and open in the canvas (`src/placement.ts`). Growing past the limit while streaming moves a surface to the canvas; nothing jumps back. The canvas no longer opens before the first snapshot shows how big a surface is. Inline surfaces have no extra header; open one in the canvas from the reply's actions.

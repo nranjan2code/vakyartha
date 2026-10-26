@@ -21,17 +21,20 @@ export function separateFormAndTable(view: SessionView): boolean {
   return outputs.some((form) => form.types.includes("form") && !form.types.includes("table") && outputs.some((table) => table.id !== form.id && table.types.includes("table") && !table.types.includes("form")));
 }
 
+export function tablePayloads(view: SessionView): { columns: unknown; rows: unknown }[] {
+  return resolvedSurfaces(view).flatMap((surface) => nodesOf(surface.root).filter((node) => node.type === "table").map((node) => ({ columns: node.props.columns, rows: node.props.rows })));
+}
+
 /** Use the canonical resolved tree, including column finalization and visibility. */
 export function tableRows(view: SessionView): unknown[][] {
-  return resolvedSurfaces(view).flatMap((surface) => nodesOf(surface.root).filter((node) => node.type === "table").flatMap((node) => {
-    const props = node.props;
+  return tablePayloads(view).flatMap((props) => {
     if (!Array.isArray(props.rows) || !Array.isArray(props.columns)) return [];
     const columns = props.columns;
     return props.rows.map((row: unknown) => Array.isArray(row) ? row : row && typeof row === "object" ? columns.map((column: unknown) => {
       const key = typeof column === "string" ? column : column && typeof column === "object" && "key" in column ? String(column.key) : "";
       return (row as Record<string, unknown>)[key];
     }) : []);
-  }));
+  });
 }
 
 export function tableOutputText(view: SessionView): string { return JSON.stringify(tableRows(view)); }

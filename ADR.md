@@ -229,3 +229,14 @@ Boundary/unit tests cover bounds, deduplication, both policies, visible vs unuse
 Status: implemented evaluation slice, 2026-10-26. Owner: Vakyartha's development evaluation; product execution/acceptance unchanged.
 
 Automated layout/numeric checks cannot certify arbitrary recommendation prose. Replace evaluation `candidate-pass` with `needs-semantic-review` when checks pass, retaining `failed` otherwise. Compute row-local reference facts from a single typed fixture, beside canonical visible output, without guessing what prose means or rewriting it. Historical/manual failure evidence remains authoritative. Public resolution APIs suffice; no framework, dependency or persistence authority is added. Tests reproduce the retained contradictory Atlas row and exclude hidden/orphan/unused data. Automatic semantic verification and product acceptance remain separate open gates.
+
+
+## ADR-022 — Caller-supplied exact comparison assertions
+
+Status: implemented opt-in slice, 2026-10-26. Owner: Vakyartha. Existing public completion callbacks and canonical resolved tables suffice; no framework change.
+
+A comparison result policy may include `table: {identityColumn, rows}`. The caller supplies expected scalar facts/claims, not model-authored verification rules. Validate unique text identities, identical safe column keys and finite numbers/booleans/nonempty strings; cap at 16 rows, 12 columns, 128 cells and 12,000 serialized row characters. Optional setup JSON and inspectable task details use the existing journal/writer. Labels and asserted identities must agree. No migration or second surface store is introduced.
+
+Checks read resolved displayed columns/rows. They enforce exact column sets, one row per identity and scalar equality/types, allowing column/row reordering. Hidden/unused expected data, duplicate identities and stringified booleans cannot satisfy assertions. Failures return bounded correction feedback through the same run/request/time budgets. No expression evaluator, implicit field mapping, inferred facts, surface rewriting, tool authority or automatic product acceptance.
+
+Assertions remain fixed for the task; changing a form does not recompute them. Conflicting later requirements need explicit review/new expectations, not silent mutation. This checks agreement with supplied assertions, not their provenance or arbitrary extra prose. Numeric rounding/units must be declared as the actual expected scalar; no implicit tolerance/conversion. The evaluation independently derives its boolean expectations from the typed numeric fixture and rechecks visible claims. The live diagnostic failed and was retained (EVALUATION.md); full outcome reliability remains open.

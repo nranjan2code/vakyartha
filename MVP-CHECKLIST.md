@@ -188,3 +188,8 @@ ADR-017–020: Projection `9d44982` provides keyless-property/list-binding repai
 ## Current baseline and conservative evaluation — 2026-10-26
 
 ADR-021: reconciled app `8f2d6dd`/Projection `a1537c3` changes, including background work, placement and voice. Evaluation uses canonical visible outputs and independent typed constraint references; successful machine checks require semantic review instead of reporting a candidate pass. Original failed semantic evidence is retained. 86 app/277 framework tests, typecheck/build and task/canvas WebKit checks pass. No live model/voice calls or dependency/framework changes. P1.9/P4.9 remain open for explicit semantic contracts/review; this is not automatic prose verification.
+
+
+## Exact comparison assertion checkpoint — 2026-10-26
+
+ADR-022: opt-in expected visible rows are bounded, persisted and inspectable. Exact scalar/type, identity and column checks feed corrections into the existing bounded run. Deterministic tests cover wrong booleans, numeric/string mismatch, missing/duplicate rows, hidden data, invalid/oversized inputs and same-run repair. Setup and scheduled persistence are checked in WebKit. 89 app/277 pinned framework tests, typecheck/build/bundle, native and task/canvas checks pass. Local report `2026-10-26T06-27-59.817Z-e242767d` fails after 12 requests/140.2s; the checker correctly rejects missing Atlas and wrong Birch claims. No automatic task acceptance, new dependency, framework pin change or IPC. P1.9/P4.9 remain open for reliable end-to-end outcomes and arbitrary prose review.

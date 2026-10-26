@@ -1,16 +1,18 @@
+import { checkComparisonContract, parseComparisonContract, type ComparisonContract } from "./comparison-contract.ts";
 import { projectText, walk } from "@vak/core";
 import type { CompletionCheck } from "@vak/providers";
 
-export type TaskResultPolicy = ({ kind: "comparison"; labels?: string[] } | { kind: "research"; sources?: string[] }) & { notices?: string[] };
+export type TaskResultPolicy = ({ kind: "comparison"; labels?: string[]; table?: ComparisonContract } | { kind: "research"; sources?: string[] }) & { notices?: string[] };
 export function parseTaskResultPolicy(value: unknown): TaskResultPolicy {
   if (!value || typeof value !== "object" || Array.isArray(value) || !("kind" in value) || (value.kind !== "comparison" && value.kind !== "research")) throw new Error("Choose a supported result layout");
   const key = value.kind === "comparison" ? "labels" : "sources";
-  if (Object.keys(value).some((field) => field !== "kind" && field !== key && field !== "notices")) throw new Error("Result layout contains unsupported fields");
+  if (Object.keys(value).some((field) => field !== "kind" && field !== key && field !== "notices" && !(value.kind === "comparison" && field === "table"))) throw new Error("Result layout contains unsupported fields");
   const notices = "notices" in value ? value.notices : undefined;
   if (notices !== undefined && (!Array.isArray(notices) || !notices.length || notices.length > 8 || notices.some((notice) => typeof notice !== "string" || !notice.trim() || notice.length > 120))) throw new Error("Provide up to 8 nonempty visible notices, each at most 120 characters");
+  const table = value.kind === "comparison" && "table" in value ? parseComparisonContract(value.table) : undefined;
   const common = notices === undefined ? {} : { notices: [...new Set((notices as string[]).map((notice) => notice.trim()))] };
   const raw = key in value ? (value as Record<string, unknown>)[key] : undefined;
-  if (raw === undefined) return { kind: value.kind, ...common };
+  if (raw === undefined) return value.kind === "comparison" ? { kind: "comparison", ...common, ...(table ? { table } : {}) } : { kind: "research", ...common };
   if (!Array.isArray(raw) || !raw.length || raw.length > (key === "sources" ? 8 : 16) || raw.some((item) => typeof item !== "string" || !item.trim() || item.length > (key === "sources" ? 2000 : 120))) throw new Error("Provide a bounded, nonempty list of source URLs or option names");
   const items = raw.map((item: string) => {
     if (key === "labels") return item.trim();
@@ -18,13 +20,15 @@ export function parseTaskResultPolicy(value: unknown): TaskResultPolicy {
     if (url.protocol !== "https:" || url.username || url.password) throw new Error("Sources must be public https URLs without credentials");
     return url.href;
   });
-  return value.kind === "comparison" ? { kind: "comparison", labels: [...new Set(items)], ...common } : { kind: "research", sources: [...new Set(items)], ...common };
+  if (table && (table.rows.length !== new Set(items).size || table.rows.some((row) => !items.includes(String(row[table.identityColumn]))))) throw new Error("Exact comparison identities must match the option names");
+  return value.kind === "comparison" ? { kind: "comparison", labels: [...new Set(items)], ...common, ...(table ? { table } : {}) } : { kind: "research", sources: [...new Set(items)], ...common };
 }
 export function resultInstructions(policy?: TaskResultPolicy): string {
   if (!policy) return "";
   const named = policy.kind === "research" && policy.sources ? ` Required pages to read: ${policy.sources.join(", ")}.` : policy.kind === "comparison" && policy.labels ? ` Preserve these option labels exactly: ${policy.labels.join(", ")}.` : "";
   const notices = policy.notices?.length ? ` Required visible notices, supplied by the user: ${JSON.stringify(policy.notices)}. Copy each notice into a visible surface title or content; unused data does not display it.` : "";
-  return named + notices + `Required result contract: exactly TWO separate surfaces. One surface must contain one form with bound editable controls and no comparison table. Initialize supplied criteria values, without inventing missing values. The other surface must contain one comparison table and no form. Layout/title wrappers are allowed on either independent surface. Remove surplus surfaces. Finish when the outputs are ready for user review; the app supplies a neutral acknowledgement. ${policy.kind === "research" ? 'The evidence table has ONLY columns source and quote, with keys source and quote. Each row has ONLY those two fields. source is a successfully fetched https URL; quote is a 24–800 character verbatim excerpt of that successful web tool result, preserving its wording. Include every source successfully read in this run. Do not paraphrase facts, add conclusions/statistics or claim verification of an inference. Put interpretation decisions in the editable criteria form.' : 'Every comparison row must visibly retain its option name in a displayed column. Every displayed cell needs its actual value or an explicit missing-data label; a column key must match its row field. Preserve all supplied options, values and units. Never replace row identity with a prose summary.'}`;
+  const exact = policy.kind === "comparison" && policy.table ? ` Exact visible comparison contract supplied by the caller: ${JSON.stringify(policy.table)}. Use these column keys and raw scalar types. These assertions stay fixed for this task. If later instructions conflict with them, explain the conflict rather than claiming both were satisfied. They check only declared cells, not extra prose or tool effects.` : "";
+  return named + notices + exact + `Required result contract: exactly TWO separate surfaces. One surface must contain one form with bound editable controls and no comparison table. Initialize supplied criteria values, without inventing missing values. The other surface must contain one comparison table and no form. Layout/title wrappers are allowed on either independent surface. Remove surplus surfaces. Finish when the outputs are ready for user review; the app supplies a neutral acknowledgement. ${policy.kind === "research" ? 'The evidence table has ONLY columns source and quote, with keys source and quote. Each row has ONLY those two fields. source is a successfully fetched https URL; quote is a 24–800 character verbatim excerpt of that successful web tool result, preserving its wording. Include every source successfully read in this run. Do not paraphrase facts, add conclusions/statistics or claim verification of an inference. Put interpretation decisions in the editable criteria form.' : 'Every comparison row must visibly retain its option name in a displayed column. Every displayed cell needs its actual value or an explicit missing-data label; a column key must match its row field. Preserve all supplied options, values and units. Never replace row identity with a prose summary.'}`;
 }
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
 export function checkTaskResult(policy: TaskResultPolicy, result: Parameters<CompletionCheck>[0], sources: ReadonlyMap<string, string>): string[] {
@@ -59,6 +63,7 @@ export function checkTaskResult(policy: TaskResultPolicy, result: Parameters<Com
     const columns = Array.isArray(table.props.columns) ? table.props.columns.map((column) => typeof column === "string" ? column : column && typeof column === "object" && "key" in column ? String(column.key) : "") : [];
     if (!rows.length) problems.push(`Surface ${tableId} needs nonempty resolved rows.`);
     if (policy.kind === "comparison") {
+      if (policy.table) problems.push(...checkComparisonContract(policy.table, { columns: table.props.columns, rows: table.props.rows }));
       const visible = rows.map((row) => Array.isArray(row) ? row : row && typeof row === "object" ? columns.map((key) => (row as Record<string, unknown>)[key]) : []);
       rows.forEach((row, index) => {
         const absent = columns.filter((_key, column) => { const value = visible[index]?.[column]; return value === undefined || value === null || typeof value === "string" && !value.trim(); });
