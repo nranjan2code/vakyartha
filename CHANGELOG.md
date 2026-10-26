@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Bundled engine:** Node 24.22.1 (LTS security release) with npm 11.19.1. Release builds now refuse a Node that is not Foundation-signed, not LTS, or not its line's newest release; release builds are optimised for speed (`opt-level = 3`). [RELEASING.md](docs/RELEASING.md#the-bundled-node-engine).
+
 - **Window chrome:** the traffic lights are centred in the 40px title bar on the same line as the sidebar hide/show buttons; the logo moved from the sidebar top to the right of Settings.
 
 - **Interface font:** the app and generated interfaces use Inter 4.1 (variable upright and italic, SIL OFL, bundled under `public/fonts/` with its licence; no network font), with tabular numbers in answer tables.

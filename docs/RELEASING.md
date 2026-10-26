@@ -48,6 +48,20 @@ git -C framework checkout local/main                         # or a branch
 
 Run the app and tests, then push the change to Projection and pin to the pushed commit. Never commit a pin that only exists locally. `git -C framework branch -r --contains HEAD` must list `origin/...` before a release.
 
+## The bundled Node engine
+
+The release app ships the Node binary that runs the build (and its npm), so the build machine's Node **is** the shipped engine. `scripts/bundle-sidecar.ts` refuses to package it unless:
+
+- it is signed by the Node.js Foundation (Developer ID team `HX7739G8FX`, `codesign --verify --strict`);
+- it is on an LTS line; and
+- it is that line's newest release in `https://nodejs.org/dist/index.json`, so security patches cannot be missed.
+
+`VAK_NODE_CHECK=offline` skips only the nodejs.org lookup and prints a warning; never use it for a published release.
+
+To update: download `node-vX.Y.Z-darwin-arm64.tar.gz`, `SHASUMS256.txt` and `SHASUMS256.txt.sig` from `https://nodejs.org/dist/vX.Y.Z/` into an empty folder; check the tarball against `SHASUMS256.txt` (`shasum -a 256 -c`), and the PGP signature when `gpg` and the release keys are available; check `codesign --verify --strict` and the team ID on `bin/node`; then replace `~/.local/bin/node`, `~/.local/lib/node_modules/{npm,corepack}` and `~/.local/include/node`, keeping the previous copy until the new build is verified. A security release is taken as soon as it is verified; the 14-day age rule is for packages and integrations.
+
+Current: Node 24.22.1 (Krypton LTS, security release of 2026-10-20) with npm 11.19.1, adopted 2026-10-26. Tarball SHA-256 matched `SHASUMS256.txt`; signature valid for Node.js Foundation (HX7739G8FX), timestamped 2026-10-21. The PGP signature of `SHASUMS256.txt` was not checked (`gpg` is not installed).
+
 ## Release checklist
 
 1. **Start clean:** on `main`, `git status` clean, `git submodule status` shows no `+` (the checkout matches the pin), and the pin is pushed to Projection (above).
