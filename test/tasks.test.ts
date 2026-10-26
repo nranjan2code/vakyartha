@@ -3,11 +3,12 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { createHost, type HostRunOptions } from "@vak/host";
+import { createHost, type HostRunOptions, type HostTurn } from "@vak/host";
 import { ProfileCache, type Provider, type AgentTool } from "@vak/providers";
+import { comparisonExpectedRows } from "../comparison-contract.ts";
 import { Tasks } from "../sidecar/tasks.ts";
 import { parseTaskInput, parseTaskView } from "../task-contract.ts";
-import { COMPARISON_FIXTURE, comparisonClaimContract, comparisonClaimIssues } from "../scripts/evaluation-reference.ts";
+import { COMPARISON_FIXTURE, interactiveComparisonContract, comparisonClaimIssues } from "../scripts/evaluation-reference.ts";
 
 async function until(check: () => boolean): Promise<void> {
   const end = Date.now() + 3000;
@@ -28,21 +29,21 @@ const scripted: Provider = {
   },
 };
 
-test("changed form criteria reach the host while caller assertions remain fixed across repair and restart", async () => {
+test("submitted criteria recompute checked claims without changing facts or expressions, across repair and restart", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "vak-fixed-criteria-"));
-  const contract = comparisonClaimContract(COMPARISON_FIXTURE);
+  const contract = interactiveComparisonContract(COMPARISON_FIXTURE);
   const changed = { ...COMPARISON_FIXTURE, budget: 10, minimumSeats: 8 };
   let requests = 0;
   const provider: Provider = { id: "scripted", async *stream(req) {
     requests++;
-    const rows = requests === 3 ? comparisonClaimContract(changed).rows : contract.rows;
-    // The second run first offers correct claims for changed criteria. The fixed
-    // task contract must reject those claims instead of silently changing policy.
+    const rows = comparisonExpectedRows(requests === 5 ? interactiveComparisonContract(changed) : contract);
+    // The second run offers stale initial claims. The revised criterion contract
+    // must reject them while preserving the original facts and expressions.
     if (requests === 1 || requests === 3 || requests === 5) {
       const output = requests === 1 ? [
-        { surface: "criteria", data: { budget: 20, seats: 6 }, nodes: [{ id: "root", type: "form", props: { submit: "apply" }, children: [{ id: "budget", type: "input", props: { label: "Budget", bind: "/budget" } }, { id: "seats", type: "input", props: { label: "Seats", bind: "/seats" } }] }] },
-        { surface: "comparison", nodes: [{ id: "root", type: "table", props: { columns: Object.keys(contract.rows[0]!), rows } }] },
-      ] : [{ surface: "comparison", nodes: [{ id: "root", type: "table", props: { columns: Object.keys(contract.rows[0]!), rows } }] }];
+        { surface: "criteria", data: { criteria: { budget: 20, seats: 6 } }, nodes: [{ id: "root", type: "form", props: { submit: "apply" }, children: [{ id: "budget", type: "input", props: { label: "Budget", bind: "/criteria/budget" } }, { id: "seats", type: "input", props: { label: "Seats", bind: "/criteria/seats" } }] }] },
+        { surface: "comparison", nodes: [{ id: "root", type: "table", props: { columns: Object.keys(rows[0]!), rows } }] },
+      ] : [{ surface: "comparison", nodes: [{ id: "root", type: "table", props: { columns: Object.keys(rows[0]!), rows } }] }];
       if (requests === 3) assert.ok(req.messages.some((message) => typeof message.content === "string" && message.content.includes('"budget":10')));
       if (requests === 5) assert.ok(JSON.stringify(req.messages.at(-1)).includes("caller-supplied"));
       for (const args of output) {
@@ -59,21 +60,65 @@ test("changed form criteria reach the host while caller assertions remain fixed 
   const deps = { dir: path.join(dir, "tasks"), run: host.run, view: host.view, tools: async () => [], instructions: () => "test", observe: async (_session: string, work: () => Promise<void>) => work(), ready: () => {}, warn: () => {} };
   let tasks = await Tasks.open(deps);
   try {
-    const task = await tasks.create({ goal: "Compare fixture", criteria: "Fixed caller assertions", provider: "scripted", model: "fake", integrations: [], spending: { kind: "local_only" }, resultPolicy: { kind: "comparison", table: contract } });
+    const task = await tasks.create({ goal: "Compare fixture", criteria: "Checked caller facts and submitted criteria", provider: "scripted", model: "fake", integrations: [], spending: { kind: "local_only" }, resultPolicy: { kind: "comparison", table: contract } });
     await until(() => tasks.get(task.id).state === "needs_input");
     const form = (await host.view(task.id)).surfaces.find((surface) => surface.id === "criteria")!;
-    await tasks.input(task.id, { id: "changed-criteria", action: { surface: form.id, source: "root", data: { budget: 10, seats: 8 } }, revision: form.version });
+    await tasks.input(task.id, { id: "changed-criteria", action: { surface: form.id, source: "root", data: { criteria: { budget: 10, seats: 8 } } }, revision: form.version });
     await until(() => tasks.get(task.id).state === "needs_input");
     const view = await host.view(task.id);
     assert.equal(requests, 6);
     assert.equal(tasks.get(task.id).runs, 2);
     assert.equal(view.timeline.filter((entry) => entry.kind === "action").length, 1);
-    assert.deepEqual(view.surfaces.find((surface) => surface.id === "criteria")!.data, { budget: 10, seats: 8 });
-    assert.deepEqual(comparisonClaimIssues(view, COMPARISON_FIXTURE), []);
-    assert.ok(comparisonClaimIssues(view, changed).length > 0);
+    assert.deepEqual(view.surfaces.find((surface) => surface.id === "criteria")!.data, { criteria: { budget: 10, seats: 8 } });
+    assert.deepEqual(comparisonClaimIssues(view, changed), []);
+    assert.ok(comparisonClaimIssues(view, COMPARISON_FIXTURE).length > 0);
     await tasks.close(); tasks = await Tasks.open(deps);
-    assert.deepEqual(tasks.get(task.id).resultPolicy, { kind: "comparison", table: contract });
+    assert.deepEqual(tasks.get(task.id).resultPolicy, { kind: "comparison", table: interactiveComparisonContract(changed) });
     assert.equal(tasks.get(task.id).state, "needs_input");
+    const current = (await host.view(task.id)).surfaces.find((surface) => surface.id === "criteria")!;
+    await tasks.input(task.id, { id: "forged-criterion", action: { surface: current.id, source: "budget", data: { criteria: { budget: 999, seats: 1 } } }, revision: current.version });
+    await until(() => tasks.get(task.id).state === "failed");
+    assert.equal(requests, 6);
+    assert.deepEqual(tasks.get(task.id).resultPolicy, { kind: "comparison", table: interactiveComparisonContract(changed) });
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test("only successful scoped reads issue application retrieval receipts and persist them with the run", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-read-receipt-"));
+  let tasks!: Tasks;
+  let session = "", reads = 0;
+  const url = "https://one.example/page";
+  const deps = {
+    dir, ready: () => {}, warn: () => {}, instructions: () => "test", observe: async (_session: string, work: () => Promise<void>) => work(),
+    tools: async (): Promise<AgentTool[]> => [{ spec: { name: "web__fetch_page", description: "Read", inputSchema: { type: "object" } }, execute: () => {
+      const isError = ++reads > 1, text = isError ? "Read failed" : "The page contains source evidence for this question.";
+      tasks.observeResult({ session, server: "web", tool: "fetch_page", args: { url } }, { text, isError });
+      return text;
+    } }],
+    view: async (id: string) => ({ id, title: "test", updated: "", timeline: [], surfaces: [] }),
+    run: async (input: HostTurn, options: HostRunOptions) => {
+      assert.equal(input.schemaMode, "strict");
+      session = input.session!;
+      const first = await options.tools![0]!.execute({ url }, { callId: "read-1" });
+      assert.ok(first.includes("Application retrieval receipt:"));
+      const receipt = JSON.parse(first.split("Application retrieval receipt: ")[1]!);
+      assert.equal(receipt.source, url);
+      assert.equal(new Date(receipt.retrieved_at).toISOString(), receipt.retrieved_at);
+      assert.equal(await options.tools![0]!.execute({ url }, { callId: "read-2" }), "Read failed");
+      return { stop: "end" as const };
+    },
+  };
+  tasks = await Tasks.open(deps);
+  try {
+    const task = await tasks.create({ goal: "Read one page", criteria: "Retain receipt", provider: "scripted", model: "fake", spending: { kind: "local_only" }, integrations: ["web"], resultPolicy: { kind: "research", sources: [url] } });
+    await until(() => tasks.get(task.id).state === "needs_input");
+    const receipts = tasks.get(task.id).runHistory[0]!.retrievals!;
+    assert.equal(receipts.length, 1); assert.equal(receipts[0]!.url, url);
+    await tasks.close(); tasks = await Tasks.open(deps);
+    assert.deepEqual(tasks.get(task.id).runHistory[0]!.retrievals, receipts);
+    const saved = JSON.parse(await readFile(path.join(dir, `${task.id}.json`), "utf8"));
+    saved.runHistory[0].retrievals[0].retrievedAt = "2100-01-01T00:00:00.000Z";
+    assert.throws(() => parseTaskView(saved));
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });
 

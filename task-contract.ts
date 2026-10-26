@@ -1,3 +1,4 @@
+import { parseResearchReceipt, type ResearchReceipt } from "./research-contract.ts";
 import { parseTaskResultPolicy, type TaskResultPolicy } from "./task-result.ts";
 import { parseSchedule, type OnceSchedule } from "./schedule.ts";
 
@@ -55,6 +56,7 @@ export interface TaskRun {
   stop?: string;
   note: string;
   review?: ResultReview;
+  retrievals?: ResearchReceipt[];
 }
 export const TASK_RUN_LABELS: Record<TaskRunState, string> = { running: "In progress", review: "Ready for review", accepted: "Accepted", failed: "Could not finish", cancelled: "Cancelled", interrupted: "Interrupted" };
 export interface TaskView {
@@ -188,8 +190,10 @@ function parseTaskRun(value: unknown): TaskRun {
   if ((raw.state === "running" && (ended || recovered)) || (["review", "accepted", "failed", "cancelled"].includes(raw.state) && !ended) || (raw.state !== "interrupted" && recovered) || (ended && Date.parse(ended) < Date.parse(started))) throw new Error("Run timestamps do not match its state");
   if (integer(raw.activeMs, TASK_LIMITS.activeMs) > integer(raw.chargedMs, TASK_LIMITS.activeMs)) throw new Error("Recorded active time exceeds its budget charge");
   const review = raw.review === undefined ? undefined : parseResultReview(raw.review);
+  const retrievals = raw.retrievals === undefined ? undefined : array(raw.retrievals, 8).map(parseResearchReceipt);
+  if (retrievals && (new Set(retrievals.map((read) => read.url)).size !== retrievals.length || retrievals.some((read) => Date.parse(read.retrievedAt) < Date.parse(started) || ended && Date.parse(read.retrievedAt) > Date.parse(ended)))) throw new Error("Retrieval receipts must be unique and belong to this run");
   if ((raw.state === "accepted") !== Boolean(review) || (review && review.runId !== raw.id)) throw new Error("Acceptance requires a matching user review");
-  return { ...(review ? { review } : {}), id: taskString(raw.id, 120), sequence, inputId: taskString(raw.inputId, 120), inputKind: raw.inputKind, state: raw.state as TaskRunState, started, activeMs: integer(raw.activeMs, TASK_LIMITS.activeMs), chargedMs: integer(raw.chargedMs, TASK_LIMITS.activeMs), toolCalls: integer(raw.toolCalls, TASK_LIMITS.tools), modelRequests: integer(raw.modelRequests, TASK_LIMITS.rounds), note: typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "", ...(ended ? { ended } : {}), ...(recovered ? { recovered } : {}), ...(raw.stop === undefined ? {} : { stop: taskString(raw.stop, 120) }) };
+  return { ...(review ? { review } : {}), ...(retrievals ? { retrievals } : {}), id: taskString(raw.id, 120), sequence, inputId: taskString(raw.inputId, 120), inputKind: raw.inputKind, state: raw.state as TaskRunState, started, activeMs: integer(raw.activeMs, TASK_LIMITS.activeMs), chargedMs: integer(raw.chargedMs, TASK_LIMITS.activeMs), toolCalls: integer(raw.toolCalls, TASK_LIMITS.tools), modelRequests: integer(raw.modelRequests, TASK_LIMITS.rounds), note: typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "", ...(ended ? { ended } : {}), ...(recovered ? { recovered } : {}), ...(raw.stop === undefined ? {} : { stop: taskString(raw.stop, 120) }) };
 }
 
 

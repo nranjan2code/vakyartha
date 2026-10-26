@@ -1,5 +1,6 @@
-import { checkComparisonContract, parseComparisonContract, type ComparisonContract } from "./comparison-contract.ts";
-import { projectText, walk } from "@vak/core";
+import { checkComparisonContract, comparisonExpectedRows, parseComparisonContract, type ComparisonContract } from "./comparison-contract.ts";
+import { parseResearchSummary, type ResearchRead } from "./research-contract.ts";
+import { getAt, projectText, walk } from "@vak/core";
 import type { CompletionCheck } from "@vak/providers";
 
 export type TaskResultPolicy = ({ kind: "comparison"; labels?: string[]; table?: ComparisonContract } | { kind: "research"; sources?: string[] }) & { notices?: string[] };
@@ -25,14 +26,20 @@ export function parseTaskResultPolicy(value: unknown): TaskResultPolicy {
 }
 export function resultInstructions(policy?: TaskResultPolicy): string {
   if (!policy) return "";
-  const named = policy.kind === "research" && policy.sources ? ` Required pages to read: ${policy.sources.join(", ")}.` : policy.kind === "comparison" && policy.labels ? ` Preserve these option labels exactly: ${policy.labels.join(", ")}.` : "";
+  const named = policy.kind === "research" && policy.sources ? ` FIRST read every required page using web__fetch_page, before drawing any output: ${policy.sources.join(", ")}. Never ask the user to paste pages you can fetch. Use only actual successful tool results and application receipts, never guessed source contents or dates.` : policy.kind === "comparison" && policy.labels ? ` Preserve these option labels exactly: ${policy.labels.join(", ")}.` : "";
   const notices = policy.notices?.length ? ` Required visible notices, supplied by the user: ${JSON.stringify(policy.notices)}. Copy each notice into a visible surface title or content; unused data does not display it.` : "";
-  const exact = policy.kind === "comparison" && policy.table ? ` Exact visible comparison contract supplied by the caller: ${JSON.stringify(policy.table)}. Use these column keys and raw scalar types. These assertions stay fixed for this task. If later instructions conflict with them, explain the conflict rather than claiming both were satisfied. They check only declared cells, not extra prose or tool effects.` : "";
-  return named + notices + exact + `Required result contract: exactly TWO separate surfaces. One surface must contain one form with bound editable controls and no comparison table. Initialize supplied criteria values, without inventing missing values. The other surface must contain one comparison table and no form. Layout/title wrappers are allowed on either independent surface. Remove surplus surfaces. Finish when the outputs are ready for user review; the app supplies a neutral acknowledgement. ${policy.kind === "research" ? 'The evidence table has ONLY columns source and quote, with keys source and quote. Each row has ONLY those two fields. source is a successfully fetched https URL; quote is a 24–800 character verbatim excerpt of that successful web tool result, preserving its wording. Include every source successfully read in this run. Do not paraphrase facts, add conclusions/statistics or claim verification of an inference. Put interpretation decisions in the editable criteria form.' : 'Every comparison row must visibly retain its option name in a displayed column. Every displayed cell needs its actual value or an explicit missing-data label; a column key must match its row field. Preserve all supplied options, values and units. Never replace row identity with a prose summary.'}`;
+  const exact = policy.kind === "comparison" && policy.table ? ` Comparison contract supplied by the caller: ${JSON.stringify(policy.table)}. Expected visible rows for the current criteria: ${JSON.stringify(comparisonExpectedRows(policy.table))}. Use these column keys and raw scalar types. ${policy.table.criteria ? 'The criteria form MUST bind numeric inputs to /criteria/<key> for every declared criterion and initialize data.criteria to the current values. Submit the FORM to revise criteria; do not invent input minimums or maximums. Supplied row facts and calculation expressions are immutable. Only validated user form submissions revise criteria; model-authored data never revises them.' : 'These assertions stay fixed for this task.'} They check declared cells, not extra prose or tool effects.` : "";
+  return named + notices + exact + `Required result contract: exactly TWO separate surfaces. One surface must contain one form with bound editable controls and no comparison table. Initialize supplied criteria values, without inventing missing values. The other surface must contain one comparison table and no form. Layout/title wrappers are allowed on either independent surface. Remove surplus surfaces. Finish when the outputs are ready for user review; the app supplies a neutral acknowledgement. ${policy.kind === "research" ? 'The evidence surface MUST use a stack containing text blocks and a table. Its data.research is exactly {answer: string, limitations: string}. Write a substantive answer to the actual question, citing the fetched URLs, and explain missing information, freshness limits and any unverified inferences in limitations. Render both strings visibly in text blocks with content bindings {/research/answer} and {/research/limitations}. Label the answer Interpretation — review required and label limitations Missing information and limitations. The table has ONLY columns source, quote, retrieved_at. Use props.rows as a JSON array of row objects, never an each wrapper or a string containing JSON. Each row has ONLY those three string fields. source is a successfully fetched https URL; quote is a 24–800 character verbatim excerpt; retrieved_at is the exact application receipt timestamp appended to that tool response. Include every source successfully read in this run. Keep excerpts separate from interpretation; do not call interpretation independently verified. The criteria form is editable and separate from this evidence surface.' : 'Every comparison row must visibly retain its option name in a displayed column. Every displayed cell needs its actual value or an explicit missing-data label; a column key must match its row field. Preserve all supplied options, values and units. Never replace row identity with a prose summary.'}`;
 }
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
-export function checkTaskResult(policy: TaskResultPolicy, result: Parameters<CompletionCheck>[0], sources: ReadonlyMap<string, string>): string[] {
+export function checkTaskResult(policy: TaskResultPolicy, result: Parameters<CompletionCheck>[0], sources: ReadonlyMap<string, ResearchRead>): string[] {
   const problems: string[] = [];
+  // Evidence prerequisites come before layout feedback so structural retries
+  // cannot bury a missing read at the end of a bounded correction message.
+  if (policy.kind === "research") {
+    const missing = policy.sources?.filter((url) => !sources.has(url)) ?? [];
+    if (missing.length) problems.push(`First call web__fetch_page for each missing required page: ${JSON.stringify(missing.map((url) => ({ url })))}. Then build outputs from those real results and application receipt timestamps. Do not invent evidence or ask the user to supply accessible pages. These reads still use the task's normal approvals.`);
+  }
   const visibleText = normalize(result.resolved.map((surface) => projectText(surface)).join("\n")).toLowerCase();
   for (const notice of policy.notices ?? []) {
     const escaped = normalize(notice).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -56,7 +63,16 @@ export function checkTaskResult(policy: TaskResultPolicy, result: Parameters<Com
   let fields = 0;
   if (form) walk(form, (node) => { if (node.bindPath && ["input", "select", "checkbox", "textarea", "date"].includes(node.type)) fields++; });
   if (form?.type !== "form" || !fields) problems.push("The criteria surface needs one form and at least one editable bound field, separate from the comparison table.");
+  if (policy.kind === "comparison" && policy.table?.criteria) {
+    const criteria = policy.table.criteria;
+    for (const [key, expected] of Object.entries(criteria)) {
+      let matches = 0;
+      if (form) walk(form, (node) => { if (node.type === "input" && node.bindPath === `/criteria/${key}` && getAt(formSurface!.data, node.bindPath) === expected) matches++; });
+      if (matches !== 1) problems.push(`Bind exactly one numeric criterion input to /criteria/${key} and set its value to current caller criterion ${expected}. Preserve the other surfaces.`);
+    }
+  }
   const table = tableOutput?.tables[0];
+  if (policy.kind === "research" && !table) problems.push('Keep interpretation AND evidence in one surface: a stack root with text nodes bound to {/research/answer} and {/research/limitations}, plus a table with source/quote/retrieved_at columns. Put strings under data.research and row objects in the table props.rows. The separate criteria surface must retain its bound form inputs. A text-only replacement deletes the evidence table.');
   if (table?.type !== "table") problems.push(`Surface ${tableId} needs one table, separate from the criteria form.`);
   else {
     const rows = Array.isArray(table.props.rows) ? table.props.rows : [];
@@ -73,15 +89,23 @@ export function checkTaskResult(policy: TaskResultPolicy, result: Parameters<Com
       if (policy.labels?.some((label) => !visible.some((cells) => cells.includes(label)))) problems.push(`The comparison must visibly retain all requested option names: ${policy.labels.join(", ")}.`);
       if (visible.some((cells) => !cells.some((cell) => typeof cell === "string" && cell.trim()))) problems.push("Every comparison row needs a nonempty visible option name.");
     } else {
-      if (columns.length !== 2 || !columns.includes("source") || !columns.includes("quote")) problems.push("Evidence columns must be exactly source and quote; do not add unsupported conclusions or statistics.");
+      try {
+        const summary = parseResearchSummary(tableSurface?.data.research);
+        const visible = new Set<string>();
+        if (tableSurface?.root) walk(tableSurface.root, (node) => { if (node.type === "text" && typeof node.props.content === "string") visible.add(node.props.content); });
+        if (!visible.has(summary.answer) || !visible.has(summary.limitations)) problems.push(`On evidence surface ${JSON.stringify(tableSurface!.id)}, use two text nodes whose props are exactly {"content":"{/research/answer}"} and {"content":"{/research/limitations}"}. Include both node IDs alongside the existing table in the stack root's children. Keep data.research unchanged. Do not shorten, paraphrase or combine these strings when rendering them; whole-value bindings display the complete authored answer and limitations.`);
+        if (policy.sources?.some((url) => !summary.answer.includes(url))) problems.push("Cite every required source URL in the explanatory answer, separate from verbatim evidence.");
+      } catch { problems.push('Use vak_update on the existing evidence surface with data: {"research":{"answer":"<answer the question and cite source URLs>","limitations":"<state missing information and unverified inferences>"}}. Add visible text nodes with content bindings {/research/answer} and {/research/limitations} to its stack root without removing the table. Do not use data.answer, data.limitation or unused text fields.'); }
+      if (columns.length !== 3 || !columns.includes("source") || !columns.includes("quote") || !columns.includes("retrieved_at")) problems.push("Evidence columns must be exactly source, quote and retrieved_at; keep interpretation in the visible answer.");
       const covered = new Set<string>();
       for (const row of rows) {
-        if (!row || typeof row !== "object" || Array.isArray(row) || Object.keys(row).some((key) => key !== "source" && key !== "quote") || !("source" in row) || !("quote" in row) || typeof row.source !== "string" || typeof row.quote !== "string") { problems.push("Each evidence row must contain only source and quote strings."); continue; }
+        if (!row || typeof row !== "object" || Array.isArray(row) || Object.keys(row).length !== 3 || Object.keys(row).some((key) => !["source", "quote", "retrieved_at"].includes(key)) || !("source" in row) || !("quote" in row) || !("retrieved_at" in row) || typeof row.source !== "string" || typeof row.quote !== "string" || typeof row.retrieved_at !== "string") { problems.push(`On surface ${JSON.stringify(tableSurface!.id)}, update table node ${JSON.stringify(table.id)} props.rows to a JSON ARRAY of row OBJECTS with only source, quote and retrieved_at string fields. Do not stringify the array or wrap it in {each:...}. Use the fetched source excerpts and application timestamps, preserving the other nodes.`); continue; }
         let url: string;
         try { const parsed = new URL(row.source); if (parsed.protocol !== "https:") throw new Error("https required"); url = parsed.href; } catch { problems.push("Use the full fetched https URL as source, not a data path or invented reference."); continue; }
         const text = sources.get(url), quote = normalize(row.quote);
-        if (!text || quote.length < 24 || quote.length > 800 || !normalize(text).includes(quote)) problems.push(`Evidence for ${url} needs a 24–800 character verbatim excerpt from its successful web read, not a paraphrase or an unsupported inference.`);
+        if (!text || quote.length < 24 || quote.length > 800 || !normalize(text.text).includes(quote)) problems.push(`Evidence for ${url} needs a 24–800 character verbatim excerpt from its successful web read, not a paraphrase or an unsupported inference.`);
         else covered.add(url);
+        if (text && row.retrieved_at !== text.retrievedAt) problems.push(`Use the application retrieval receipt for ${url}: retrieved_at must be ${JSON.stringify(text.retrievedAt)}. Do not invent a date.`);
       }
       if (policy.sources?.some((url) => !sources.has(url) || !covered.has(url))) problems.push(`Read and include valid excerpts from all required pages: ${policy.sources.join(", ")}.`);
       if (!sources.size || [...sources.keys()].some((url) => !covered.has(url))) problems.push("Include a valid source excerpt for every successfully read page; fetch missing sources before claiming a result.");
@@ -92,6 +116,6 @@ export function checkTaskResult(policy: TaskResultPolicy, result: Parameters<Com
 
 
 /** The app supplies review prose; wording alone must never start a repair run. */
-export function reviewTaskResult(policy: TaskResultPolicy, result: Parameters<CompletionCheck>[0], sources: ReadonlyMap<string, string>) {
+export function reviewTaskResult(policy: TaskResultPolicy, result: Parameters<CompletionCheck>[0], sources: ReadonlyMap<string, ResearchRead>) {
   return { issues: checkTaskResult(policy, result, sources), response: "Ready for review." };
 }

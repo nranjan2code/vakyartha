@@ -4,6 +4,10 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Checked comparisons can declare immutable facts/formulas and editable numeric criteria; validated form submissions update expected claims, so old boolean claims are rejected after criteria change.
+- Checked research requires a visible answer and limitations, verbatim evidence and application retrieval dates. Successful source receipts persist with each run and appear in details; fabricated dates and missing output fail checks. Full local research authoring reliability remains open.
+- Projection pin `558ca0c` includes merged PR #2: cyclic ancestor references are removed without discarding valid sibling content or data. Checked tasks use the existing strict schema mode.
+
 - Projection parser PR #1 is merged; pin `fb63ede` names the main-branch merge of `05c9d59`. Added a canonical-host regression for changed criteria with fixed assertions. Complete-outcome review records remaining stale-claim and research explanation/receipt gaps; no readiness claim.
 
 - From Projection `05c9d59`: token-based recovery of a missing key quote before a complete JSON primitive preserves table rows. Standard JSON validates primitive tokens; uncertain streaming prefixes are deferred. Schema/claim checks still reject incorrect facts. Reconciled with the concurrent surface styling changes; framework review is PR #1.

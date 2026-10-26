@@ -253,3 +253,9 @@ Checked layouts optionally retain up to eight user-supplied visible notices (120
 ### Explicit comparison assertions (2026-10-26)
 
 Checked comparison layouts optionally accept bounded caller-supplied expected rows (ADR-022). Public resolved-table data and existing completion feedback enforce declared visible identities, column sets and exact scalar values/types, without inferring facts or rewriting outputs. Setup/details expose the fixed assertions; form edits do not recompute them. The evaluation independently derives fixture constraint booleans. This is a narrow formal-claim check, not general semantic or source verification; the new live trial fails and P1.9/P4.9 remain open.
+
+### Submitted comparison criteria and complete research contract (2026-10-26)
+
+ADR-023 separates caller-supplied facts from bounded typed calculations and editable submitted criteria. Only the canonical validated criteria-form action revises numeric criteria; facts/formulas remain immutable, local drafts remain local, and stale visible claims are corrected through existing completion feedback. No app renderer recalculates or rewrites model surfaces. Fixed contracts still mean fixed values.
+
+ADR-024 requires research's explanatory answer and explicit limitations beside its quoted evidence table, preserving two independent interactive surfaces. Successful scoped reads produce app-owned retrieval timestamps, persisted with the run and inspectable in details; dates shown by the model must match. Missing reads and unsupported evidence fail checks. Structural checks do not establish interpretation semantics; user review still controls acceptance. Projection PR #2 repairs ancestor layout edges generally; the app consumes the pushed merged pin.

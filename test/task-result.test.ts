@@ -21,12 +21,24 @@ test("comparison completion requires distinct editable/table outputs and all dec
 test("research completion rejects failed/missing reads, invented quotes, scope gaps and unsupported output columns", () => {
   const urls = ["https://one.example/page", "https://two.example/page"], quote = "These are exact words returned by a successful source read.";
   const policy = parseTaskResultPolicy({ kind: "research", sources: urls });
-  const good = result("evidence", urls.map((source) => ({ source, quote })), ["source", "quote"]);
-  const sources = new Map(urls.map((url) => [url, quote]));
+  const retrieved_at = "2026-10-26T00:00:00.000Z";
+  const good = result("evidence", urls.map((source) => ({ source, quote, retrieved_at })), ["source", "quote", "retrieved_at"]);
+  const summary = { answer: `These sources explain the documentation use and limitations: ${urls.join(" and ")}`, limitations: "Availability and future behavior have not been independently verified." };
+  const evidence = good.resolved[1]!;
+  evidence.data.research = summary;
+  evidence.root = { id: "wrapper", key: "wrapper", type: "stack", props: {}, children: [evidence.root!, ...Object.entries(summary).map(([id, content]) => ({ id, key: id, type: "text", props: { content }, children: [] }))] };
+  const sources = new Map(urls.map((url) => [url, { text: quote, retrievedAt: retrieved_at }]));
   assert.deepEqual(checkTaskResult(policy, good, sources), []);
   assert.ok(checkTaskResult(policy, good, new Map()).length);
-  assert.ok(checkTaskResult(policy, result("evidence", [{ source: urls[0], quote: "This invented claim does not occur in the actual source response." }], ["source", "quote"]), sources).some((issue) => issue.includes("verbatim")));
-  assert.ok(checkTaskResult(policy, result("evidence", [{ source: urls[0], quote }], ["source", "quote", "conclusion"]), sources).some((issue) => issue.includes("unsupported conclusions")));
+  assert.ok(checkTaskResult(policy, result("evidence", [{ source: urls[0], quote: "This invented claim does not occur in the actual source response.", retrieved_at }], ["source", "quote", "retrieved_at"]), sources).some((issue) => issue.includes("verbatim")));
+  assert.ok(checkTaskResult(policy, result("evidence", [{ source: urls[0], quote }], ["source", "quote", "conclusion"]), sources).some((issue) => issue.includes("Evidence columns")));
+  const row = (evidence.root.children[0]!.props.rows as Record<string, unknown>[])[0]!;
+  row.retrieved_at = "2000-01-01T00:00:00.000Z";
+  assert.ok(checkTaskResult(policy, good, sources).some((issue) => issue.includes("retrieval receipt")));
+  row.retrieved_at = retrieved_at;
+  evidence.root.children.pop();
+  assert.ok(checkTaskResult(policy, good, sources).some((issue) => issue.includes("whole-value bindings")));
+  evidence.root.children.push({ id: "limitations", key: "limitations", type: "text", props: { content: summary.limitations }, children: [] });
   good.response = "Both websites guarantee production availability.";
   assert.deepEqual(reviewTaskResult(policy, good, sources), { issues: [], response: "Ready for review." });
   assert.ok(reviewTaskResult(policy, good, new Map()).issues.length);

@@ -1,10 +1,12 @@
 import { parseTaskResultPolicy, resultInstructions, reviewTaskResult } from "../task-result.ts";
+import { reviseComparisonCriteria } from "../comparison-contract.ts";
+import type { ResearchRead } from "../research-contract.ts";
 import { MAX_TOOL_OUTPUT } from "@vak/mcp/client";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AgentEvent } from "@vak/core";
+import { basicCatalog, SurfaceStore, walk, type AgentEvent } from "@vak/core";
 import type { HostRunOptions, HostTurn, SessionView } from "@vak/host";
 import type { AgentTool } from "@vak/providers";
 import { TASK_LIMITS, TASK_BUDGET_DEFAULTS, parseTaskLimits, parseTaskSpending, type TaskSpending, parseReviewSnapshot, type ReviewSnapshot, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskRun, type TaskRunIdentity } from "../task-contract.ts";
@@ -23,7 +25,7 @@ interface Dependencies {
   permitted?(server: string, tool: string): boolean;
   warn(message: string): void;
 }
-type Execution = { sources: Map<string, string>; allowance: number; reserved: boolean; run?: TaskRun; task: TaskView; inputId: string; ctrl: AbortController; remaining: number; since: number; timer?: ReturnType<typeof setTimeout> };
+type Execution = { sources: Map<string, ResearchRead>; allowance: number; reserved: boolean; run?: TaskRun; task: TaskView; inputId: string; ctrl: AbortController; remaining: number; since: number; timer?: ReturnType<typeof setTimeout> };
 const text = (v: unknown, max: number) => typeof v === "string" && v.trim().length <= max ? v.trim() : "";
 const identifier = (v: unknown) => typeof v === "string" && /^[\w-]{1,120}$/.test(v);
 
@@ -90,7 +92,11 @@ export class Tasks {
     if (!e || e.task.session !== request.session || e.task.resultPolicy?.kind !== "research" || request.server !== "web" || request.tool !== "fetch_page" || result.isError || e.ctrl.signal.aborted) return;
     let url: URL;
     try { url = new URL(String(request.args.url)); } catch { return; }
-    if (url.protocol === "https:" && (e.sources.size < 8 || e.sources.has(url.href))) e.sources.set(url.href, result.text.slice(0, MAX_TOOL_OUTPUT));
+    if (url.protocol === "https:" && (e.sources.size < 8 || e.sources.has(url.href))) {
+      const retrievedAt = new Date().toISOString();
+      e.sources.set(url.href, { text: result.text.slice(0, MAX_TOOL_OUTPUT), retrievedAt });
+      if (e.run) e.run.retrievals = [...e.sources].map(([url, read]) => ({ url, retrievedAt: read.retrievedAt }));
+    }
   }
   private available(e: Execution): boolean {
     if (e.remaining <= 0 || (e.timer && performance.now() - e.since >= e.remaining)) e.ctrl.abort(new Error("Active time limit reached"));
@@ -363,7 +369,25 @@ export class Tasks {
       this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree, t.spending);
       if (input.action) {
         const view = await this.deps.view(t.session);
-        if (view.surfaces.find((s) => s.id === input.action!.surface)?.version !== input.revision) throw new Error("This surface changed. Review it and submit again.");
+        const surface = view.surfaces.find((s) => s.id === input.action!.surface);
+        if (surface?.version !== input.revision) throw new Error("This surface changed. Review it and submit again.");
+        if (t.resultPolicy?.kind === "comparison" && t.resultPolicy.table?.criteria) {
+          const contract = t.resultPolicy.table;
+          // Only a real form action with the declared bindings can revise checked
+          // criteria. Model output and unrelated buttons never change the policy.
+          const store = new SurfaceStore(basicCatalog); store.load(surface);
+          const resolved = store.resolve(surface.id)!;
+          let matched = false;
+          if (resolved.root) walk(resolved.root, (node) => {
+            if (node.id !== input.action!.source || node.type !== "form") return;
+            const bindings: string[] = [];
+            walk(node, (field) => { if (field.type === "input" && field.bindPath) bindings.push(field.bindPath); });
+            matched = Object.keys(contract.criteria!).every((key) => bindings.filter((binding) => binding === `/criteria/${key}`).length === 1);
+          });
+          if (!matched) throw new Error("Submit the checked criteria form, using its declared input bindings");
+          t.resultPolicy.table = reviseComparisonCriteria(t.resultPolicy.table, input.action.data.criteria);
+          await this.persist(t);
+        }
       }
       if (!this.available(e)) throw e.ctrl.signal.reason ?? new Error("Task stopped before execution");
       await this.scope.run(e, () => this.deps.observe(t.session, async () => {
@@ -386,9 +410,14 @@ export class Tasks {
             try {
               if (!this.available(e)) throw e.ctrl.signal.reason ?? new Error("Task stopped before tool dispatch");
               dispatched = true;
+              const previousRead = tool.spec.name === "web__fetch_page" ? e.sources.get(new URL(String(args.url)).href) : undefined;
               const result = await tool.execute(args, ctx);
               Object.assign(op, { state: e.ctrl.signal.aborted ? "uncertain" : "returned" });
               await this.persist(t);
+              if (tool.spec.name === "web__fetch_page") {
+                const read = e.sources.get(new URL(String(args.url)).href);
+                if (read && read !== previousRead) return result + "\nApplication retrieval receipt: " + JSON.stringify({ source: new URL(String(args.url)).href, retrieved_at: read.retrievedAt });
+              }
               return result;
             } catch (err) {
               Object.assign(op, { state: dispatched ? "uncertain" : "failed" });
@@ -397,7 +426,7 @@ export class Tasks {
             }
           },
         }));
-        const result = await this.deps.run({ session: t.session, provider: t.provider, model: t.model, message: input.message, action: input.action, history: 10 }, {
+        const result = await this.deps.run({ session: t.session, provider: t.provider, model: t.model, message: input.message, action: input.action, ...(t.resultPolicy ? { schemaMode: "strict" } : {}), history: 10 }, {
           completion: "response", validateCompletion: t.resultPolicy ? (result) => reviewTaskResult(t.resultPolicy!, result, e.sources) : undefined, signal: e.ctrl.signal, tools, maxSteps: TASK_LIMITS.rounds,
           // Gathering never takes the last model request: the engine keeps it for the closing answer.
           toolRounds: TASK_LIMITS.rounds - 1, maxTokens: TASK_LIMITS.outputTokens,

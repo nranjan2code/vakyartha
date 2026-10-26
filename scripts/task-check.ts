@@ -140,7 +140,7 @@ const steps = [
    const resultLayout=document.getElementById('task-result-layout');resultLayout.value='comparison';resultLayout.dispatchEvent(new Event('change'));
    document.getElementById('task-result-inputs').value='First\\nSecond';document.getElementById('task-result-notices').value='Fictional data';
    check(!document.getElementById('task-comparison-checks-row').hidden,'exact comparison input missing');
-   document.getElementById('task-comparison-checks').value=JSON.stringify({identityColumn:'option',rows:[{option:'First',eligible:false},{option:'Second',eligible:true}]});
+   document.getElementById('task-comparison-checks').value=JSON.stringify({identityColumn:'option',rows:[{option:'First',seats:4},{option:'Second',seats:8}],criteria:{minimumSeats:6},calculations:{eligible:{op:'gte',args:[{column:'seats'},{criterion:'minimumSeats'}]}}});
    const timing=document.getElementById('schedule-timing');timing.value='once';timing.dispatchEvent(new Event('change'));
    const d=new Date(Date.now()+3600000);document.getElementById('schedule-at').value=new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
    const before=(await(await fetch('/api/tasks')).json()).map(t=>t.id);
@@ -149,8 +149,8 @@ const steps = [
    await wait(()=>document.querySelector('#schedule-page .schedule-badge.scheduled'));
    check((await(await fetch('/api/tasks/'+window.qaScheduled)).json()).runs===0,'scheduled work ran early');
    check((await(await fetch('/api/tasks/'+window.qaScheduled)).json()).resultPolicy.notices[0]==='Fictional data','visible notice was not saved');
-   check((await(await fetch('/api/tasks/'+window.qaScheduled)).json()).resultPolicy.table.rows[0].eligible===false,'typed comparison assertion was not saved');
-   check(document.querySelector('.schedule-facts').textContent.includes('expected rows'),'exact comparison detail missing');
+   check((await(await fetch('/api/tasks/'+window.qaScheduled)).json()).resultPolicy.table.criteria.minimumSeats===6,'typed comparison criterion was not saved');
+   check(document.querySelector('.schedule-facts').textContent.includes('submitted criteria'),'computed comparison detail missing');
    check(document.querySelector('.schedule-facts').textContent.includes('Fictional data'),'saved notice absent from detail');
    Array.from(document.querySelectorAll('#schedule-page button')).find(b=>b.textContent==='Pause').click();
    await wait(()=>document.querySelector('#schedule-page .schedule-badge.paused'));

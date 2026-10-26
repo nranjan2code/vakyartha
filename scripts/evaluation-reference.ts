@@ -45,6 +45,16 @@ export function comparisonClaimContract(fixture: ComparisonFixture) {
   })) });
 }
 
+/** Caller-declared calculations; the evaluator still derives its reference independently. */
+export function interactiveComparisonContract(fixture: ComparisonFixture) {
+  const within = { op: "lte", args: [{ column: "monthly_cost" }, { criterion: "budget" }] };
+  const enough = { op: "gte", args: [{ column: "seats" }, { criterion: "seats" }] };
+  return parseComparisonContract({ identityColumn: "option", rows: fixture.options.map((option) => ({ option: option.name, monthly_cost: option.monthlyCost, seats: option.seats })), criteria: { budget: fixture.budget, seats: fixture.minimumSeats }, calculations: {
+    cost_per_seat: { op: "divide", args: [{ column: "monthly_cost" }, { column: "seats" }] },
+    within_budget: within, enough_seats: enough, meets_both: { op: "and", args: [within, enough] },
+  } });
+}
+
 
 export function comparisonClaimIssues(view: SessionView, fixture: ComparisonFixture): string[] {
   const tables = tablePayloads(view);

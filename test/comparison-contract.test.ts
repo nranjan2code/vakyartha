@@ -1,13 +1,31 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkComparisonContract, parseComparisonContract } from "../comparison-contract.ts";
+import { checkComparisonContract, comparisonExpectedRows, parseComparisonContract, reviseComparisonCriteria } from "../comparison-contract.ts";
 import { parseTaskResultPolicy, reviewTaskResult } from "../task-result.ts";
-import { COMPARISON_FIXTURE, comparisonClaimContract } from "../scripts/evaluation-reference.ts";
+import { COMPARISON_FIXTURE, comparisonClaimContract, interactiveComparisonContract } from "../scripts/evaluation-reference.ts";
 import { basicCatalog, SurfaceStore } from "@vak/core";
 import { runAgent, type Provider } from "@vak/providers";
 
 const contract = comparisonClaimContract(COMPARISON_FIXTURE);
 const columns = Object.keys(contract.rows[0]!).map((key) => ({ key, label: key }));
+
+test("typed calculations use submitted criteria and reject unsafe, unbounded or invalid expressions", () => {
+  const original = interactiveComparisonContract(COMPARISON_FIXTURE);
+  const changed = reviseComparisonCriteria(original, { budget: 10, seats: 8 });
+  assert.deepEqual(changed.rows, original.rows);
+  assert.deepEqual(changed.calculations, original.calculations);
+  assert.deepEqual(comparisonExpectedRows(changed).map((row) => [row.within_budget, row.enough_seats, row.meets_both]), [[false, false, false], [false, true, false]]);
+  assert.deepEqual(original.criteria, { budget: 20, seats: 6 });
+  for (const criteria of [{ budget: 10 }, { budget: "10", seats: 8 }, { budget: NaN, seats: 8 }, { budget: 10, seats: 8, other: 1 }]) assert.throws(() => reviseComparisonCriteria(original, criteria));
+  for (const expression of [{ criterion: "missing" }, { column: "missing" }, { op: "eval", args: [1, 2] }, { op: "divide", args: [1, 0] }, { op: "and", args: [1, true] }, { op: "gte", args: [{ column: "option" }, 1] }, { op: "lte", args: [1, 2], extra: true }]) assert.throws(() => parseComparisonContract({ ...original, calculations: { computed: expression } }));
+  let deep: unknown = 1;
+  for (let i = 0; i < 8; i++) deep = { op: "divide", args: [deep, 1] };
+  assert.throws(() => parseComparisonContract({ ...original, calculations: { computed: deep } }));
+  assert.throws(() => parseComparisonContract({ ...original, calculations: { option: 1 } }));
+  const changedRows = comparisonExpectedRows(changed);
+  assert.deepEqual(checkComparisonContract(changed, { columns: Object.keys(changedRows[0]!), rows: changedRows }), []);
+  assert.ok(checkComparisonContract(changed, { columns: Object.keys(changedRows[0]!), rows: comparisonExpectedRows(original) }).length);
+});
 
 test("formal visible claims match the independent arithmetic and constraints", () => {
   assert.deepEqual(checkComparisonContract(contract, { columns, rows: contract.rows }), []);

@@ -1,5 +1,5 @@
 // Opt-in real local-model outcome checks. Reuses installed settings/runtime; retains dev evidence.
-import { COMPARISON_FIXTURE, comparisonClaimContract, comparisonClaimIssues, comparisonReference, comparisonReview, evaluationVerdict } from "./evaluation-reference.ts";
+import { COMPARISON_FIXTURE, interactiveComparisonContract, comparisonClaimIssues, comparisonReference, comparisonReview, evaluationVerdict } from "./evaluation-reference.ts";
 import { copyFile, mkdir, readFile, writeFile, symlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -8,7 +8,8 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import type { SessionView } from "@vak/host";
 import type { IntegrationView, ToolPolicy } from "@vak/mcp/client";
-import { boundFieldValues, resultText, separateFormAndTable, tableOutputText, tableRows } from "./evaluation-checks.ts";
+import { boundFieldValues, resultText, separateFormAndTable, tableOutputText, tableRows, tablePayloads } from "./evaluation-checks.ts";
+import { parseResearchSummary } from "../research-contract.ts";
 import { CATALOG } from "../sidecar/integrations.ts";
 import { startAppServer } from "../sidecar/server.ts";
 import { parseTaskView, taskObject, type TaskView, type TaskApproval } from "../task-contract.ts";
@@ -71,7 +72,11 @@ const cases: Case[] = [
     goal: `Read BOTH ${urls.join(" and ")} using web__fetch_page. Based on those sources, explain whether example domains are appropriate for documentation and production application dependencies. Cite both source URLs and distinguish what you verified from missing information. Create TWO independent surfaces: a criteria form and an evidence table. No other URLs or services are authorized.`,
     criteria: "Both pages successfully read through MCP, both URLs cited, documentation purpose and production limitations explained, two independent interactive surfaces. No invented sources or claims of unavailable verification.",
     approve: (req) => req.server === "web" && req.tool === "fetch_page" && urls.some((url) => new URL(url).href === new URL(String(taskObject(req.args).url)).href),
-    check: async (task, view, integrations) => { const text = resultText(view); const calls = integrations.find((i) => i.entry.id === "web")?.calls.filter((c) => c.at >= task.created && c.ok === true) ?? []; return { bothSourcesRead: urls.every((url) => calls.some((c) => new URL(String(taskObject(c.args).url)).href === new URL(url).href)), bothSourcesCited: urls.every((url) => text.includes(url)), evidenceRowsPresent: tableRows(view).filter((row) => row.some((cell) => cell !== undefined && cell !== null && cell !== "")).length >= 2, independentSurfaces: separateFormAndTable(view), form: types(view).has("form"), table: types(view).has("table"), subjectPresent: /documentation/i.test(text) && /production/i.test(text) }; } },
+    check: async (task, view, integrations) => { const text = resultText(view); const calls = integrations.find((i) => i.entry.id === "web")?.calls.filter((c) => c.at >= task.created && c.ok === true) ?? [];
+      const receipts = task.runHistory.at(-1)?.retrievals ?? [], rows = tablePayloads(view).flatMap((table) => Array.isArray(table.rows) ? table.rows : []);
+      let explanationVisible = false;
+      for (const surface of view.surfaces) { try { const summary = parseResearchSummary(surface.data.research); explanationVisible ||= text.includes(JSON.stringify(summary.answer).slice(1, -1)) && text.includes(JSON.stringify(summary.limitations).slice(1, -1)); } catch {} }
+      return { explanationVisible, retrievalDatesMatch: urls.every((url) => receipts.some((receipt) => new URL(receipt.url).href === new URL(url).href && rows.some((row) => row && typeof row === "object" && row.source === receipt.url && row.retrieved_at === receipt.retrievedAt))), bothSourcesRead: urls.every((url) => calls.some((c) => new URL(String(taskObject(c.args).url)).href === new URL(url).href)), bothSourcesCited: urls.every((url) => text.includes(url)), evidenceRowsPresent: tableRows(view).filter((row) => row.some((cell) => cell !== undefined && cell !== null && cell !== "")).length >= 2, independentSurfaces: separateFormAndTable(view), form: types(view).has("form"), table: types(view).has("table"), subjectPresent: /documentation/i.test(text) && /production/i.test(text) }; } },
   { id: "memory-operation", integrations: ["memory"],
     goal: `Use memory__create_entities to create exactly one entity with name "${entity}", entityType "evaluation", observations ["${marker}"]. Then use memory__open_nodes with names ["${entity}"] to read it back. Show the actual read-back result in an interactive confirmation. Do not change any other entity. Do not claim verification without reading it back.`,
     criteria: "Exact approved create operation, separate MCP read-back and independent persisted-file confirmation of the marker. No other entities changed; result remains open for user review.",
@@ -104,7 +109,7 @@ try {
       integrations = await request<IntegrationView[]>("/api/integrations");
       if (scenario.integrations.some((id) => !integrations.some((i) => i.entry.id === id && i.status === "ready"))) { results.push({ case: scenario.id, verdict: "blocked", reason: "Required installed integration is not ready" }); continue; }
       const started = Date.now();
-      const made = parseTaskView(await request("/api/tasks", { goal: scenario.goal, criteria: scenario.criteria, provider: "ollama", model, ...(scenario.id === "interactive-comparison" ? { resultPolicy: { kind: "comparison", labels: COMPARISON_FIXTURE.options.map((option) => option.name), table: comparisonClaimContract(COMPARISON_FIXTURE), notices: ["Fictional"] } } : scenario.id === "public-source-research" ? { resultPolicy: { kind: "research", sources: urls } } : {}), integrations: scenario.integrations, spending: { kind: "local_only" }, limits: { runs: 2, modelRequests: 12, toolCalls: 6, activeMs: 300000 } }));
+      const made = parseTaskView(await request("/api/tasks", { goal: scenario.goal, criteria: scenario.criteria, provider: "ollama", model, ...(scenario.id === "interactive-comparison" ? { resultPolicy: { kind: "comparison", labels: COMPARISON_FIXTURE.options.map((option) => option.name), table: interactiveComparisonContract(COMPARISON_FIXTURE), notices: ["Fictional"] } } : scenario.id === "public-source-research" ? { resultPolicy: { kind: "research", sources: urls } } : {}), integrations: scenario.integrations, spending: { kind: "local_only" }, limits: { runs: 2, modelRequests: 12, toolCalls: 6, activeMs: 300000 } }));
       active = made.id; let task = made, nextLog = 0; const decisions: { tool: string; decision: string }[] = [], answered = new Set<string>();
       while (["queued", "running", "needs_approval"].includes(task.state)) {
         if (task.approval && !answered.has(task.approval.id)) {
@@ -121,6 +126,24 @@ try {
       const checks = { awaitingUserReview: task.state === "needs_input", ...await scenario.check(task, view, integrations) };
       const result = { case: scenario.id, task: task.id, verdict: evaluationVerdict(checks), checks, ...(scenario.id === "interactive-comparison" ? { comparisonReview: comparisonReview(view, COMPARISON_FIXTURE) } : {}), decisions, state: task.state, note: task.note, seconds: (Date.now() - started) / 1000, budget: task.budget, surfaces: view.surfaces.map((s) => ({ id: s.id, types: [...new Set(s.nodes.map((n) => n.type))] })), manualReviewRequired: true };
       results.push(result); await writeFile(path.join(reportDir, `${scenario.id}.json`), JSON.stringify({ result, task, view }, null, 2), { mode: 0o600 }); console.log(`${scenario.id}: ${result.verdict}`);
+      if (scenario.id === "interactive-comparison" && args.includes("--change-criteria") && task.state === "needs_input") {
+        const surface = view.surfaces.find((surface) => surface.nodes.some((node) => node.props?.bind === "/criteria/budget"));
+        const form = surface?.nodes.find((node) => node.type === "form");
+        if (!surface || !form) throw new Error("The checked criteria form is missing its declared bindings");
+        const changed = { ...COMPARISON_FIXTURE, budget: 10, minimumSeats: 8 }, continuedAt = Date.now();
+        await request(`/api/tasks/${task.id}/input`, { id: randomUUID(), revision: surface.version, action: { surface: surface.id, source: form.id, data: { criteria: { budget: changed.budget, seats: changed.minimumSeats } } } });
+        active = task.id;
+        do {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          task = parseTaskView(await request(`/api/tasks/${task.id}`));
+          if (task.state === "needs_approval" || Date.now() - continuedAt > 360000) throw new Error("Comparison continuation exceeded its scope or wall-time guard");
+        } while (["queued", "running"].includes(task.state));
+        active = undefined;
+        const after = await request<SessionView>(`/api/sessions/${task.id}`), fields = boundFieldValues(after);
+        const checks = { awaitingUserReview: task.state === "needs_input", changedClaimsMatch: comparisonClaimIssues(after, changed).length === 0, changedControlsMatch: fields.some((field) => Number(field.value) === changed.budget) && fields.some((field) => Number(field.value) === changed.minimumSeats), independentSurfaces: separateFormAndTable(after), factsAndExpressionsPreserved: task.resultPolicy?.kind === "comparison" && JSON.stringify(task.resultPolicy.table?.rows) === JSON.stringify(made.resultPolicy?.kind === "comparison" ? made.resultPolicy.table?.rows : null) && JSON.stringify(task.resultPolicy.table?.calculations) === JSON.stringify(made.resultPolicy?.kind === "comparison" ? made.resultPolicy.table?.calculations : null) };
+        const result = { case: "interactive-comparison-changed", task: task.id, verdict: evaluationVerdict(checks), checks, comparisonReview: comparisonReview(after, changed), state: task.state, seconds: (Date.now() - continuedAt) / 1000, budget: task.budget, manualReviewRequired: true };
+        results.push(result); await writeFile(path.join(reportDir, "interactive-comparison-changed.json"), JSON.stringify({ result, task, view: after }, null, 2), { mode: 0o600 }); console.log(`${result.case}: ${result.verdict}`);
+      }
     }
   }
 } finally {

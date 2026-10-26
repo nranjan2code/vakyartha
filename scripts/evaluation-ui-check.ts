@@ -10,7 +10,7 @@ import { taskObject } from "../task-contract.ts";
 
 const report = path.resolve(process.argv[2] ?? "");
 if (!process.argv[2] || !report.includes(`${path.sep}.vak${path.sep}evaluations${path.sep}`)) throw new Error("Pass a retained evaluation report directory under .vak/evaluations");
-const scenarios = ["interactive-comparison", "public-source-research", "memory-operation"].filter((name) => existsSync(path.join(report, `${name}.json`)));
+const scenarios = ["interactive-comparison", "interactive-comparison-changed", "public-source-research", "memory-operation"].filter((name) => existsSync(path.join(report, `${name}.json`)));
 if (!scenarios.length) throw new Error("This report has no retained case outputs to inspect");
 const dataDir = path.dirname(path.dirname(report));
 const app = await startAppServer({ dataDir, access: "open", uiDir: path.resolve("dist"), keychainService: "com.nranjan2code.vakyartha.evaluation", appName: "Vakyartha evaluation" });
