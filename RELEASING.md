@@ -63,7 +63,8 @@ Run the app and tests, then push the change to Projection and pin to the pushed 
 5. **Build:** `npm run desktop:build`. It bundles the sidecar (framework included), the Node binary and npm. Output: `src-tauri/target/release/bundle/macos/Vakyartha.app` and `bundle/dmg/Vakyartha_X.Y.Z_<arch>.dmg`.
 6. **Install locally and smoke-test the installed app:**
    ```bash
-   osascript -e 'quit app "Vakyartha"' 2>/dev/null
+   osascript -e 'quit app "Vakyartha"' 2>/dev/null       # a running copy cannot be replaced (a dmg drag fails silently)
+   rm -rf /Applications/Vakyartha.app                    # ditto merges into an existing bundle; replace it whole
    ditto src-tauri/target/release/bundle/macos/Vakyartha.app /Applications/Vakyartha.app
    open /Applications/Vakyartha.app
    ```
@@ -87,6 +88,6 @@ Run the app and tests, then push the change to Projection and pin to the pushed 
 - **Windows/Linux builds:** unverified.
 
 
-## Latest local build checkpoint — 2026-10-26
+## Latest release — 0.2.0 (2026-10-26)
 
-Clean build of pushed code `2c71c44`, pinned to Projection main `558ca0c`, used fresh target `/tmp/vakyartha-clean-release.K5cDXz` through `CARGO_TARGET_DIR=... npm run desktop:build`. The release hooks rebuilt frontend/sidecar, and Rust compiled fresh. Its app/DMG replaced the standard `src-tauri/target/release/bundle/` outputs. `/Applications/Vakyartha.app` was replaced as a complete bundle after quitting; the previous installed bundle remains in a temporary backup. All 1,949 installed files match. Native About/runtime/data path and new checked-comparison setup verified. This is a local unsigned/unnotarized build; `codesign --verify` did not validate the bundle signature. No signing, notarization, tag or GitHub release. Installed-model smoke was not performed while the user used the app. Full research outcome gates still fail, so installation is not a readiness claim. Hashes and local manifest are in EVALUATION.md.
+Release commit `4ffabb3`, tag `v0.2.0`, built on Projection `2918883`. Checks before the build: fresh `npm ci`, 299 framework and 117 app tests, Rust tests, typecheck, UI build and the WebKit canvas check. `npm run desktop:build` gave `Vakyartha_0.2.0_aarch64.dmg` (42.77 MiB); installed as a complete replacement of `/Applications/Vakyartha.app`, which reports 0.2.0 and started its engine with no log errors. Published as the [v0.2.0 GitHub release](https://github.com/nranjan2code/vakyartha/releases/tag/v0.2.0) with the dmg and the CHANGELOG section, marked unsigned. Unsigned and not notarized; voice approvals, choices and forms are not yet confirmed with a live microphone (MVP-CHECKLIST V3–V6).

@@ -22,6 +22,8 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
+- **Release 0.2.0 (2026-10-26):** tagged `v0.2.0` (`4ffabb3`, Projection `2918883`), published on GitHub with the unsigned dmg, installed locally. Details in RELEASING.md "Latest release". Next release work: signing and notarization (ask first).
+
 - **Voice V1–V13 (2026-10-26):** see MVP-CHECKLIST "V — Voice interaction". Done and tested without a microphone: module and switch, Projection answer contract (`@vak/core` answer.ts, pinned `2918883`), conversation mode, approvals, choices, forms, model fallback (local 4B 5/6), commands, gist speech, echo guard, seven languages' answer words, item-naming repair. **Next: one live session in the dev window** (⌘⇧D): sentence endings, barge-in, echo, then an approval, a comparison and a form by voice; tune `ENDPOINT` from it and tick V3–V6. Still open: number words/dates beyond English, spoken follow-ups beyond the waiting item, dead-control diagnostic.
 
 - **Approvals by voice (2026-10-26, V4):** implemented and tested in `src/voice/approvals.ts`; same live-microphone check as V3 is still needed.

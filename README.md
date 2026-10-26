@@ -39,7 +39,7 @@ The site describes where Vakyartha is going. Here is what this repository does t
 
 ## Get started
 
-Open source under MIT; build it from source. A one-click download is not available yet.
+Open source under MIT. Download the latest Apple-silicon build from [Releases](https://github.com/nranjan2code/vakyartha/releases) (unsigned and not notarized: quit any running Vakyartha first, drag it to Applications, then allow it in System Settings → Privacy & Security), or build it from source.
 
 You need **macOS**, **Node.js 24+**, npm, **Rust** (stable) and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). For a free local model, run [Ollama](https://ollama.com) with `qwen3.5:4b-mlx` (or any installed model). Hosted AI services may charge for use.
 
