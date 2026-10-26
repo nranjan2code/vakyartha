@@ -84,7 +84,7 @@ const steps = [
    const view=await (await window.qaRealFetch('/api/sessions/'+session)).json(); window.qaSnapshot=view.surfaces.find(s=>s.id==='sales');
    window.qaEmit({type:'surface',snapshot:window.qaSnapshot}); await new Promise(r=>setTimeout(r,30)); flush();
    check(document.querySelector('#canvas-content vak-surface')?.surfaceId==='sales','large update did not open its target');
-   window.qaEmit({type:'tool_start',id:'u1b',name:'vak_update'}); await new Promise(r=>setTimeout(r,30));
+   window.qaEmit({type:'tool_start',id:'u1b',name:'vak_submit'}); await new Promise(r=>setTimeout(r,30));
    check(!document.getElementById('canvas-progress').hidden,'open canvas shows no progress');
    document.getElementById('canvas-close').click();
    window.qaEmit({type:'surface',snapshot:window.qaSnapshot}); window.qaEmit({type:'tool_start',id:'u2',name:'vak_update'}); await new Promise(r=>setTimeout(r,30));

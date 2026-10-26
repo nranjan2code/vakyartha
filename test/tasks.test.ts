@@ -37,21 +37,19 @@ test("submitted criteria recompute checked claims without changing facts or expr
   let requests = 0;
   const provider: Provider = { id: "scripted", async *stream(req) {
     requests++;
-    const rows = comparisonExpectedRows(requests === 5 ? interactiveComparisonContract(changed) : contract);
+    const rows = comparisonExpectedRows(requests === 3 ? interactiveComparisonContract(changed) : contract);
     // The second run offers stale initial claims. The revised criterion contract
     // must reject them while preserving the original facts and expressions.
-    if (requests === 1 || requests === 3 || requests === 5) {
+    if (requests <= 3) {
       const output = requests === 1 ? [
         { surface: "criteria", data: { criteria: { budget: 20, seats: 6 } }, nodes: [{ id: "root", type: "form", props: { submit: "apply" }, children: [{ id: "budget", type: "input", props: { label: "Budget", bind: "/criteria/budget" } }, { id: "seats", type: "input", props: { label: "Seats", bind: "/criteria/seats" } }] }] },
         { surface: "comparison", nodes: [{ id: "root", type: "table", props: { columns: Object.keys(rows[0]!), rows } }] },
       ] : [{ surface: "comparison", nodes: [{ id: "root", type: "table", props: { columns: Object.keys(rows[0]!), rows } }] }];
-      if (requests === 3) assert.ok(req.messages.some((message) => typeof message.content === "string" && message.content.includes('"budget":10')));
-      if (requests === 5) assert.ok(JSON.stringify(req.messages.at(-1)).includes("caller-supplied"));
-      for (const args of output) {
-        yield { type: "tool_start", id: args.surface, name: "vak_render" };
-        yield { type: "tool_args", id: args.surface, delta: JSON.stringify(args) };
-        yield { type: "tool_end", id: args.surface };
-      }
+      if (requests === 2) assert.ok(req.messages.some((message) => typeof message.content === "string" && message.content.includes('"budget":10')));
+      if (requests === 3) assert.ok(JSON.stringify(req.messages.at(-1)).includes("caller-supplied"));
+      yield { type: "tool_start", id: "candidate", name: "vak_submit" };
+      yield { type: "tool_args", id: "candidate", delta: JSON.stringify({ surfaces: output.map(({ nodes, ...surface }) => ({ op: "replace", ...surface, root: nodes[0] })) }) };
+      yield { type: "tool_end", id: "candidate" };
       yield { type: "done", stop: "tool_use" }; return;
     }
     yield { type: "text", delta: "Ready for review." };
@@ -67,7 +65,7 @@ test("submitted criteria recompute checked claims without changing facts or expr
     await tasks.input(task.id, { id: "changed-criteria", action: { surface: form.id, source: "root", data: { criteria: { budget: 10, seats: 8 } } }, revision: form.version });
     await until(() => tasks.get(task.id).state === "needs_input");
     const view = await host.view(task.id);
-    assert.equal(requests, 6);
+    assert.equal(requests, 3);
     assert.equal(tasks.get(task.id).runs, 2);
     assert.equal(view.timeline.filter((entry) => entry.kind === "action").length, 1);
     assert.deepEqual(view.surfaces.find((surface) => surface.id === "criteria")!.data, { criteria: { budget: 10, seats: 8 } });
@@ -79,7 +77,7 @@ test("submitted criteria recompute checked claims without changing facts or expr
     const current = (await host.view(task.id)).surfaces.find((surface) => surface.id === "criteria")!;
     await tasks.input(task.id, { id: "forged-criterion", action: { surface: current.id, source: "budget", data: { criteria: { budget: 999, seats: 1 } } }, revision: current.version });
     await until(() => tasks.get(task.id).state === "failed");
-    assert.equal(requests, 6);
+    assert.equal(requests, 3);
     assert.deepEqual(tasks.get(task.id).resultPolicy, { kind: "comparison", table: interactiveComparisonContract(changed), initialValues: { "/criteria/budget": 20 } });
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });
@@ -98,7 +96,7 @@ test("only successful scoped reads issue application retrieval receipts and pers
     } }],
     view: async (id: string) => ({ id, title: "test", updated: "", timeline: [], surfaces: [] }),
     run: async (input: HostTurn, options: HostRunOptions) => {
-      assert.equal(input.schemaMode, "strict");
+      assert.equal(options.surfaceSubmission, true);
       session = input.session!;
       const first = await options.tools![0]!.execute({ url }, { callId: "read-1" });
       assert.ok(first.includes("Application retrieval receipt:"));
@@ -478,11 +476,9 @@ test("checked task output repairs in the same run and withholds rejected complet
         { surface: "criteria", data: { budget: 20 }, nodes: [{ id: "root", type: "form", props: { submit: "apply" }, children: [{ id: "budget", type: "input", props: { label: "Budget", bind: "/budget" } }] }] },
         { surface: "comparison", data: { rows: [{ label: "Atlas" }, { label: "Birch" }] }, nodes: [{ id: "root", type: "table", props: { columns: ["label"], rows: "{/rows}" } }] },
       ];
-      for (const output of outputs) {
-        yield { type: "tool_start", id: output.surface, name: "vak_render" };
-        yield { type: "tool_args", id: output.surface, delta: JSON.stringify(output) };
-        yield { type: "tool_end", id: output.surface };
-      }
+      yield { type: "tool_start", id: "candidate", name: "vak_submit" };
+      yield { type: "tool_args", id: "candidate", delta: JSON.stringify({ surfaces: outputs.map(({ nodes, ...surface }) => ({ op: "replace", ...surface, root: nodes[0] })) }) };
+      yield { type: "tool_end", id: "candidate" };
       yield { type: "done", stop: "tool_use" }; return;
     } else yield { type: "text", delta: "Ready for review." };
     yield { type: "done", stop: "end" };
@@ -492,7 +488,7 @@ test("checked task output repairs in the same run and withholds rejected complet
   try {
     const task = await tasks.create({ goal: "Compare options", criteria: "Editable criteria and visible option identities", provider: "scripted", model: "fake", spending: { kind: "local_only" }, integrations: [], resultPolicy: { kind: "comparison", labels: ["Atlas", "Birch"] } });
     await until(() => tasks.get(task.id).state === "needs_input");
-    assert.equal(requests, 3);
+    assert.equal(requests, 2);
     assert.equal(tasks.get(task.id).runs, 1);
     const view = await host.view(task.session);
     assert.equal(view.surfaces.length, 2);
@@ -501,34 +497,29 @@ test("checked task output repairs in the same run and withholds rejected complet
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });
 
-test("task authoring can create independent surfaces sequentially before completion validation", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "vak-sequential-authoring-"));
+test("checked task submits two independent surfaces as one candidate without a closing generation", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-submitted-authoring-"));
   let requests = 0;
   const provider: Provider = { id: "scripted", capabilities: { constrainedOutput: true }, async *stream(req) {
     requests++;
-    assert.equal(req.responseSchema, undefined, "retain negotiated native/inline authoring");
-    if (requests === 2) {
-      assert.equal(req.messages.at(-1)?.role, "tool");
-      assert.ok(!JSON.stringify(req.messages).includes("Current output constraints after this edit"));
-    }
-    if (requests <= 2) {
-      const args = requests === 1
-        ? { surface: "criteria", data: { budget: 20 }, nodes: [{ id: "root", type: "form", props: { submit: "apply" }, children: [{ id: "budget", type: "input", props: { label: "Budget", bind: "/budget" } }] }] }
-        : { surface: "report", nodes: [{ id: "root", type: "table", props: { columns: ["name"], rows: [{ name: "One" }] } }] };
-      yield { type: "tool_start", id: `step-${requests}`, name: "vak_render" };
-      yield { type: "tool_args", id: `step-${requests}`, delta: JSON.stringify(args) };
-      yield { type: "tool_end", id: `step-${requests}` };
-      yield { type: "done", stop: "tool_use" }; return;
-    }
-    yield { type: "text", delta: "Ready." }; yield { type: "done", stop: "end" };
+    assert.equal(req.responseSchema, undefined);
+    assert.deepEqual(req.tools!.map((tool) => tool.name), ["vak_submit"]);
+    yield { type: "tool_start", id: "candidate", name: "vak_submit" };
+    yield { type: "tool_args", id: "candidate", delta: JSON.stringify({ surfaces: [
+      { op: "replace", surface: "criteria", data: { budget: 20 }, root: { type: "form", props: { submit: "apply" }, children: [{ type: "input", props: { label: "Budget", bind: "/budget" } }] } },
+      { op: "replace", surface: "report", root: { type: "table", props: { columns: ["name"], rows: [{ name: "One" }] } } },
+    ] }) };
+    yield { type: "tool_end", id: "candidate" }; yield { type: "done", stop: "tool_use" };
   } };
   const host = createHost({ providers: () => [{ id: "scripted", label: "Scripted", available: true, make: () => provider }], profiles: new ProfileCache(path.join(dir, "profiles.json")), instructions: "test", sessionsDir: path.join(dir, "sessions"), log: () => {} });
   const tasks = await Tasks.open({ dir: path.join(dir, "tasks"), run: host.run, view: host.view, tools: async () => [], instructions: () => "test", observe: async (_session, work) => work(), ready: () => {}, warn: () => {} });
   try {
     const task = await tasks.create({ goal: "Compare", criteria: "Separate form and report", provider: "scripted", model: "fake", integrations: [], spending: { kind: "local_only" }, resultPolicy: { kind: "comparison", labels: ["One"], initialValues: { "/budget": 20 } } });
     await until(() => tasks.get(task.id).state === "needs_input");
-    assert.equal(requests, 3);
-    assert.equal((await host.view(task.id)).surfaces.length, 2);
+    assert.equal(requests, 1);
+    const view = await host.view(task.id);
+    assert.equal(view.surfaces.length, 2);
+    assert.equal(view.surfaces[0]!.nodes[1]!.id, "__vak_0_0");
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });
 

@@ -520,8 +520,8 @@ export class Tasks {
         }));
         // Initial-value assertions must not reset later user-submitted criteria.
         const resultPolicy = t.resultPolicy && run.sequence > 1 ? { ...t.resultPolicy, initialValues: undefined } : t.resultPolicy;
-        const result = await this.deps.run({ session: t.session, provider: t.provider, model: t.model, message: input.message, action: input.action, ...(t.resultPolicy ? { schemaMode: "strict" } : {}), history: 10 }, {
-          completion: "response", validateCompletion: t.resultPolicy ? (result) => reviewTaskResult(resultPolicy!, result, e.sources) : undefined, signal: e.ctrl.signal, tools, maxSteps: TASK_LIMITS.rounds,
+        const result = await this.deps.run({ session: t.session, provider: t.provider, model: t.model, message: input.message, action: input.action, history: 10 }, {
+          surfaceSubmission: Boolean(t.resultPolicy), completion: "response", validateCompletion: t.resultPolicy ? (result) => reviewTaskResult(resultPolicy!, result, e.sources) : undefined, signal: e.ctrl.signal, tools, maxSteps: TASK_LIMITS.rounds,
           // Gathering never takes the last model request: the engine keeps it for the closing answer.
           toolRounds: TASK_LIMITS.rounds - 1, maxTokens: TASK_LIMITS.outputTokens,
           instructions: `${this.deps.instructions()}\nYou are working on a task. Goal: ${t.goal}\nCompletion criteria: ${t.criteria}\nKeep every existing surface interactive. Use evidence from the available tools; do not claim an external effect without a receipt. The user reviews your result before marking the task complete.\n${resultInstructions(resultPolicy)}${inputInstructions(t.inputs ?? [])}${t.output ? "\nThe app will save the canonical result as Markdown in local task outputs after successful generation. Do not call a file-writing tool or claim it saved before the app issues a receipt." : ""}`,

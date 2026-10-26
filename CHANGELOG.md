@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Checked tasks submit inline multi-surface replacements, targeted patches and removals as one validated transaction. Rejected candidates leave accepted results intact; stale/incomplete/mixed batches cannot publish. Accepted submissions finish without an extra generation. Existing interactions and canonical surfaces remain. The unused constrained-call experiment is removed from Projection.
+
 - Checked tasks validate complete results at completion, allow sequential surface authoring and suppress dependent diagnostics when surface roles are ambiguous. Supplied initial control values remain asserted without rewriting output. Repeated unchanged rejected completions stop early; unknown engine endings cannot save or present a result for review. Native/inline authoring remains in use; the experimental constrained-call transport is not enabled for tasks.
 
 - **Projection `e4eec18`:** correction lint checks the actual form/action submission scope, preserves usable published forms against scope-breaking retries, supplies bounded structural feedback and favors ID-only correction patches. Inline child identity and custom-summary/automatic-total guidance are clearer. Exact retained file-report edits and the replay gate cover these general repairs.

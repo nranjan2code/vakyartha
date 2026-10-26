@@ -609,7 +609,7 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         }
         break;
       case "tool_start":
-        if (e.name === "vak_render" || e.name === "vak_update") canvas.beginWork();
+        if (e.name === "vak_render" || e.name === "vak_update" || e.name === "vak_submit") canvas.beginWork();
         phase = e.name.startsWith("vak_") ? "Building the interface" : `Using ${toolLabel(e.name)}`;
         setStatus(turn, `${phase}…`);
         break;
@@ -1217,7 +1217,7 @@ function watch(id: string): void {
               outsideTurn ??= newTurn("Working…");
               outsideTurn.text.dataset.text = (outsideTurn.text.dataset.text ?? "") + e.delta;
               outsideTurn.text.replaceChildren(renderMarkdown(outsideTurn.text.dataset.text));
-            } else if (e.type === "tool_start" && (e.name === "vak_render" || e.name === "vak_update")) canvas.beginWork();
+            } else if (e.type === "tool_start" && (e.name === "vak_render" || e.name === "vak_update" || e.name === "vak_submit")) canvas.beginWork();
             else if (e.type === "approval") approvalCard(outsideTurn ??= newTurn("Working…"), e);
             else if (e.type === "approval_done") settleApproval(e.id, e.decision);
             else if (e.type === "run_end") {
@@ -1244,7 +1244,7 @@ function watch(id: string): void {
               outsideTurn ??= newTurn("Working…");
               outsideTurn.text.dataset.text = (outsideTurn.text.dataset.text ?? "") + e.delta;
               outsideTurn.text.replaceChildren(renderMarkdown(outsideTurn.text.dataset.text));
-            } else if (e.type === "tool_start" && (e.name === "vak_render" || e.name === "vak_update")) canvas.beginWork();
+            } else if (e.type === "tool_start" && (e.name === "vak_render" || e.name === "vak_update" || e.name === "vak_submit")) canvas.beginWork();
             else if (e.type === "run_end") {
               canvas.endTurn();
               for (const surface of mounted.values()) surface.releaseAction();

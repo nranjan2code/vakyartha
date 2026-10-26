@@ -1,5 +1,9 @@
 # Agent outcome evaluation
 
+## Transactional authoring — 2026-10-27
+
+Projection `0138493` replaces the unused schema-call experiment with one trusted multi-surface submission boundary. Deterministic checks cover full-candidate validation, accepted commit before events, rejection rollback, original-response/prose bypass, canonical edits during generation and asynchronous validation, absent/failed terminal events, mixed external batches, cancellation, templates and restored generated-ID patches. Checked app tasks adopt the host option; whole-result checks do not run on partial edits. 153 app/353 framework tests and both typechecks pass; package build, native test, wide/narrow task/canvas WebKit checks pass. The latter includes vak_submit progress and manual-close behavior. Two fixed local cases (selected-file report and comparison including changed criteria where admitted) run once on frozen code; no prompt/schema tuning between outcomes. Trial and install evidence follows.
+
 ## File-report correction repairs — 2026-10-26
 
 Projection `e4eec18` replays the exact retained `d335ae6a` calls. Lint previously accepted inputs anywhere on a surface if any form existed; it now follows canonical submission scope, so a sibling/empty form cannot mask omitted action values. The publisher holds a scope-breaking correction and restores the usable form. A small child-ID patch regression preserves original data and exact submitted values. Inline child identity/update-ID schemas and a bounded parent-edge/binding inventory prevent anonymous rewrite patterns without inventing facts. Custom summary rows are distinguished from automatic column sums. One historical job-application replay score is explicitly corrected from 1.0 to 0.8 for genuinely stranded inputs; the existing recording and reason are retained.
