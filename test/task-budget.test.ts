@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import type { HostRunOptions } from "@vak/host";
+import { basicCatalog, SurfaceStore } from "@vak/core";
+import { runAgent, ToolGenerationError, type Provider } from "@vak/providers";
 import { Tasks } from "../sidecar/tasks.ts";
 import { parseTaskView, parseTaskLimits, type TaskLimits } from "../task-contract.ts";
 
@@ -132,5 +134,30 @@ test("a failed reservation save prevents generation dispatch", async () => {
     await h.tasks.close();
     assert.equal(requests, 0);
     assert.match(h.tasks.get(t.id).note, /could not be saved/);
+  } finally { await h.close(); }
+});
+
+
+test("rejected tool generations consume durable task request reservations before another retry", async () => {
+  let requests = 0;
+  const h = await harness(async (tasks, options) => {
+    const provider: Provider = { id: "scripted", async *stream() {
+      await tasks.beforeModelRequest("scripted", "test");
+      requests++;
+      throw new ToolGenerationError("scripted", "generated tool syntax rejected");
+    } };
+    await runAgent({ provider, model: "test", messages: [{ role: "user", content: "Bounded work" }], store: new SurfaceStore(basicCatalog), completion: "response", maxSteps: 12, signal: options.signal, emit: options.emit ?? (() => {}) });
+  });
+  try {
+    const t = await h.create({ ...limits, modelRequests: 2 });
+    await until(() => h.tasks.get(t.id).state === "failed");
+    assert.equal(requests, 2);
+    assert.equal(h.tasks.get(t.id).budget.modelRequests, 2);
+    assert.equal(h.tasks.get(t.id).runHistory[0]!.modelRequests, 2);
+    assert.match(h.tasks.get(t.id).note, /Model-request budget/);
+    assert.equal(h.effects, 0);
+    await h.reopen();
+    await assert.rejects(h.tasks.input(t.id, { id: "retry-rejected-generation", message: "Continue" }), /budget exhausted/);
+    assert.equal(requests, 2);
   } finally { await h.close(); }
 });

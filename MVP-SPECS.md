@@ -223,3 +223,8 @@ The initial outcome evaluation is repeatable through `scripts/task-evaluate.ts`,
 ### Result layout enforcement checkpoint (2026-10-26)
 
 Setup offers a flexible workspace, separate editable criteria and comparison, or separate editable criteria and source excerpts. Typed option/source manifests bound the selected layout. Completion checks repair within the same execution budget and retain manual evidence review; arbitrary IDs and all existing interactive surfaces remain supported. Source excerpts match successful current-run tool responses; numeric correctness, interpretation, supplied defaults and general semantic completion remain open. See ADR-015 and EVALUATION.md.
+
+
+### Rejected-generation recovery checkpoint (2026-10-26)
+
+A tool generation rejected before any usable text/call may retry in the same bounded execution (ADR-016). Attempts re-enter provider admission and consume durable request/time limits; earlier tool receipts remain without runner replay. Partial output, cancellation and unrelated failures stop normally. This is syntax recovery only: independent output authoring, completion evidence and uncertain external-effect reconciliation remain separate gates. No new task, store, process, IPC or dependency is introduced.
