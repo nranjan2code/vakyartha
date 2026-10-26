@@ -604,6 +604,8 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         // Conversation mode always answers aloud, and then asks any choice the reply left.
         if (conversationState() !== "off" && turnSession === session && !turn.status.classList.contains("error")) {
           const ask = voiceDecisions.offer(turnSurfaces(turn));
+          // An open canvas shows what is being asked about; focus stays where it is.
+          if (ask && voiceDecisions.surface && !$("canvas").hidden) canvas.open(voiceDecisions.surface, false);
           lastSpokenTurn = turn;
           toggleReading(turn.root, () => [turnSpeech(turn, "gist"), ask].filter(Boolean).join("\n\n"));
         } else if (voicePrefs.enabled && voicePrefs.auto && turnSession === session && !turn.status.classList.contains("error")) toggleReading(turn.root, () => turnSpeech(turn));

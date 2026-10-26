@@ -22,6 +22,8 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
+- **Voice V1–V13 (2026-10-26):** see MVP-CHECKLIST "V — Voice interaction". Done and tested without a microphone: module and switch, Projection answer contract (`@vak/core` answer.ts, pinned `2918883`), conversation mode, approvals, choices, forms, model fallback (local 4B 5/6), commands, gist speech, echo guard, seven languages' answer words, item-naming repair. **Next: one live session in the dev window** (⌘⇧D): sentence endings, barge-in, echo, then an approval, a comparison and a form by voice; tune `ENDPOINT` from it and tick V3–V6. Still open: number words/dates beyond English, spoken follow-ups beyond the waiting item, dead-control diagnostic.
+
 - **Approvals by voice (2026-10-26, V4):** implemented and tested in `src/voice/approvals.ts`; same live-microphone check as V3 is still needed.
 - **Conversation mode (2026-10-26, MVP-CHECKLIST V3):** implemented and unit-tested, but not yet heard with a live microphone: try it in the dev window (⌘⇧D), check that a sentence ends after a pause, that talking over a reply stops it, and that the reply's own sound does not trigger a turn. Tune `ENDPOINT` in `src/voice/endpoint.ts` from that. Words said while a turn is still running wait in the message box. `task-files` test failed once on timing and passed on rerun.
 

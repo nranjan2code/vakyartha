@@ -50,6 +50,11 @@ export class VoiceDecisions {
     return this.item !== undefined;
   }
 
+  /** The surface being asked about, so the canvas can show it. */
+  get surface(): string | undefined {
+    return this.item?.surface;
+  }
+
   /** A reply ended with these surfaces: the first decision among them becomes the question, returned to be said after the reply. */
   offer(surfaces: readonly string[]): string | undefined {
     this.clear();
