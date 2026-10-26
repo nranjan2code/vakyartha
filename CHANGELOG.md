@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Projection `e4eec18`:** correction lint checks the actual form/action submission scope, preserves usable published forms against scope-breaking retries, supplies bounded structural feedback and favors ID-only correction patches. Inline child identity and custom-summary/automatic-total guidance are clearer. Exact retained file-report edits and the replay gate cover these general repairs.
+
 - **Bundled engine:** Node 24.22.1 (LTS security release) with npm 11.19.1. Release builds now refuse a Node that is not Foundation-signed, not LTS, or not its line's newest release; release builds are optimised for speed (`opt-level = 3`). [RELEASING.md](docs/RELEASING.md#the-bundled-node-engine).
 
 - **Window chrome:** the traffic lights are centred in the 40px title bar on the same line as the sidebar hide/show buttons; the logo moved from the sidebar top to the right of Settings.
