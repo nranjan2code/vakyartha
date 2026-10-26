@@ -4,7 +4,7 @@
 // Kept deliberately quiet: the window is the conversation and a composer with
 // a model picker; everything else is on the Settings page.
 
-import { type AgentEvent, projectText, readSse, type SurfaceSnapshot, titleRepeated } from "@vak/core";
+import { type AgentEvent, getAt, projectText, readSse, type SurfaceSnapshot, titleRepeated } from "@vak/core";
 import type { SessionSummary, SessionView } from "@vak/host";
 import { defineVakElements, renderMarkdown, type VakActionDetail, VakClient, type VakSurfaceElement } from "@vak/web";
 import { ArtifactsPage } from "./artifacts-page.ts";
@@ -18,7 +18,7 @@ import { closeSettings, openSettings, settingsOpen } from "./settings.ts";
 import { applyAppearance, surfaceMode } from "./theme.ts";
 import { TasksPanel } from "./tasks-panel.ts";
 import { Drafts } from "./drafts.ts";
-import { VoiceApprovals, VoiceDecisions, cancelDictation, conversationPrefs, conversationState, type ConversationState, startConversation, stopConversation, dictationPrefs, dictationState, lastError, readAloud, replyText, spokenSurface, startDictation, stopDictation, stopReading, textLanguage, voicePrefs, voiceState } from "./voice/index.ts";
+import { VoiceApprovals, VoiceDecisions, recentlySaid, cancelDictation, conversationPrefs, conversationState, type ConversationState, startConversation, stopConversation, dictationPrefs, dictationState, lastError, readAloud, replyText, spokenSurface, startDictation, stopDictation, stopReading, textLanguage, voicePrefs, voiceState } from "./voice/index.ts";
 
 applyAppearance();
 defineVakElements();
@@ -831,6 +831,14 @@ const voiceDecisions = new VoiceDecisions({
   store: () => client.store,
   say(text) { void readAloud(text, voiceDecisions); },
   activate: (surface, key) => mounted.get(surface)?.activate(key) ?? false,
+  // As if typed: the surface shows the value and its draft is kept.
+  filled(surface, paths) {
+    const el = mounted.get(surface);
+    if (!el) return;
+    el.refresh();
+    const data = client.store.get(surface)?.data;
+    for (const path of paths) el.dispatchEvent(new CustomEvent("vak-change", { detail: { surface, path, value: getAt(data, path) }, bubbles: true, composed: true }));
+  },
 });
 const talk = $<HTMLButtonElement>("talk");
 const talkStatus = $<HTMLElement>("talk-status");
@@ -853,6 +861,13 @@ function toggleConversation(): void {
         return composerHint("Still working on the last message; your words are in the message box.");
       }
       submit(text);
+    },
+    onCommand(command) {
+      if (command === "repeat") return void readAloud(recentlySaid(120_000).at(-1) ?? "There is nothing to repeat.", voiceDecisions);
+      if (command === "new") return void (voiceDecisions.clear(), newChat());
+      const last = [...thread.querySelectorAll<HTMLElement>(".surface-home[data-surface]")].at(-1)?.dataset.surface;
+      if (last) canvas.open(last, true);
+      else void readAloud("There is nothing to show yet.", voiceDecisions);
     },
     onError(message) {
       composerHint(message);

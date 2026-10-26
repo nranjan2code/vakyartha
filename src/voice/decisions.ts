@@ -2,18 +2,23 @@
 // screen (a comparison, a row of buttons, a "Choose" on each card), it is asked
 // aloud after the reply. The answer is matched by meaning ("the cheaper one",
 // "the second", "Hilton") with @vak/core's deterministic resolver, read back,
-// and on a yes the control is activated exactly as a click would.
-// Forms come later (V6); they stay on screen.
+// and on a yes the control is activated exactly as a click would. A form is
+// filled one question at a time (an answer may fill several fields), its
+// checks explained aloud, the values shown on screen as they are heard, then
+// read back and submitted the same way.
 
-import { type AgendaItem, agenda, answerWords, question, readBack, resolveAnswer, type SurfaceStore } from "@vak/core";
+import { type AgendaItem, agenda, answerWords, fillAnswer, getAt, question, readBack, resolveAnswer, type SurfaceStore } from "@vak/core";
 
 type Decision = AgendaItem & { kind: "decision" };
+type Form = AgendaItem & { kind: "form" };
 
 export interface DecisionVoice {
   store(): SurfaceStore;
   say(text: string): void;
   /** Activate the control as a click; false if it could not be sent. */
   activate(surface: string, key: string): boolean;
+  /** Values were written to these data paths: show them, and keep them as drafts. */
+  filled?(surface: string, paths: string[]): void;
 }
 
 /** A short unclear answer is asked again once; after that the choice waits on screen. */
@@ -22,8 +27,12 @@ const TRIES = 2;
 const ASIDE_WORDS = 4;
 
 export class VoiceDecisions {
-  private item: Decision | undefined;
+  private item: Decision | Form | undefined;
   private chosen: number | undefined;
+  /** The form field being asked; undefined once every field is answered and the read-back is out. */
+  private field: string | undefined;
+  /** Form fields already asked or answered: an optional one is asked once. */
+  private asked = new Set<string>();
   private tries = 0;
   private readonly io: DecisionVoice;
 
@@ -39,10 +48,16 @@ export class VoiceDecisions {
   offer(surfaces: readonly string[]): string | undefined {
     this.clear();
     for (const id of surfaces) {
-      const d = agenda(this.io.store(), id).find((i): i is Decision => i.kind === "decision" && i.options.length > 0);
-      if (d) {
+      const d = agenda(this.io.store(), id).find((i): i is Decision | Form => (i.kind === "decision" && i.options.length > 0) || (i.kind === "form" && i.fields.length > 0));
+      if (d?.kind === "decision") {
         this.item = d;
         return question(d);
+      }
+      if (d?.kind === "form") {
+        this.item = d;
+        this.field = this.nextField(d) ?? d.fields[0]!.key;
+        this.asked.add(this.field);
+        return `${d.title ?? d.action} needs ${d.fields.length === 1 ? "one thing" : `${d.fields.length} things`}: ${d.fields.map((f) => f.label).join(", ")}. ${question(d, this.field)}`;
       }
     }
     return undefined;
@@ -52,6 +67,8 @@ export class VoiceDecisions {
   clear(): void {
     this.item = undefined;
     this.chosen = undefined;
+    this.field = undefined;
+    this.asked.clear();
     this.tries = 0;
   }
 
@@ -59,6 +76,7 @@ export class VoiceDecisions {
   hear(said: string): boolean {
     const d = this.item;
     if (!d) return false;
+    if (d.kind === "form") return this.hearForm(d, said);
     const r = resolveAnswer(d, said);
     if (r.kind === "choose") return this.pick(r.index), true;
     if (r.kind === "ambiguous") {
@@ -87,9 +105,55 @@ export class VoiceDecisions {
     return true;
   }
 
+  private hearForm(f: Form, said: string): boolean {
+    const r = resolveAnswer(f, said, { field: this.field });
+    const ask = () => this.io.say(question(f, this.field));
+    if (r.kind === "cancel") return this.clear(), this.io.say("All right. The form stays on screen."), true;
+    if (r.kind === "repeat") return (this.field ? ask() : this.io.say(readBack(this.io.store(), f))), true;
+    if (this.field === undefined) {
+      // The read-back is out: yes submits, no asks what to change.
+      if (r.kind === "yes") {
+        this.clear();
+        if (!this.io.activate(f.surface, f.source)) this.io.say("That form is no longer available on screen.");
+        return true;
+      }
+      if (r.kind === "no") return (this.field = f.fields[0]!.key), this.io.say(`What should change? ${question(f, this.field)}`), true;
+    }
+    if (r.kind === "back") {
+      const i = f.fields.findIndex((x) => x.key === this.field);
+      this.field = f.fields[Math.max(0, (i < 0 ? f.fields.length : i) - 1)]!.key;
+      return ask(), true;
+    }
+    if (r.kind !== "fill") {
+      if (++this.tries < TRIES) return this.io.say(`Sorry. ${question(f, this.field)}`), true;
+      this.clear();
+      this.io.say("It is waiting on screen for you.");
+      return true;
+    }
+    this.tries = 0;
+    fillAnswer(this.io.store(), f, r.values);
+    for (const k of Object.keys(r.values)) this.asked.add(k);
+    this.io.filled?.(f.surface, f.fields.filter((x) => x.key in r.values).map((x) => x.bindPath));
+    const error = this.field ? r.errors[this.field] : undefined;
+    if (error) return this.io.say(`${error}. ${question(f, this.field)}`), true;
+    this.field = this.nextField(f);
+    if (this.field) this.asked.add(this.field);
+    this.io.say(this.field ? question(f, this.field) : readBack(this.io.store(), f));
+    return true;
+  }
+
+  /** In reading order: a field failing its checks, else an empty optional one not yet asked. */
+  private nextField(f: Form): string | undefined {
+    const store = this.io.store();
+    const failing = new Set(fillAnswer(store, f, {}).map((x) => x.key));
+    const data = store.get(f.surface)?.data;
+    const empty = (path: string) => [undefined, null, ""].includes(getAt(data, path) as never);
+    return f.fields.find((x) => failing.has(x.key))?.key ?? f.fields.find((x) => !this.asked.has(x.key) && empty(x.bindPath))?.key;
+  }
+
   private pick(index: number): void {
     this.chosen = index;
     this.tries = 0;
-    this.io.say(readBack(this.io.store(), this.item!, index));
+    this.io.say(readBack(this.io.store(), this.item as Decision, index));
   }
 }

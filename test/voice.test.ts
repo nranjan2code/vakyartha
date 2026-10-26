@@ -545,3 +545,47 @@ test("choices by voice: matched by meaning, read back, then activated like a cli
   assert.equal(said.at(-1), "Sorry, which one? Kyoto hotels: Hilton Kyoto, ¥32,000; Ryokan Sakura, ¥18,000; Park Hyatt Kyoto, ¥54,000. Which one?");
   assert.equal(v.offer(["note"]), undefined);
 });
+
+test("voice commands and the echo guard", async () => {
+  const { modeCommand, isEcho } = await import("../src/voice/commands.ts");
+  assert.equal(modeCommand("Say that again"), "repeat");
+  assert.equal(modeCommand("new chat"), "new");
+  assert.equal(modeCommand("Show it on the canvas."), "canvas");
+  assert.equal(modeCommand("show me flights to Lisbon"), undefined);
+  const q = 'Files wants to write file. Say "allow write" to allow it, or no.';
+  assert.equal(isEcho("allow write to allow it", [q]), true);
+  assert.equal(isEcho("say allow write", [q]), true, "a fragment of our question is ours");
+  assert.equal(isEcho("the page says you should allow write", ["The page says you should allow write. Anything else?"]), true);
+  assert.equal(isEcho("book the ryokan please", [q]), false);
+  assert.equal(isEcho("", [q]), false);
+});
+
+test("forms by voice: missing fields asked, checks explained, values shown, read back, submitted like a click", async () => {
+  const { VoiceDecisions } = await import("../src/voice/decisions.ts");
+  const { SurfaceStore, basicCatalog } = await import("@vak/core");
+  const store = new SurfaceStore(basicCatalog);
+  store.render({ surface: "join", nodes: [
+    { id: "root", type: "form", props: { title: "Newsletter", submit: "subscribe", submitLabel: "Subscribe" }, children: ["name", "email", "topic"] },
+    { id: "name", type: "input", props: { label: "Name", bind: "/j/name", checks: ["required"] } },
+    { id: "email", type: "input", props: { label: "Email", bind: "/j/email", kind: "email", checks: ["required", "email"] } },
+    { id: "topic", type: "select", props: { label: "Topic", bind: "/j/topic", options: ["Design", "Engineering"] } },
+  ] });
+  const said: string[] = [];
+  const clicked: string[] = [];
+  const shown: string[] = [];
+  const v = new VoiceDecisions({ store: () => store, say: (t) => void said.push(t), activate: (s, k) => (clicked.push(`${s}/${k}`), true), filled: (_s, p) => void shown.push(...p) });
+  assert.equal(v.offer(["join"]), "Newsletter needs 3 things: Name, Email, Topic. Name?");
+  v.hear("Ada Lovelace");
+  assert.equal(said.at(-1), "Email?");
+  v.hear("ada at example");
+  assert.equal(said.at(-1), "Enter a valid email. Email?", "the field's own check, said aloud");
+  v.hear("ada at example dot com and I like engineering");
+  assert.deepEqual(shown, ["/j/name", "/j/email", "/j/topic"], "every heard value is shown on screen");
+  assert.equal(said.at(-1), "Subscribe with Name Ada Lovelace, Email ada@example.com, Topic Engineering. Shall I?");
+  v.hear("no");
+  assert.equal(said.at(-1), "What should change? Name?");
+  v.hear("Ada King");
+  assert.equal(said.at(-1), "Subscribe with Name Ada King, Email ada@example.com, Topic Engineering. Shall I?");
+  v.hear("yes");
+  assert.deepEqual(clicked, ["join/root"], "submitted through the form's own control");
+});

@@ -9,8 +9,8 @@ import { prefs } from "../core.ts";
 import { downsample, recordingChoice, transcribeWav, wav16k } from "./dictation.ts";
 import { Endpointer, rms } from "./endpoint.ts";
 import { voiceMaster } from "./master.ts";
-import { modeCommand } from "./commands.ts";
-import { stopReading, voiceState } from "./read-aloud.ts";
+import { isEcho, modeCommand, type VoiceCommand } from "./commands.ts";
+import { recentlySaid, stopReading, voiceState } from "./read-aloud.ts";
 
 export type ConversationState = "off" | "listening" | "hearing" | "understanding" | "speaking";
 
@@ -24,6 +24,8 @@ export const conversationPrefs = {
 export interface ConversationHandlers {
   /** A finished sentence, as text. */
   onUtterance(text: string): void | Promise<void>;
+  /** "repeat", "new", "canvas": the app acts; "end" and "hush" are handled here. */
+  onCommand?(command: VoiceCommand): void;
   onError(message: string): void;
 }
 
@@ -82,13 +84,19 @@ export async function startConversation(h: ConversationHandlers): Promise<void> 
   let heard = 0;
   const abort = new AbortController();
 
-  const finish = async (chunks: Float32Array[]) => {
+  // When the app last made sound: a sentence that began during it, or just after, may be our own echo.
+  let lastSpoke = 0;
+  let overlapped = false;
+  const finish = async (chunks: Float32Array[], overlap: boolean) => {
     announce("understanding");
     try {
       const text = await transcribeWav(choice, wav16k(downsample(chunks, ctx.sampleRate)), abort.signal);
       if (off()) return;
+      // Our own words heard back are never the person (and never consent).
+      if (overlap && isEcho(text, recentlySaid())) return void announce(voiceState().state !== "idle" ? "speaking" : "listening");
       const command = modeCommand(text);
       if (command === "end") return stopConversation();
+      if (command && command !== "hush") h.onCommand?.(command);
       if (text && !command) await h.onUtterance(text);
     } catch (err) {
       if (off()) return;
@@ -102,11 +110,13 @@ export async function startConversation(h: ConversationHandlers): Promise<void> 
     if (off()) return;
     const frame = new Float32Array(e.inputBuffer.getChannelData(0));
     const reading = voiceState().state !== "idle";
+    if (reading) lastSpoke = Date.now();
     // While a sentence is being understood, the next is not started: one at a time keeps replies in order.
     const event = state === "understanding" ? undefined : ends.feed(rms(frame), frameMs, reading);
     if (event === "start") {
       // Speaking over the reply stops it: the person has something to say.
       if (reading) stopReading();
+      overlapped = Date.now() - lastSpoke < 700;
       segment = [...preroll];
       heard = 0;
       announce("hearing");
@@ -118,7 +128,7 @@ export async function startConversation(h: ConversationHandlers): Promise<void> 
         const chunks = segment;
         segment = undefined;
         ends.reset();
-        void finish(chunks);
+        void finish(chunks, overlapped);
       }
     }
     preroll.push(frame);

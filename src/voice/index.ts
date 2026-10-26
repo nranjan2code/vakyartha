@@ -5,7 +5,7 @@
 // hears where sentences end), and master.ts is the switch over all of it.
 
 export { cancelDictation, dictationPrefs, dictationState, startDictation, stopDictation } from "./dictation.ts";
-export { lastError, readAloud, replyText, stopReading, voicePrefs, voiceState } from "./read-aloud.ts";
+export { lastError, readAloud, recentlySaid, replyText, stopReading, voicePrefs, voiceState } from "./read-aloud.ts";
 export { spokenSurface, textLanguage } from "./speech-text.ts";
 export { setVoiceOn, voicePage, voiceSection, voiceSettingsPage } from "./settings-page.ts";
 export { voiceMaster } from "./master.ts";

@@ -92,6 +92,13 @@ let abort: AbortController | undefined;
 export let lastError = "";
 
 export const voiceState = () => ({ state, target });
+
+/** What was said lately, so conversation mode can tell our own voice heard back from the person (commands.ts isEcho). */
+const said: { text: string; at: number }[] = [];
+export function recentlySaid(ms = 15_000): string[] {
+  const since = Date.now() - ms;
+  return said.filter((s) => s.at >= since).map((s) => s.text);
+}
 const announce = (s: VoiceState) => { state = s; window.dispatchEvent(new Event("vak:voice")); };
 
 function applySpeed(a: HTMLAudioElement): void {
@@ -173,6 +180,8 @@ export async function readAloud(text: string, owner: unknown, choice?: VoiceChoi
   const pieces = speechChunks(text, lang);
   if (!pieces.length) return;
   target = owner;
+  said.push({ text, at: Date.now() });
+  if (said.length > 8) said.shift();
   lastError = "";
   let note = "";
   announce("loading");
