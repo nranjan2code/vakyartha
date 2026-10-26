@@ -230,6 +230,8 @@ function newChat(): void {
   artifacts.close();
   clearThread();
   session = crypto.randomUUID();
+  attached = [];
+  showAttached();
   drafts.begin(session);
   prefs.set("session", session);
   watch(session);
@@ -302,7 +304,12 @@ function add(el: HTMLElement, scroll = true): HTMLElement {
   return el;
 }
 
-function userBubble(text: string): void {
+/** The model needs each attachment's path; people only need its name. */
+const ATTACHED = /^\[Attached image (.+?): [^\]\n]+\]$/gm;
+const shown = (text: string) => text.replace(ATTACHED, "Attached: $1");
+
+function userBubble(sent: string): void {
+  const text = shown(sent);
   const m = document.createElement("div");
   m.className = "msg user";
   const b = document.createElement("div");
@@ -517,7 +524,7 @@ function updateSend(): void {
   const runningHere = isRunning(session);
   send.classList.toggle("stop", runningHere);
   send.setAttribute("aria-label", runningHere ? "Stop" : "Send");
-  send.disabled = !runningHere && (!input.value.trim() || !current.model);
+  send.disabled = !runningHere && ((!input.value.trim() && !attached.length) || !current.model);
 }
 
 async function runTurn(req: { message?: string; continue?: boolean; action?: VakActionDetail["action"] & { data: Record<string, unknown> } }): Promise<void> {
@@ -655,14 +662,20 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
 }
 
 function submit(text: string): void {
-  const t = text.trim();
-  if (!t) return;
+  let t = text.trim();
+  if (!t && !attached.length) return;
   if (tasksPanel.owns(session)) {
     void tasksPanel.input(t).then(() => { input.value = ""; autosize(); }).catch((err) => tasksPanel.error((err as Error).message));
     return;
   }
   if (isRunning(session)) return;
   if (!current.model) return void openSettings();
+  // The engine reads attachments by path; the model sees where each one is.
+  if (attached.length) {
+    t = [t || "What's in the attached image?", ...attached.map((a) => `[Attached image ${a.name}: ${a.path}]`)].join("\n");
+    attached = [];
+    showAttached();
+  }
   userBubble(t);
   input.value = "";
   autosize();
@@ -767,6 +780,42 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     act();
   }
+});
+
+// --- attachments ---------------------------------------------------------------------
+const attachBtn = $<HTMLButtonElement>("attach");
+const attachFile = $<HTMLInputElement>("attach-file");
+attachBtn.append(icon("image", 17));
+let attached: { name: string; path: string }[] = [];
+
+function showAttached(): void {
+  composerNote.textContent = attached.length ? `Attached: ${attached.map((a) => a.name).join(", ")}` : "";
+  composerNote.hidden = !attached.length;
+  send.disabled = !attached.length && !input.value.trim();
+}
+
+async function base64(f: File): Promise<string> {
+  const url = await new Promise<string>((ok, fail) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result));
+    r.onerror = () => fail(r.error);
+    r.readAsDataURL(f);
+  });
+  return url.slice(url.indexOf(",") + 1);
+}
+
+attachBtn.addEventListener("click", () => attachFile.click());
+attachFile.addEventListener("change", async () => {
+  for (const f of Array.from(attachFile.files ?? [])) {
+    try {
+      const r = await api<{ path: string }>(`/api/attachments?session=${encodeURIComponent(session)}`, { method: "POST", body: JSON.stringify({ type: f.type, data: await base64(f) }) });
+      attached.push({ name: f.name, path: r.path });
+    } catch (err) {
+      composerHint((err as Error).message);
+    }
+  }
+  attachFile.value = "";
+  showAttached();
 });
 
 // --- dictation ------------------------------------------------------------------------

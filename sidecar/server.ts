@@ -8,6 +8,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSy
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { createHost, json, readJson } from "@vak/host";
+import { attachmentsRoute } from "./attachments.ts";
 import type { Integrations } from "@vak/mcp/client";
 import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, providersFromEnv } from "@vak/providers";
 import { Channels, CHANNELS } from "./channels.ts";
@@ -117,6 +118,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
     return true;
   }
 
+  const attachRoute = attachmentsRoute(path.join(dataDir, "attachments"));
   const voiceRoute = voiceRoutes(voiceDir, log, () => modelProviders());
 
   /** For the About page: where things are kept. */
@@ -204,7 +206,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     origins: ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420", "http://127.0.0.1:1420"],
     // Outside agents get a link to watch what they projected (only when this server serves the UI).
     viewerUrl: opts.uiDir ? (session) => `http://127.0.0.1:${listening}/?session=${encodeURIComponent(session)}` : undefined,
-    routes: async (req, res, url) => (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await voiceRoute(req, res, url)) || infoRoute(req, res, url),
+    routes: async (req, res, url) => (await attachRoute(req, res, url)) || (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await voiceRoute(req, res, url)) || infoRoute(req, res, url),
     log,
   });
 
