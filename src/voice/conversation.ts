@@ -23,7 +23,7 @@ export const conversationPrefs = {
 
 export interface ConversationHandlers {
   /** A finished sentence, as text. */
-  onUtterance(text: string): void;
+  onUtterance(text: string): void | Promise<void>;
   onError(message: string): void;
 }
 
@@ -89,7 +89,7 @@ export async function startConversation(h: ConversationHandlers): Promise<void> 
       if (off()) return;
       const command = modeCommand(text);
       if (command === "end") return stopConversation();
-      if (text && !command) h.onUtterance(text);
+      if (text && !command) await h.onUtterance(text);
     } catch (err) {
       if (off()) return;
       // Noise the endpointer took for speech is not worth a message.

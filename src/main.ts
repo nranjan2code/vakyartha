@@ -18,7 +18,7 @@ import { closeSettings, openSettings, settingsOpen } from "./settings.ts";
 import { applyAppearance, surfaceMode } from "./theme.ts";
 import { TasksPanel } from "./tasks-panel.ts";
 import { Drafts } from "./drafts.ts";
-import { cancelDictation, conversationPrefs, conversationState, type ConversationState, startConversation, stopConversation, dictationPrefs, dictationState, lastError, readAloud, replyText, spokenSurface, startDictation, stopDictation, stopReading, textLanguage, voicePrefs, voiceState } from "./voice/index.ts";
+import { VoiceApprovals, cancelDictation, conversationPrefs, conversationState, type ConversationState, startConversation, stopConversation, dictationPrefs, dictationState, lastError, readAloud, replyText, spokenSurface, startDictation, stopDictation, stopReading, textLanguage, voicePrefs, voiceState } from "./voice/index.ts";
 
 applyAppearance();
 defineVakElements();
@@ -818,6 +818,12 @@ window.addEventListener("vak:dictation-level", () => mic.style.setProperty("--le
 paintMic();
 
 // --- conversation mode -------------------------------------------------------------------
+const voiceApprovals = new VoiceApprovals({
+  async decide(id, decision) {
+    await api(`/api/approvals/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ decision }) }).catch(() => settleApproval(id, "deny"));
+  },
+  say(text) { void readAloud(text, voiceApprovals); },
+});
 const talk = $<HTMLButtonElement>("talk");
 const talkStatus = $<HTMLElement>("talk-status");
 talk.append(icon("talk", 17));
@@ -828,7 +834,9 @@ function toggleConversation(): void {
   if (dictationState().state !== "idle") cancelDictation();
   composerHint("");
   void startConversation({
-    onUtterance(text) {
+    async onUtterance(text) {
+      // A tool waiting for an answer hears it first; only these heard words can decide it.
+      if (voiceApprovals.waiting && (await voiceApprovals.hear(text))) return;
       // A turn still running keeps its place; the words wait in the box rather than cutting it off.
       if (isRunning(session)) {
         input.value = input.value.trim() ? `${input.value.replace(/\s*$/, " ")}${text}` : text;
@@ -865,6 +873,7 @@ function paintTalk(): void {
   if (s !== "hearing") talkStatus.textContent = s === "off" ? "Conversation mode off" : TALK_LABEL[s];
 }
 window.addEventListener("vak:conversation", paintTalk);
+window.addEventListener("vak:conversation", () => { if (conversationState() === "off") voiceApprovals.clear(); });
 window.addEventListener("vak:voice", paintTalk);
 paintTalk();
 
@@ -1033,9 +1042,11 @@ function approvalCard(turn: Turn, e: Extract<AgentEvent, { type: "approval" }>):
   setStatus(turn, "Waiting for your answer…");
   card.scrollIntoView({ block: "nearest", behavior: "smooth" });
   actions.querySelector<HTMLButtonElement>(".primary")?.focus();
+  if (conversationState() !== "off") voiceApprovals.offer(e, l?.name);
 }
 
 function settleApproval(id: string, decision: "allow" | "deny"): void {
+  voiceApprovals.settled(id);
   const card = document.querySelector<HTMLElement>(`.approval[data-id="${CSS.escape(id)}"]`);
   if (!card) return;
   card.classList.add("settled", decision);
