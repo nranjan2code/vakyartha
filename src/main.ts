@@ -399,22 +399,40 @@ function limited(turn: Turn, limit: "steps" | "tools"): void {
 function setStatus(turn: Turn, text: string, state?: "done" | "error"): void {
   turn.status.className = `status ${state ?? ""}`;
   turn.status.querySelector(".label")!.textContent = text;
-  if (state === "done" && !turn.status.querySelector(".msg-actions") && replyText(turn.text)) {
-    turn.status.prepend(messageActions([copyAction(() => turn.text.innerText, "Copy reply"), speakButton(turn)]));
+  if (state === "done" && !turn.status.querySelector(".msg-actions") && turnText(turn)) {
+    const buttons = [copyAction(() => turnText(turn), "Copy reply"), speakButton(turn)];
+    const inline = turnSurfaces(turn).filter((id) => canvas.isInline(id));
+    if (inline.length) buttons.push(action("maximize", "Open in canvas", () => canvas.open(inline.at(-1)!, true)));
+    turn.status.prepend(messageActions(buttons));
   }
   paintSpeak();
 }
 
+/** The surfaces a reply produced, in order (their homes stay in the reply while one is in the canvas). */
+function turnSurfaces(turn: Turn): string[] {
+  return [...turn.surfaces.querySelectorAll<HTMLElement>(".surface-home[data-surface]")].map((h) => h.dataset.surface!).filter((id) => mounted.has(id));
+}
+
+/** A reply as text: its prose, then each interface it produced. */
+function turnText(turn: Turn): string {
+  const parts = [replyText(turn.text)];
+  for (const id of turnSurfaces(turn)) {
+    const resolved = client.store.resolve(id);
+    if (resolved) parts.push(projectText(resolved));
+  }
+  return parts.filter((p) => p.trim()).join("\n\n");
+}
+
 // --- read aloud ---------------------------------------------------------------------
 function speakButton(turn: Turn): HTMLButtonElement {
-  const b = action("voice", "Read aloud", () => toggleReading(turn.root, turn.text));
+  const b = action("voice", "Read aloud", () => toggleReading(turn.root, () => turnText(turn)));
   b.classList.add("speak");
   return b;
 }
 
-function toggleReading(root: HTMLElement, text: HTMLElement): void {
+function toggleReading(root: HTMLElement, text: () => string): void {
   if (voiceState().target === root) return stopReading();
-  void readAloud(replyText(text), root).then(() => {
+  void readAloud(text(), root).then(() => {
     if (lastError) eventChip(`Read aloud: ${lastError}`);
   });
 }
@@ -546,7 +564,7 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
           setStatus(turn, `${model} · ${((performance.now() - started) / 1000).toFixed(1)}s${e.limit === "steps" ? " · step limit" : e.limit === "tools" ? " · tool budget" : ""}`, "done");
         }
         if (e.limit) limited(turn, e.limit);
-        if (voicePrefs.enabled && voicePrefs.auto && turnSession === session && !turn.status.classList.contains("error")) toggleReading(turn.root, turn.text);
+        if (voicePrefs.enabled && voicePrefs.auto && turnSession === session && !turn.status.classList.contains("error")) toggleReading(turn.root, () => turnText(turn));
         break;
     }
   };
@@ -1035,7 +1053,7 @@ onContextMenu((_t, path) => {
   const reading = voiceState().target === root;
   return [
     { label: "Copy reply", run: () => copy(text.innerText) },
-    ...(voicePrefs.enabled ? [{ label: reading ? "Stop reading" : "Read aloud", run: () => toggleReading(root, text) }] : []),
+    ...(voicePrefs.enabled ? [{ label: reading ? "Stop reading" : "Read aloud", run: () => toggleReading(root, () => replyText(text)) }] : []),
   ];
 });
 

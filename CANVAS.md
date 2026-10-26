@@ -12,16 +12,21 @@ framework continues to own surfaces, rendering, bindings, validation and actions
   forms or expose field values in previews. No extra copies of surfaces are saved.
 - Opening a card returns to its chat and opens that surface in the canvas.
   Opening an artifact from the current chat preserves its live form draft.
-- The chat shows a compact artifact card with Open in canvas; full content
-  appears exclusively in the canvas. Closing the canvas keeps the content hidden
-  and preserves its live draft. New and updated artifacts open automatically.
-  A render/update tool-start event opens the panel with a progress indicator,
-  without guessing the target artifact; the first surface snapshot selects it.
-  Streamed snapshots paint there as they arrive. Closing during a turn suppresses
-  reopening for the rest of that turn; the next request may open it again.
-  Loading history only restores the explicitly saved open selection. An empty
-  pending panel closes if generation fails or stops before producing a surface.
-- One live element moves between hidden storage in the thread and the canvas. Drafts, validation,
+- **Placement by size** (`src/placement.ts`). Small interfaces stay in the
+  conversation, beside the words around them, with Open in canvas. Tables,
+  charts, tabs, maps, graphs, galleries, calendars, boards, Gantt charts, diffs,
+  comparisons, code over 12 lines, forms with more than five fields, trees of
+  more than 24 nodes and long reads (over 1,500 characters) leave a compact
+  reference card in the chat and open in the canvas. A surface that grows past
+  the limit while streaming or updating moves to the canvas; nothing moves back
+  on its own. Closing the canvas returns a small interface to the conversation
+  and a large one to its card.
+- New and updated large surfaces open the canvas automatically. A render/update
+  tool-start shows progress in a canvas that is already open; a closed canvas
+  waits for the first snapshot, which decides placement. Closing during a turn
+  suppresses reopening for the rest of that turn; the next request may open it
+  again. Loading history only restores the explicitly saved open selection.
+- One live element moves between its place in the thread and the canvas. Drafts, validation,
   local filters and actions remain attached to it. The thread keeps a reference.
 - The canvas provides a surface picker, Preview/Text, Copy as text, Markdown
   download, resizing, full/split view, close, and narrow-window full-width layout.

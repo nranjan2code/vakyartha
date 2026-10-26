@@ -93,7 +93,13 @@ body.collapsed .sidebar { visibility: hidden; }
 body.collapsed .canvas-expanded .canvas-head { padding-left: 84px; }
 .surface-home { min-width: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); padding: 12px; }
 /* Park the live element without showing artifact content in the conversation. */
-.surface-home > vak-surface { display: none; }
+.surface-home:not(.inline) > vak-surface { display: none; }
+/* A small interface reads in the conversation: its own card, a quiet header with the canvas button. */
+.surface-home.inline { border: 0; background: none; padding: 0; }
+/* Inline, the surface speaks for itself; its canvas button is in the reply's actions. The header returns as a placeholder while it is in the canvas. */
+.surface-home.inline:not(.in-canvas) > .surface-head { display: none; }
+.surface-home.inline.in-canvas > .surface-head { margin: 0; }
+.surface-home.inline.in-canvas { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); padding: 12px; }
 .surface-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .surface-head > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; color: var(--muted); }
 .surface-head > button { flex: none; }

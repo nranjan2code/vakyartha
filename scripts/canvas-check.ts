@@ -29,9 +29,9 @@ const setup = `
 const steps = [
   `document.getElementById('settings-back').click();
    await project('vak_render', {surface:'signup',title:'Newsletter signup',nodes:[{id:'root',type:'form',props:{submit:'subscribe',submitLabel:'Subscribe'},children:[{id:'name',type:'input',props:{label:'Name',bind:'/name',checks:['required']}},{id:'email',type:'input',props:{label:'Email',bind:'/email',checks:['required','email']}}]}]});
-   check(!document.getElementById('canvas').hidden, 'new small artifact should auto-open');
-   document.getElementById('canvas-close').click();
-   check(getComputedStyle(document.querySelector('.surface-home vak-surface')).display === 'none', 'artifact content leaked into chat'); return 'artifact reference only';`,
+   check(document.getElementById('canvas').hidden, 'small form should stay in the conversation');
+   const inline = document.querySelector('.surface-home vak-surface');
+   check(document.querySelector('.surface-home').classList.contains('inline') && !inline.hidden && getComputedStyle(inline).display !== 'none', 'small form not shown inline'); return 'small interface inline';`,
   `const s = document.querySelector('vak-surface'); window.qaSurface = s;
    const field = s.shadowRoot.querySelector('input'); field.value='Draft name'; field.dispatchEvent(new Event('input',{bubbles:true}));
    document.querySelector('.surface-head button').click(); flush();
@@ -40,11 +40,12 @@ const steps = [
    document.getElementById('canvas-expand').click();
    check(document.getElementById('canvas').clientWidth === document.getElementById('workspace').clientWidth, 'full view failed');
    document.getElementById('canvas-close').click();
-   check(s === document.querySelector('.surface-home vak-surface'), 'surface not parked after close');
+   check(s === document.querySelector('.surface-home vak-surface'), 'surface not returned after close');
    check(s.shadowRoot.querySelector('input').value === 'Draft name', 'draft lost on close');
-   check(s.hidden && getComputedStyle(s).display === 'none', 'closing canvas exposed content inline'); return 'live draft and full view';`,
+   check(!s.hidden && getComputedStyle(s).display !== 'none', 'small form not back in the conversation'); return 'live draft, full view, back inline';`,
   `await project('vak_render', {surface:'sales',title:'Sales overview',nodes:[{id:'root',type:'stack',children:[{id:'heading',type:'text',props:{content:'Monthly sales'}},{id:'table',type:'table',props:{columns:['Month','Revenue'],rows:[['January','$4,200'],['February','$5,100']]}}]}]});
    check(document.querySelector('#canvas-content vak-surface')?.surfaceId === 'sales', 'large surface did not auto-open');
+   check(!document.querySelector('.surface-home:not(.inline)').classList.contains('inline'), 'table left inline');
    check(document.querySelector('#canvas-pick').options.length === 2, 'picker missing surfaces');
    check(document.documentElement.scrollWidth <= innerWidth, 'horizontal page overflow');
    if (innerWidth < 720) check(document.querySelector('.main').getBoundingClientRect().width === 0, 'narrow canvas not full width');
@@ -69,22 +70,23 @@ const steps = [
    window.qaSubmit=()=>{document.getElementById('input').value='Update the artifact';document.getElementById('composer').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}))};
    window.qaSubmit(); await new Promise(r=>setTimeout(r,30));
    window.qaEmit({type:'tool_start',id:'u1',name:'vak_update'}); await new Promise(r=>setTimeout(r,30));
-   check(!document.getElementById('canvas').hidden && !document.getElementById('canvas-progress').hidden,'closed canvas did not open at update start');
-   check(document.getElementById('canvas-copy').disabled,'pending canvas should not expose old content');
+   check(document.getElementById('canvas').hidden,'a closed canvas should wait for the snapshot to decide placement');
    const session=new URLSearchParams(location.search).get('session');
    const view=await (await window.qaRealFetch('/api/sessions/'+session)).json(); window.qaSnapshot=view.surfaces.find(s=>s.id==='sales');
    window.qaEmit({type:'surface',snapshot:window.qaSnapshot}); await new Promise(r=>setTimeout(r,30)); flush();
-   check(document.querySelector('#canvas-content vak-surface')?.surfaceId==='sales','update did not select its target');
+   check(document.querySelector('#canvas-content vak-surface')?.surfaceId==='sales','large update did not open its target');
+   window.qaEmit({type:'tool_start',id:'u1b',name:'vak_update'}); await new Promise(r=>setTimeout(r,30));
+   check(!document.getElementById('canvas-progress').hidden,'open canvas shows no progress');
    document.getElementById('canvas-close').click();
    window.qaEmit({type:'surface',snapshot:window.qaSnapshot}); window.qaEmit({type:'tool_start',id:'u2',name:'vak_update'}); await new Promise(r=>setTimeout(r,30));
    check(document.getElementById('canvas').hidden,'stream reopened canvas after manual close');
    window.qaEmit({type:'run_end',stop:'done'}); window.qaController.close(); await new Promise(r=>setTimeout(r,30));
    window.qaSubmit(); await new Promise(r=>setTimeout(r,30));
-   window.qaEmit({type:'tool_start',id:'u3',name:'vak_render'}); await new Promise(r=>setTimeout(r,30));
+   window.qaEmit({type:'tool_start',id:'u3',name:'vak_render'}); window.qaEmit({type:'surface',snapshot:window.qaSnapshot}); await new Promise(r=>setTimeout(r,30)); flush();
    check(!document.getElementById('canvas').hidden,'next turn should reopen canvas');
    window.qaEmit({type:'error',message:'Scripted failure'}); window.qaEmit({type:'run_end',stop:'error'}); window.qaController.close(); await new Promise(r=>setTimeout(r,30));
-   check(document.getElementById('canvas').hidden && document.getElementById('canvas-progress').hidden,'failed generation left an empty canvas');
-   window.fetch=window.qaRealFetch; return 'update-start reopen, streamed target, manual close and failure cleanup';`,
+   check(document.getElementById('canvas-progress').hidden,'failed generation left progress showing');
+   window.fetch=window.qaRealFetch; return 'snapshot placement, progress, manual close and failure cleanup';`,
   `document.getElementById('open-artifacts').click(); await new Promise(r => setTimeout(r, 250));
    check(!document.getElementById('artifacts-page').hidden && document.getElementById('workspace').hidden, 'library did not open');
    check(document.querySelectorAll('.artifact-card').length === 2, 'library missing saved surfaces'); return 'artifact library rendered';`,

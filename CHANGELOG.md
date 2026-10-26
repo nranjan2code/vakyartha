@@ -4,6 +4,10 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Inline or canvas, by size:** small interfaces stay in the conversation again; tables, charts, tabs, maps, boards, long code, forms with more than five fields and large or long surfaces leave a reference card and open in the canvas (`src/placement.ts`). Growing past the limit while streaming moves a surface to the canvas; nothing jumps back. The canvas no longer opens before the first snapshot shows how big a surface is. Inline surfaces have no extra header; open one in the canvas from the reply's actions.
+- **Reply actions for interfaces:** replies that are only an interface now get copy, read aloud and open in canvas; copy and speech use the interface's text.
+- **Plain answers stay text:** the app's instructions now say when to answer without UI (greetings, thanks, small talk, a fact or short explanation, or a request for text), matching Projection's new prompt rule. A title the content repeats is no longer drawn twice.
+
 - **Dictation:** a mic in the message box (⌘D) turns speech into text. This Mac's speech recognition is the free default and shows words as you speak; a hosted model (OpenAI GPT Transcribe / GPT-4o Transcribe / Whisper, Gemini's transcribe models, ElevenLabs Scribe) gets a 16 kHz recording when you stop. Enter finishes, Esc discards; a timer and a ring that follows your voice show it is listening. Settings → Voice → Dictation picks the model and language and can send when dictation ends. Ollama has no transcription model yet; its card says so. The desktop app asks for microphone and speech recognition access (Info.plist).
 - **Message actions:** small icon buttons under each message, shown on hover and always on the latest reply: copy and read aloud on replies, copy and edit on your messages. Copy shows a check when done.
 - Gemini's speech and transcription models now come from its model list, so retired names never appear.

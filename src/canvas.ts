@@ -1,13 +1,16 @@
 // The app owns where an interface is shown. Move its live element rather than
 // rendering a second form: validation, drafts and local table views stay intact.
-// The thread holds a reference card; closed surfaces stay parked there hidden.
+// Small interfaces live in the conversation; large ones (placement.ts) leave a
+// reference card there and open in the canvas. Any can be opened in the canvas.
 import { projectMarkdown, projectText, type SurfaceSnapshot, type SurfaceStore } from "@vak/core";
 import type { VakSurfaceElement } from "@vak/web";
 import { $, prefs } from "./core.ts";
 import { icon } from "./icons.ts";
 import { downloadMarkdown } from "./backend.ts";
+import { canvasReason } from "./placement.ts";
 
-interface Entry { surface: VakSurfaceElement; home: HTMLElement; button: HTMLButtonElement; title: HTMLElement; option: HTMLOptionElement }
+/** large: placed in the canvas; once large it stays so, and nothing jumps back into the chat. */
+interface Entry { surface: VakSurfaceElement; home: HTMLElement; button: HTMLButtonElement; title: HTMLElement; option: HTMLOptionElement; large: boolean }
 
 export class Canvas {
   #entries = new Map<string, Entry>();
@@ -32,9 +35,9 @@ export class Canvas {
   }
 
   beginWork(): void {
-    if (this.#dismissed) return;
-    // A tool-start event has no surface ID yet. Show progress without guessing
-    // which of several artifacts the model will change; the snapshot selects it.
+    // A tool-start event has neither surface ID nor size yet: progress shows in
+    // a canvas already open; otherwise the first snapshot decides where it goes.
+    if (this.#dismissed || this.#panel.hidden) return;
     this.#panel.hidden = this.#resize.hidden = false;
     this.#workspace.classList.add("canvas-open");
     if (!this.#active) this.#view(false);
@@ -184,6 +187,7 @@ export class Canvas {
     if (!entry) {
       const home = document.createElement("section");
       home.className = "surface-home";
+      home.dataset.surface = snap.id;
       const head = document.createElement("div");
       head.className = "surface-head";
       const title = document.createElement("span");
@@ -194,22 +198,25 @@ export class Canvas {
       button.addEventListener("click", () => this.open(snap.id, true));
       head.append(title, button);
       home.append(head, surface);
-      surface.hidden = true;
       parent.append(home);
       const option = new Option("", snap.id);
       this.#picker.add(option);
-      entry = { surface, home, button, title, option };
+      entry = { surface, home, button, title, option, large: false };
       this.#entries.set(snap.id, entry);
     }
+    // Promote once a stream or update makes it large; never demote.
+    entry.large ||= canvasReason(snap) !== undefined;
+    entry.home.classList.toggle("inline", !entry.large);
+    if (this.#active !== snap.id) surface.hidden = entry.large;
     entry.title.textContent = snap.title || "Interface";
     entry.option.textContent = entry.title.textContent;
     entry.button.textContent = this.#active === snap.id ? "Shown in canvas" : "Open in canvas";
     entry.button.setAttribute("aria-expanded", String(this.#active === snap.id));
     if (this.#active === snap.id) $("canvas-title").textContent = entry.title.textContent;
     if (this.#active === snap.id) this.#updateText();
-    // Both new and updated live surfaces belong in the canvas. History redraws
-    // pass auto=false; closing during this turn suppresses later stream ticks.
-    if (auto && !this.#dismissed) this.open(snap.id);
+    // Large new and updated surfaces open in the canvas. History redraws pass
+    // auto=false; closing during this turn suppresses later stream ticks.
+    if (auto && !this.#dismissed && entry.large) this.open(snap.id);
   }
 
   open(id: string, focus = false): void {
@@ -240,7 +247,7 @@ export class Canvas {
     const entry = this.#active ? this.#entries.get(this.#active) : undefined;
     if (!entry) return;
     entry.home.append(entry.surface);
-    entry.surface.hidden = true;
+    entry.surface.hidden = entry.large;
     entry.home.classList.remove("in-canvas");
     entry.button.textContent = "Open in canvas";
     entry.button.setAttribute("aria-expanded", "false");
@@ -264,6 +271,12 @@ export class Canvas {
   restore(): void {
     const id = prefs.get(`canvas:session:${this.#session()}`);
     if (id) this.open(id);
+  }
+
+  /** Whether the surface sits in the conversation (small), not on a card. */
+  isInline(id: string): boolean {
+    const e = this.#entries.get(id);
+    return Boolean(e && !e.large);
   }
 
   remove(id: string): void {
