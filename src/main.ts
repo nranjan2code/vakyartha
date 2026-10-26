@@ -31,7 +31,10 @@ const thread = $<HTMLElement>("thread");
 const input = $<HTMLTextAreaElement>("input");
 const send = $<HTMLButtonElement>("send");
 const modelPick = $<HTMLSelectElement>("model-pick");
-modelMenu(modelPick);
+const composerFoot = document.createElement("div");
+composerFoot.className = "composer-foot";
+$<HTMLFormElement>("composer").after(composerFoot);
+modelMenu(modelPick, composerFoot);
 const chatsNav = $<HTMLElement>("chats");
 
 let client: VakClient;

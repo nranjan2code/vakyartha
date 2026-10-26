@@ -4,7 +4,7 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
-- **Composer:** the model picker is a compact popover grouped by provider, with keyboard navigation; the conversation and the input bar share one column width so their edges line up.
+- **Composer:** the model picker sits below the input bar on the right and opens a compact menu grouped by provider, with numbered shortcuts, keyboard navigation and More models; the conversation and the input bar share one column width so their edges line up.
 
 - **New chat screen:** a quieter time-of-day greeting and five ideas drawn from a mix of everyday and technical starters. Choosing one fills the message box to edit before sending instead of sending at once.
 
