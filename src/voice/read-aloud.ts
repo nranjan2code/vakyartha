@@ -2,7 +2,8 @@
 // a reply are fetched one ahead of playback, so a long reply starts speaking
 // after its first sentence. Anything that reads aloud hears "vak:voice".
 
-import { engine, prefs } from "./core.ts";
+import { engine, prefs } from "../core.ts";
+import { voiceMaster } from "./master.ts";
 import { speechChunks, speechLocale, textLanguage } from "./speech-text.ts";
 
 export interface Voice { id: string; name: string }
@@ -23,7 +24,9 @@ export interface VoiceChoice { provider: string; model: string; voice: string; o
 export const SPEEDS = [["0.75", "0.75×"], ["1", "1×"], ["1.25", "1.25×"], ["1.5", "1.5×"], ["2", "2×"]] as const;
 
 export const voicePrefs = {
-  get enabled(): boolean { return prefs.get("voice:enabled") !== "false"; },
+  /** The person's own setting; `enabled` is also off under the master switch. */
+  get own(): boolean { return prefs.get("voice:enabled") !== "false"; },
+  get enabled(): boolean { return voiceMaster.on && this.own; },
   set enabled(v: boolean) { prefs.set("voice:enabled", String(v)); window.dispatchEvent(new Event("vak:voice")); },
   get auto(): boolean { return prefs.get("voice:auto") === "true"; },
   set auto(v: boolean) { prefs.set("voice:auto", String(v)); },

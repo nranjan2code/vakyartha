@@ -9,7 +9,7 @@ import { applyAppearance, appearance, MODES, SIZES, THEMES } from "./theme.ts";
 import { addOwnPage, integrationPage, marketplace } from "./integrations-page.ts";
 import { disposeFinops, finopsPage } from "./finops-page.ts";
 import { TASK_LIMITS, parseTaskSummaries } from "../task-contract.ts";
-import { voicePage, voiceSection, voiceSettingsPage } from "./voice-page.ts";
+import { voicePage, voiceSection, voiceSettingsPage } from "./voice/index.ts";
 import { group, pill, plainField, row, secretField, segmented, select, type Setting, title, toggle } from "./ui.ts";
 
 interface ChannelInfo { id: string; label: string; enabled: boolean; provider?: string; model?: string; ready: boolean; secrets: string[]; needs: string[]; state: string; detail: string }

@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { PROVIDER_SETTINGS, type ProviderSetting } from "@vak/providers";
 import { CHANNELS } from "./channels.ts";
-import { VOICE_KEYS } from "./voice.ts";
+import { VOICE_KEYS } from "./voice/index.ts";
 
 export interface Setting extends Omit<ProviderSetting, "group" | "provider"> {
   group: ProviderSetting["group"] | "channel" | "voice";

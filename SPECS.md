@@ -39,9 +39,10 @@ Tauri 2 shell, Vite + plain TypeScript UI, the engine as a Node sidecar. **The b
 
 ## 4. Voice: read aloud and dictation
 
-- **Read aloud** is for the person, not a tool the model calls, so it is not an MCP integration: `sidecar/voice.ts` holds one adapter per voice provider (models, voices, the controls each model accepts, one synthesis call). Adding a provider is adding an adapter; its key, if new, is declared there and stored like any other secret.
+- **One module, one switch.** The window imports voice only from `src/voice/index.ts` (read aloud, dictation, spoken form, settings) and the engine only from `sidecar/voice/index.ts` (its routes and keys). Settings → Voice → Use voice is the master switch: off, there is no microphone, nothing is read aloud and nothing reaches a voice provider; read aloud and dictation keep their own settings beneath it. It is on by default.
+- **Read aloud** is for the person, not a tool the model calls, so it is not an MCP integration: `sidecar/voice/speech.ts` holds one adapter per voice provider (models, voices, the controls each model accepts, one synthesis call). Adding a provider is adding an adapter; its key, if new, is declared there and stored like any other secret.
 - The engine asks every provider for 16-bit 24 kHz mono PCM and writes the WAV header itself; requests are capped at 4,096 characters and validated before anything is sent. The window splits a reply into sentence-aligned pieces, plays one while fetching the next, and keeps speed in the player. The model's style and slider options are passed through to the provider.
-- **What is read** (`src/speech-text.ts`) is the reply as a person would say it, not the text Copy gives.
+- **What is read** (`src/voice/speech-text.ts`) is the reply as a person would say it, not the text Copy gives.
   - Prose is read without code, links or markup.
   - Interfaces are read as content. A card is its title, subtitle, badge and body. A stat is "label, value, up 0.39%". A table is read row by row, at most six rows, then "and N more rows". A chart is one sentence giving each series' range, and an alert is its title and body.
   - Controls are skipped: buttons, inputs, selects, checkboxes, dates, dividers and images. Component names and actions are never read.
@@ -67,7 +68,7 @@ Tauri 2 shell, Vite + plain TypeScript UI, the engine as a Node sidecar. **The b
   - Each transcription model may declare the language tags it honours (`SttModel.languages`). Settings → Voice offers only those; a model without a list offers the app's regional list.
   - The window sends the chosen language, or for "Same as this Mac" the Mac's own regional tag, narrowed to the most exact tag the model honours: `en-GB` becomes `en` for Whistle. A language the model does not know is not sent, and the model detects it.
   - The engine passes the whole tag to the adapter. OpenAI gets the bare language plus a prompt naming the region's spelling or script ("British English spelling", "Simplified Chinese characters"). Gemini is told the variant by name. ElevenLabs and Whistle get the bare language. The same path serves the browser and the app window. In a browser, the recognizer built into the window is the free default and needs no engine call. The app window's WebKit recognizer returns nothing, so there the first provider ready to transcribe is the default: Whistle, once installed. Gemini model lists come from its API.
-- **Whistle** (`sidecar/whistle.ts`) only transcribes, on this Mac's CPU, in seven languages (en, de, fr, es, it, nl, pl), and refuses others. Its engine is a prebuilt binary with no published source, so it is handled as untrusted:
+- **Whistle** (`sidecar/voice/whistle.ts`) only transcribes, on this Mac's CPU, in seven languages (en, de, fr, es, it, nl, pl), and refuses others. Its engine is a prebuilt binary with no published source, so it is handled as untrusted:
   - its pack (the macOS arm64 engine plus weights, both Apache 2.0) is pinned to Hugging Face commits at least 14 days old and to each file's SHA-256;
   - it is checked before it is moved into `<data>/voice/whistle/<engine>-<weights>/`;
   - each recording runs as one process with an empty environment and, on macOS, with networking denied.

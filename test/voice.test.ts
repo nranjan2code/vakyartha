@@ -4,12 +4,13 @@ import { SETTINGS } from "../sidecar/settings.ts";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { installVoicePack, MAX_SPEECH_CHARS, pullOllamaPack, speak, SpeechError, transcribe, voiceProviders, wav } from "../sidecar/voice.ts";
-import { WHISTLE_PACK, whistleDir, whistleSupported } from "../sidecar/whistle.ts";
-import { dictationLanguage, downsample, mergeResults, wav16k } from "../src/dictation.ts";
-import { speakable, speechChunks, speechLocale, spokenSurface, textLanguage } from "../src/speech-text.ts";
+import { installVoicePack, MAX_SPEECH_CHARS, pullOllamaPack, speak, SpeechError, transcribe, voiceProviders, wav } from "../sidecar/voice/speech.ts";
+import { WHISTLE_PACK, whistleDir, whistleSupported } from "../sidecar/voice/whistle.ts";
+import { dictationLanguage, dictationPrefs, downsample, mergeResults, wav16k } from "../src/voice/dictation.ts";
+import { voiceMaster } from "../src/voice/master.ts";
+import { speakable, speechChunks, speechLocale, spokenSurface, textLanguage } from "../src/voice/speech-text.ts";
 import type { ResolvedNode, ResolvedSurface } from "@vak/core";
-import { type VoiceProvider, voiceFor } from "../src/voice.ts";
+import { type VoiceProvider, voiceFor, voicePrefs } from "../src/voice/read-aloud.ts";
 
 interface Call { url: string; init?: RequestInit }
 function fake(routes: Record<string, (init?: RequestInit) => Response>): { f: typeof fetch; calls: Call[] } {
@@ -361,4 +362,30 @@ test("dictation results join once, whether phrases arrive separately or repeated
   assert.equal(mergeResults(["Hello how", "Hello how are you?"]), "Hello how are you?");
   assert.equal(mergeResults(["Hello how are you", "Hello, how are you."]), "Hello, how are you.");
   assert.equal(mergeResults(["", "  "]), "");
+});
+
+test("the master switch turns read aloud and dictation off and keeps their own settings", () => {
+  const store = new Map<string, string>();
+  const events: string[] = [];
+  const g = globalThis as Record<string, unknown>;
+  const saved = { localStorage: g.localStorage, window: g.window };
+  g.localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+  g.window = { dispatchEvent: (e: Event) => events.push(e.type) };
+  try {
+    assert.equal(voiceMaster.on, true, "on by default, so nothing changes for existing installs");
+    assert.equal(voicePrefs.enabled, true);
+    assert.equal(dictationPrefs.enabled, true);
+    voiceMaster.on = false;
+    assert.deepEqual(events, ["vak:voice", "vak:dictation"]);
+    assert.equal(voicePrefs.enabled, false);
+    assert.equal(dictationPrefs.enabled, false);
+    assert.equal(voicePrefs.own, true);
+    assert.equal(dictationPrefs.own, true);
+    dictationPrefs.enabled = false;
+    voiceMaster.on = true;
+    assert.equal(voicePrefs.enabled, true);
+    assert.equal(dictationPrefs.enabled, false, "a setting turned off beneath the switch stays off");
+  } finally {
+    Object.assign(g, saved);
+  }
 });

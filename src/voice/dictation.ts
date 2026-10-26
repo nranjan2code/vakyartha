@@ -4,7 +4,8 @@
 // recording when you stop. Anything showing
 // dictation hears "vak:dictation".
 
-import { engine, prefs } from "./core.ts";
+import { engine, prefs } from "../core.ts";
+import { voiceMaster } from "./master.ts";
 
 export interface DictationChoice { provider: string; model: string }
 
@@ -40,7 +41,9 @@ const Recognizer = (globalThis as { SpeechRecognition?: RecognitionCtor; webkitS
 export const systemDictation = Boolean(Recognizer) && !("__TAURI_INTERNALS__" in globalThis);
 
 export const dictationPrefs = {
-  get enabled(): boolean { return prefs.get("dictation:enabled") !== "false"; },
+  /** The person's own setting; `enabled` is also off under the master switch. */
+  get own(): boolean { return prefs.get("dictation:enabled") !== "false"; },
+  get enabled(): boolean { return voiceMaster.on && this.own; },
   set enabled(v: boolean) { prefs.set("dictation:enabled", String(v)); window.dispatchEvent(new Event("vak:dictation")); },
   get send(): boolean { return prefs.get("dictation:send") === "true"; },
   set send(v: boolean) { prefs.set("dictation:send", String(v)); },
@@ -118,7 +121,7 @@ export function mergeResults(parts: string[]): string {
 
 /** With no choice made and no system recognizer: the first provider ready to transcribe (local ones come first). */
 async function firstReady(): Promise<DictationChoice | undefined> {
-  const { loadVoices } = await import("./voice.ts");
+  const { loadVoices } = await import("./read-aloud.ts");
   const list = await loadVoices().catch(() => []);
   const p = list.find((x) => x.stt?.length && !(x.keyVar && x.reason?.includes("API key")));
   return p ? { provider: p.id, model: p.stt![0]!.id } : undefined;
@@ -238,7 +241,7 @@ async function record(c: DictationChoice, h: DictationHandlers): Promise<void> {
     try {
       const audio = wav16k(downsample(chunks, rate));
       if (audio.length < 44 + RATE * 2 * 0.3) throw new Error("Nothing was heard.");
-      const { loadVoices } = await import("./voice.ts");
+      const { loadVoices } = await import("./read-aloud.ts");
       const model = (await loadVoices().catch(() => [])).find((p) => p.id === c.provider)?.stt?.find((m) => m.id === c.model);
       const language = dictationLanguage(dictationPrefs.language || navigator.language, model?.languages);
       const res = await fetch(`${engine().url}/api/transcribe`, {

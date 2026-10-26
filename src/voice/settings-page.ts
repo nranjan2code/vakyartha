@@ -2,11 +2,12 @@
 // voice packs, model and voice with a preview) and Settings → Voice (how
 // reading aloud behaves). Choosing a voice is per window, like the theme.
 
-import { api, el } from "./core.ts";
-import { tile } from "./icons.ts";
-import { group, pill, row, secretField, segmented, select, type Setting, title, toggle } from "./ui.ts";
-import { dictationLanguage, dictationPrefs, systemDictation } from "./dictation.ts";
-import { type VoiceOption, lastError, loadVoices, readAloud, resolveChoice, SPEEDS, stopReading, voicePrefs, voiceState, type VoiceChoice, type VoiceProvider } from "./voice.ts";
+import { api, el } from "../core.ts";
+import { tile } from "../icons.ts";
+import { group, pill, row, secretField, segmented, select, type Setting, title, toggle } from "../ui.ts";
+import { cancelDictation, dictationLanguage, dictationPrefs, systemDictation } from "./dictation.ts";
+import { voiceMaster } from "./master.ts";
+import { type VoiceOption, lastError, loadVoices, readAloud, resolveChoice, SPEEDS, stopReading, voicePrefs, voiceState, type VoiceChoice, type VoiceProvider } from "./read-aloud.ts";
 
 const inUse = (p: VoiceProvider) => voicePrefs.choice?.provider === p.id && resolveChoice([p]) !== undefined;
 
@@ -158,6 +159,15 @@ export async function voicePage(id: string, settings: Setting[], back: () => voi
   return parts;
 }
 
+/** Turning voice off stops anything speaking or listening at once. */
+export function setVoiceOn(on: boolean): void {
+  if (!on) {
+    stopReading();
+    cancelDictation();
+  }
+  voiceMaster.on = on;
+}
+
 /** Settings → Voice: whether and how replies are read; the voice itself is chosen in Integrations. */
 export async function voiceSettingsPage(openProvider: (id: string) => void): Promise<HTMLElement[]> {
   const list = await loadVoices(true).catch(() => [] as VoiceProvider[]);
@@ -171,17 +181,22 @@ export async function voiceSettingsPage(openProvider: (id: string) => void): Pro
   const current = c && p && m ? `${v?.name ?? c.voice} · ${m.label} · ${p.label}` : "No voice is ready yet.";
   const controls = el("span", { className: "row-actions" }, change);
   if (c) controls.prepend(previewButton(() => sample(v?.name ?? "your voice"), () => c, note));
-  return [
-    ...title("Voice", "Hear replies read aloud and dictate messages. On this Mac it is free; a hosted provider receives the text or recording and bills for it."),
+  const rest = el("div", { hidden: !voiceMaster.on });
+  rest.append(
     group(
       "Read aloud",
-      row("Read-aloud button", "Show a speaker on each reply. Right-click a reply for the same.", toggle(voicePrefs.enabled, (on) => { voicePrefs.enabled = on; })),
+      row("Read-aloud button", "Show a speaker on each reply. Right-click a reply for the same.", toggle(voicePrefs.own, (on) => { voicePrefs.enabled = on; })),
       row("Read new replies automatically", "Only while the chat is open. Hosted voices charge for every reply read.", toggle(voicePrefs.auto, (on) => { voicePrefs.auto = on; })),
       row("Speed", null, segmented(SPEEDS, voicePrefs.speed as (typeof SPEEDS)[number][0], (s) => { voicePrefs.speed = s; })),
     ),
     dictationGroup(list),
     group("Voice", row("Current voice", current, controls), el("div", { className: "row stack" }, el("p", { className: "row-hint", textContent: p ? p.cost : "Install a free voice pack under Integrations → Voice → Ollama." }))),
     note,
+  );
+  return [
+    ...title("Voice", "Hear replies read aloud and dictate messages. On this Mac it is free; a hosted provider receives the text or recording and bills for it."),
+    group("Voice", row("Use voice", "Off: no microphone, nothing read aloud and nothing sent to a voice provider. Your settings below are kept.", toggle(voiceMaster.on, (on) => { setVoiceOn(on); rest.hidden = !on; }))),
+    rest,
   ];
 }
 
@@ -230,7 +245,7 @@ function dictationGroup(list: VoiceProvider[]): HTMLElement {
   describe(chosen?.provider);
   return group(
     "Dictation",
-    row("Microphone button", "Speak instead of typing: ⌘D or the mic in the message box. Enter stops; Esc discards.", toggle(dictationPrefs.enabled, (on) => { dictationPrefs.enabled = on; })),
+    row("Microphone button", "Speak instead of typing: ⌘D or the mic in the message box. Enter stops; Esc discards.", toggle(dictationPrefs.own, (on) => { dictationPrefs.enabled = on; })),
     which,
     row("Language", "Only the languages the chosen model transcribes. A regional choice sets spelling where the model supports it.", languageBox),
     row("Send when dictation ends", "Otherwise the words wait in the message box for you to edit.", toggle(dictationPrefs.send, (on) => { dictationPrefs.send = on; })),

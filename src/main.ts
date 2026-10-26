@@ -18,9 +18,7 @@ import { closeSettings, openSettings, settingsOpen } from "./settings.ts";
 import { applyAppearance, surfaceMode } from "./theme.ts";
 import { TasksPanel } from "./tasks-panel.ts";
 import { Drafts } from "./drafts.ts";
-import { cancelDictation, dictationPrefs, dictationState, startDictation, stopDictation } from "./dictation.ts";
-import { lastError, readAloud, replyText, stopReading, voicePrefs, voiceState } from "./voice.ts";
-import { spokenSurface, textLanguage } from "./speech-text.ts";
+import { cancelDictation, dictationPrefs, dictationState, lastError, readAloud, replyText, spokenSurface, startDictation, stopDictation, stopReading, textLanguage, voicePrefs, voiceState } from "./voice/index.ts";
 
 applyAppearance();
 defineVakElements();
