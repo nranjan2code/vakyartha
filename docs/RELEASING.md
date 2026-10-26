@@ -109,3 +109,17 @@ Artifact SHA-256:
 The local verification receipt is `.vak/media-checks/2026-10-26-install.json` (ignored). A later documentation-only checkpoint records this install; the compiled code remains `2556f53`. No new tag or GitHub release was published.
 
 Installed-app smoke (2026-10-26): `qwen3.5:4b-mlx` rendered the requested “Local installation check / Ready” card in 33.4 seconds; Open in canvas moved the same surface successfully. The installed catalog and About were inspected. No paid generation was run.
+
+## Task outcome and accessibility local build — 2026-10-26
+
+Compiled app `d29ffbd` with pushed Projection `c147332` from an exact exported source snapshot and an absent Rust target (`/tmp/vakyartha-outcome-rust-final-d29ffbd`), with fresh `npm ci` and regenerated frontend/sidecar. This includes completed Databricks support and the task focus/hidden-field fixes. The concurrent external-catalog work was unfinished at the snapshot and is outside this build. Source validation: 134 app tests, 324 pinned framework tests, typecheck, the native test, wide/narrow task/canvas and retained-output WebKit checks. The exact final snapshot repeats app/typecheck and the 26-step task check at both widths. Both app and DMG succeeded (133.11 MiB / 42.79 MiB), retained in `src-tauri/target/release/bundle/` and the clean target.
+
+After explicit user approval to replace/relaunch the concurrently used app, the prior bundle was preserved and `/Applications/Vakyartha.app` replaced whole. All 1,949 installed files/symlinks match the fresh bundle; bundled sidecar matches the snapshot's regenerated sidecar. Native accessibility inspection confirms optional hidden fields are absent, Tab moves instructions → completion criteria, and Back/Escape returns focus to Schedule. No installed model/provider run was made. The current window is open on the conversation. Version remains 0.2.0, unsigned/unnotarized; no new tag or public release.
+
+Artifact SHA-256:
+
+- Native executable: `a89f27ceb4918432612f5d2f851767efc5094b9422b1ec0883902c9d91399ce1`
+- Bundled sidecar: `766fb33a4b3a752ca31879c7d099e53a86a42190cd6d13b2a5003a0b030af15b`
+- Disk image: `d2c9c54d26b0b3c540f7f2dacdaf3f6c0435283d998ee057ecfc21e077f5c5e8`
+
+Ignored local receipt: `.vak/builds/2026-10-26-outcome-final-install.json`, including the clean snapshot and previous-install backup paths. Later documentation commits do not change compiled source. File-report reliability still fails the retained trials; live microphone checks remain deferred, as documented in EVALUATION.md and VOICE-CHECK.md.

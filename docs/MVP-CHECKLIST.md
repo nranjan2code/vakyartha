@@ -69,7 +69,7 @@ Owner: Vakyartha. Reuse framework rendering and actions. Acceptance: M5 and M8.
 - [x] P2.5. Preserve all supported interactions after completion; additional work becomes an explicit continuation with its own record.
 - [x] P2.6. Prevent background updates from stealing focus, opening another task's canvas or changing the user's selection unexpectedly.
 - [ ] P2.7. Link evidence and output receipts to artifacts; distinguish real, sample, missing and stale information. User review now records run/surface version references and rejects stale results; output-file receipts now have hash/size/version references, verify/download and missing/modified states (ADR-026). Broader provenance classification remains open.
-- [ ] P2.8. Verify keyboard, assistive-technology status announcements, focus return and wide/narrow layouts. Automated WebKit coverage now includes native Space/Tab/Shift-Tab/Escape, focused receipt retention through a persisted revision, named delete dialogs and cancellation focus return. Full screen-reader and installed-window coverage remain open; see EVALUATION.md.
+- [ ] P2.8. Verify keyboard, assistive-technology status announcements, focus return and wide/narrow layouts. Automated WebKit coverage now includes native Space/Tab/Shift-Tab/Escape, focused receipt retention through a persisted revision, named delete dialogs and cancellation focus return. Installed `d29ffbd` confirms hidden optional fields are absent from native AX, Tab traversal and Back/Escape focus return. Full screen-reader and installed-window task lifecycle coverage remain open; see EVALUATION.md.
 
 ## P3 — Limits, data and recovery
 
