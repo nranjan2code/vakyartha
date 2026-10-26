@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import type { SessionView } from "@vak/host";
 import type { IntegrationView, ToolPolicy } from "@vak/mcp/client";
-import { resultText, separateFormAndTable, tableOutputText } from "./evaluation-checks.ts";
+import { resultText, separateFormAndTable, tableOutputText, tableRows } from "./evaluation-checks.ts";
 import { CATALOG } from "../sidecar/integrations.ts";
 import { startAppServer } from "../sidecar/server.ts";
 import { parseTaskView, taskObject, type TaskView, type TaskApproval } from "../task-contract.ts";
@@ -31,7 +31,7 @@ for (const line of settings.split("\n")) {
 const configurations: Record<string, unknown> = {};
 for (const id of ["time", "web", "memory"]) {
   const state = saved[id] === undefined ? undefined : taskObject(saved[id]);
-  if (!state?.enabled) continue;
+  if (state?.enabled !== true) continue;
   if (id === "memory") {
     const entry = CATALOG.find((e) => e.id === id)!;
     if (entry.source.kind !== "npm") throw new Error("Expected the pinned memory runtime");
@@ -70,7 +70,7 @@ const cases: Case[] = [
     goal: `Read BOTH ${urls.join(" and ")} using web__fetch_page. Based on those sources, explain whether example domains are appropriate for documentation and production application dependencies. Cite both source URLs and distinguish what you verified from missing information. Create TWO independent surfaces: a criteria form and an evidence table. No other URLs or services are authorized.`,
     criteria: "Both pages successfully read through MCP, both URLs cited, documentation purpose and production limitations explained, two independent interactive surfaces. No invented sources or claims of unavailable verification.",
     approve: (req) => req.server === "web" && req.tool === "fetch_page" && urls.includes(String(taskObject(req.args).url)),
-    check: async (task, view, integrations) => { const text = resultText(view); const calls = integrations.find((i) => i.entry.id === "web")?.calls.filter((c) => c.at >= task.created && c.ok === true) ?? []; return { bothSourcesRead: urls.every((url) => calls.some((c) => taskObject(c.args).url === url)), bothSourcesCited: urls.every((url) => text.includes(url)), independentSurfaces: separateFormAndTable(view), form: types(view).has("form"), table: types(view).has("table"), subjectPresent: /documentation/i.test(text) && /production/i.test(text) }; } },
+    check: async (task, view, integrations) => { const text = resultText(view); const calls = integrations.find((i) => i.entry.id === "web")?.calls.filter((c) => c.at >= task.created && c.ok === true) ?? []; return { bothSourcesRead: urls.every((url) => calls.some((c) => taskObject(c.args).url === url)), bothSourcesCited: urls.every((url) => text.includes(url)), evidenceRowsPresent: tableRows(view).filter((row) => row.some((cell) => cell !== undefined && cell !== null && cell !== "")).length >= 2, independentSurfaces: separateFormAndTable(view), form: types(view).has("form"), table: types(view).has("table"), subjectPresent: /documentation/i.test(text) && /production/i.test(text) }; } },
   { id: "memory-operation", integrations: ["memory"],
     goal: `Use memory__create_entities to create exactly one entity with name "${entity}", entityType "evaluation", observations ["${marker}"]. Then use memory__open_nodes with names ["${entity}"] to read it back. Show the actual read-back result in an interactive confirmation. Do not change any other entity. Do not claim verification without reading it back.`,
     criteria: "Exact approved create operation, separate MCP read-back and independent persisted-file confirmation of the marker. No other entities changed; result remains open for user review.",

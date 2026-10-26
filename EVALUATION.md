@@ -46,3 +46,10 @@ Evidence folders (UTC timestamps are used in filenames):
 Projection's default stops on a clean projection. The new opt-in `completion: "response"` allows publication as progress in the same bounded host run and ends on a response without tool calls. Ordinary chat is unchanged. Vakyartha enables it for tasks and still requires separate user evidence review before acceptance. No repeated chat requests, generated surface splitting or parallel canonical stores are used.
 
 Next, replay the recorded research binding and missing-identity output in Projection's own repository to identify general catalog/normalizer/authoring improvements. Add regressions from the real output before rerunning affected local cases. Do not solve these failures with app-side surface rewriting. Keep source correctness, independent controls, output receipts, recovery and full installed-window checks open until their acceptance evidence exists.
+
+
+## Wrapped-list replay and targeted rerun — 2026-10-26
+
+Projection `9c6a0ae` repairs a schema-declared singleton list reference only when its absolute target is an existing array. Replaying the recorded `rows: ["data/evidence"]` now stores a canonical binding, displays actual evidence rows, and follows later data updates. Missing/scalar targets, relative references, ordinary paths and nested row cells remain unchanged. The framework passes 240 tests including its replay gate.
+
+A targeted research rerun on that pin took 60.4s, four generation requests and two approved page reads. Evidence rows were populated, but the requested form/table were still combined into one surface and source interpretation remained unreliable. That run used a direct row array rather than the repaired spelling; it is not evidence of a causal end-to-end improvement from this specific repair. Keep the outcome failed. Retained evidence: `.vak/evaluations/agent-mvp/results/2026-10-25T21-50-54.221Z-aa0e1edb`. The inspector supports single-case report directories and now exercises native and segmented select controls plus checkboxes as well as field edits/filtering, checking that no run/input/model request is dispatched.

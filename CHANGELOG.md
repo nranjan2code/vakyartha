@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- From Projection `9c6a0ae`: schema-declared wrapped list references such as `rows: ["data/evidence"]` resolve to existing array data and retain live bindings. Literal paths and unresolved/scalar targets remain unchanged. Real outcome failures remain tracked separately.
+
 - **Task progress:** opt-in response completion lets a task publish interfaces and continue work in the same bounded run. Ordinary chat keeps projection completion. Added repeatable local outcome evaluation using installed capabilities; current research/comparison failures remain documented in EVALUATION.md.
 
 - **Task budgets:** configurable limits across all runs for requests, tool attempts and active time. Reservations persist before work, survive restart and count retries. Crash recovery keeps unfinished time charged; approval waits do not use active time. Setup and task/run details show the limits and counters. Task schema is v5, with no compatibility migration or automatic data deletion.
@@ -14,7 +16,7 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 - **Task usage:** run-level model usage in Schedule, task/run attribution and filtering in FinOps, and matching CSV columns. Missing costs remain unknown; model estimates exclude tool/server charges and do not enforce a spending ceiling.
 
-Built on Projection `dbae5c2`.
+Built on Projection `9c6a0ae`.
 
 - **Schedule workspace:** calendar navigation, full-page creation, lifecycle filters/search, starter ideas, activity, permissions and result access. Immediate and one-time future runs share the task dispatcher; pause/resume, reschedule, Run now and guarded deletion are available. Missed times require review. Existing multiple interactive surfaces stay in the canonical workspace.
 - **Task execution:** permission waits release the execution slot and resume the same call after fresh authority checks. Expandable run history records distinct attempts, outcomes, active time, tool counts and user acceptance. Task journal schema v2 is strict, with no prelaunch compatibility migration or automatic data deletion. Repeating schedules, chains and sustained retention remain planned.

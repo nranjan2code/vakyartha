@@ -1,5 +1,6 @@
 // Inspect retained real-model outputs in WebKit; typing/filtering must not call a model.
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,14 +10,17 @@ import { taskObject } from "../task-contract.ts";
 
 const report = path.resolve(process.argv[2] ?? "");
 if (!process.argv[2] || !report.includes(`${path.sep}.vak${path.sep}evaluations${path.sep}`)) throw new Error("Pass a retained evaluation report directory under .vak/evaluations");
+const scenarios = ["interactive-comparison", "public-source-research", "memory-operation"].filter((name) => existsSync(path.join(report, `${name}.json`)));
+if (!scenarios.length) throw new Error("This report has no retained case outputs to inspect");
 const dataDir = path.dirname(path.dirname(report));
 const app = await startAppServer({ dataDir, access: "open", uiDir: path.resolve("dist"), keychainService: "com.nranjan2code.vakyartha.evaluation", appName: "Vakyartha evaluation" });
 const run = promisify(execFile), bin = path.join(await mkdtemp(path.join(tmpdir(), "vak-evaluation-webkit-")), "webkit-check");
 try {
   await run("swiftc", ["-O", path.resolve("scripts/webkit-check.swift"), "-o", bin]);
-  for (const scenario of ["interactive-comparison", "public-source-research", "memory-operation"]) {
+  for (const scenario of scenarios) {
     const raw = taskObject(JSON.parse(await readFile(path.join(report, `${scenario}.json`), "utf8")));
     const result = taskObject(raw.result), task = String(result.task);
+    if (!/^[\w-]{1,120}$/.test(task)) throw new Error("Invalid retained task identity");
     for (const width of [1100, 620]) {
       const steps = [`
         const wait=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await new Promise(r=>setTimeout(r,40))}throw new Error('Real output did not mount')};
@@ -32,11 +36,15 @@ try {
           const surface=select(option.value);await new Promise(r=>setTimeout(r,40));
           const input=surface.shadowRoot.querySelector('form input:not([type="checkbox"])');
           if(input){input.value=input.type==='number'?'20':'Evaluation draft';input.dispatchEvent(new Event('input',{bubbles:true}));edited++;}
+          const choice=surface.shadowRoot.querySelector('form select');
+          if(choice&&choice.options.length>1){choice.selectedIndex=choice.selectedIndex===0?1:0;choice.dispatchEvent(new Event('change',{bubbles:true}));edited++;}
+          for(const group of surface.shadowRoot.querySelectorAll('form [role="radiogroup"]')){const buttons=group.querySelectorAll('button');if(buttons.length>1){buttons[1].click();edited++;}}
+          for(const checkbox of surface.shadowRoot.querySelectorAll('form input[type="checkbox"]')){checkbox.checked=!checkbox.checked;checkbox.dispatchEvent(new Event('change',{bubbles:true}));edited++;}
           const search=surface.shadowRoot.querySelector('input[type="search"]');
           if(search){search.value='Birch';search.dispatchEvent(new Event('input',{bubbles:true}));surface.renderNow();filtered++;search.value='';search.dispatchEvent(new Event('input',{bubbles:true}));surface.renderNow();}
         }
         const shown=document.querySelector('#canvas-content vak-surface');shown.renderNow();shown.shadowRoot.querySelectorAll('.enter').forEach(node=>node.classList.remove('enter'));
-        const after=await(await fetch('/api/tasks/${task}')).json();check(before.budget.modelRequests===after.budget.modelRequests,'Local controls called a model');
+        const after=await(await fetch('/api/tasks/${task}')).json();check(before.budget.modelRequests===after.budget.modelRequests&&before.runs===after.runs&&before.pending.length===after.pending.length,'Local controls dispatched agent work');
         check(document.documentElement.scrollWidth<=innerWidth,'Real output caused page overflow');
         return JSON.stringify({surfaces:picker.options.length,edited,filtered,modelRequestsUnchanged:true});
       `];
