@@ -77,6 +77,7 @@ test("failed output saves can recover without repeating generation and deletion 
     assert.equal(current.state, "needs_input"); assert.equal(current.runHistory[0]!.output!.state, "saved"); assert.equal(requests, 2);
     const file = path.join(files.outputsDir, run.output!.filename);
     assert.match(await readFile(file, "utf8"), /Actual canonical output/);
+    assert.match(await readFile(file, "utf8"), /Ready for review/);
     await tasks.close();
     const journalFile = path.join(deps.dir, `${task.id}.json`), journal = JSON.parse(await readFile(journalFile, "utf8"));
     await writeFile(path.join(deps.dir, `${task.id}.json.00000000-0000-0000-0000-000000000000.tmp`), "abandoned private checkpoint");

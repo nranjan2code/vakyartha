@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Saved task Markdown preserves the latest assistant prose alongside its canonical surfaces, including mixed narrative/interface results.
+
 - Task setup accepts bounded selected UTF-8 snapshots and an optional local Markdown destination. Saved output receipts include read-back hashes, size and available surface versions, with verify/download and save retry without generation. Missing/changed/stale outputs block acceptance.
 - Task diagnostic retention and scoped deletion now include owned input/output/checkpoint content. Uncertain operations require exact-ID, revision-bound evidence review; duplicate call IDs are not redispatched and uncertain dispatched effects stop work.
 - Projection pin `d1248e2` adds caller constraints during surface correction, schema-governed recovery of sibling settings inside serialized lists, and abandoned session-checkpoint removal. Checked research reaches user review and saves a verified output; general semantic/reliability gates remain open.
