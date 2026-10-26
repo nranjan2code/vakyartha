@@ -11,7 +11,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createHost, json, readJson } from "@vak/host";
 import { attachmentsRoute } from "./attachments.ts";
 import type { Integrations } from "@vak/mcp/client";
-import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, providersFromEnv } from "@vak/providers";
+import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, providersFromEnv, pinnedFetch } from "@vak/providers";
 import { Channels, CHANNELS } from "./channels.ts";
 import { Marketplaces } from "./marketplaces.ts";
 import { MARKETPLACES, type MarketplaceId } from "../shared/marketplaces.ts";
@@ -47,6 +47,7 @@ export interface AppServerOptions {
   npm?: string;
   /** Discovery transport override for deterministic catalog/lifecycle checks. */
   marketplaceFetch?: typeof fetch;
+  marketplaceImageFetch?: typeof pinnedFetch;
   /** Built UI to serve at / (the playground); none: API only. */
   uiDir?: string;
   appName?: string;
@@ -235,7 +236,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     log,
   });
 
-  marketplaces = new Marketplaces(dataDir, [...CATALOG, ...media.entries()], opts.marketplaceFetch);
+  marketplaces = new Marketplaces(dataDir, [...CATALOG, ...media.entries()], opts.marketplaceFetch, opts.marketplaceImageFetch);
   integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm }, media, marketplaces.catalog);
   // Refresh app-owned tool schemas after an upgrade; the integration journal
   // may otherwise retain an older model's controls indefinitely.
@@ -320,10 +321,15 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     if (p === "/api/marketplaces" && req.method === "GET") { json(res, 200, MARKETPLACES); return true; }
     if (p.startsWith("/api/marketplaces/")) {
       try {
-        const match = /^\/api\/marketplaces\/(mcp|github|docker)(?:\/(review|add))?$/.exec(p);
+        const match = /^\/api\/marketplaces\/(mcp|github|docker)(?:\/(review|add|icon))?$/.exec(p);
         if (!match) { json(res, 404, { error: "Unknown marketplace" }); return true; }
         const source = match[1] as MarketplaceId;
         if (!match[2] && req.method === "GET") json(res, 200, await marketplaces.search(source, url.searchParams.get("q") ?? "", url.searchParams.get("cursor") ?? ""));
+        else if (match[2] === "icon" && req.method === "GET") {
+          const image = await marketplaces.icon(source, url.searchParams.get("q") ?? "", url.searchParams.get("cursor") ?? "", url.searchParams.get("key") ?? "");
+          res.writeHead(200, { "content-type": image.type, "content-length": image.bytes.length, "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox", "cache-control": "private, max-age=3600" });
+          res.end(image.bytes);
+        }
         else if (match[2] === "review" && req.method === "POST") {
           const b = await readJson(req);
           json(res, 200, await marketplaces.review(source, String(b.query ?? ""), String(b.cursor ?? ""), String(b.key ?? ""), String(b.option ?? "")));
@@ -335,12 +341,17 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
       return true;
     }
     if (!p.startsWith("/api/integrations")) return false;
-    const m = /^\/api\/integrations(?:\/([\w-]+)(?:\/(install|uninstall|refresh|test))?)?$/.exec(p);
+    const m = /^\/api\/integrations(?:\/([\w-]+)(?:\/(install|uninstall|refresh|test|icon))?)?$/.exec(p);
     if (!m) return false;
     const [, id, verb] = m;
     try {
       const list = integrations!;
       if (!id && req.method === "GET") json(res, 200, list.view().map(i => ({ ...i, provenance: marketplaces.provenance(i.entry.id) })));
+      else if (id && verb === "icon" && req.method === "GET") {
+        const image = await marketplaces.importedIcon(id);
+        res.writeHead(200, { "content-type": image.type, "content-length": image.bytes.length, "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox", "cache-control": "private, max-age=3600" });
+        res.end(image.bytes);
+      }
       else if (id === "custom" && !verb && req.method === "POST") {
         const body = await readJson(req);
         const made = list.addCustom({ name: String(body.name ?? ""), command: body.command, args: Array.isArray(body.args) ? body.args.map(String) : undefined, url: body.url, token: body.token });
@@ -348,7 +359,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
       } else if (id && verb === "test" && req.method === "POST") {
         const body = await readJson(req);
         json(res, 200, await list.test(id, String(body.tool), (body.args ?? {}) as Record<string, unknown>));
-      } else if (id && req.method === "POST" && verb) {
+      } else if (id && req.method === "POST" && verb && verb !== "icon") {
         integrationRevisions.set(id, (integrationRevisions.get(id) ?? 0) + 1);
         if (verb === "install") await list.install(id);
         else if (verb === "uninstall") { await list.uninstall(id); marketplaces.remove(id); }

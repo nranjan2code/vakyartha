@@ -178,3 +178,27 @@ test("damaged imported definitions preserve normal catalog availability and cann
     assert.equal(readFileSync(path.join(dir,"external-catalog.json"),"utf8"),"broken-json");
   } finally {rmSync(dir,{recursive:true,force:true});}
 });
+
+test("publisher icons come only from listing metadata and use bounded credential-free fetches", async () => {
+  const listing={...remote,icons:[{src:"https://icons.example.org/logo.svg"}]};
+  const {dir,market}=setup(fetchRegistry(registry(listing)));
+  try {
+    const p=await market.search("mcp"),key=p.items[0]!.key;
+    let calls=0;
+    const fetchImage=async (url:string,opts:import("@vak/providers").PinnedFetchOptions = {})=>{
+      calls++;assert.equal(url,"https://icons.example.org/logo.svg");assert.equal(opts.maxBytes,262144);
+      assert.deepEqual(opts.headers,{accept:"image/png,image/jpeg,image/webp,image/svg+xml"});
+      return new Response('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h10v10z"/></svg>',{headers:{"content-type":"image/svg+xml"}});
+    };
+    const [a,b]=await Promise.all([market.icon("mcp","","",key,fetchImage),market.icon("mcp","","",key,fetchImage)]);
+    assert.equal(calls,1);assert.equal(a.type,"image/svg+xml");assert.equal(a.bytes.toString(),b.bytes.toString());
+    const review=await market.review("mcp","","",key,"remote-0"), id=market.add(review.fingerprint,true);
+    assert.equal(market.provenance(id)!.icon,true);
+    assert.equal((await market.importedIcon(id)).bytes.toString(),a.bytes.toString());
+    const restarted=new Marketplaces(dir,[],fetchRegistry(registry(listing)),fetchImage);
+    assert.equal((await restarted.importedIcon(id)).type,"image/svg+xml");
+
+    await assert.rejects(market.icon("mcp","","","caller-url",fetchImage),/No publisher icon/);
+    assert.equal(normalizeListings("mcp",registry({...remote,icons:[{src:"https://127.0.0.1/logo.png"}]}))[0]!.iconUrl,undefined);
+  }finally{rmSync(dir,{recursive:true,force:true});}
+});

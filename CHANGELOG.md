@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Integration layout and identity:** aligned headings/tabs/toolbars/grids, consistent bottom card actions, official source/publisher assets with provenance, and authenticated bounded listing thumbnails with passive SVG rendering. Active card actions are visually distinct from status badges. Three-width WebKit checks cover the reported faults. Projection `da49065` fixes the checked DNS callback shape discovered by live icon requests.
+
 - **External discovery:** browse optional public catalogs alongside our own, search/page results and review connection details, provenance, credentials, unknown costs and compatibility. Compatible hosted and pinned local connections import unverified/off through the existing integration lifecycle; unsupported runtimes/authentication remain explicit. Bounded cached metadata, stale/offline handling, review-bound consent, duplicate reuse and removal are covered. [Guide and verification](docs/EXTERNAL-CATALOGS.md). Projection `801e227` includes unreviewed-tool Ask defaults and negotiated HTTP/session/redirect fixes found during live checks. No new dependency/native IPC.
 
 - **Workspace data connector:** remote MCP setup for governed data and workspace tools, with a user-selected HTTPS endpoint and secret-store bearer token. No local package is installed; the entry stays off until configured and enabled. Calls may incur service charges. Browser OAuth and hosted-app endpoints are not supported; authenticated workspace access remains unverified. [Setup guide](docs/DATABRICKS.md). Uses Projection `c147332` for general configuration-based HTTP endpoints.

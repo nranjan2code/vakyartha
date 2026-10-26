@@ -1,0 +1,58 @@
+[
+  {
+    "file": "mcp.svg",
+    "source": "https://raw.githubusercontent.com/modelcontextprotocol/docs/main/favicon.svg",
+    "resolved": "https://raw.githubusercontent.com/modelcontextprotocol/docs/main/favicon.svg",
+    "sha256": "05f47fb3ffb7323bdbf6b397330229a7f32a3a1f2d17365e748f8777a82dd6c0",
+    "retrieved": "2026-10-26"
+  },
+  {
+    "file": "github.png",
+    "source": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+    "resolved": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+    "sha256": "6d6ef7bede0416b6ebee2014be5852576dbce89235fe16ea5c44ed01bd522132",
+    "retrieved": "2026-10-26"
+  },
+  {
+    "file": "docker.png",
+    "source": "https://www.docker.com/wp-content/uploads/2022/03/Moby-logo.png",
+    "resolved": "https://www.docker.com/app/uploads/2022/03/Moby-logo.png",
+    "sha256": "53c161304c635a8b6bbd0f94310634beaa49b75b73521e157e5edd29c3a2784f",
+    "retrieved": "2026-10-26"
+  },
+  {
+    "file": "brave-search.png",
+    "source": "https://api.github.com/users/brave",
+    "resolved": "https://avatars.githubusercontent.com/u/12301619?v=4&s=96",
+    "sha256": "566abf3cb02ec1e02f8c5b41269be086ac3947cde8d2be34588c87fb37e8a264",
+    "retrieved": "2026-10-26"
+  },
+  {
+    "file": "tavily.png",
+    "source": "https://api.github.com/users/tavily-ai",
+    "resolved": "https://avatars.githubusercontent.com/u/170207473?v=4&s=96",
+    "sha256": "e35a3096a720b8c50d1936a446d70e46da5b61993db5b0925817fd8c7f8efd43",
+    "retrieved": "2026-10-26"
+  },
+  {
+    "file": "databricks.png",
+    "source": "https://api.github.com/users/databricks",
+    "resolved": "https://avatars.githubusercontent.com/u/4998052?v=4&s=96",
+    "sha256": "bf4f9b6ae9c2a8a1ef485e89e696ae9079c2ced133d78fd20d0cc25ddfad552e",
+    "retrieved": "2026-10-26"
+  },
+  {
+    "file": "notion.png",
+    "source": "https://api.github.com/users/makenotion",
+    "resolved": "https://avatars.githubusercontent.com/u/4792552?v=4&s=96",
+    "sha256": "780eff6174c6957d1b10f90475b836a7bec713127f98023922dfa9e0ef6400be",
+    "retrieved": "2026-10-26"
+  },
+  {
+    "file": "context7.png",
+    "source": "https://api.github.com/users/upstash",
+    "resolved": "https://avatars.githubusercontent.com/u/74989412?v=4&s=96",
+    "sha256": "076a02c39aee75f059d4ddd4fccac6350e601b32f8d0659c0cdc907cd7800f4b",
+    "retrieved": "2026-10-26"
+  }
+]

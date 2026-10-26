@@ -2,6 +2,7 @@
 // every tool with its policy and a test run, recent calls), and adding a
 // server of your own. What an integration can reach is shown before install.
 
+import { brandTile, importedIcon } from "./catalog-icons.ts";
 import { externalCatalogs } from "./marketplaces-page.ts";
 import { api, ask, el } from "./core.ts";
 import { icon, tile } from "./icons.ts";
@@ -24,7 +25,7 @@ interface Tool {
 }
 interface Call { at: string; tool: string; decision: string; ok?: boolean; ms?: number; preview?: string }
 export interface Integration {
-  provenance?: { source: string; name: string; version: string; addedAt: string };
+  provenance?: { source: string; name: string; version: string; addedAt: string; icon?: boolean };
   entry: { id: string; name: string; publisher: string; trust: Trust; summary: string; description: string; homepage: string; icon: string; access: string[]; config: Field[]; sourceKind: string; version?: string; package?: string; url?: string; command?: string };
   installed: boolean;
   version?: string;
@@ -89,7 +90,7 @@ export async function marketplace(open: (id: string) => void, addOwn: () => void
     grid.replaceChildren(
       ...shown.map((i) => {
         const [label, tone] = STATUS[i.status];
-        const card = el("button", { type: "button", className: "market-card" }, tile(i.entry.icon, 40), el("div", { className: "market-text" }, el("div", { className: "market-name" }, i.entry.name), el("div", { className: "market-pub" }, i.entry.publisher), el("div", { className: "market-sum" }, i.entry.summary)), el("div", { className: "market-foot" }, trustBadge(i.entry.trust), pill(label, tone), i.provenance ? pill(i.provenance.source) : null));
+        const card = el("button", { type: "button", className: "market-card" }, i.provenance ? importedIcon(i.entry.id, i.entry.name, 40, Boolean(i.provenance.icon)) : brandTile(i.entry.id, i.entry.icon, 40), el("div", { className: "market-text" }, el("div", { className: "market-name" }, i.entry.name), el("div", { className: "market-pub" }, i.entry.publisher), el("div", { className: "market-sum" }, i.entry.summary)), el("div", { className: "market-foot" }, trustBadge(i.entry.trust), pill(label, tone), i.provenance ? pill(i.provenance.source) : null, el("span", { className: "market-card-action" }, i.enabled || i.provenance || i.entry.sourceKind === "npm" && i.installed ? "Manage" : "Set up", icon("arrow", 14))));
         card.addEventListener("click", () => open(i.entry.id));
         return card;
       }),
@@ -121,7 +122,7 @@ export async function marketplace(open: (id: string) => void, addOwn: () => void
   add.addEventListener("click", addOwn);
   paint();
   const external = externalCatalogs(open);
-  const own = el("div", {}, el("div", { className: "market-bar" }, search, filters, add), grid, voiceBox);
+  const own = el("div", {}, el("div", { className: "market-bar" }, search, add, filters), grid, voiceBox);
   external.node.hidden = true;
   const tabs = segmented([["ours", "Our catalog"], ["external", "External catalogs"], ["installed", "In use"]] as const, "ours", v => {
     external.node.hidden = v !== "external"; own.hidden = v === "external";
@@ -136,10 +137,10 @@ export async function marketplace(open: (id: string) => void, addOwn: () => void
   tabs.classList.add("catalog-tabs");
   tabs.setAttribute("role", "group");
   tabs.setAttribute("aria-label", "Integration views");
-  return [
+  return [el("div", { className: "integrations-layout" },
     ...title("Integrations", "Tools the model can use to work with real data: your files, the web, your accounts. Each runs with only the access shown on its page, and anything that changes something asks you first."),
     tabs, own, external.node,
-  ];
+  )];
 }
 
 /** One integration: setup, every tool and its policy, test runs, recent calls. */
@@ -170,7 +171,7 @@ export async function integrationPage(id: string, back: () => void, reload: () =
   const head = el(
     "div",
     { className: "int-head" },
-    tile(e.icon, 56),
+    i.provenance ? importedIcon(e.id, e.name, 56, Boolean(i.provenance.icon)) : brandTile(e.id, e.icon, 56),
     el("div", {}, el("h1", { textContent: e.name }), el("div", { className: "int-meta" }, el("span", { textContent: e.publisher }), trustBadge(e.trust), e.version ? el("span", { className: "mono", textContent: `${e.package ?? ""}@${e.version}` }) : e.url ? el("span", { className: "mono", textContent: e.url }) : e.command ? el("span", { className: "mono", textContent: e.command }) : null)),
   );
   const description = el("p", { className: "lead", textContent: e.description });

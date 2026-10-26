@@ -7,7 +7,7 @@ export const MARKETPLACES: MarketplaceSource[] = [
 ];
 export interface MarketplaceListing {
   key: string; source: MarketplaceId; name: string; title: string; description: string; version: string;
-  homepage: string; repository: string; publisher: string; publishedAt?: string;
+  homepage: string; repository: string; publisher: string; publishedAt?: string; iconUrl?: string;
   options: MarketplaceOption[];
 }
 export interface MarketplaceOption {

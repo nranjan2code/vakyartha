@@ -1,6 +1,6 @@
 // Original icons for integrations and the app's chrome: simple 24px stroke
-// glyphs on a tinted tile, drawn for vak. Vendors' logos are not used (they
-// are trademarks); the publisher's name is shown beside each instead.
+// glyphs on a tinted tile, drawn for vak. Publisher identity assets are
+// handled separately by catalog-icons.ts; these glyphs represent capabilities.
 
 const GLYPHS: Record<string, string> = {
   calendar: '<rect x="3.5" y="5.5" width="17" height="15" rx="2.5"/><path d="M7.5 3.5v4M16.5 3.5v4M3.5 10h17M8 14h2M14 14h2M8 17h2"/>',

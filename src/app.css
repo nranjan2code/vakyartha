@@ -765,3 +765,38 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
   .catalog-source { justify-content: center; text-align: center; }
   .catalog-source svg { display: none; }
 }
+
+/* One containing block keeps the heading, tabs, tools and grid on one axis. */
+.settings-content > .integrations-layout { width: 100%; max-width: 960px; margin: 0 auto; }
+.integrations-layout > .catalog-tabs { margin-left: 0; margin-right: 0; }
+.integrations-layout .market-bar { display: grid; grid-template-columns: minmax(200px, 1fr) auto; gap: 12px; margin: 0 0 18px; }
+.integrations-layout .market-bar > .market-search { width: 100%; min-width: 0; }
+.integrations-layout .catalog-filters { grid-column: 1 / -1; justify-self: start; flex-wrap: wrap; }
+.integrations-layout .market-card { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; align-items: start; }
+.integrations-layout .market-text { min-width: 0; }
+.integrations-layout .market-name { margin: 0; overflow-wrap: anywhere; }
+.integrations-layout .market-foot { align-self: end; align-items: center; }
+.brand-tile, .publisher-icon { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 10px; background: #fff; overflow: hidden; }
+.brand-tile img, .publisher-icon img { display: block; width: calc(100% - 12px); height: calc(100% - 12px); object-fit: contain; }
+.publisher-icon { font-size: .8rem; font-weight: 600; color: var(--muted); background: var(--hover); }
+.publisher-icon:has(img) { background: #fff; }
+.catalog-source { align-items: center; }
+.catalog-source > span:last-child { min-width: 0; }
+.external-card { cursor: default; min-height: 196px; }
+.external-card:hover { transform: none; border-color: var(--border); }
+.external-card .market-foot { justify-content: space-between; gap: 12px; padding-top: 6px; }
+.external-card .catalog-origin { margin-left: 0; }
+.catalog-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 7px 11px; color: var(--accent); background: var(--soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); border-radius: 8px; cursor: pointer; font-size: .8rem; font-weight: 550; white-space: nowrap; }
+.catalog-action:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+@media (max-width: 760px) {
+  .integrations-layout .market-bar { grid-template-columns: minmax(0, 1fr) auto; }
+  .catalog-source { padding: 10px 8px; gap: 8px; }
+  .catalog-source .brand-tile { width: 26px !important; height: 26px !important; border-radius: 7px; }
+}
+@media (max-width: 440px) {
+  .integrations-layout .market-bar { grid-template-columns: minmax(0, 1fr); }
+  .integrations-layout .market-bar > button { justify-self: start; }
+  .catalog-source { flex-direction: column; }
+  .external-card .market-foot { gap: 6px; }
+}
+.market-card-action { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--accent); font-size: .8rem; font-weight: 550; white-space: nowrap; }

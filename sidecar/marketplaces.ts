@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { isIP } from "node:net";
+import { pinnedFetch } from "@vak/providers";
 import { type CatalogEntry } from "@vak/mcp/client";
 import { MARKETPLACES, type MarketplaceId, type MarketplaceListing, type MarketplaceOption, type MarketplacePage, type MarketplaceReview } from "../shared/marketplaces.ts";
 
@@ -24,6 +25,14 @@ function publicUrl(v: unknown): string {
     const u = new URL(str(v));
     if (u.protocol !== "https:" || u.username || u.password || u.search || u.hash || u.port || /[{}\s]/.test(u.href) ||
       isIP(u.hostname.replace(/^\[|\]$/g, "")) || !u.hostname.includes(".") || /(?:^|\.)(?:localhost|local|internal|test|invalid)$/.test(u.hostname)) return "";
+    return u.href;
+  } catch { return ""; }
+}
+
+function imageUrl(v: unknown): string {
+  try {
+    const u = new URL(str(v));
+    if (u.protocol !== "https:" || u.username || u.password || u.hash || u.port || isIP(u.hostname.replace(/^\[|\]$/g, "")) || !u.hostname.includes(".") || /(?:^|\.)(?:localhost|local|internal|test|invalid)$/.test(u.hostname)) return "";
     return u.href;
   } catch { return ""; }
 }
@@ -53,7 +62,7 @@ export function normalizeListings(source: MarketplaceId, data: unknown): Marketp
     const d = obj(v), remote = obj(d.remote);
     return { server: { name, title: d.title, description: d.description, version: str(d.image) || "hosted", repository: { url: d.upstream || d.source }, publisher: obj(d.metadata).owner,
       remotes: remote.url ? [{ type: remote.transport_type, url: remote.url, headers: Object.entries(obj(remote.headers)).map(([name, value]) => ({ name, value, isRequired: true })) }] : [],
-      container: d.image, oauth: Object.keys(obj(d.oauth)).length > 0 }, _meta: {} };
+      icons: d.icon ? [{ src: d.icon }] : [], container: d.image, oauth: Object.keys(obj(d.oauth)).length > 0 }, _meta: {} };
   }) : arr(root.servers);
   const seen = new Set<string>();
   return entries.flatMap((e) => {
@@ -84,7 +93,7 @@ export function normalizeListings(source: MarketplaceId, data: unknown): Marketp
     }
     if (s.container) options.push({ key: "container", label: "Container", kind: "unsupported", fields: [], blocked: "Requires a separately managed container runtime. Configure it there, then connect its HTTP gateway using Add your own server." });
     if (!options.length) options.push({ key: "unavailable", label: "Manual setup", kind: "unsupported", fields: [], blocked: "No supported connection details were published." });
-    return [{ key: hash([source, name, version]).slice(0, 32), source, name, title: str(s.title, 120) || name, description: str(s.description), version, publisher: str(s.publisher, 100) || name.split("/")[0]!, homepage: publicUrl(s.websiteUrl) || publicUrl(obj(s.repository).url) || MARKETPLACES.find(x => x.id === source)!.homepage, repository: publicUrl(obj(s.repository).url), publishedAt: str(meta.publishedAt, 80) || undefined, options }];
+    return [{ key: hash([source, name, version]).slice(0, 32), source, name, title: str(s.title, 120) || name, description: str(s.description), version, publisher: str(s.publisher, 100) || name.split("/")[0]!, homepage: publicUrl(s.websiteUrl) || publicUrl(obj(s.repository).url) || MARKETPLACES.find(x => x.id === source)!.homepage, repository: publicUrl(obj(s.repository).url), publishedAt: str(meta.publishedAt, 80) || undefined, iconUrl: arr(s.icons).map(i => imageUrl(i.src)).find(Boolean) || imageUrl(obj(obj(obj(s._meta)["io.modelcontextprotocol.registry/publisher-provided"]).github).ownerAvatarUrl) || undefined, options }];
   });
 }
 
@@ -99,8 +108,11 @@ export class Marketplaces {
   private reviews = new Map<string, { review: MarketplaceReview; expires: number }>();
   private fetcher: typeof fetch;
   private loadError?: string;
-  constructor(dataDir: string, catalog: CatalogEntry[], fetcher: typeof fetch = fetch) {
-    this.catalog = [...catalog]; this.fetcher = fetcher;
+  private imageFetcher: typeof pinnedFetch;
+  private iconCache = new Map<string, { bytes: Buffer; type: string }>();
+  private iconPending = new Map<string, Promise<{ bytes: Buffer; type: string }>>();
+  constructor(dataDir: string, catalog: CatalogEntry[], fetcher: typeof fetch = fetch, imageFetcher = pinnedFetch) {
+    this.catalog = [...catalog]; this.fetcher = fetcher; this.imageFetcher = imageFetcher;
     this.file = path.join(dataDir, "external-catalog.json"); this.cacheDir = path.join(dataDir, "catalog-cache");
     mkdirSync(this.cacheDir, { recursive: true, mode: 0o700 });
     if (existsSync(this.file)) try {
@@ -133,7 +145,7 @@ export class Marketplaces {
     if (!MARKETPLACES.some(s => s.id === source)) throw new Error("Unknown marketplace");
     if (this.loadError) throw new Error(this.loadError);
     if (query.length > 120 || cursor.length > 1000) throw new Error("Search is too long");
-    const cacheKey = hash([source, source === "docker" ? "" : query, source === "docker" ? "" : cursor]);
+    const cacheKey = hash(["icons-v1", source, source === "docker" ? "" : query, source === "docker" ? "" : cursor]);
     const cacheFile = path.join(this.cacheDir, `${cacheKey}.json`);
     let cached = this.pages.get(cacheKey);
     if (!cached && existsSync(cacheFile)) try { cached = JSON.parse(readFileSync(cacheFile, "utf8")); } catch { /* refetch damaged metadata */ }
@@ -169,6 +181,50 @@ export class Marketplaces {
     const filtered = page.items.filter(i => words.every(w => `${i.title} ${i.description} ${i.publisher}`.toLowerCase().includes(w)));
     const start = Number(cursor || 0); if (!Number.isSafeInteger(start) || start < 0 || start > 3000) throw new Error("Invalid page");
     return { ...page, items: filtered.slice(start, start + 24), nextCursor: start + 24 < filtered.length ? String(start + 24) : undefined };
+  }
+
+  /** Only a source-provided listing icon can be fetched, never a caller's URL. */
+  async icon(source: MarketplaceId, query: string, cursor: string, key: string, fetchImage = this.imageFetcher): Promise<{ bytes: Buffer; type: string }> {
+    const page = await this.search(source, query, cursor);
+    const listing = page.items.find(i => i.key === key);
+    if (!listing?.iconUrl) throw new Error("No publisher icon is available");
+    return this.loadIcon(listing.iconUrl, fetchImage);
+  }
+  async importedIcon(id: string): Promise<{ bytes: Buffer; type: string }> {
+    const record = this.imports.find(r => r.id === id);
+    if (!record?.listing.iconUrl) throw new Error("No publisher icon is available");
+    return this.loadIcon(record.listing.iconUrl);
+  }
+  private async loadIcon(iconUrl: string, fetchImage = this.imageFetcher): Promise<{ bytes: Buffer; type: string }> {
+    const cacheKey = hash(iconUrl);
+    const cached = this.iconCache.get(cacheKey); if (cached) return cached;
+    const pending = this.iconPending.get(cacheKey); if (pending) return pending;
+    const load = (async () => {
+      let url = iconUrl;
+      for (let redirects = 0; redirects < 3; redirects++) {
+        if (!imageUrl(url)) throw new Error("Unsupported icon URL");
+        const response = await fetchImage(url, { maxBytes: 262_144, signal: AbortSignal.timeout(8000), headers: { accept: "image/png,image/jpeg,image/webp,image/svg+xml" } });
+        if ([301,302,303,307,308].includes(response.status)) {
+          const location = response.headers.get("location"); if (!location) throw new Error("Missing icon redirect");
+          url = new URL(location, url).href; continue;
+        }
+        if (!response.ok) throw new Error("Publisher icon is unavailable");
+        const bytes = Buffer.from(await response.arrayBuffer());
+        if (bytes.length > 262_144) throw new Error("Publisher icon is too large");
+        const mime = response.headers.get("content-type")?.split(";")[0]?.trim();
+        const type = bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) ? "image/png"
+          : bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 ? "image/jpeg"
+          : bytes.subarray(0,4).toString() === "RIFF" && bytes.subarray(8,12).toString() === "WEBP" ? "image/webp"
+          : mime === "image/svg+xml" && /<svg[\s>]/i.test(bytes.toString("utf8").slice(0,2000)) ? "image/svg+xml" : "";
+        if (!type) throw new Error("Unsupported publisher icon format");
+        const result = { bytes, type }; this.iconCache.set(cacheKey, result);
+        if (this.iconCache.size > 128) this.iconCache.delete(this.iconCache.keys().next().value!);
+        return result;
+      }
+      throw new Error("Too many icon redirects");
+    })();
+    this.iconPending.set(cacheKey, load);
+    try { return await load; } finally { this.iconPending.delete(cacheKey); }
   }
   private existing(option: MarketplaceOption): string | undefined {
     return this.catalog.find(e => option.kind === "npm" && e.source.kind === "npm" && e.source.package === option.package || option.kind === "http" && e.source.kind === "http" && typeof e.source.url === "string" && e.source.url.replace(/\/$/, "") === option.url?.replace(/\/$/, ""))?.id;
@@ -223,9 +279,9 @@ export class Marketplaces {
     try { this.save(); } catch(err) { this.imports = previous; throw err; }
     const index = this.catalog.findIndex(e => e.id === id); if (index >= 0) this.catalog.splice(index, 1);
   }
-  provenance(id: string): { source: string; name: string; version: string; addedAt: string } | undefined {
+  provenance(id: string): { source: string; name: string; version: string; addedAt: string; icon: boolean } | undefined {
     const r = this.imports.find(r => r.id === id);
-    return r ? { source: MARKETPLACES.find(s => s.id === r.listing.source)!.name, name: r.listing.name, version: r.listing.version, addedAt: r.addedAt } : undefined;
+    return r ? { source: MARKETPLACES.find(s => s.id === r.listing.source)!.name, name: r.listing.name, version: r.listing.version, addedAt: r.addedAt, icon: Boolean(r.listing.iconUrl) } : undefined;
   }
   private toEntry(r: Imported): CatalogEntry {
     const { listing: l, option: o } = r;

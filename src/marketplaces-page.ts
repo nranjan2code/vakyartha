@@ -1,4 +1,5 @@
 import { api, el } from "./core.ts";
+import { brandTile, publisherIcon } from "./catalog-icons.ts";
 import { icon, tile } from "./icons.ts";
 import { group, pill } from "./ui.ts";
 import { MARKETPLACES, type MarketplaceId, type MarketplaceListing, type MarketplacePage, type MarketplaceReview } from "../shared/marketplaces.ts";
@@ -21,16 +22,20 @@ export function externalCatalogs(open: (id: string) => void): { node: HTMLElemen
   const currentSource = () => MARKETPLACES.find(x => x.id === source)!;
   function paintSources() {
     sourceBox.replaceChildren(...MARKETPLACES.map(s => {
-      const b = el("button", { type: "button", className: "catalog-source", title: s.description, "aria-pressed": String(s.id === source) }, icon(s.id === "github" ? "branch" : s.id === "docker" ? "tool" : "globe", 20), el("span", {}, el("strong", { textContent: s.name }), el("span", { textContent: s.description })));
+      const b = el("button", { type: "button", className: "catalog-source", title: s.description, "aria-pressed": String(s.id === source) }, brandTile(s.id, "plug", 32), el("span", {}, el("strong", { textContent: s.name }), el("span", { textContent: s.description })));
       b.addEventListener("click", () => { source = s.id; paintSources(); void load(); }); return b;
     }));
   }
   function card(item: MarketplaceListing, originCursor: string): HTMLElement {
     const supported = item.options.some(o => !o.blocked && o.kind !== "unsupported");
-    const b = el("button", { type: "button", className: "market-card external-card" }, tile("plug", 36), el("div", { className: "market-text" }, el("div", { className: "market-name", textContent: item.title }), el("div", { className: "market-pub", textContent: item.publisher }), el("div", { className: "market-sum", textContent: item.description })), el("div", { className: "market-foot" }, pill(supported ? "Review connection" : "Setup required"), el("span", { className: "catalog-origin", textContent: currentSource().name })));
-    b.addEventListener("click", () => void review(item, originCursor));
-    return b;
+    const action = button(supported ? "Review connection" : "View requirements", () => void review(item, originCursor), "catalog-action");
+    action.setAttribute("aria-label", `${supported ? "Review connection" : "View requirements"} for ${item.title}`);
+    action.append(icon("arrow", 14));
+    return el("article", { className: "market-card external-card" }, publisherIcon(item, query, originCursor),
+      el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: item.title }), el("div", { className: "market-pub", textContent: item.publisher }), el("div", { className: "market-sum", textContent: item.description })),
+      el("div", { className: "market-foot" }, el("span", { className: "catalog-origin", textContent: currentSource().name }), action));
   }
+
   async function load(more = false): Promise<void> {
     const generation = ++request;
     const next = more ? page?.nextCursor ?? "" : "";
@@ -86,7 +91,7 @@ export function externalCatalogs(open: (id: string) => void): { node: HTMLElemen
       add.disabled = !r.existingId;
       ack.addEventListener("change", () => { add.disabled = !ack.checked; });
       const blocked = r.blocked || o.blocked;
-      detail.replaceChildren(back, el("div", { className: "catalog-review-heading" }, tile("plug", 48), el("div", {}, el("div", { className: "catalog-eyebrow", textContent: "REVIEW CONNECTION" }), el("h2", { textContent: item.title }))), el("p", { className: "lead", textContent: item.description }), el("div", { className: "badges" }, pill("Unverified"), pill("Starts off"), pill("Tools ask first")), selector, facts, el("p", { className: "row-hint", textContent: limits }), links, ...(packageDetails ? [packageDetails] : []), requirements,
+      detail.replaceChildren(back, el("div", { className: "catalog-review-heading" }, publisherIcon(item, query, originCursor, 48), el("div", {}, el("div", { className: "catalog-eyebrow", textContent: "REVIEW CONNECTION" }), el("h2", { textContent: item.title }))), el("p", { className: "lead", textContent: item.description }), el("div", { className: "badges" }, pill("Unverified"), pill("Starts off"), pill("Tools ask first")), selector, facts, el("p", { className: "row-hint", textContent: limits }), links, ...(packageDetails ? [packageDetails] : []), requirements,
         blocked && !r.existingId ? el("div", { className: "catalog-notice" }, el("strong", { textContent: "More setup is needed" }), el("p", { textContent: blocked })) : r.existingId ? el("div", { className: "catalog-notice" }, el("p", { textContent: "This connection is already in your catalog. Open its saved version and setup to manage tools and access." }), add) : el("div", { className: "catalog-next" }, acknowledgement, add, el("p", { className: "row-hint", textContent: "Next: save credentials if needed, install a local package, then turn it on to check the connection. You can disable or remove it at any time." })), note);
     } catch (err) { if (generation === request) detail.replaceChildren(back, el("p", { role: "alert", className: "row-hint bad", textContent: (err as Error).message }), button("Try again", () => void review(item, originCursor, optionKey))); }
   }
