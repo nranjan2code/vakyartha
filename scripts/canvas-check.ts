@@ -107,6 +107,24 @@ const steps = [
    // Leave the live surface as the server has it for the steps that follow.
    await turn({...window.qaSnapshot, version: next.version+1});
    window.fetch=window.qaRealFetch; return 'versions of a surface rewritten in place';`,
+  `window.fetch=async (url, init) => String(url).endsWith('/api/chat')
+     ? new Response(new ReadableStream({start(c){window.qaController=c}}),{headers:{'content-type':'text/event-stream'}})
+     : window.qaRealFetch(url,init);
+   const session=new URLSearchParams(location.search).get('session');
+   const form=(await (await window.qaRealFetch('/api/sessions/'+session)).json()).surfaces.find(s=>s.id==='signup');
+   const turn=async (snap)=>{ window.qaSubmit(); await new Promise(r=>setTimeout(r,30)); window.qaEmit({type:'surface',snapshot:snap}); window.qaEmit({type:'run_end',stop:'done'}); window.qaController.close(); await new Promise(r=>setTimeout(r,60)); flush(); };
+   await turn({...form, id:'step-a', title:'First step', version:1});
+   await turn({...form, id:'step-b', title:'Second step', version:1});
+   const home=id=>document.querySelector('.surface-home[data-surface="'+id+'"]');
+   check(home('step-a').classList.contains('folded'),'finished earlier interface did not fold');
+   check(!home('step-b').classList.contains('folded'),'latest interface folded');
+   check(!home('signup').classList.contains('folded'),'interface with unsent input folded');
+   home('step-a').querySelector('.surface-head > span').click();
+   check(!home('step-a').classList.contains('folded'),'folded title did not open it');
+   window.qaSubmit(); await new Promise(r=>setTimeout(r,30));
+   for (const id of ['step-a','step-b']) window.qaEmit({type:'surface_removed',id});
+   window.qaEmit({type:'run_end',stop:'done'}); window.qaController.close(); await new Promise(r=>setTimeout(r,60)); flush();
+   window.fetch=window.qaRealFetch; return 'earlier interfaces fold to one line';`,
   `document.getElementById('open-artifacts').click(); await new Promise(r => setTimeout(r, 250));
    check(!document.getElementById('artifacts-page').hidden && document.getElementById('workspace').hidden, 'library did not open');
    check(document.querySelectorAll('.artifact-card').length === 2, 'library missing saved surfaces'); return 'artifact library rendered';`,

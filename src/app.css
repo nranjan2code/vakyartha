@@ -105,6 +105,13 @@ body.collapsed .canvas-expanded .canvas-head { padding-left: 84px; }
 .surface-home.inline:not(.in-canvas) > .surface-head { display: none; }
 .surface-home.inline.in-canvas > .surface-head { margin: 0; }
 .surface-home.inline.in-canvas { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); padding: 12px; }
+/* An interface the conversation has moved past: its title line, open on click. */
+.surface-home.inline.folded { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); padding: 8px 12px; }
+.surface-home.inline.folded > vak-surface { display: none; }
+.surface-home.inline.folded > .surface-head { display: flex; }
+.surface-home.folded .surface-head > span { cursor: pointer; }
+.surface-home.folded .surface-head > span::after { content: "\00A0\203A"; }
+.surface-home.folded .surface-head > span:hover { color: var(--fg); }
 .surface-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .surface-head > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; color: var(--muted); }
 .surface-head > button { flex: none; }

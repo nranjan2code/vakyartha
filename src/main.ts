@@ -287,6 +287,7 @@ async function openChat(id: string, keepLibrary = false, redraw = false): Promis
     canvas.beginTurn();
   }
   updateSend();
+  tidySurfaces();
   canvas.restore();
   tasksPanel.selectionChanged();
   thread.scrollTop = thread.scrollHeight;
@@ -577,6 +578,7 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         }
         if (e.limit) limited(turn, e.limit);
         recordVersions(turn);
+        tidySurfaces();
         if (voicePrefs.enabled && voicePrefs.auto && turnSession === session && !turn.status.classList.contains("error")) toggleReading(turn.root, () => turnText(turn));
         break;
     }
@@ -890,6 +892,20 @@ function usedChip(turn: Turn, name: string, ok: boolean): void {
 }
 
 /**
+ * Inline interfaces the conversation has moved past fold to one line: the
+ * latest reply's interfaces stay open, and so does any holding unsent input.
+ */
+function tidySurfaces(): void {
+  const turns = [...thread.querySelectorAll<HTMLElement>(".msg.assistant")];
+  const last = turns.findLast((t) => t.querySelector(".surface-home, .steps li[data-surface]"));
+  const current = new Set([...(last?.querySelectorAll<HTMLElement>(".surface-home[data-surface], .steps li[data-surface]") ?? [])].map((el) => el.dataset.surface!));
+  for (const home of thread.querySelectorAll<HTMLElement>(".surface-home.inline[data-surface]")) {
+    const id = home.dataset.surface!;
+    canvas.fold(id, !current.has(id) && !drafts.pending(id));
+  }
+}
+
+/**
  * The surfaces a reply made or changed, as it left them: the canvas keeps them
  * as versions, and the reply's "changed" step opens its own. History passes the
  * saved copies; a live turn takes the store's at its end.
@@ -995,6 +1011,7 @@ function watch(id: string): void {
               const done = outsideTurn;
               outsideTurn = undefined;
               if (done) recordVersions(done);
+              tidySurfaces();
               updateSend();
               void api<SessionView>(`/api/sessions/${encodeURIComponent(id)}`).then((v) => {
                 const last = v.timeline.findLast((t) => t.kind === "assistant");

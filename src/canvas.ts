@@ -193,6 +193,20 @@ export class Canvas {
     return this.#old?.id === this.#active ? this.#old.store.resolve(this.#active) : this.#store().resolve(this.#active);
   }
 
+  /**
+   * Fold an inline interface the conversation has moved past to its title line
+   * (or open it again). The element stays in place, so its drafts and state do.
+   */
+  fold(id: string, folded: boolean): void {
+    const entry = this.#entries.get(id);
+    if (!entry || entry.large) return;
+    entry.home.classList.toggle("folded", folded);
+    entry.title.tabIndex = folded ? 0 : -1;
+    entry.title.setAttribute("role", folded ? "button" : "presentation");
+    entry.title.setAttribute("aria-expanded", String(!folded));
+    entry.title.title = folded ? "Show this interface" : "";
+  }
+
   /** Remember a surface as a reply left it; the same version twice is kept once. */
   addVersion(snap: SurfaceSnapshot): void {
     const list = this.#versions.get(snap.id) ?? [];
@@ -295,6 +309,9 @@ export class Canvas {
       if (this.#active) this.#controls();
       entry = { surface, home, button, title, option, large: false };
       this.#entries.set(snap.id, entry);
+      // Folded, the title is the way back in.
+      title.addEventListener("click", () => this.fold(snap.id, false));
+      title.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.fold(snap.id, false); } });
     }
     // Promote once a stream or update makes it large; never demote.
     entry.large ||= canvasReason(snap) !== undefined;

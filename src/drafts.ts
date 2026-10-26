@@ -56,6 +56,8 @@ export class Drafts {
     this.flush();
     return copy;
   }
+  /** Input typed into a surface that it does not hold yet. */
+  pending(surface: string): boolean { return (this.edits.get(surface)?.size ?? 0) > 0; }
   conflicted(surface: string): boolean { return [...(this.edits.get(surface)?.values() ?? [])].some((edit) => edit.conflict); }
   resolve(snapshot: SurfaceSnapshot, keep: boolean): SurfaceSnapshot {
     const copy = structuredClone(snapshot), fields = this.edits.get(snapshot.id) ?? new Map<string, Edit>();
