@@ -128,3 +128,20 @@ Ignored local receipt: `.vak/builds/2026-10-26-outcome-final-install.json`, incl
 ## External discovery source checkpoint — 2026-10-26
 
 The source checkout now uses pushed Projection `801e227`, including unreviewed-tool consent defaults and HTTP protocol/session/redirect corrections. External catalog discovery/import is source-validated, including live public metadata and one isolated hosted documentation lifecycle. [Implementation, verification and limits](EXTERNAL-CATALOGS.md). This checkpoint does not replace the installed app or its recorded artifact provenance; a future installation must regenerate the UI and sidecar and follow the existing clean-build/verification procedure. No release/tag/public download was created for it.
+
+
+## External catalog layout and identity local install — 2026-10-26
+
+Compiled pushed app `9f192f5` with pushed Projection `da49065` from an exact exported source snapshot, fresh `npm ci`, regenerated UI/sidecar and a previously absent Rust release target. Both app and DMG built successfully (133.20 MiB / 42.85 MiB). Retained at `src-tauri/target/release/bundle/` and `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vakyartha-catalog-ui-9f192f5-swyz2kua/rust-release/release/bundle/`.
+
+Validation: 144 app tests, 327 pinned framework tests/replay, typecheck, native test, catalog WebKit at 1440/1100/620 pixels and wide/narrow canvas checks pass. Live identity fetches returned PNG/SVG assets from all three discovery sources after the upstream dual-stack correction. The installed desktop About shows 0.2.0, Node v24.21.0, macOS Keychain and the existing data folder. Native inspection confirms a shared heading/tab/toolbar/grid axis, publisher/source logos and distinct bottom-aligned review/requirements buttons with real catalog results. No paid/model/microphone run or integration adoption was needed.
+
+Replaced `/Applications/Vakyartha.app` as a whole after quitting; all 1,949 installed files/symlinks match the fresh bundle, including the regenerated sidecar. Prior install retained at `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vakyartha-catalog-ui-9f192f5-swyz2kua/previous-installed-Vakyartha.app`. Existing user data/settings are preserved. Ignored receipt: `.vak/builds/2026-10-26-catalog-ui-install.json`; its source snapshot, test/build logs and installed manifest are retained at `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vakyartha-catalog-ui-9f192f5-swyz2kua`.
+
+Artifact SHA-256:
+
+- Native executable: `35098a26ae576ba519b89b9db3393b011684aba84268a48fcedc34b9fed60d1c`
+- Bundled sidecar: `e736ad7ef640c87f81ac82f0ca063cd8ec19ac759e1d7edb7af9f79313daa409`
+- Disk image: `435f03705d8469be5a012e1b2c390e460a66fa4635db174215d3d993db227a71`
+
+Version remains 0.2.0, unsigned/unnotarized. No tag or public release created. Subsequent installation-record documentation does not change compiled source.

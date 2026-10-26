@@ -68,3 +68,6 @@ UI correction validation (2026-10-26): 144 app tests and typecheck pass. Icon te
 
 
 Live identity fetches use Projection `da49065`, which fixes the public-fetch resolver's single-address versus dual-stack callback shape on the current runtime. The first real checks failed with an invalid-address error; fixture success was insufficient evidence. The upstream fix preserves one checked DNS result and private-address refusal; both callback forms are tested offline. The pinned framework now passes 327 tests. This is a general networking correction in Projection, not an app-specific fetch workaround.
+
+
+Installed verification: the corrected source snapshot `9f192f5` / Projection `da49065` was clean-built and installed locally. All 1,949 files/symlinks match the fresh bundle. Actual desktop inspection confirms aligned navigation/content, official catalog marks, supplied publisher images and visible bottom-aligned review/requirements buttons against live results. Tests: 144 app/327 framework, typecheck/native and three-width catalog plus canvas WebKit pass. Exact installation/artifact provenance is in RELEASING.md.
