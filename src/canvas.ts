@@ -56,6 +56,17 @@ export class Canvas {
 
   #controls(): void {
     this.#picker.hidden = !this.#active;
+    // A flow (a form, then its results, then a booking step) is several
+    // interfaces: step through them in order instead of only the latest.
+    const n = this.#picker.options.length;
+    const i = this.#picker.selectedIndex;
+    const many = Boolean(this.#active) && n > 1;
+    $("canvas-label").textContent = many ? `Canvas · ${i + 1} of ${n}` : "Canvas";
+    for (const [id, to] of [["canvas-prev", i - 1], ["canvas-next", i + 1]] as const) {
+      const b = $<HTMLButtonElement>(id);
+      b.hidden = !many;
+      b.disabled = to < 0 || to >= n;
+    }
     for (const id of ["canvas-copy", "canvas-download", "canvas-preview", "canvas-text"]) $<HTMLButtonElement>(id).disabled = !this.#active;
   }
 
@@ -64,6 +75,12 @@ export class Canvas {
     this.#store = store;
     for (const [id, name] of [["canvas-close", "close"], ["canvas-expand", "maximize"], ["canvas-copy", "copy"], ["canvas-download", "download"]] as const) $(id).append(icon(name, 16));
     this.#picker.addEventListener("change", () => this.open(this.#picker.value));
+    for (const [id, by] of [["canvas-prev", -1], ["canvas-next", 1]] as const) {
+      $(id).addEventListener("click", () => {
+        const o = this.#picker.options[this.#picker.selectedIndex + by];
+        if (o) this.open(o.value);
+      });
+    }
     $("canvas-preview").addEventListener("click", () => this.#view(false));
     $("canvas-text").addEventListener("click", () => this.#view(true));
     $("canvas-copy").addEventListener("click", () => void this.#copy());
@@ -201,6 +218,7 @@ export class Canvas {
       parent.append(home);
       const option = new Option("", snap.id);
       this.#picker.add(option);
+      if (this.#active) this.#controls();
       entry = { surface, home, button, title, option, large: false };
       this.#entries.set(snap.id, entry);
     }

@@ -77,7 +77,9 @@ body.collapsed .sidebar { visibility: hidden; }
 .canvas-content > vak-surface { display: block; max-width: 1400px; margin: auto; }
 .canvas-content[hidden], .canvas-text-content[hidden] { display: none; }
 .canvas-progress { padding: 12px 16px; font-size: .85rem; color: var(--muted); border-bottom: 1px solid var(--border); }
-.canvas-progress[hidden], #canvas-pick[hidden] { display: none; }
+.canvas-progress[hidden], #canvas-pick[hidden], .canvas-step[hidden] { display: none; }
+.canvas-step { font-size: 1.2rem; line-height: 1; }
+.canvas-step:disabled { opacity: .35; cursor: default; }
 .canvas-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
 .canvas-toolbar .seg { background: var(--bg); }
 .canvas-feedback { flex: 1; min-width: 0; text-align: right; font-size: .75rem; color: var(--muted); }
@@ -226,8 +228,9 @@ body.collapsed .artifacts-sidebar { display: grid; margin-left: 58px; }
 .msg.user { display: flex; justify-content: flex-end; }
 .msg.user .bubble { background: var(--user); color: var(--user-fg); padding: 9px 14px; border-radius: 18px; max-width: min(620px, 85%); white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg.event { display: flex; justify-content: flex-end; }
-.msg.event .chip { font-size: 0.8rem; color: var(--muted); border: 1px solid var(--border); padding: 3px 10px; border-radius: 999px; }
-.msg.assistant { display: flex; flex-direction: column; gap: 12px; }
+.msg.event .chip { font-size: 0.78rem; color: var(--muted); }
+.msg.assistant { display: flex; flex-direction: column; gap: 10px; }
+
 .msg.assistant .text:empty { display: none; }
 .msg.assistant .text p { margin: 0 0 0.5em; } .msg.assistant .text p:last-child { margin: 0; }
 .surfaces { display: flex; flex-direction: column; gap: 16px; }
@@ -434,9 +437,6 @@ kbd { font: 0.8rem ui-monospace, SFMono-Regular, Menlo, monospace; min-width: 34
 .settings-content a { color: var(--accent); font-size: 0.86rem; }
 
 /* tools in the chat */
-.used { display: flex; flex-wrap: wrap; gap: 6px; }
-.used-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 0.76rem; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px 2px 7px; }
-.used-chip.failed { color: var(--danger); }
 .approval { border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--panel); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; max-width: 640px; }
 .approval-head { display: flex; gap: 12px; align-items: center; }
 .approval-sub { font-size: 0.8rem; color: var(--muted); }
@@ -644,3 +644,15 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 @media (max-width: 720px) { .schedule-budget-grid { grid-template-columns: 1fr; } }
 
 .schedule-contract { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* A turn's working, in order, behind its footer toggle: never while it runs (the
+   live status says what is happening), on hover once done, always if a step failed. */
+.status:not(.done) .steps-toggle { display: none; }
+.status.done > .steps-toggle:has(.failed) { opacity: 1; }
+.steps-toggle { margin-left: auto; padding: 2px 8px; border: 0; border-radius: 6px; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+.steps-toggle:hover, .steps-toggle[aria-expanded="true"] { color: var(--fg); background: var(--hover); }
+.steps-toggle .failed { color: var(--danger); }
+.steps[hidden] { display: none; }
+.steps { list-style: none; margin: -4px 0 0; padding: 8px 12px; border-left: 2px solid var(--border); display: flex; flex-direction: column; gap: 6px; font-size: 0.78rem; color: var(--muted); }
+.steps li { display: flex; align-items: center; gap: 6px; }
+.steps li.failed { color: var(--danger); }

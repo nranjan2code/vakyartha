@@ -258,13 +258,14 @@ async function openChat(id: string, keepLibrary = false, redraw = false): Promis
   else thread.replaceChildren();
   for (const entry of view.timeline) {
     if (entry.kind === "user") userBubble(entry.text);
-    else if (entry.kind === "action") eventChip(entry.action);
+    else if (entry.kind === "action") pendingSteps.push(entry.action);
     else {
       const turn = newTurn("", false);
       turn.text.replaceChildren(renderMarkdown(entry.text));
       for (const sid of entry.surfaces) {
         const snap = client.store.snapshot(sid);
         if (snap && !mounted.has(sid)) mount(turn, snap, false);
+        else if (snap) surfaceUpdated(turn, snap);
       }
       for (const u of entry.used ?? []) usedChip(turn, u.name, u.ok);
       for (const note of entry.notes) if (note.name.startsWith("vak_")) addNote(turn, note.name, note.result);
@@ -359,6 +360,12 @@ function eventChip(text: string): void {
   add(m, false);
 }
 
+// "search_kyoto_hotels" → "Search kyoto hotels"
+function humanize(id: string): string {
+  const words = id.replace(/[_-]+/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 interface Turn { root: HTMLElement; text: HTMLElement; surfaces: HTMLElement; status: HTMLElement }
 
 function newTurn(label: string, scroll = true): Turn {
@@ -374,7 +381,9 @@ function newTurn(label: string, scroll = true): Turn {
   status.querySelector(".label")!.textContent = label;
   root.append(text, surfaces, status);
   add(root, scroll);
-  return { root, text, surfaces, status };
+  const turn = { root, text, surfaces, status };
+  for (const a of pendingSteps.splice(0)) addStep(turn, "form", `You: ${humanize(a)}`);
+  return turn;
 }
 
 /**
@@ -545,6 +554,7 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         break;
       case "surface":
         loadSnapshot(e.snapshot);
+        if (mounted.has(e.snapshot.id)) surfaceUpdated(turn, e.snapshot);
         mount(turn, e.snapshot);
         updateDraftNotice();
         break;
@@ -628,14 +638,19 @@ function submit(text: string): void {
 
 // UI actions from any surface go back to the model.
 document.addEventListener("vak-action", (e) => {
-  const { action, data } = (e as CustomEvent<VakActionDetail>).detail;
+  const detail = (e as CustomEvent<VakActionDetail>).detail;
+  const { action } = detail;
+  // The surface's data model, plus what the control itself carries (which
+  // option of a compare, a button's payload): replacing one with the other lost
+  // which item was chosen.
+  const data = { ...detail.data, ...action.data };
   if (tasksPanel.owns(session)) {
     const surface = mounted.get(action.surface);
     void tasksPanel.input(undefined, { surface: action.surface, source: action.source, data }, remoteVersions.get(action.surface))
       .catch((err) => tasksPanel.error((err as Error).message)).finally(() => surface?.releaseAction());
     return;
   }
-  eventChip(action.action);
+  if (!isRunning(session)) pendingSteps.push(action.action);
   void runTurn({ action: { ...action, data } });
 });
 
@@ -802,22 +817,77 @@ function splitTool(name: string): { server: string; tool: string } {
 function toolLabel(name: string): string {
   const { server, tool } = splitTool(name);
   const l = labels[server];
-  return l ? `${l.name} · ${l.tools[tool] ?? tool}` : name;
+  if (!l) return name;
+  const title = l.tools[tool] ?? tool;
+  // "Tavily · Tavily Search" says the name twice; the title alone carries it.
+  return title.toLowerCase().includes(l.name.toLowerCase()) ? title : `${l.name} · ${title}`;
+}
+
+/**
+ * What a turn did on the way (tool calls, the surface action that started it)
+ * is working, not conversation: it stays out of the thread, in order, behind a
+ * "9 steps" toggle in the reply's footer. Failures show on the toggle itself.
+ */
+function addStep(turn: Turn, iconName: string, text: string, failed = false): HTMLElement {
+  let list = turn.root.querySelector<HTMLElement>(".steps");
+  if (!list) {
+    list = document.createElement("ol");
+    list.className = "steps";
+    list.hidden = true;
+    turn.root.append(list);
+  }
+  const li = document.createElement("li");
+  li.className = failed ? "failed" : "";
+  li.append(icon(iconName, 13), document.createTextNode(failed ? `${text} · failed` : text));
+  list.append(li);
+  let toggle = turn.status.querySelector<HTMLButtonElement>(".steps-toggle");
+  if (!toggle) {
+    toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "steps-toggle";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.addEventListener("click", () => {
+      const open = list.hidden;
+      list.hidden = !open;
+      toggle!.setAttribute("aria-expanded", String(open));
+    });
+    turn.status.append(toggle);
+  }
+  const n = list.children.length;
+  const bad = list.querySelectorAll(".failed").length;
+  toggle.textContent = `${n} step${n === 1 ? "" : "s"}`;
+  if (bad) {
+    const f = document.createElement("span");
+    f.className = "failed";
+    f.textContent = ` · ${bad} failed`;
+    toggle.append(f);
+  }
+  return li;
+}
+
+/**
+ * A surface's card shows once, in the turn that made it; a later turn that
+ * changes it records that as one step, which opens it in the canvas.
+ */
+function surfaceUpdated(turn: Turn, snap: SurfaceSnapshot): void {
+  if ([...turn.root.querySelectorAll<HTMLElement>(".steps li")].some((li) => li.dataset.surface === snap.id)) return;
+  if (turnSurfaces(turn).includes(snap.id)) return;
+  const li = addStep(turn, "canvas", "");
+  li.dataset.surface = snap.id;
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "link";
+  open.textContent = `${snap.title || "Interface"} · changed`;
+  open.addEventListener("click", () => canvas.open(snap.id, true));
+  li.lastChild!.replaceWith(open);
 }
 
 function usedChip(turn: Turn, name: string, ok: boolean): void {
-  let row = turn.root.querySelector<HTMLElement>(".used");
-  if (!row) {
-    row = document.createElement("div");
-    row.className = "used";
-    turn.root.insertBefore(row, turn.text);
-  }
-  const { server } = splitTool(name);
-  const chip = document.createElement("span");
-  chip.className = `used-chip${ok ? "" : " failed"}`;
-  chip.append(icon(labels[server]?.icon ?? "tool", 13), document.createTextNode(`${toolLabel(name)}${ok ? "" : " · failed"}`));
-  row.append(chip);
+  addStep(turn, labels[splitTool(name).server]?.icon ?? "tool", toolLabel(name), !ok);
 }
+
+// A surface action is answered by the next turn: it becomes that turn's first step.
+let pendingSteps: string[] = [];
 
 /** "May I?" for a tool on Ask: what it is, what it will be given, and three answers. */
 function approvalCard(turn: Turn, e: Extract<AgentEvent, { type: "approval" }>): void {
@@ -933,6 +1003,7 @@ function watch(id: string): void {
           if (e.type === "surface") {
             loadSnapshot(e.snapshot);
             if (mounted.has(e.snapshot.id)) {
+              if (outsideTurn) surfaceUpdated(outsideTurn, e.snapshot);
               canvas.register(mounted.get(e.snapshot.id)!, e.snapshot, thread, true);
               mounted.get(e.snapshot.id)!.refresh();
             }
