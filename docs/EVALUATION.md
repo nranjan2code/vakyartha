@@ -1,5 +1,9 @@
 # Agent outcome evaluation
 
+## Cross-session baseline review — 2026-10-26
+
+Reviewed app `3724e67` and pinned Projection `2f8dcf6` after the intervening voice, attachments/OCR, media and hardening work. Fresh checks pass: 132 app tests, 323 framework tests and typecheck. Both repositories are clean and synced on main. This review adds no model/provider calls or installed-app restart. RELEASING.md retains the current installed build provenance (`2556f53` / `2f8dcf6`). Next: extend the existing task evaluation harness with a bounded fictional selected-file report, independently check its values and saved output, then complete accessibility/readiness checks. Basic live conversation is recorded in the voice tracker; remaining microphone gates stay open.
+
 ## Media plugins — 2026-10-26
 
 The independent media slice has 14 focused tests covering separation, credential reuse, existing approvals, configuration/model enforcement, scoped attachment/symlink reads, saved output/usage, provider job identity, restart recovery without resubmission, resource ranges/deletion, malformed output, current speech endpoint/language, conditional capability controls, and spoken/local playback semantics. Combined source checks pass 132 app tests, 323 pinned framework tests/replay, typecheck and the native test. No dependency or native IPC was added.
