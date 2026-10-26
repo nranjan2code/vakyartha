@@ -116,18 +116,40 @@ window.addEventListener("vak:settings-closed", () => {
 });
 
 // --- empty state ------------------------------------------------------------
+// A rotating mix of everyday and technical starters; each fills the composer
+// so the user can adjust it before sending.
 const SAMPLES: [string, string][] = [
-  ["Compare hotels", "Compare three hotels in Kyoto for a week in November and let me book one"],
-  ["Sales dashboard", "Show a Q3 sales dashboard: KPIs, a monthly revenue chart and top 5 products"],
-  ["Workout plan", "Plan a 5-day beginner workout routine, one tab per day"],
-  ["Signup form", "Make a newsletter signup form with name, email, topics and frequency"],
+  ["Plan my day", "Plan my day: deep work on the report, gym at 6pm, groceries, and a 3pm call. I start at 9."],
+  ["Weekend in Lisbon", "Plan a relaxed 2-day weekend in Lisbon for two, with food spots and a rainy-day option."],
+  ["Week of dinners", "Plan 5 quick vegetarian dinners for two and give me one shopping list."],
+  ["Monthly budget", "Help me build a monthly budget. My take-home pay is "],
+  ["Polite reply", "Write a polite email declining a meeting next week and suggesting a later date."],
+  ["Explain simply", "Explain how compound interest works, simply, with an example."],
+  ["Compare phones", "Compare three mid-range phones for camera, battery and price."],
+  ["Fix this error", "Help me fix this error:\n"],
+  ["Shell command", "Give me a command to find files larger than 500 MB in my home folder."],
+  ["Review my code", "Review this code for bugs:\n"],
+  ["Sales dashboard", "Show a sample Q3 sales dashboard: KPIs, monthly revenue chart and top 5 products."],
+  ["Signup form", "Make a newsletter signup form with name, email, topics and frequency."],
 ];
+
+function greeting(): string {
+  const h = new Date().getHours();
+  return h < 5 ? "Working late?" : h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+}
+
+function pickSamples(n: number): [string, string][] {
+  const pool = [...SAMPLES];
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j]!, pool[i]!]; }
+  return pool.slice(0, n);
+}
 
 function showEmpty(): void {
   const empty = document.createElement("section");
   empty.className = "empty";
   empty.id = "empty";
-  empty.innerHTML = '<img class="empty-mark" src="/icon.svg" alt="" width="64" height="64" /><h1>What can I show you?</h1><div class="samples"></div>';
+  empty.innerHTML = '<img class="empty-mark" src="/icon.svg" alt="" width="44" height="44" /><h1></h1><p class="empty-sub">Ask anything, or start from an idea.</p><div class="samples"></div>';
+  empty.querySelector("h1")!.textContent = greeting();
   const problem = modelErrors.get(current.provider);
   if (problem) {
     const label = providers.find((p) => p.id === current.provider)?.label ?? current.provider;
@@ -139,12 +161,17 @@ function showEmpty(): void {
     hint.querySelector("button")!.addEventListener("click", () => void openSettings("providers"));
     empty.append(hint);
   }
-  for (const [title, prompt] of SAMPLES) {
+  for (const [title, prompt] of pickSamples(5)) {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = title;
     b.title = prompt;
-    b.addEventListener("click", () => submit(prompt));
+    b.addEventListener("click", () => {
+      input.value = prompt;
+      input.dispatchEvent(new Event("input"));
+      input.focus();
+      input.setSelectionRange(prompt.length, prompt.length);
+    });
     empty.querySelector(".samples")!.append(b);
   }
   thread.replaceChildren(empty);

@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **New chat screen:** a quieter time-of-day greeting and five ideas drawn from a mix of everyday and technical starters. Choosing one fills the message box to edit before sending instead of sending at once.
+
 - **Skills:** Settings → Skills installs, writes, edits and toggles `SKILL.md` instruction skills. Enabled skills are indexed in the system instructions and loaded on demand with `use_skill`, so they chain with each other and with integration tools without granting access. A catalog of six publisher repositories (plus any `owner/repository`) reads skills at a commit at least 14 days old; review shows the exact text and bundled files (never imported); added skills start off. Twelve everyday built-in skills ship on. [Guide](docs/SKILLS.md).
 
 - **Settings navigation:** Integrations is now a group holding **MCP** and **Skills**; every settings item has an icon.

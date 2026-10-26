@@ -137,7 +137,7 @@ body.collapsed .canvas-expanded .canvas-head { padding-left: 84px; }
 .brand { display: inline-flex; align-items: center; gap: 7px; font-weight: 650; font-size: 0.95rem; letter-spacing: -0.01em; user-select: none; }
 .brand img { flex: none; }
 .brand-wordmark { display: block; width: 88px; height: 24px; flex: none; background: light-dark(#101D3D, #F6F5F1); -webkit-mask: url("/brand/wordmark-colour.svg") center / contain no-repeat; mask: url("/brand/wordmark-colour.svg") center / contain no-repeat; }
-.empty-mark { display: block; margin: 0 auto 14px; }
+.empty-mark { display: block; margin: 0 auto 14px; border-radius: 10px; opacity: 0.92; }
 .side-head { padding: 0 10px 8px; }
 .side-pages { padding: 0 10px 8px; }
 #open-artifacts[aria-current="page"], #open-schedule[aria-current="page"] { color: var(--fg); background: var(--hover); }
@@ -229,7 +229,8 @@ body.collapsed .artifacts-sidebar { display: grid; margin-left: 58px; }
 .thread { flex: 1; overflow-y: auto; padding: 8px 24px 24px; display: flex; flex-direction: column; gap: 20px; }
 .thread > * { width: 100%; max-width: 980px; margin: 0 auto; }
 .empty { margin: auto; text-align: center; }
-.empty h1 { font-size: 1.6rem; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 18px; }
+.empty h1 { font-size: 1.35rem; font-weight: 500; letter-spacing: -0.01em; margin: 0 0 4px; }
+.empty-sub { color: var(--muted); font-size: 0.92rem; margin: 0 0 20px; }
 .samples { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 640px; margin: 0 auto; }
 .samples button { background: none; border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; font-size: 0.86rem; color: var(--muted); cursor: pointer; }
 .samples button:hover { color: var(--fg); border-color: var(--faint); }
