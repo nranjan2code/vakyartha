@@ -118,6 +118,9 @@ Owner: Projection for the voice projector; Vakyartha for the `voice/` module. Ac
 - [ ] V7. Constrained model resolution for non-approval items, evaluated on the local 4B model.
 - [ ] V8. App commands by voice (stop, repeat, cancel, new conversation, show on the canvas) and the canvas following the item under discussion without taking focus from background work.
 - [ ] V9. Resolver words for every language read aloud supports; others stay on screen with a note.
+- [ ] V11. Spoken projection in Projection (replaces the app's `spokenSurface`): answer first, gist per surface, one waiting item, follow-ups from on-screen controls, details on request, progress during long work (M9.11).
+- [ ] V12. Voice security: echo guard, spoken provenance for outside content, follow-ups only from controls, adversarial tests for each (M9.12).
+- [ ] V13. Model-authored controls carry action, item payload and option values: catalog guidance, derivable repairs, dead-control diagnostics, replay-gated on local-model output (M9.13).
 - [ ] V10. Regression gates: recordings never stored; voice answers recorded like typed input; billed providers keep consent; keyboard parity for every voice action.
 
 ## Release readiness
