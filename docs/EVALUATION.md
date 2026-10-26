@@ -200,3 +200,5 @@ Final source checks: 99 app tests, 287 pinned framework tests/replay gate, typec
 
 
 Export follow-up before installation (2026-10-26): the final save regression now requires both latest assistant prose and canonical surfaces in the Markdown file, so flexible mixed results do not silently lose their narrative. 99 app tests/typecheck pass. The earlier live research artifact/hash is preserved unchanged; this addition is verified independently, without another model run. The preceding clean build is not installed; a new fresh-target build uses the corrected pushed commit.
+
+Installed-app smoke (2026-10-26): `qwen3.5:4b-mlx` rendered the requested “Local installation check / Ready” card in 33.4 seconds; Open in canvas moved the same surface successfully. The installed catalog and About were inspected. No paid generation was run.

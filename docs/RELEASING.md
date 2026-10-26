@@ -94,4 +94,18 @@ Release commit `4ffabb3`, tag `v0.2.0`, built on Projection `2918883`. Checks be
 
 ## Media plugin local build — 2026-10-26
 
-The media changes are a local development installation on version 0.2.0, not a new published release. Projection is pinned to pushed commit `2f8dcf6`. A clean build uses a previously absent `CARGO_TARGET_DIR`, regenerates frontend assets and the bundled sidecar, and replaces the installed app as a whole. The source commit, artifact hashes and installed verification are recorded below after the build. Provider runs remain mocked; no paid generation or live microphone check is implied.
+The media changes are a local development installation on version 0.2.0, not a new published release. Projection is pinned to pushed commit `2f8dcf6`. A clean build uses a previously absent `CARGO_TARGET_DIR`, regenerates frontend assets and the bundled sidecar, and replaces the installed app as a whole. The source commit, artifact hashes and installed verification are recorded below. Provider runs remain mocked; no paid generation or live microphone check is implied.
+
+Built from application commit `2556f53` and Projection `2f8dcf6`, after `npm ci`, 132 app tests, 323 pinned framework tests/replay, typecheck, the native test and the WebKit canvas/media checks. `CARGO_TARGET_DIR=/tmp/vakyartha-media-build-2556f53 npm run desktop:build` succeeded from an absent target directory. The regenerated bundles are also retained at `src-tauri/target/release/bundle/`: app 133.11 MiB and disk image 42.79 MiB.
+
+The previous app was preserved at `/tmp/Vakyartha-before-media-2556f53.app`; `/Applications/Vakyartha.app` was replaced whole. All 1,949 regular files/symlinks match the fresh bundle. The launched app shows 0.2.0, Node v24.21.0, macOS Keychain and the existing data folder. Images/Audio/Video appear independently, off by default; image provider/model selection and all five audio-operation selectors were inspected without saving configuration or generating paid media.
+
+Artifact SHA-256:
+
+- Native executable: `89b33c0df37c83859ecdd08d4e2aa4f93a13a1e65fda7cfc4870f30561128e33`
+- Bundled sidecar: `27a28b5a615ad99d0c3ebf8873664cf2f34da50e3a6c68fa4c7997f02a09edf8`
+- Disk image: `2f0bffbb1e7f780dd44fcca72561aa18fc563e537b43bf4bae6ea3d1dc6740b5`
+
+The local verification receipt is `.vak/media-checks/2026-10-26-install.json` (ignored). A later documentation-only checkpoint records this install; the compiled code remains `2556f53`. No new tag or GitHub release was published.
+
+Installed-app smoke (2026-10-26): `qwen3.5:4b-mlx` rendered the requested “Local installation check / Ready” card in 33.4 seconds; Open in canvas moved the same surface successfully. The installed catalog and About were inspected. No paid generation was run.
