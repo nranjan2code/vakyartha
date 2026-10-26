@@ -71,3 +71,6 @@ Live identity fetches use Projection `da49065`, which fixes the public-fetch res
 
 
 Installed verification: the corrected source snapshot `9f192f5` / Projection `da49065` was clean-built and installed locally. All 1,949 files/symlinks match the fresh bundle. Actual desktop inspection confirms aligned navigation/content, official catalog marks, supplied publisher images and visible bottom-aligned review/requirements buttons against live results. Tests: 144 app/327 framework, typecheck/native and three-width catalog plus canvas WebKit pass. Exact installation/artifact provenance is in RELEASING.md.
+
+
+Detail-page alignment correction (2026-10-26): the imported-server setup now has one containing block for breadcrumbs, header, description, provenance notice, activation and setup/tool sections. The notice's zero horizontal margins no longer override direct-child centering. The WebKit fixture includes an Authorization setup field and compares every section's left/right bounds with the detail frame at all three widths, covering the user's imported-server screenshot rather than only the discovery grid.

@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Imported setup alignment:** one detail-page container aligns provenance notices with header, access and credential sections; three-width WebKit assertions cover their exact bounds.
+
 - **Integration layout and identity:** aligned headings/tabs/toolbars/grids, consistent bottom card actions, official source/publisher assets with provenance, and authenticated bounded listing thumbnails with passive SVG rendering. Active card actions are visually distinct from status badges. Three-width WebKit checks cover the reported faults. Projection `da49065` fixes the checked DNS callback shape discovered by live icon requests.
 
 - **External discovery:** browse optional public catalogs alongside our own, search/page results and review connection details, provenance, credentials, unknown costs and compatibility. Compatible hosted and pinned local connections import unverified/off through the existing integration lifecycle; unsupported runtimes/authentication remain explicit. Bounded cached metadata, stale/offline handling, review-bound consent, duplicate reuse and removal are covered. [Guide and verification](docs/EXTERNAL-CATALOGS.md). Projection `801e227` includes unreviewed-tool Ask defaults and negotiated HTTP/session/redirect fixes found during live checks. No new dependency/native IPC.

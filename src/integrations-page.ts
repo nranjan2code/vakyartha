@@ -266,7 +266,7 @@ export async function integrationPage(id: string, back: () => void, reload: () =
   });
   const links = el("div", { className: "row-actions" }, e.homepage ? el("a", { href: e.homepage, textContent: "Source and docs" }) : null);
 
-  return [
+  const parts = [
     el("div", { className: "crumbs" }, backLink),
     head,
     description,
@@ -281,6 +281,7 @@ export async function integrationPage(id: string, back: () => void, reload: () =
     calls,
     el("section", { className: "group" }, el("div", { className: "row-actions spread" }, links, danger)),
   ].filter(Boolean) as HTMLElement[];
+  return [el("div", { className: "integration-detail-layout" }, ...parts)];
 }
 
 /** Inputs from the tool's JSON schema; the raw JSON stays editable for anything else. */
