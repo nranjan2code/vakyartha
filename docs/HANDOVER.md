@@ -22,6 +22,8 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
+- **Projection pin moved to `2cc2174` (2026-10-26, `6509f84`):** the review pass on the framework (saved chats keep no tool output, collision-free session files, batched streaming, IPv6/DNS-rebinding SSRF, resilient `toolsFor`, `error` + `run_end` on a pre-model failure, locale numbers, first `@vak/web` tests). Checked before the pin move: 319 framework and 118 app tests, typecheck, UI build. The framework's **Breaking** `runAgent` change does not reach the app: it calls `runAgent` only from tests, with valid options. The lockfile's stale `0.1.0` was caught up by `npm install`. Not yet exercised in the dev window: a long interface streaming, and a reloaded chat's tool placeholder.
+
 - **Attachments and local OCR (2026-10-26, `c53f53c`):** image attach in the chat and the "OCR (local)" integration (six GLM-OCR tools). Tested in the browser app with qwen3.5:4b: an attached receipt was read correctly. Open: with only "What's in the attached image?" the model once answered without calling OCR (a framework-level rule, not an app patch); not yet tried in the dev window; exported Markdown for attachments sits in the chat's folder with no open/download button.
 
 - **Release 0.2.0 (2026-10-26):** tagged `v0.2.0` (`4ffabb3`, Projection `2918883`), published on GitHub with the unsigned dmg, installed locally. Details in RELEASING.md "Latest release". Next release work: signing and notarization (ask first).
