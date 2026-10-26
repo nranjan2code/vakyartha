@@ -123,3 +123,8 @@ Artifact SHA-256:
 - Disk image: `d2c9c54d26b0b3c540f7f2dacdaf3f6c0435283d998ee057ecfc21e077f5c5e8`
 
 Ignored local receipt: `.vak/builds/2026-10-26-outcome-final-install.json`, including the clean snapshot and previous-install backup paths. Later documentation commits do not change compiled source. File-report reliability still fails the retained trials; live microphone checks remain deferred, as documented in EVALUATION.md and VOICE-CHECK.md.
+
+
+## External discovery source checkpoint — 2026-10-26
+
+The source checkout now uses pushed Projection `801e227`, including unreviewed-tool consent defaults and HTTP protocol/session/redirect corrections. External catalog discovery/import is source-validated, including live public metadata and one isolated hosted documentation lifecycle. [Implementation, verification and limits](EXTERNAL-CATALOGS.md). This checkpoint does not replace the installed app or its recorded artifact provenance; a future installation must regenerate the UI and sidecar and follow the existing clean-build/verification procedure. No release/tag/public download was created for it.

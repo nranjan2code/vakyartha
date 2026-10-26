@@ -179,6 +179,6 @@ export const CATALOG: CatalogEntry[] = [
 ];
 
 /** The app's integrations: its catalog run by the framework; Time is on from the first run (it runs no outside code). */
-export function createIntegrations(deps: Omit<IntegrationsOptions, "catalog" | "enabledAtFirstRun">, media?: Media): Integrations {
-  return new Integrations({ ...deps, catalog: [...CATALOG, ...(media?.entries() ?? [])], enabledAtFirstRun: ["time"] });
+export function createIntegrations(deps: Omit<IntegrationsOptions, "catalog" | "enabledAtFirstRun">, media?: Media, catalog?: CatalogEntry[]): Integrations {
+  return new Integrations({ ...deps, catalog: catalog ?? [...CATALOG, ...(media?.entries() ?? [])], enabledAtFirstRun: ["time"] });
 }

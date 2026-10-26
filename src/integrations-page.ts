@@ -2,6 +2,7 @@
 // every tool with its policy and a test run, recent calls), and adding a
 // server of your own. What an integration can reach is shown before install.
 
+import { externalCatalogs } from "./marketplaces-page.ts";
 import { api, ask, el } from "./core.ts";
 import { icon, tile } from "./icons.ts";
 import { group, pill, row, segmented, title, toggle } from "./ui.ts";
@@ -23,6 +24,7 @@ interface Tool {
 }
 interface Call { at: string; tool: string; decision: string; ok?: boolean; ms?: number; preview?: string }
 export interface Integration {
+  provenance?: { source: string; name: string; version: string; addedAt: string };
   entry: { id: string; name: string; publisher: string; trust: Trust; summary: string; description: string; homepage: string; icon: string; access: string[]; config: Field[]; sourceKind: string; version?: string; package?: string; url?: string; command?: string };
   installed: boolean;
   version?: string;
@@ -74,6 +76,7 @@ let query = "";
 /** `voice`: the Voice category, shown under All and alone under its own filter. */
 export async function marketplace(open: (id: string) => void, addOwn: () => void, voice: HTMLElement[] = []): Promise<HTMLElement[]> {
   const list = await api<Integration[]>("/api/integrations");
+  filter = "all";
   const grid = el("div", { className: "market" });
   const voiceBox = el("div", {}, ...voice);
   const paint = () => {
@@ -82,11 +85,11 @@ export async function marketplace(open: (id: string) => void, addOwn: () => void
     voiceBox.style.display = filter === "all" || filter === "voice" ? "" : "none";
     if (filter === "voice") return;
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    const shown = list.filter((i) => (filter === "all" ? true : filter === "installed" ? i.installed && i.entry.sourceKind !== "builtin" ? true : i.enabled : i.entry.trust === filter)).filter((i) => words.every((w) => `${i.entry.name} ${i.entry.publisher} ${i.entry.summary}`.toLowerCase().includes(w)));
+    const shown = list.filter((i) => (filter === "all" ? true : filter === "installed" ? i.enabled || i.entry.sourceKind === "npm" && i.installed || Boolean(i.provenance) || i.entry.trust === "custom" : i.entry.trust === filter)).filter((i) => words.every((w) => `${i.entry.name} ${i.entry.publisher} ${i.entry.summary}`.toLowerCase().includes(w)));
     grid.replaceChildren(
       ...shown.map((i) => {
         const [label, tone] = STATUS[i.status];
-        const card = el("button", { type: "button", className: "market-card" }, tile(i.entry.icon, 40), el("div", { className: "market-text" }, el("div", { className: "market-name" }, i.entry.name), el("div", { className: "market-pub" }, i.entry.publisher), el("div", { className: "market-sum" }, i.entry.summary)), el("div", { className: "market-foot" }, trustBadge(i.entry.trust), pill(label, tone)));
+        const card = el("button", { type: "button", className: "market-card" }, tile(i.entry.icon, 40), el("div", { className: "market-text" }, el("div", { className: "market-name" }, i.entry.name), el("div", { className: "market-pub" }, i.entry.publisher), el("div", { className: "market-sum" }, i.entry.summary)), el("div", { className: "market-foot" }, trustBadge(i.entry.trust), pill(label, tone), i.provenance ? pill(i.provenance.source) : null));
         card.addEventListener("click", () => open(i.entry.id));
         return card;
       }),
@@ -101,7 +104,6 @@ export async function marketplace(open: (id: string) => void, addOwn: () => void
   const filters = segmented(
     [
       ["all", "All"],
-      ["installed", "In use"],
       ["built-in", "Built in"],
       ["official", "Official"],
       ["vendor", "Vendors"],
@@ -114,14 +116,29 @@ export async function marketplace(open: (id: string) => void, addOwn: () => void
       paint();
     },
   );
+  filters.classList.add("catalog-filters");
   const add = el("button", { type: "button", className: "ghost small", textContent: "Add your own server…" });
   add.addEventListener("click", addOwn);
   paint();
+  const external = externalCatalogs(open);
+  const own = el("div", {}, el("div", { className: "market-bar" }, search, filters, add), grid, voiceBox);
+  external.node.hidden = true;
+  const tabs = segmented([["ours", "Our catalog"], ["external", "External catalogs"], ["installed", "In use"]] as const, "ours", v => {
+    external.node.hidden = v !== "external"; own.hidden = v === "external";
+    if (v === "external") external.load();
+    else {
+      filter = v === "installed" ? "installed" : "all";
+      filters.hidden = v === "installed";
+      for (const button of filters.children) button.setAttribute("aria-pressed", String(button.textContent === "All"));
+      paint();
+    }
+  });
+  tabs.classList.add("catalog-tabs");
+  tabs.setAttribute("role", "group");
+  tabs.setAttribute("aria-label", "Integration views");
   return [
     ...title("Integrations", "Tools the model can use to work with real data: your files, the web, your accounts. Each runs with only the access shown on its page, and anything that changes something asks you first."),
-    el("div", { className: "market-bar" }, search, filters, add),
-    grid,
-    voiceBox,
+    tabs, own, external.node,
   ];
 }
 
@@ -168,9 +185,9 @@ export async function integrationPage(id: string, back: () => void, reload: () =
     });
     controls.push(install);
   } else {
-    controls.push(
-      el("div", { className: "row-actions" }, pill(...STATUS[i.status]), toggle(i.enabled, (on) => act(() => put({ enabled: on })))),
-    );
+    const enabled = toggle(i.enabled, (on) => act(() => put({ enabled: on })));
+    enabled.setAttribute("aria-label", `Use ${e.name}`);
+    controls.push(el("div", { className: "row-actions" }, pill(...STATUS[i.status]), enabled));
   }
   const access = group("What it can reach", ...e.access.map((a) => el("div", { className: "row" }, el("div", { className: "row-label", textContent: a }))), i.error ? el("div", { className: "row stack" }, el("p", { className: "row-hint bad", textContent: i.error })) : null);
 
@@ -242,7 +259,7 @@ export async function integrationPage(id: string, back: () => void, reload: () =
       )
     : null;
 
-  const danger = i.installed && e.sourceKind !== "builtin" ? el("button", { type: "button", className: "danger small", textContent: e.trust === "custom" ? "Remove this server" : "Uninstall" }) : null;
+  const danger = (i.installed || i.provenance) && e.sourceKind !== "builtin" ? el("button", { type: "button", className: "danger small", textContent: e.trust === "custom" ? "Remove this server" : "Uninstall" }) : null;
   danger?.addEventListener("click", async () => {
     if (await ask(`Remove ${e.name}? Its saved keys and data in this app are deleted too.`, "Remove")) void act(() => api(`/api/integrations/${id}/uninstall`, { method: "POST" }).then(back));
   });
@@ -252,6 +269,7 @@ export async function integrationPage(id: string, back: () => void, reload: () =
     el("div", { className: "crumbs" }, backLink),
     head,
     description,
+    i.provenance ? el("p", { className: "catalog-notice", textContent: `Added from ${i.provenance.source} · ${i.provenance.name} · listing ${i.provenance.version}. This server has not been reviewed by Vakyartha.` }) : null,
     el("div", { className: "int-controls" }, ...controls),
     note,
     access,

@@ -25,7 +25,7 @@ The site describes where Vakyartha is going. Here is what this repository does t
 |---|---|
 | Ask, and get something you can use | **Works.** Answers project as live surfaces; chats are saved; an **Artifacts** library gathers every surface across chats and reopens it in the canvas. |
 | Your choice of models | **Works.** Local models through Ollama; 11 hosted providers with keys in the macOS Keychain. |
-| Connected tools and services | **Works.** A curated catalog for web reading/search, time, local OCR, scoped files, persistent memory, repositories, pages, library documentation and workspace data/tools. Local npm servers are pinned; remote services use HTTPS, with per-tool policies and approvals. Workspace connector setup is implemented; live account access remains unverified ([setup](docs/DATABRICKS.md)). |
+| Connected tools and services | **Works.** Optional external catalog discovery supplements our curated entries, with review before import and the same lifecycle ([support and limits](docs/EXTERNAL-CATALOGS.md)). A curated catalog for web reading/search, time, local OCR, scoped files, persistent memory, repositories, pages, library documentation and workspace data/tools. Local npm servers are pinned; remote services use HTTPS, with per-tool policies and approvals. Workspace connector setup is implemented; live account access remains unverified ([setup](docs/DATABRICKS.md)). |
 | Make and edit media | **Implemented.** Independent Images, Audio and Video plugins, provider/model selection per tool, shared provider keys, saved files, background job recovery and dedicated screen/voice projections. Hosted calls are opt-in and billed separately. See [media tools](docs/MEDIA-TOOLS.md) for supported operations and verification limits. |
 | In your everyday chat | **Telegram works**, answered from the menu bar while the window is closed. Slack and Discord are listed as coming. |
 | Spending limits and usage | **Usage works:** Settings → FinOps charts tokens, context and estimated cost per turn. Spending limits are not built yet. |
@@ -63,7 +63,7 @@ Builds are not code-signed or notarized yet: install only what you built yoursel
 
 - **You choose the access.** Apart from the built-in clock (Time), integrations stay off until you turn them on; each declares what it can reach, and the Files server is limited to the folders you pick.
 - **Actions follow your rules.** Anything that writes, deletes or reaches the internet asks first; each tool's policy can be allowed, ask or blocked. Model text, tool output and fetched pages are treated as data, never as instructions.
-- **Servers are pinned.** Each integration is a fixed version published at least 14 days earlier, installed without install scripts, and given only the environment variables it declares.
+- **Local server packages are pinned.** Supported npm integrations use a fixed version published at least 14 days earlier, install without scripts, and receive only declared environment variables. Hosted servers can change independently of listing versions.
 - **Your work stays on your Mac.** Chats, artifacts and usage records live in the app's data folder; keys live in the Keychain. Requests go only to the providers and services you connect, and a local model keeps them on your machine.
 - **You can follow the outcome.** Every tool call is logged to `logs/tools.jsonl`; the engine window is token-protected.
 
@@ -89,7 +89,7 @@ For development, provider keys can also go in a local `.env` (see [`.env.example
 | Shell | `src-tauri/src/lib.rs` | starts the engine, hands the window its address and token, tray, close-to-background, single instance, launch at login, graceful stop |
 | Engine | `sidecar/main.ts` → `sidecar/server.ts` | `@vak/host` plus settings, channels, integrations, client-log and info routes; token-protected for the window, loopback-only for `npm run web` |
 | Settings store | `sidecar/settings.ts` | provider and channel keys in the Keychain; plain values in `settings.env` |
-| Integrations | `sidecar/integrations.ts` | the app's catalog (which servers, pinned versions); installing and running them is Projection's `Integrations` |
+| Integrations | `sidecar/integrations.ts`, `sidecar/marketplaces.ts` | curated catalog plus external discovery/review and imported definitions; installing and running them is Projection's `Integrations` |
 | FinOps | `sidecar/finops.ts`, `src/finops-page.ts` | local usage ledger, model rates, per-turn charts and CSV export ([FINOPS.md](docs/FINOPS.md)) |
 | Channels | `sidecar/channels.ts` | Telegram (`runTelegram`); Slack and Discord slots |
 | UI | `src/` | chats, thread, composer, approvals, canvas and Artifacts ([CANVAS.md](docs/CANVAS.md)), Settings, themes, right-click menus |
@@ -116,6 +116,7 @@ Each folder holds `sessions/`, `integrations/`, `integrations.json`, `channels.j
 - [SPECS.md](docs/SPECS.md): what the app is, its framework dependency and identity.
 - [MVP-SPECS.md](docs/MVP-SPECS.md), [MVP-CHECKLIST.md](docs/MVP-CHECKLIST.md) and [ADR.md](docs/ADR.md): agent MVP implementation, preserved interactive surfaces, architecture decisions, progress gates and later scope.
 - [RELEASING.md](docs/RELEASING.md): releasing the app and updating Projection.
+- [EXTERNAL-CATALOGS.md](docs/EXTERNAL-CATALOGS.md): external discovery, review/import UX, lifecycle ownership, supported runtimes/authentication and verification.
 - [DATABRICKS.md](docs/DATABRICKS.md): workspace MCP endpoint/token setup, supported clouds, permissions, costs and verification limits.
 - [MEDIA-TOOLS.md](docs/MEDIA-TOOLS.md): media plugins, shared credentials, supported tools, projections and recovery; [research baseline](docs/MEDIA-TOOLS-RESEARCH.md).
 - [AGENTS.md](AGENTS.md) and [HANDOVER.md](docs/HANDOVER.md): working rules and where work stands.

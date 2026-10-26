@@ -706,3 +706,62 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
   .settings-content input[type="file"] { max-width: 100%; min-width: 0; }
   .settings-content .row-actions { flex-wrap: wrap; }
 }
+
+/* External catalogs share the integration lifecycle and the app's theme. */
+.catalog-tabs { margin: 6px 0 24px; }
+.external-catalogs[hidden], .catalog-filters[hidden] { display: none; }
+.catalog-intro { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+.catalog-intro h2 { font-size: 1.15rem; margin: 0 0 8px; }
+.catalog-intro p { max-width: 580px; margin: 0; line-height: 1.6; }
+.catalog-sources { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 22px; }
+.catalog-source { display: flex; text-align: left; gap: 10px; align-items: flex-start; padding: 15px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border); cursor: pointer; min-width: 0; }
+.catalog-source[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+.catalog-source svg { flex: 0 0 auto; margin-top: 2px; color: var(--muted); }
+.catalog-source strong { display: block; font-size: .86rem; margin-bottom: 5px; }
+.catalog-source span span { display: block; font-size: .76rem; color: var(--muted); line-height: 1.5; }
+.catalog-search { display: flex; gap: 10px; }
+.catalog-search input { min-width: 0; }
+.catalog-status { margin: 12px 0 18px; line-height: 1.6; font-size: .75rem; }
+.external-content { display: grid; gap: 12px; }
+.external-card .market-text { min-width: 0; }
+.external-card .market-name, .external-card .market-pub { overflow-wrap: anywhere; }
+.external-card .market-sum { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; line-height: 1.5; }
+.catalog-origin { margin-left: auto; font-size: .74rem; color: var(--muted); }
+.catalog-more { justify-self: center; margin: 14px 0; }
+.catalog-empty { grid-column: 1 / -1; padding: 36px 20px; text-align: center; background: var(--panel); border: 1px dashed var(--border); border-radius: 14px; }
+.catalog-empty h3 { margin: 12px 0 8px; font-size: 1rem; }
+.catalog-empty p { max-width: 440px; margin: 12px auto; line-height: 1.6; }
+.catalog-skeleton { height: 120px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border); }
+.catalog-review { outline: none; max-width: 780px; }
+.catalog-review > button:first-child { margin-bottom: 20px; }
+.catalog-review-heading { display: flex; gap: 14px; align-items: center; }
+.catalog-review-heading h2 { margin: 5px 0; font-size: 1.45rem; overflow-wrap: anywhere; }
+.catalog-eyebrow { font-size: .68rem; letter-spacing: .1em; color: var(--muted); }
+.catalog-options { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 14px; }
+.catalog-options [aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--accent); }
+.catalog-facts { padding: 4px 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+.catalog-fact { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; padding: 11px 0; font-size: .82rem; border-bottom: 1px solid var(--border); }
+.catalog-fact:last-child { border-bottom: 0; }
+.catalog-fact > span { overflow-wrap: anywhere; }
+.catalog-review > .row-hint { line-height: 1.7; }
+.catalog-notice { padding: 16px; border: 1px solid var(--border); border-left: 3px solid var(--accent); background: var(--panel); border-radius: 10px; font-size: .84rem; line-height: 1.6; margin: 20px 0; overflow-wrap: anywhere; }
+.catalog-notice p { margin: 6px 0 12px; }
+.catalog-next { border-top: 1px solid var(--border); margin-top: 24px; padding-top: 20px; }
+.catalog-ack { display: flex; align-items: flex-start; gap: 12px; font-size: .85rem; line-height: 1.6; margin: 0 0 18px; cursor: pointer; }
+.catalog-ack input { flex: 0 0 auto; margin-top: 5px; }
+.catalog-package { margin: 20px 0; font-size: .84rem; }
+.catalog-package pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; background: var(--panel); padding: 12px; border-radius: 10px; }
+@media (max-width: 760px) {
+  .catalog-sources { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .catalog-source { padding: 12px 10px; gap: 8px; align-items: center; }
+  .catalog-source strong { margin: 0; font-size: .8rem; }
+  .catalog-source span span { display: none; }
+  .catalog-tabs { max-width: 100%; flex-wrap: wrap; }
+  .catalog-fact { grid-template-columns: 90px minmax(0, 1fr); }
+  .external-content .market { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 440px) {
+  .catalog-source { justify-content: center; text-align: center; }
+  .catalog-source svg { display: none; }
+}

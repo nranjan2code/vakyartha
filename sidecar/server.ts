@@ -13,7 +13,9 @@ import { attachmentsRoute } from "./attachments.ts";
 import type { Integrations } from "@vak/mcp/client";
 import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, providersFromEnv } from "@vak/providers";
 import { Channels, CHANNELS } from "./channels.ts";
-import { createIntegrations } from "./integrations.ts";
+import { Marketplaces } from "./marketplaces.ts";
+import { MARKETPLACES, type MarketplaceId } from "../shared/marketplaces.ts";
+import { CATALOG, createIntegrations } from "./integrations.ts";
 import { runUsage } from "../shared/finops.ts";
 import { Finops } from "./finops.ts";
 import { TaskFiles } from "./task-files.ts";
@@ -43,6 +45,8 @@ export interface AppServerOptions {
   access: "token" | "open";
   /** npm for installing integrations: a command or a path to npm-cli.js (the release app bundles one). */
   npm?: string;
+  /** Discovery transport override for deterministic catalog/lifecycle checks. */
+  marketplaceFetch?: typeof fetch;
   /** Built UI to serve at / (the playground); none: API only. */
   uiDir?: string;
   appName?: string;
@@ -173,6 +177,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
   const token = opts.access === "token" ? randomBytes(32).toString("base64url") : undefined;
   // Created after the host (it asks the host for approvals); the host reads it per turn.
   let integrations: Integrations | undefined;
+  let marketplaces: Marketplaces;
   let tasks: Tasks | undefined;
   const media = new Media({ dir: path.join(dataDir, "media"), attachmentsDir: path.join(dataDir, "attachments"), voiceDir,
     config: (kind) => integrations?.configuration(`media-${kind}`) ?? { enabled: false, config: {} },
@@ -230,7 +235,8 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     log,
   });
 
-  integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm }, media);
+  marketplaces = new Marketplaces(dataDir, [...CATALOG, ...media.entries()], opts.marketplaceFetch);
+  integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm }, media, marketplaces.catalog);
   // Refresh app-owned tool schemas after an upgrade; the integration journal
   // may otherwise retain an older model's controls indefinitely.
   for (const entry of integrations.view().filter((i) => i.enabled && i.entry.id.startsWith("media-"))) {
@@ -311,13 +317,30 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
 
   async function integrationsRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     const p = url.pathname;
+    if (p === "/api/marketplaces" && req.method === "GET") { json(res, 200, MARKETPLACES); return true; }
+    if (p.startsWith("/api/marketplaces/")) {
+      try {
+        const match = /^\/api\/marketplaces\/(mcp|github|docker)(?:\/(review|add))?$/.exec(p);
+        if (!match) { json(res, 404, { error: "Unknown marketplace" }); return true; }
+        const source = match[1] as MarketplaceId;
+        if (!match[2] && req.method === "GET") json(res, 200, await marketplaces.search(source, url.searchParams.get("q") ?? "", url.searchParams.get("cursor") ?? ""));
+        else if (match[2] === "review" && req.method === "POST") {
+          const b = await readJson(req);
+          json(res, 200, await marketplaces.review(source, String(b.query ?? ""), String(b.cursor ?? ""), String(b.key ?? ""), String(b.option ?? "")));
+        } else if (match[2] === "add" && req.method === "POST") {
+          const b = await readJson(req);
+          json(res, 200, { id: marketplaces.add(String(b.fingerprint ?? ""), b.acknowledged === true) });
+        } else json(res, 405, { error: "Method not allowed" });
+      } catch (err) { json(res, 400, { error: (err as Error).message }); }
+      return true;
+    }
     if (!p.startsWith("/api/integrations")) return false;
     const m = /^\/api\/integrations(?:\/([\w-]+)(?:\/(install|uninstall|refresh|test))?)?$/.exec(p);
     if (!m) return false;
     const [, id, verb] = m;
     try {
       const list = integrations!;
-      if (!id && req.method === "GET") json(res, 200, list.view());
+      if (!id && req.method === "GET") json(res, 200, list.view().map(i => ({ ...i, provenance: marketplaces.provenance(i.entry.id) })));
       else if (id === "custom" && !verb && req.method === "POST") {
         const body = await readJson(req);
         const made = list.addCustom({ name: String(body.name ?? ""), command: body.command, args: Array.isArray(body.args) ? body.args.map(String) : undefined, url: body.url, token: body.token });
@@ -328,7 +351,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
       } else if (id && req.method === "POST" && verb) {
         integrationRevisions.set(id, (integrationRevisions.get(id) ?? 0) + 1);
         if (verb === "install") await list.install(id);
-        else if (verb === "uninstall") await list.uninstall(id);
+        else if (verb === "uninstall") { await list.uninstall(id); marketplaces.remove(id); }
         else await list.refresh(id);
         json(res, 200, list.view());
       } else if (id && !verb && req.method === "PUT") {
