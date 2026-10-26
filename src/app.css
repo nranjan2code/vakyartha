@@ -285,13 +285,18 @@ body:not(.notes) details.diag { display: none; }
   box-shadow: 0 4px 24px rgb(0 0 0 / 0.06);
 }
 .composer:focus-within { border-color: var(--faint); }
-.composer textarea { border: 0; outline: 0; resize: none; background: none; padding: 4px 0; max-height: 220px; }
+.composer textarea { min-width: 0; width: 100%; border: 0; outline: 0; resize: none; background: none; padding: 4px 0; max-height: 220px; }
 .composer-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.model-pick { appearance: none; max-width: 60%; background: none; border: 0; border-radius: 8px; padding: 4px 8px; margin-left: -8px; font-size: 0.8rem; color: var(--muted); cursor: pointer; text-overflow: ellipsis; }
+.model-pick { appearance: none; min-width: 0; flex: 1; max-width: 60%; background: none; border: 0; border-radius: 8px; padding: 4px 8px; margin-left: -8px; font-size: 0.8rem; color: var(--muted); cursor: pointer; text-overflow: ellipsis; }
 .model-pick:hover { background: var(--hover); color: var(--fg); }
 .send { flex: none; width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--fg); color: var(--bg); cursor: pointer; display: grid; place-items: center; }
 .send:disabled { opacity: 0.3; cursor: default; }
 .composer-actions { display: flex; align-items: center; gap: 6px; }
+@container workspace (max-width: 360px) {
+  .composer-row { flex-wrap: wrap; }
+  .model-pick { flex-basis: 100%; max-width: 100%; }
+  .composer-actions { min-width: 0; flex-wrap: wrap; }
+}
 .mic { flex: none; width: 32px; height: 32px; border-radius: 50%; border: 0; background: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; transition: background 120ms, color 120ms, box-shadow 80ms; }
 .mic:hover { color: var(--fg); background: var(--hover); }
 .mic:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -675,3 +680,26 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 .steps { list-style: none; margin: -4px 0 0; padding: 8px 12px; border-left: 2px solid var(--border); display: flex; flex-direction: column; gap: 6px; font-size: 0.78rem; color: var(--muted); }
 .steps li { display: flex; align-items: center; gap: 6px; }
 .steps li.failed { color: var(--danger); }
+/* Media selections wrap on narrow settings pages; players use the framework. */
+.media-selection { flex-wrap: wrap; }
+.media-selection select { max-width: min(100%, 340px); }
+.media-model-choice { min-width: 0; max-width: 100%; }
+.media-result-surface { width: 100%; min-width: 0; }
+.media-result-surface vak-surface { display: block; }
+@media (max-width: 720px) {
+  .settings-page { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .settings-nav { border-right: 0; border-bottom: 1px solid var(--border); }
+  .settings-nav-head { padding: 8px 12px 4px; }
+  .settings-nav-list { flex: initial; flex-direction: row; overflow-x: auto; padding: 4px 8px 8px; }
+  .settings-nav-list .nav-item { flex: 0 0 auto; white-space: nowrap; }
+  .settings-nav-list .nav-group { display: none; }
+  .settings-content { padding: 8px 16px 32px; }
+  .settings-content .row, .settings-content .tool-top { flex-direction: column; align-items: stretch; }
+  .settings-content .row-control { width: 100%; min-width: 0; }
+  .settings-content .row-control select { width: 100%; min-width: 0; }
+  .settings-content code { overflow-wrap: anywhere; }
+  .media-selection { flex-direction: column; align-items: stretch; }
+  .media-selection select, .media-model-choice { width: 100%; max-width: 100%; min-width: 0; }
+  .settings-content input[type="file"] { max-width: 100%; min-width: 0; }
+  .settings-content .row-actions { flex-wrap: wrap; }
+}

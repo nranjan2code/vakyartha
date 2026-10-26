@@ -5,6 +5,8 @@
 import { api, ask, el } from "./core.ts";
 import { icon, tile } from "./icons.ts";
 import { group, pill, row, segmented, title, toggle } from "./ui.ts";
+import { isMediaKind } from "../shared/media.ts";
+import { mediaResults, mediaSetup } from "./media-page.ts";
 
 type Trust = "built-in" | "official" | "vendor" | "custom";
 type Policy = "allow" | "ask" | "off";
@@ -129,6 +131,7 @@ export async function integrationPage(id: string, back: () => void, reload: () =
   const i = list.find((x) => x.entry.id === id);
   if (!i) return [...title("Not found"), el("p", { className: "row-hint", textContent: "This integration was removed." })];
   const e = i.entry;
+  const mediaKind = e.id.startsWith("media-") && isMediaKind(e.id.slice(6)) ? e.id.slice(6) : undefined;
   const note = el("p", { className: "row-hint bad" });
   const act = async (fn: () => Promise<unknown>, busy?: HTMLButtonElement) => {
     note.textContent = "";
@@ -172,7 +175,8 @@ export async function integrationPage(id: string, back: () => void, reload: () =
   const access = group("What it can reach", ...e.access.map((a) => el("div", { className: "row" }, el("div", { className: "row-label", textContent: a }))), i.error ? el("div", { className: "row stack" }, el("p", { className: "row-hint bad", textContent: i.error })) : null);
 
   // Setup fields.
-  const setup = e.config.length
+  const mediaFields = mediaKind && isMediaKind(mediaKind) ? await mediaSetup(mediaKind, i.config, (config) => act(() => put({ config }))).catch((err: Error) => [group("Media setup", el("p", { className: "row-hint bad", textContent: err.message }))]) : [];
+  const setup = !mediaKind && e.config.length
     ? group(
         "Setup",
         ...e.config.map((f) => {
@@ -251,6 +255,8 @@ export async function integrationPage(id: string, back: () => void, reload: () =
     el("div", { className: "int-controls" }, ...controls),
     note,
     access,
+    ...mediaFields,
+    mediaKind && isMediaKind(mediaKind) ? mediaResults(mediaKind) : null,
     setup,
     tools,
     calls,

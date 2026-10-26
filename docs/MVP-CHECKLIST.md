@@ -145,6 +145,8 @@ These boxes track future candidates only. Do not start them simply because they 
 - [ ] L7. Remote execution, remote notifications and cross-device channels.
 - [ ] L8. Artifact history, collaboration and publishing.
 - [ ] L9. Additional platforms and automatic updates.
+- [x] L10. Initial independent image, audio and video plugins through existing integrations, shared provider keys, selected models, upload/cost approval, durable assets and recoverable job IDs. Dedicated screen/voice projections use canonical host publication. Supported subset and verification limits: [MEDIA-TOOLS.md](MEDIA-TOOLS.md); [research baseline](MEDIA-TOOLS-RESEARCH.md).
+- [ ] L10a. Approve and run live provider/account quality benchmarks and hands-on microphone/media barge-in evaluation. Mocked API checks and synthetic voice checks do not establish these outcomes; broader media editing operations remain later scope.
 
 ## Evidence log
 

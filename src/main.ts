@@ -15,6 +15,9 @@ import { choose, current, fillPicker, loadProviders, modelErrors, parseChoice, p
 import { icon, tile } from "./icons.ts";
 import { closest, onContextMenu } from "./menu.ts";
 import { closeSettings, openSettings, settingsOpen } from "./settings.ts";
+import { resolveMedia } from "./media.ts";
+
+window.addEventListener("vak:media-chat", (event) => { const id = (event as CustomEvent<unknown>).detail; if (typeof id === "string") { closeSettings(); void openChat(id); } });
 import { applyAppearance, surfaceMode } from "./theme.ts";
 import { TasksPanel } from "./tasks-panel.ts";
 import { Drafts } from "./drafts.ts";
@@ -305,7 +308,7 @@ function add(el: HTMLElement, scroll = true): HTMLElement {
 }
 
 /** The model needs each attachment's path; people only need its name. */
-const ATTACHED = /^\[Attached image (.+?): [^\]\n]+\]$/gm;
+const ATTACHED = /^\[Attached (?:image|audio|video) (.+?): [^\]\n]+\]$/gm;
 const shown = (text: string) => text.replace(ATTACHED, "Attached: $1");
 
 function userBubble(sent: string): void {
@@ -506,6 +509,7 @@ function mount(turn: Turn, snap: SurfaceSnapshot, scroll = true): void {
   let el = mounted.get(snap.id);
   if (!el) {
     el = document.createElement("vak-surface") as VakSurfaceElement;
+    el.mediaResolver = resolveMedia;
     mounted.set(snap.id, el);
     canvas.register(el, snap, turn.surfaces, scroll);
     el.attach(client.store, snap.id);
@@ -672,7 +676,7 @@ function submit(text: string): void {
   if (!current.model) return void openSettings();
   // The engine reads attachments by path; the model sees where each one is.
   if (attached.length) {
-    t = [t || "What's in the attached image?", ...attached.map((a) => `[Attached image ${a.name}: ${a.path}]`)].join("\n");
+    t = [t || "Help me with the attached media.", ...attached.map((a) => `[Attached ${a.kind} ${a.name}: ${a.path}]`)].join("\n");
     attached = [];
     showAttached();
   }
@@ -786,7 +790,7 @@ document.addEventListener("keydown", (e) => {
 const attachBtn = $<HTMLButtonElement>("attach");
 const attachFile = $<HTMLInputElement>("attach-file");
 attachBtn.append(icon("image", 17));
-let attached: { name: string; path: string }[] = [];
+let attached: { name: string; path: string; kind: string }[] = [];
 
 function showAttached(): void {
   composerNote.textContent = attached.length ? `Attached: ${attached.map((a) => a.name).join(", ")}` : "";
@@ -809,7 +813,7 @@ attachFile.addEventListener("change", async () => {
   for (const f of Array.from(attachFile.files ?? [])) {
     try {
       const r = await api<{ path: string }>(`/api/attachments?session=${encodeURIComponent(session)}`, { method: "POST", body: JSON.stringify({ type: f.type, data: await base64(f) }) });
-      attached.push({ name: f.name, path: r.path });
+      attached.push({ name: f.name.replace(/[\r\n\[\]]/g, "_"), path: r.path, kind: /^(audio|video)\//.test(f.type) ? f.type.split("/")[0]! : "image" });
     } catch (err) {
       composerHint((err as Error).message);
     }

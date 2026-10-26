@@ -11,6 +11,8 @@ import { disposeFinops, finopsPage } from "./finops-page.ts";
 import { TASK_LIMITS, parseTaskSummaries } from "../shared/task-contract.ts";
 import { voicePage, voiceSection, voiceSettingsPage } from "./voice/index.ts";
 import { group, pill, plainField, row, secretField, segmented, select, type Setting, title, toggle } from "./ui.ts";
+import { disposeMediaPage } from "./media-page.ts";
+import type { MediaProvider } from "../shared/media.ts";
 
 interface ChannelInfo { id: string; label: string; enabled: boolean; provider?: string; model?: string; ready: boolean; secrets: string[]; needs: string[]; state: string; detail: string }
 interface PlanInfo { generation: string; tier: string; examples: boolean; authoring?: string; maxSteps: number; reasons: string[] }
@@ -46,6 +48,7 @@ let section: Section = (prefs.get("settings:section") as Section | null) ?? "mod
 let settings: Setting[] = [];
 let timer: ReturnType<typeof setInterval> | undefined;
 window.addEventListener("vak:finops-refresh", () => { if (settingsOpen() && section === "finops") void show("finops"); });
+window.addEventListener("vak:media-providers", () => void show("providers"));
 
 export function settingsOpen(): boolean {
   return !page().hidden;
@@ -58,6 +61,7 @@ export async function openSettings(to?: Section, arg?: string): Promise<void> {
 }
 
 export function closeSettings(): void {
+  disposeMediaPage();
   disposeFinops();
   clearInterval(timer);
   page().hidden = true;
@@ -83,6 +87,7 @@ function nav(): void {
 }
 
 async function show(to: Section, arg?: string): Promise<void> {
+  disposeMediaPage();
   disposeFinops();
   clearInterval(timer);
   section = to;
@@ -274,10 +279,12 @@ async function providersPage(): Promise<HTMLElement[]> {
   const labs = providers.filter((p) => !p.local && p.id !== "compatible");
   // Labs with a key first, so the ones in use are at the top.
   labs.sort((a, b) => Number(b.available) - Number(a.available));
+  const media = (await api<MediaProvider[]>("/api/media/providers")).filter((p) => !providers.some((chat) => chat.id === p.id));
   return [
     ...title("Providers", "Keys are kept in the macOS Keychain (elsewhere, a file only you can read) and are never shown again once saved."),
     el("section", { className: "group" }, el("h2", { textContent: "On this computer" }), ...local.map(card)),
     el("section", { className: "group" }, el("h2", { textContent: "Labs and hosts" }), ...labs.map(card)),
+    el("section", { className: "group" }, el("h2", { textContent: "Media and voice" }), ...media.map((p) => el("div", { className: "card" }, el("div", { className: "card-head" }, el("b", { textContent: p.label }), pill(p.available ? "Key saved" : "Needs key", p.available ? "ok" : "")), el("p", { className: "row-hint", textContent: "Shared by the media plugins and Voice. Choose models in Integrations." }), el("div", { className: "card-fields" }, ...settings.filter((s) => s.name === p.keyVar).map((s) => secretField(s, refresh)))))),
     el("section", { className: "group" }, el("h2", { textContent: "Any OpenAI-compatible server" }), ...custom.map(card)),
   ];
 }

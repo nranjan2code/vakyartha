@@ -5,6 +5,8 @@ framework continues to own surfaces, rendering, bindings, validation and actions
 
 ## Experience
 
+- Media results use the canonical host session and dedicated media projection. Image/video results prefer the canvas; compact audio can remain inline. Playback controls are local and voice-addressable, while multiple result surfaces remain independently discoverable. Private resource resolution and the media library do not create another rendered-surface authority. See [MEDIA-TOOLS.md](MEDIA-TOOLS.md).
+
 - **Artifacts** is one permanent sidebar entry. Its page lists saved surfaces
   across chats, with type filters, search by title/chat/type, sorting, source
   chat and date. It shows 24 cards initially, then offers Show more.

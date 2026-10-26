@@ -9,6 +9,7 @@ import { icon } from "./icons.ts";
 import { downloadMarkdown } from "./backend.ts";
 import { canvasReason } from "./placement.ts";
 import { surfaceMode } from "./theme.ts";
+import { resolveMedia } from "./media.ts";
 
 /** large: placed in the canvas; once large it stays so, and nothing jumps back into the chat. */
 interface Entry { surface: VakSurfaceElement; home: HTMLElement; button: HTMLButtonElement; title: HTMLElement; option: HTMLOptionElement; large: boolean }
@@ -244,6 +245,7 @@ export class Canvas {
       back.addEventListener("click", () => this.showVersion(id));
       note.append(document.createTextNode("Earlier version · "), back);
       const surface = document.createElement("vak-surface") as VakSurfaceElement;
+      surface.mediaResolver = resolveMedia;
       surfaceMode(surface);
       surface.attach(store, id);
       // What it showed, not something to act on: its controls belong to a past state.

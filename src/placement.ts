@@ -45,6 +45,7 @@ export function canvasReason(s: Shape): string | undefined {
     text += textLength(n.props);
     if (INPUTS.has(n.type)) fields++;
     if (!reason && WIDE.has(n.type)) reason = n.type;
+    if (!reason && n.type === "media" && n.props?.kind !== "audio") reason = "media";
     if (!reason && n.type === "code" && String(n.props?.code ?? n.props?.content ?? "").split("\n").length > LONG_CODE_LINES) reason = "long code";
   });
   if (reason) return reason;

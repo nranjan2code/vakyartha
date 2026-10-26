@@ -91,3 +91,7 @@ Run the app and tests, then push the change to Projection and pin to the pushed 
 ## Latest release — 0.2.0 (2026-10-26)
 
 Release commit `4ffabb3`, tag `v0.2.0`, built on Projection `2918883`. Checks before the build: fresh `npm ci`, 299 framework and 117 app tests, Rust tests, typecheck, UI build and the WebKit canvas check. `npm run desktop:build` gave `Vakyartha_0.2.0_aarch64.dmg` (42.77 MiB); installed as a complete replacement of `/Applications/Vakyartha.app`, which reports 0.2.0 and started its engine with no log errors. Published as the [v0.2.0 GitHub release](https://github.com/nranjan2code/vakyartha/releases/tag/v0.2.0) with the dmg and the CHANGELOG section, marked unsigned. Unsigned and not notarized; voice approvals, choices and forms are not yet confirmed with a live microphone (MVP-CHECKLIST V3–V6).
+
+## Media plugin local build — 2026-10-26
+
+The media changes are a local development installation on version 0.2.0, not a new published release. Projection is pinned to pushed commit `2f8dcf6`. A clean build uses a previously absent `CARGO_TARGET_DIR`, regenerates frontend assets and the bundled sidecar, and replaces the installed app as a whole. The source commit, artifact hashes and installed verification are recorded below after the build. Provider runs remain mocked; no paid generation or live microphone check is implied.

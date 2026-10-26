@@ -205,6 +205,8 @@ Dependency avoidance does not justify custom cryptography, a new authentication 
 
 ## 7. Later scope
 
+The optional media slice is now implemented independently of task admission: three integrations select provider/model per operation, share credentials, retain private files and known provider job identities, and publish results through the canonical host/store. Dedicated screen/voice media projections keep playback local. This does not change scheduled-task free-capability admission, establish a monetary ceiling or implement every prospective editing operation. No new native relay or parallel agent loop was introduced. Current scope and evidence: [MEDIA-TOOLS.md](MEDIA-TOOLS.md).
+
 Memory, reusable context and external tool capabilities use the existing MCP integration/plugin boundary, with catalog choices and user-configured servers. Prefer free built-in/local choices initially. Do not build a parallel memory database, retrieval stack or plugin marketplace. Optional capability failure cannot prevent local task recovery. This is the selected architecture for later knowledge features, not a claim they are implemented; task-local continuity remains MVP scope. See ADR-002.
 
 The following are planned candidates, not MVP commitments or implemented features:

@@ -15,6 +15,8 @@ Filter by work type (task runs or ordinary chats) and conversation, select a tur
 
 ## Accounting boundary
 
+The optional media plugins retain numeric provider usage where returned, but currently display their monetary charge as unknown. Their hosted generation/editing costs are excluded from the chat-token estimate. Approval to upload or generate is not a monetary ceiling; no estimated or actual media charge is fabricated. See [MEDIA-TOOLS.md](MEDIA-TOOLS.md).
+
 `sidecar/finops.ts` decorates the app's provider instances and observes their requests and streamed usage. `AsyncLocalStorage` isolates concurrent HTTP chat requests. Provider events pass through unchanged; tool policies, approvals, generation and projection stay in the existing engine. The host's existing admission checks also protect `/api/finops`.
 
 The app saves numeric telemetry in `<dataDir>/logs/finops.jsonl`, with owner-only creation permissions. The file rotates at 10 MB and retains one previous file. It records session/model identifiers, timings, character counts, token usage and call counts, never prompt text, tool arguments/results, credentials or native reasoning content. An interrupted or missing usage report stays unknown. Ledger errors are logged and do not prevent a reply.

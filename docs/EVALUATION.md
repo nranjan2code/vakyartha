@@ -1,5 +1,15 @@
 # Agent outcome evaluation
 
+## Media plugins — 2026-10-26
+
+The independent media slice has 14 focused tests covering separation, credential reuse, existing approvals, configuration/model enforcement, scoped attachment/symlink reads, saved output/usage, provider job identity, restart recovery without resubmission, resource ranges/deletion, malformed output, current speech endpoint/language, conditional capability controls, and spoken/local playback semantics. Combined source checks pass 132 app tests, 323 pinned framework tests/replay, typecheck and the native test. No dependency or native IPC was added.
+
+`scripts/media-authoring-check.ts` ran the primary local conversation model through the real integration tool schema and approval path, with media provider I/O mocked. Result: one configured image submission, one succeeded private output and an ordinary response completion. It is a tool-authoring check, not a generated-image quality result. The retained local-only report is `.vak/media-checks/2026-10-26-authoring.json`, SHA-256 `376730906dbed6346620b20ad524f64dd4be0093f28a48cc20de8a71ff42e170`. No paid model/provider run was made.
+
+`scripts/media-smoke.ts` starts an isolated app instance, mocks all provider traffic and refuses unknown external requests. A synthetic PNG, half-second WAV and one-second MP4 exercise real canonical publication and authenticated file resolution. Off-screen WebKit confirms decoded image width 1, audio duration 0.5/video duration 1, `blob:` resources, ready state 4, actual play/pause and local mute/unmute controls. The first 390px check found the existing fixed-width settings sidebar/fields unusable; responsive settings navigation and wrapped media controls are repaired and rechecked. Screenshot/probe artifacts remain under `/tmp/vakyartha-media-*`; source app data and installed user data are not used by this fixture.
+
+No claim is made about paid-provider account entitlement, output quality, live microphone echo/barge-in, every prospective media operation or automatic remote exactly-once behavior. Those gates remain explicit in the media documentation and checklist. Clean committed build/local installation is recorded separately in RELEASING.md.
+
 This complements deterministic tests with opt-in runs on the primary installed local model. A finished run is not a passing outcome. No release thresholds or broad reliability claims are established yet.
 
 ## Development setup

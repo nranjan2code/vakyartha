@@ -11,6 +11,7 @@ import { Endpointer, rms } from "./endpoint.ts";
 import { voiceMaster } from "./master.ts";
 import { isEcho, modeCommand, type VoiceCommand } from "./commands.ts";
 import { recentlySaid, stopReading, voiceState } from "./read-aloud.ts";
+import { mediaPlaying, pauseMedia } from "../media.ts";
 
 export type ConversationState = "off" | "listening" | "hearing" | "understanding" | "speaking";
 
@@ -87,6 +88,7 @@ export async function startConversation(h: ConversationHandlers): Promise<void> 
   // When the app last made sound: a sentence that began during it, or just after, may be our own echo.
   let lastSpoke = 0;
   let overlapped = false;
+  let mediaQuietUntil = 0;
   const finish = async (chunks: Float32Array[], overlap: boolean) => {
     announce("understanding");
     try {
@@ -109,13 +111,18 @@ export async function startConversation(h: ConversationHandlers): Promise<void> 
   proc.onaudioprocess = (e) => {
     if (off()) return;
     const frame = new Float32Array(e.inputBuffer.getChannelData(0));
-    const reading = voiceState().state !== "idle";
+    const media = mediaPlaying();
+    if (Date.now() < mediaQuietUntil) { ends.reset(); preroll.length = 0; return; }
+    const reading = voiceState().state !== "idle" || media;
     if (reading) lastSpoke = Date.now();
     // While a sentence is being understood, the next is not started: one at a time keeps replies in order.
     const event = state === "understanding" ? undefined : ends.feed(rms(frame), frameMs, reading);
     if (event === "start") {
       // Speaking over the reply stops it: the person has something to say.
       if (reading) stopReading();
+      // A clip can contain arbitrary speech, including approval words. Pause
+      // on barge-in and discard that overlapping utterance before transcription.
+      if (media) { pauseMedia(); mediaQuietUntil = Date.now() + 1000; ends.reset(); preroll.length = 0; announce("listening"); return; }
       overlapped = Date.now() - lastSpoke < 700;
       segment = [...preroll];
       heard = 0;

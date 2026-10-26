@@ -2,6 +2,18 @@
 
 These decisions constrain the agent MVP. Scope: [MVP-SPECS.md](MVP-SPECS.md). Progress: [MVP-CHECKLIST.md](MVP-CHECKLIST.md). No decision authorizes a new dependency or integration installation.
 
+## ADR-027 — Optional media capabilities, one asset/job owner and canonical projection
+
+Date: 2026-10-26. Status: implemented initial subset at the user's request.
+
+Image, audio and video are independent integrations with provider/model selection per operation. Reuse existing integration policy/approval/logging and shared provider credentials, including the canonical Voice adapter registry. Standard HTTP adapters add no server package or SDK. Validate the configured selection at dispatch and after waits; never silently change models or paid providers. Late-October capability review determines the offered controls, not an assumption that every model supports a shared superset.
+
+The app's media service is the sole writer for private files and bounded versioned job state. It performs bounded provider I/O without a second model loop, native IPC or a separate task dispatcher. Save known remote identity before polling; an unknown submission is not replayed. Explicit recovery checks the existing provider job. Stop waiting does not imply remote cancellation/refund. Tool charges remain unknown and outside token-only FinOps; task admission is unchanged.
+
+General projection gaps were recorded in [MEDIA-TOOLS-RESEARCH.md](MEDIA-TOOLS-RESEARCH.md). The framework adds one dedicated media component with text/channel fallback, voice agenda playback keys, authenticated-resource resolution and trusted publication through the canonical session/store. The app retains model lists, asset permissions, result placement and deletion policy. The Results page renders detached canonical snapshots, while authored surfaces and persistence remain with the host. Playback is local; no playback request can become an external tool effect. In conversation mode overlapping clip audio is discarded before transcription.
+
+Inputs are imported assets or scoped chat attachments, outputs are new immutable files, and saved URIs contain no credentials. The media library has independent retention: deleting a chat detaches its media references; explicit file deletion invalidates previews. Current limits and verification are recorded in [MEDIA-TOOLS.md](MEDIA-TOOLS.md). Paid account quality benchmarks and live microphone evaluation remain separate gates.
+
 ## ADR-001 — One surface authority and minimal runtime boundaries
 
 Date: 2026-10-25. Status: accepted for implementation.

@@ -292,9 +292,9 @@ const openai: VoiceAdapter = {
   async list() {
     return {
       models: [
-        { id: "gpt-4o-mini-tts", label: "GPT-4o mini TTS", voices: named(OPENAI_VOICES), options: [style("How the voice should sound: tone, pace, personality.")] },
-        { id: "tts-1", label: "TTS-1 (fast)", voices: named(OPENAI_CLASSIC) },
-        { id: "tts-1-hd", label: "TTS-1 HD (higher quality)", voices: named(OPENAI_CLASSIC) },
+        { id: "gpt-4o-mini-tts", label: "GPT-4o mini TTS", note: "Deprecated · shuts down 6 January 2027", voices: named(OPENAI_VOICES), options: [style("How the voice should sound: tone, pace, personality.")] },
+        { id: "tts-1", label: "TTS-1 (fast)", note: "Deprecated · shuts down 6 January 2027", voices: named(OPENAI_CLASSIC) },
+        { id: "tts-1-hd", label: "TTS-1 HD (higher quality)", note: "Deprecated · shuts down 6 January 2027", voices: named(OPENAI_CLASSIC) },
       ],
     };
   },
@@ -340,7 +340,7 @@ const gemini: VoiceAdapter = {
   keyVar: "GEMINI_API_KEY",
   async list({ env, f }) {
     const styled = (id: string, label: string): VoiceModel => ({ id, label, voices: named(GEMINI_VOICES), options: [style("Told to the model before the text, e.g. “Say cheerfully”.")] });
-    const fallback = { models: [styled("gemini-2.5-flash-preview-tts", "Gemini 2.5 Flash TTS")], stt: GEMINI_STT };
+    const fallback = { models: [styled("gemini-3.8-flash-tts", "Gemini 3.8 Flash TTS"), styled("gemini-3.8-flash-lite-tts", "Gemini 3.8 Flash-Lite TTS")], stt: [{ id: "gemini-3.5-transcribe", label: "Gemini 3.5 Transcribe" }, ...GEMINI_STT] };
     if (!env.GEMINI_API_KEY) return fallback;
     // Google retires model names for new keys, so the lists come from the API.
     try {
@@ -407,6 +407,7 @@ const elevenlabs: VoiceAdapter = {
   keyLabel: "ElevenLabs",
   async list({ env, f }) {
     const models = (voices: Voice[]): VoiceModel[] => [
+      { id: "eleven_v4", label: "Eleven v4 (expressive narration)", voices, note: "Dialogue API · expressive speech in 90+ languages" },
       { id: "eleven_flash_v2_5", label: "Flash v2.5 (fastest)", voices, options: ELEVEN_OPTIONS },
       { id: "eleven_multilingual_v2", label: "Multilingual v2 (higher quality)", voices, options: ELEVEN_OPTIONS },
     ];
@@ -421,12 +422,17 @@ const elevenlabs: VoiceAdapter = {
     }
   },
   transcribe: {
-    models: [{ id: "scribe_v1", label: "Scribe" }],
+    models: [{ id: "scribe_v2", label: "Scribe v2" }, { id: "scribe_v1", label: "Scribe v1 (legacy)" }],
     run(audio, model, language, ctx) {
       return upload("ElevenLabs", ctx, "https://api.elevenlabs.io/v1/speech-to-text", { "xi-api-key": key(elevenlabs, ctx.env) }, audio, { model_id: model, ...(language ? { language_code: language.split("-")[0]! } : {}) });
     },
   },
   async synth(req, ctx) {
+    if (req.model === "eleven_v4") {
+      if (req.text.length > 2000) throw new SpeechError("Eleven v4 dialogue requests are limited to 2,000 characters here");
+      const res = await post("ElevenLabs", ctx, "https://api.elevenlabs.io/v1/text-to-dialogue?output_format=pcm_24000", { "xi-api-key": key(this, ctx.env) }, { model_id: req.model, inputs: [{ text: req.text, voice_id: req.voice }], ...(req.language ? { language_code: req.language.split("-")[0] } : {}) });
+      return new Uint8Array(await res.arrayBuffer());
+    }
     const res = await post("ElevenLabs", ctx, `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(req.voice)}?output_format=pcm_24000`, { "xi-api-key": key(this, ctx.env) }, {
       text: req.text,
       model_id: req.model,

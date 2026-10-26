@@ -9,8 +9,9 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { json } from "@vak/host";
+import { mediaType, TYPES as MEDIA_TYPES } from "./media/io.ts";
 
-const TYPES: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif", "image/bmp": ".bmp", "image/tiff": ".tiff" };
+const TYPES: Record<string, string> = { ...MEDIA_TYPES, "image/gif": ".gif", "image/bmp": ".bmp", "image/tiff": ".tiff" };
 const MAX_BYTES = 20_000_000;
 const CHAT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -33,9 +34,13 @@ export function attachmentsRoute(dir: string) {
     }
     const body = JSON.parse(raw || "{}") as { type?: string; data?: string };
     const ext = TYPES[String(body.type)];
-    if (!ext) return json(res, 415, { error: "Only images can be attached for now." }), true;
+    if (!ext) return json(res, 415, { error: "Choose a supported image, audio recording or video." }), true;
     const bytes = Buffer.from(String(body.data ?? ""), "base64");
     if (!bytes.length || bytes.length > MAX_BYTES) return json(res, 413, { error: "Attachments are limited to 20 MB." }), true;
+    if (/^(audio|video)\//.test(String(body.type))) {
+      try { if (mediaType(bytes) !== body.type) throw new Error("mismatch"); }
+      catch { return json(res, 415, { error: "The recording or video does not match its file type." }), true; }
+    }
     const folder = path.join(dir, chat);
     await mkdir(folder, { recursive: true, mode: 0o700 });
     const file = path.join(folder, `${randomUUID()}${ext}`);

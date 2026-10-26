@@ -233,7 +233,9 @@ test("models declare the controls they accept", async () => {
   const openai = list.find((p) => p.id === "openai")!;
   assert.deepEqual(openai.models.find((m) => m.id === "gpt-4o-mini-tts")!.options!.map((o) => o.id), ["style"]);
   assert.equal(openai.models.find((m) => m.id === "tts-1-hd")!.options, undefined);
-  assert.deepEqual(list.find((p) => p.id === "elevenlabs")!.models[0]!.options!.map((o) => o.id), ["stability", "similarity", "style"]);
+  const eleven = list.find((p) => p.id === "elevenlabs")!;
+  assert.deepEqual(eleven.models.find((m) => m.id === "eleven_flash_v2_5")!.options!.map((o) => o.id), ["stability", "similarity", "style"]);
+  assert.equal(eleven.models.find((m) => m.id === "eleven_v4")!.options, undefined);
 });
 
 const GEMINI_MODELS = {

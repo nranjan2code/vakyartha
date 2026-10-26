@@ -7,7 +7,7 @@
 // checks explained aloud, the values shown on screen as they are heard, then
 // read back and submitted the same way.
 
-import { type AgendaItem, agenda, answerSchema, answerWords, fillAnswer, getAt, question, readBack, readModelAnswer, type Resolution, resolveAnswer, type SurfaceStore } from "@vak/core";
+import { type AgendaItem, agenda, answerSchema, answerWords, fillAnswer, getAt, playbackKey, question, readBack, readModelAnswer, type Resolution, resolveAnswer, type SurfaceStore } from "@vak/core";
 
 type Decision = AgendaItem & { kind: "decision" };
 type Form = AgendaItem & { kind: "form" };
@@ -85,12 +85,26 @@ export class VoiceDecisions {
 
   /** A sentence heard while a choice waits. True when it was about the choice, so it is not sent as a message. */
   async hear(said: string): Promise<boolean> {
+    // Playback is reversible local interaction, never a model/tool action or
+    // an approval. A named clip can be controlled after its original question.
+    const command = /^(?:please )?(play|pause|restart|mute|unmute)(?: (?:the )?(.+))?$/.exec(answerWords(said));
+    if (command && !this.item) {
+      const matches = this.io.store().list().flatMap((surface) => agenda(this.io.store(), surface.id)).filter((a): a is Decision => a.kind === "decision" && a.action === "Playback").filter((a) => !command[2] || [answerWords(a.title ?? ""), "audio", "video", "clip", "narration"].includes(command[2]));
+      if (matches.length === 1) {
+        const option = matches[0]!.options.find((o) => playbackKey(o.source)?.command === command[1]);
+        if (option) return this.io.activate(matches[0]!.surface, option.source), true;
+      }
+    }
     const d = this.item;
     if (!d) return false;
     if (d.kind === "form") return this.hearForm(d, said);
     let r = resolveAnswer(d, said);
     if (r.kind === "unknown" && this.chosen === undefined) r = await this.ask(d, said, r);
     if (this.item !== d) return true;
+    if (r.kind === "choose" && d.action === "Playback") {
+      if (!this.io.activate(d.surface, d.options[r.index]!.source)) this.io.say("That media control is no longer available.");
+      return true;
+    }
     if (r.kind === "choose") return this.pick(r.index), true;
     if (r.kind === "ambiguous") {
       this.io.say(`Did you mean ${r.indices.map((i) => d.options[i]!.label).join(" or ")}?`);

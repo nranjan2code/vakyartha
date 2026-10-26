@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { createHost, json, readJson } from "@vak/host";
 import { attachmentsRoute } from "./attachments.ts";
 import type { Integrations } from "@vak/mcp/client";
@@ -20,6 +21,8 @@ import { fileSecrets, keychainStore, Settings, SettingsError } from "./settings.
 import { checkTaskSpending } from "./task-policy.ts";
 import { Tasks } from "./tasks.ts";
 import { voiceRoutes } from "./voice/index.ts";
+import { Media } from "./media/index.ts";
+import { isMediaKind } from "../shared/media.ts";
 
 export interface AppServerOptions {
   /** Conversations, settings, channels, logs (and profiles/transcripts unless given). */
@@ -171,6 +174,23 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
   // Created after the host (it asks the host for approvals); the host reads it per turn.
   let integrations: Integrations | undefined;
   let tasks: Tasks | undefined;
+  const media = new Media({ dir: path.join(dataDir, "media"), attachmentsDir: path.join(dataDir, "attachments"), voiceDir,
+    config: (kind) => integrations?.configuration(`media-${kind}`) ?? { enabled: false, config: {} },
+    async publish(job, assets, signal) {
+      job.session ??= `media-${job.id}`;
+      const surface = `media-${job.id}`;
+      const nodes = assets.map((a, index) => ({ id: `asset-${index}`, type: a.type === "text/plain" ? "text" : "media", props: a.type === "text/plain" ? { content: media.readText(a.id) } : { kind: a.type.split("/")[0], src: `media:${a.id}`, title: `${job.kind === "image" ? "Image" : job.kind === "audio" ? "Audio" : "Video"} result`, description: `${job.selection.replace("|", " / ")} · ${(a.bytes / 1_000_000).toFixed(2)} MB`, alt: `${job.kind} result` } }));
+      for (let attempt = 0; attempt < 120; attempt++) {
+        signal?.throwIfAborted();
+        if ((await host.view(job.session)).running) { await delay(250, undefined, { signal }); continue; }
+        const result = await host.project({ session: job.session, external: false, args: { surface, title: "Media result", nodes: [{ id: "root", type: "stack", children: nodes.map((n) => n.id) }, ...nodes] } });
+        if (result.diagnostics.length) throw new Error("Media surface was not accepted");
+        return surface;
+      }
+      throw new Error("The chat is still busy; files remain saved");
+    },
+    async projection(job) { return job.session && job.surface ? (await host.view(job.session)).surfaces.find((s) => s.id === job.surface) : undefined; },
+  });
   const integrationRevisions = new Map<string, number>();
   /** Model providers for turns and voice answers alike: task spending checks and FinOps see every request. */
   function modelProviders(): ProviderEntry[] {
@@ -191,9 +211,9 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     } }));
   }
   const host = createHost({
-    tools: ({ session }) => {
+    tools: async ({ session }) => {
       finops.session(session);
-      return integrations?.toolsFor(session) ?? [];
+      return (await integrations?.toolsFor(session) ?? []).map((tool) => ({ ...tool, execute: (args, ctx) => media.withSession(session, () => tool.execute(args, ctx)) }));
     },
     providers: () => modelProviders(),
     profiles,
@@ -206,11 +226,17 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     origins: ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420", "http://127.0.0.1:1420"],
     // Outside agents get a link to watch what they projected (only when this server serves the UI).
     viewerUrl: opts.uiDir ? (session) => `http://127.0.0.1:${listening}/?session=${encodeURIComponent(session)}` : undefined,
-    routes: async (req, res, url) => (await attachRoute(req, res, url)) || (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await voiceRoute(req, res, url)) || infoRoute(req, res, url),
+    routes: async (req, res, url) => (await attachRoute(req, res, url)) || (await media.route(req, res, url)) || (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await voiceRoute(req, res, url)) || infoRoute(req, res, url),
     log,
   });
 
-  integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm });
+  integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm }, media);
+  // Refresh app-owned tool schemas after an upgrade; the integration journal
+  // may otherwise retain an older model's controls indefinitely.
+  for (const entry of integrations.view().filter((i) => i.enabled && i.entry.id.startsWith("media-"))) {
+    if (entry.entry.id === "media-audio") { try { await media.models("audio"); } catch { log("Media voice metadata is unavailable; no generation was attempted."); } }
+    await integrations.refresh(entry.entry.id);
+  }
   const freeCapabilities = new Set(["time", "web", "files", "memory"]);
   tasks = await Tasks.open({
     files: new TaskFiles(path.join(dataDir, "outputs"), opts.transcriptsDir ?? path.join(dataDir, "transcripts")),
@@ -306,8 +332,14 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
         else await list.refresh(id);
         json(res, 200, list.view());
       } else if (id && !verb && req.method === "PUT") {
+        const body = await readJson(req);
+        const kind = id.startsWith("media-") ? id.slice(6) : "";
+        if (isMediaKind(kind)) {
+          if (body.secrets) throw new Error("Media keys are shared from Settings → Providers");
+          if (body.config !== undefined) await media.validateConfig(kind, body.config);
+        }
         integrationRevisions.set(id, (integrationRevisions.get(id) ?? 0) + 1);
-        await list.configure(id, await readJson(req));
+        await list.configure(id, body);
         json(res, 200, list.view());
       } else return false;
     } catch (err) {
@@ -344,6 +376,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     async shutdown() {
       server.close();
       await tasks?.close();
+      await media.close();
       await channels.stopAll();
       await integrations?.stopAll();
     },

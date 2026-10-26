@@ -10,6 +10,7 @@
 import path from "node:path";
 import { type CatalogEntry, Integrations, type IntegrationsOptions, timeServer, webFetchServer } from "@vak/mcp/client";
 import { ollamaOcrServer } from "./ocr.ts";
+import type { Media } from "./media/index.ts";
 
 /** Versions picked on 2026-10-25: each the newest published at least 14 days before. */
 export const CATALOG: CatalogEntry[] = [
@@ -147,6 +148,6 @@ export const CATALOG: CatalogEntry[] = [
 ];
 
 /** The app's integrations: its catalog run by the framework; Time is on from the first run (it runs no outside code). */
-export function createIntegrations(deps: Omit<IntegrationsOptions, "catalog" | "enabledAtFirstRun">): Integrations {
-  return new Integrations({ ...deps, catalog: CATALOG, enabledAtFirstRun: ["time"] });
+export function createIntegrations(deps: Omit<IntegrationsOptions, "catalog" | "enabledAtFirstRun">, media?: Media): Integrations {
+  return new Integrations({ ...deps, catalog: [...CATALOG, ...(media?.entries() ?? [])], enabledAtFirstRun: ["time"] });
 }

@@ -3,7 +3,7 @@
 // answers quickly. The first piece is short so speech starts almost at once;
 // later pieces are fetched while the one before plays.
 
-import { byPriority, lowerSurface, type ResolvedNode, type ResolvedSurface } from "@vak/core";
+import { byPriority, lowerSurface, mediaDescription, type ResolvedNode, type ResolvedSurface } from "@vak/core";
 
 const FIRST = 160;
 const REST = 420;
@@ -218,7 +218,10 @@ export function spokenSurface(surface: ResolvedSurface, lang?: string, as: "gist
 }
 
 function spokenNow(surface: ResolvedSurface, lang?: string): string {
-  const lowered = lowerSurface(surface);
+  // A media caption is spoken; the file/URL and transcript are not read
+  // automatically over its own audio. Details can read the supplied transcript.
+  const prepare = (node: ResolvedNode): ResolvedNode => node.type === "media" ? { ...node, type: "text", props: { content: mediaDescription(node, mode === "details") } } : { ...node, children: node.children.map(prepare) };
+  const lowered = lowerSurface({ ...surface, root: surface.root ? prepare(surface.root) : null });
   const out: string[] = [];
   if (lowered.title) out.push(sentence(lowered.title));
   if (lowered.root) say(lowered.root, out, lang ? WORDS[lang] : undefined);
