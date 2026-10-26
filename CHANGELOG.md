@@ -2,6 +2,11 @@
 
 What changed in the app, newest first. Each release names the [Projection](https://github.com/nranjan2code/Projection) version it was built on; framework changes themselves are in Projection's CHANGELOG. Procedure: [RELEASING.md](docs/RELEASING.md).
 
+## Unreleased
+
+- **Attach images in the chat:** the image button in the message box copies images into the chat's own folder (`<data>/attachments/<chat id>/`, owner-only, at most 20 MB each) and the message carries their path; the bubble shows only the name. Deleting the chat deletes its attachments.
+- **Local OCR integration:** "OCR (local)" in Integrations uses GLM-OCR in the local Ollama (`ollama pull glm-ocr`): read text, tables, formulas (LaTeX) and figures, extract named fields as JSON, and export Markdown beside the image (asks first, never overwrites). Images never leave this computer for recognition. Other OCR engines can be added as their own catalog entries.
+
 ## 0.2.0 (2026-10-26)
 
 Built on Projection `2918883`. Unsigned and not notarized: build from source, or allow it in System Settings → Privacy & Security. No data moves; keys stay where they are.

@@ -50,6 +50,10 @@ The repository is public: <https://github.com/nranjan2code/vakyartha>. Report a 
 - Before every push: the secret scan in AGENTS.md.
 
 
+## Chat attachments
+
+Images attached in the chat are copied to `<data>/attachments/<chat id>/` (folder 0700, files 0600), accepted only as known image types up to 20 MB, behind the sidecar token and the host's JSON-only POST rule. Chat ids are checked against `[A-Za-z0-9_-]` so a path cannot escape the folder. Deleting the chat deletes the folder. The OCR tools read only image files and send them to the local Ollama only; their Markdown export is a write and defaults to Ask. Guarded by `test/attachments.test.ts`.
+
 ## Task-selected files and local outputs
 
 Only explicitly selected UTF-8 `.txt`, `.md`, `.csv`, `.json` snapshots are accepted for task input (four files, 16,000 bytes each/48,000 total). The browser supplies filename/content, never a host path or folder grant. The server computes snapshot hashes; contents are untrusted model context and are sent to the selected task model. They grant no tool or network authority. Live external access remains governed by the existing integration scope/approval lifecycle.

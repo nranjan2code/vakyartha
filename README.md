@@ -25,7 +25,7 @@ The site describes where Vakyartha is going. Here is what this repository does t
 |---|---|
 | Ask, and get something you can use | **Works.** Answers project as live surfaces; chats are saved; an **Artifacts** library gathers every surface across chats and reopens it in the canvas. |
 | Your choice of models | **Works.** Local models through Ollama; 11 hosted providers with keys in the macOS Keychain. |
-| Connected tools and services | **Works.** A curated integrations catalog (Web pages, Time, Files, Memory, Brave Search, Tavily, GitHub, Notion, Context7), each pinned, with per-tool policies and approvals. |
+| Connected tools and services | **Works.** A curated integrations catalog (Web pages, Time, local OCR, Files, Memory, Brave Search, Tavily, GitHub, Notion, Context7), each pinned, with per-tool policies and approvals. |
 | In your everyday chat | **Telegram works**, answered from the menu bar while the window is closed. Slack and Discord are listed as coming. |
 | Spending limits and usage | **Usage works:** Settings → FinOps charts tokens, context and estimated cost per turn. Spending limits are not built yet. |
 | Agent tasks | **First slice works:** Schedule provides full-page setup, lifecycle views, immediate and one-time future runs, review, continuation, per-run records, shared execution limits and guarded deletion. Results reuse the interactive canvas. Repeating schedules, task chains and long-term run history are not built yet. |
