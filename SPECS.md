@@ -40,8 +40,33 @@ Tauri 2 shell, Vite + plain TypeScript UI, the engine as a Node sidecar. **The b
 ## 4. Voice: read aloud and dictation
 
 - **Read aloud** is for the person, not a tool the model calls, so it is not an MCP integration: `sidecar/voice.ts` holds one adapter per voice provider (models, voices, the controls each model accepts, one synthesis call). Adding a provider is adding an adapter; its key, if new, is declared there and stored like any other secret.
-- The engine asks every provider for 16-bit 24 kHz mono PCM and writes the WAV header itself; requests are capped at 4,096 characters and validated before anything is sent. The window splits a reply's prose (not code or interfaces) into sentence-aligned pieces, plays one while fetching the next, and keeps speed in the player.
-- **Dictation** uses the same adapters (`transcribe`): the window records 16 kHz mono WAV, the engine forwards it (8 MB cap) and returns text. The same path serves the browser and the app window. In a browser, the recognizer built into the window is the free default and needs no engine call. The app window's WebKit recognizer returns nothing, so there the first provider ready to transcribe is the default: Whistle, once installed. Gemini model lists come from its API.
+- The engine asks every provider for 16-bit 24 kHz mono PCM and writes the WAV header itself; requests are capped at 4,096 characters and validated before anything is sent. The window splits a reply into sentence-aligned pieces, plays one while fetching the next, and keeps speed in the player. The model's style and slider options are passed through to the provider.
+- **What is read** (`src/speech-text.ts`) is the reply as a person would say it, not the text Copy gives.
+  - Prose is read without code, links or markup.
+  - Interfaces are read as content. A card is its title, subtitle, badge and body. A stat is "label, value, up 0.39%". A table is read row by row, at most six rows, then "and N more rows". A chart is one sentence giving each series' range, and an alert is its title and body.
+  - Controls are skipped: buttons, inputs, selects, checkboxes, dates, dividers and images. Component names and actions are never read.
+  - Everyday components are first lowered to the basic catalog with Projection's public `lowerSurface`.
+  - Every line ends as a sentence, so the voice pauses there.
+  - A dot inside a number never ends a sentence.
+- **Language:** text is normalized to NFC. The reply's language is told from its script (Devanagari, Han, kana, Arabic, Cyrillic, Hangul) or from common words (en, fr, de, es, it, pt, nl); if the result is not clear-cut, it is left undefined.
+  - Numbers, signs, percentages, ranges and the few phrases the app adds are said in that language.
+  - English also spells out decimals ("0 point 3 9"), currency ("4 dollars 50") and abbreviations.
+  - Other languages keep their own decimal comma.
+  - An unknown language gets only language-neutral clean-up: no English words are inserted.
+  - Voices that accept a language are told it with the Mac's region (`en` becomes `en-GB` on a British Mac):
+    - Gemini through `languageCode`;
+    - OpenAI's GPT voices through their instructions ("Speak British English");
+    - ElevenLabs Flash and Turbo through `language_code`.
+  - The language and whole sentences are how a voice chooses between words spelled alike ("a live event", "to live"). There is no pronunciation list.
+  - **The voice follows the reply's language.** Each voice model may declare the languages it speaks (`VoiceModel.languages`): a Phonon pack speaks its own language, the multilingual pack speaks five, and hosted voices declare none (any).
+    - When the chosen voice does not speak the reply's language, `voiceFor` reads with an installed voice that does. It looks at the same provider first, then other free local providers, and never at a billed provider the person did not choose.
+    - A single-language pack is preferred to a multilingual one, and the voice name carries over when the new model has it.
+    - If nothing fits, the chosen voice reads anyway, and a note afterwards names the pack to install.
+    - Previews always use the voice being previewed.
+- **Dictation** uses the same adapters (`transcribe`): the window records 16 kHz mono WAV, the engine forwards it (8 MB cap) and returns text.
+  - Each transcription model may declare the language tags it honours (`SttModel.languages`). Settings → Voice offers only those; a model without a list offers the app's regional list.
+  - The window sends the chosen language, or for "Same as this Mac" the Mac's own regional tag, narrowed to the most exact tag the model honours: `en-GB` becomes `en` for Whistle. A language the model does not know is not sent, and the model detects it.
+  - The engine passes the whole tag to the adapter. OpenAI gets the bare language plus a prompt naming the region's spelling or script ("British English spelling", "Simplified Chinese characters"). Gemini is told the variant by name. ElevenLabs and Whistle get the bare language. The same path serves the browser and the app window. In a browser, the recognizer built into the window is the free default and needs no engine call. The app window's WebKit recognizer returns nothing, so there the first provider ready to transcribe is the default: Whistle, once installed. Gemini model lists come from its API.
 - **Whistle** (`sidecar/whistle.ts`) only transcribes, on this Mac's CPU, in seven languages (en, de, fr, es, it, nl, pl), and refuses others. Its engine is a prebuilt binary with no published source, so it is handled as untrusted:
   - its pack (the macOS arm64 engine plus weights, both Apache 2.0) is pinned to Hugging Face commits at least 14 days old and to each file's SHA-256;
   - it is checked before it is moved into `<data>/voice/whistle/<engine>-<weights>/`;

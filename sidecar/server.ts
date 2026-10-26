@@ -161,7 +161,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
     const abort = new AbortController();
     res.on("close", () => abort.abort());
     try {
-      const audio = await speak({ provider: body.provider, model: body.model, voice: body.voice, text: body.text }, process.env, fetch, abort.signal);
+      const audio = await speak({ provider: body.provider, model: body.model, voice: body.voice, text: body.text, options: body.options, language: body.language }, process.env, fetch, abort.signal);
       res.writeHead(200, { "content-type": "audio/wav", "content-length": audio.length, "cache-control": "no-store" });
       res.end(audio);
     } catch (err) {

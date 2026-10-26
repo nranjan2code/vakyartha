@@ -12,9 +12,12 @@ export interface Voice { id: string; name: string }
 export type VoiceOption =
   | { id: string; kind: "text"; label: string; hint: string; presets: string[]; max: number }
   | { id: string; kind: "range"; label: string; hint: string; min: number; max: number; step: number; default: number };
-export interface VoiceModel { id: string; label: string; voices: Voice[]; note?: string; options?: VoiceOption[] }
+/** `languages`: the base codes a model speaks well; absent means any (hosted multilingual voices). */
+export interface VoiceModel { id: string; label: string; voices: Voice[]; note?: string; options?: VoiceOption[]; languages?: string[] }
 /** A local model the app can pull for an adapter, from a fixed list (never a name typed in). */
-export interface VoicePack { id: string; label: string; size: string; license: string; installed: boolean }
+/** A transcription model; `languages`, when set, are the only tags it honours (otherwise any). */
+export interface SttModel { id: string; label: string; languages?: string[] }
+export interface VoicePack { id: string; label: string; size: string; license: string; installed: boolean; languages?: string[] }
 
 export interface VoiceProviderView {
   id: string;
@@ -33,12 +36,13 @@ export interface VoiceProviderView {
   models: VoiceModel[];
   packs?: VoicePack[];
   /** Speech-to-text models ready now, when the provider transcribes. */
-  stt?: { id: string; label: string }[];
+  stt?: SttModel[];
   /** Whether it can transcribe at all, once set up. */
   transcribes: boolean;
 }
 
-export interface SpeechRequest { provider: string; model: string; voice: string; text: string; options?: Record<string, unknown> }
+/** `language`: a BCP 47 tag (en-GB) for voices that accept one; the others infer it from the text. */
+export interface SpeechRequest { provider: string; model: string; voice: string; text: string; options?: Record<string, unknown>; language?: string }
 
 /** Providers cap one request near 4,096 characters; the UI sends sentences well under it. */
 export const MAX_SPEECH_CHARS = 4096;
@@ -60,13 +64,13 @@ interface VoiceAdapter {
   keyVar?: string;
   keyLabel?: string;
   /** Models and voices, or why there are none. */
-  list(ctx: Ctx): Promise<{ models: VoiceModel[]; reason?: string; packs?: VoicePack[]; stt?: { id: string; label: string }[] }>;
+  list(ctx: Ctx): Promise<{ models: VoiceModel[]; reason?: string; packs?: VoicePack[]; stt?: SttModel[] }>;
   /** One request's PCM; absent for a provider that only transcribes. */
   synth?(req: SpeechRequest, ctx: Ctx): Promise<Uint8Array>;
   /** Install one of the packs it lists. */
   install?(pack: string, ctx: Ctx): Promise<void>;
   /** Dictation: a WAV recording to text. */
-  transcribe?: { models: { id: string; label: string }[]; run(audio: Uint8Array, model: string, language: string | undefined, ctx: Ctx): Promise<string> };
+  transcribe?: { models: SttModel[]; run(audio: Uint8Array, model: string, language: string | undefined, ctx: Ctx): Promise<string> };
 }
 
 export class SpeechError extends Error {
@@ -78,6 +82,29 @@ export class SpeechError extends Error {
 }
 
 const named = (ids: string[]): Voice[] => ids.map((id) => ({ id, name: id }));
+
+/** A tag as words for a model told in prose: en-GB → "British English". */
+export const languageName = (tag: string) => {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "language" }).of(tag) ?? tag;
+  } catch {
+    return tag;
+  }
+};
+
+/** What a regional tag changes in writing, for transcription models that take a hint. */
+const WRITING: Record<string, string> = {
+  "en-US": "American English spelling",
+  "en-GB": "British English spelling",
+  "en-IN": "Indian English with British spelling",
+  "en-AU": "Australian English spelling",
+  "pt-BR": "Brazilian Portuguese",
+  "pt-PT": "European Portuguese",
+  "zh-CN": "Simplified Chinese characters",
+  "zh-TW": "Traditional Chinese characters",
+};
+
+const LANGUAGE_TAG = /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/;
 
 async function failure(provider: string, res: Response): Promise<SpeechError> {
   let message = `${res.status}`;
@@ -135,12 +162,12 @@ export function ollamaBase(env: Env): string {
 const NC = "CC BY-NC 4.0 (non-commercial)";
 /** The Phonon tags offered for one-click install; sizes from the Ollama library. */
 export const OLLAMA_PACKS: Omit<VoicePack, "installed">[] = [
-  { id: "phonon:latest", label: "Phonon · English", size: "113 MB", license: "Apache 2.0" },
-  { id: "phonon:multilingual", label: "Phonon · Five languages", size: "123 MB", license: NC },
-  { id: "phonon:fr", label: "Phonon · French", size: "123 MB", license: NC },
-  { id: "phonon:de", label: "Phonon · German", size: "123 MB", license: NC },
-  { id: "phonon:es", label: "Phonon · Spanish", size: "123 MB", license: NC },
-  { id: "phonon:pt", label: "Phonon · Portuguese", size: "123 MB", license: NC },
+  { id: "phonon:latest", label: "Phonon · English", size: "113 MB", license: "Apache 2.0", languages: ["en"] },
+  { id: "phonon:multilingual", label: "Phonon · Five languages", size: "123 MB", license: NC, languages: ["en", "fr", "de", "es", "pt"] },
+  { id: "phonon:fr", label: "Phonon · French", size: "123 MB", license: NC, languages: ["fr"] },
+  { id: "phonon:de", label: "Phonon · German", size: "123 MB", license: NC, languages: ["de"] },
+  { id: "phonon:es", label: "Phonon · Spanish", size: "123 MB", license: NC, languages: ["es"] },
+  { id: "phonon:pt", label: "Phonon · Portuguese", size: "123 MB", license: NC, languages: ["pt"] },
 ];
 
 const ollama: VoiceAdapter = {
@@ -177,6 +204,8 @@ const ollama: VoiceAdapter = {
         // "default" first: it is what the model uses when none is named.
         voices: [{ id: "default", name: "Default" }, ...named(voices.filter((v) => v !== "default"))],
         note: pack?.license === NC ? "Non-commercial licence" : undefined,
+        // A pack speaks its own languages; a tag pulled some other way is not assumed to.
+        languages: pack?.languages,
       };
     }));
     return { models, packs };
@@ -226,8 +255,9 @@ const whistle: VoiceAdapter = {
     return installWhistle(dir, f).catch((err: Error) => { throw new SpeechError(err.message, 502); });
   },
   transcribe: {
-    models: [{ id: "whistle", label: "Whistle" }],
+    models: [{ id: "whistle", label: "Whistle", languages: Object.keys(WHISTLE_LANGUAGES) }],
     async run(audio, _model, language, { dir, signal }) {
+      language = language?.split("-")[0];
       if (language && !WHISTLE_LANGUAGES[language]) throw new SpeechError(`Whistle does not transcribe this language. Choose ${Object.values(WHISTLE_LANGUAGES).join(", ")} or "Same as this Mac" in Settings → Voice, or a hosted model.`);
       if (!(await whistleInstalled(dir))) throw new SpeechError("Install the Whistle pack in Integrations → Voice → Whistle.");
       return runWhistle(dir, audio, language, signal);
@@ -239,6 +269,14 @@ const STYLE_PRESETS = ["Warm and friendly", "Calm, measured narrator", "Cheerful
 const style = (hint: string): VoiceOption => ({ id: "style", kind: "text", label: "Style", hint, presets: STYLE_PRESETS, max: 300 });
 
 // --- OpenAI -----------------------------------------------------------------------
+
+/** The style line, plus the accent when a region is known; only the GPT speech models take instructions. */
+function instructions(req: SpeechRequest): string {
+  if (!req.model.startsWith("gpt-")) return "";
+  const style = typeof req.options?.style === "string" ? req.options.style : "";
+  const accent = req.language?.includes("-") ? `Speak ${languageName(req.language)}.` : "";
+  return [style, accent].filter(Boolean).join(" ");
+}
 
 const OPENAI_CLASSIC = ["alloy", "ash", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"];
 const OPENAI_VOICES = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"];
@@ -268,7 +306,9 @@ const openai: VoiceAdapter = {
       { id: "whisper-1", label: "Whisper" },
     ],
     run(audio, model, language, ctx) {
-      return upload("OpenAI", ctx, "https://api.openai.com/v1/audio/transcriptions", { authorization: `Bearer ${key(openai, ctx.env)}` }, audio, { model, ...(language ? { language } : {}) });
+      // OpenAI takes the bare language; the region's spelling or script goes in the prompt.
+      const hint = language ? WRITING[language] : undefined;
+      return upload("OpenAI", ctx, "https://api.openai.com/v1/audio/transcriptions", { authorization: `Bearer ${key(openai, ctx.env)}` }, audio, { model, ...(language ? { language: language.split("-")[0]! } : {}), ...(hint ? { prompt: `${hint}.` } : {}) });
     },
   },
   async synth(req, ctx) {
@@ -277,7 +317,7 @@ const openai: VoiceAdapter = {
       input: req.text,
       voice: req.voice,
       response_format: "pcm",
-      ...(typeof req.options?.style === "string" && req.options.style ? { instructions: req.options.style } : {}),
+      ...(instructions(req) ? { instructions: instructions(req) } : {}),
     });
     return new Uint8Array(await res.arrayBuffer());
   },
@@ -323,7 +363,7 @@ const gemini: VoiceAdapter = {
       // A dedicated "-transcribe" model takes the audio alone and answers with audioTranscription;
       // a general model needs to be told to transcribe and answers with text.
       const dedicated = model.endsWith("-transcribe");
-      const ask = `Transcribe this recording exactly as spoken${language ? ` (language: ${language})` : ""}. Reply with the transcript only, no notes. If nothing is said, reply with nothing.`;
+      const ask = `Transcribe this recording exactly as spoken${language ? ` in ${WRITING[language] ?? languageName(language)} (${language})` : ""}. Reply with the transcript only, no notes. If nothing is said, reply with nothing.`;
       const res = await post("Gemini", ctx, `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { "x-goog-api-key": key(gemini, ctx.env) }, {
         contents: [{ parts: [{ inlineData: { mimeType: "audio/wav", data: Buffer.from(audio).toString("base64") } }, ...(dedicated ? [] : [{ text: ask }])] }],
         ...(dedicated ? {} : { generationConfig: { temperature: 0 } }),
@@ -336,7 +376,7 @@ const gemini: VoiceAdapter = {
     const res = await post("Gemini", ctx, `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(req.model)}:generateContent`, { "x-goog-api-key": key(this, ctx.env) }, {
       // Gemini takes its style as a spoken direction ahead of the words.
       contents: [{ parts: [{ text: typeof req.options?.style === "string" && req.options.style ? `${req.options.style}: ${req.text}` : req.text }] }],
-      generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: req.voice } } } },
+      generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: req.voice } }, ...(req.language ? { languageCode: req.language } : {}) } },
     });
     const body = (await res.json()) as { candidates?: { content?: { parts?: { inlineData?: { data?: string } }[] } }[] };
     const data = body.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData?.data;
@@ -383,13 +423,15 @@ const elevenlabs: VoiceAdapter = {
   transcribe: {
     models: [{ id: "scribe_v1", label: "Scribe" }],
     run(audio, model, language, ctx) {
-      return upload("ElevenLabs", ctx, "https://api.elevenlabs.io/v1/speech-to-text", { "xi-api-key": key(elevenlabs, ctx.env) }, audio, { model_id: model, ...(language ? { language_code: language } : {}) });
+      return upload("ElevenLabs", ctx, "https://api.elevenlabs.io/v1/speech-to-text", { "xi-api-key": key(elevenlabs, ctx.env) }, audio, { model_id: model, ...(language ? { language_code: language.split("-")[0]! } : {}) });
     },
   },
   async synth(req, ctx) {
     const res = await post("ElevenLabs", ctx, `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(req.voice)}?output_format=pcm_24000`, { "xi-api-key": key(this, ctx.env) }, {
       text: req.text,
       model_id: req.model,
+      // Only the Flash and Turbo models take a language; it settles words spelled alike.
+      ...(req.language && /flash|turbo/.test(req.model) ? { language_code: req.language.split("-")[0] } : {}),
       voice_settings: { stability: num(req.options?.stability, 0.5), similarity_boost: num(req.options?.similarity, 0.75), style: num(req.options?.style, 0) },
     });
     return new Uint8Array(await res.arrayBuffer());
@@ -456,7 +498,8 @@ export async function speak(req: SpeechRequest, env: Env, f: Fetch = fetch, sign
   if (typeof req.voice !== "string" || req.voice.length > 80) throw new SpeechError("invalid voice");
   if (typeof req.text !== "string" || !req.text.trim()) throw new SpeechError("nothing to read");
   if (req.text.length > MAX_SPEECH_CHARS) throw new SpeechError(`text over ${MAX_SPEECH_CHARS} characters`);
-  return wav(await a.synth({ ...req, options: checkOptions(req.options) }, { env, f, signal, dir: "" }));
+  if (req.language !== undefined && req.language !== null && (typeof req.language !== "string" || !LANGUAGE_TAG.test(req.language))) throw new SpeechError("invalid language");
+  return wav(await a.synth({ ...req, language: req.language || undefined, options: checkOptions(req.options) }, { env, f, signal, dir: "" }));
 }
 
 /** A recording's size limit: about four minutes of 16 kHz mono WAV. */
@@ -470,10 +513,11 @@ export async function transcribe(req: TranscribeRequest, env: Env, f: Fetch = fe
   if (!a?.transcribe) throw new SpeechError("this provider does not transcribe");
   // Gemini's models come from its API, so a well-formed name is enough here.
   if (typeof req.model !== "string" || !/^[\w.:-]{1,100}$/.test(req.model)) throw new SpeechError("invalid transcription model");
-  if (req.language !== undefined && req.language !== "" && (typeof req.language !== "string" || !/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(req.language))) throw new SpeechError("invalid language");
+  if (req.language !== undefined && req.language !== "" && (typeof req.language !== "string" || !LANGUAGE_TAG.test(req.language))) throw new SpeechError("invalid language");
   if (typeof req.audio !== "string") throw new SpeechError("no recording");
   const audio = new Uint8Array(Buffer.from(req.audio, "base64"));
   if (audio.length > MAX_RECORDING_BYTES) throw new SpeechError("the recording is too long");
   if (audio.length < 44 || Buffer.from(audio.subarray(0, 4)).toString() !== "RIFF" || Buffer.from(audio.subarray(8, 12)).toString() !== "WAVE") throw new SpeechError("the recording is not a WAV file");
-  return a.transcribe.run(audio, req.model, req.language?.split("-")[0] || undefined, { env, f, signal, dir });
+  // The whole tag: each adapter gives its model as much of it as the model honours.
+  return a.transcribe.run(audio, req.model, req.language || undefined, { env, f, signal, dir });
 }

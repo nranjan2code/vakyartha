@@ -6,8 +6,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { installVoicePack, MAX_SPEECH_CHARS, pullOllamaPack, speak, SpeechError, transcribe, voiceProviders, wav } from "../sidecar/voice.ts";
 import { WHISTLE_PACK, whistleDir, whistleSupported } from "../sidecar/whistle.ts";
-import { downsample, mergeResults, wav16k } from "../src/dictation.ts";
-import { speakable, speechChunks } from "../src/speech-text.ts";
+import { dictationLanguage, downsample, mergeResults, wav16k } from "../src/dictation.ts";
+import { speakable, speechChunks, speechLocale, spokenSurface, textLanguage } from "../src/speech-text.ts";
+import type { ResolvedNode, ResolvedSurface } from "@vak/core";
+import { type VoiceProvider, voiceFor } from "../src/voice.ts";
 
 interface Call { url: string; init?: RequestInit }
 function fake(routes: Record<string, (init?: RequestInit) => Response>): { f: typeof fetch; calls: Call[] } {
@@ -45,6 +47,80 @@ test("speech chunks start short, follow sentences and stay under the limit", () 
   assert.ok(speechChunks("x".repeat(5000)).every((c) => c.length <= 420));
 });
 
+test("numbers, signs and abbreviations are said, not split at a dot", () => {
+  const en = speakable("The index rose +0.39% to 24,812.5 today, e.g. after a -1.2% dip; it costs $4.50 vs. ₹1,200 at 3 p.m. 🙂", "en");
+  assert.equal(en, "The index rose plus 0 point 3 9 percent to 24,812 point 5 today, for example, after a minus 1 point 2 percent dip; it costs 4 dollars 50 versus 1,200 rupees at 3 PM");
+  assert.deepEqual(speechChunks("Up +0.39% today. Down 1.25% yesterday.", "en"), ["Up plus 0 point 3 9 percent today. Down 1 point 2 5 percent yesterday."]);
+  // French keeps its own decimal comma and gets its own words; an unknown language only loses markup.
+  assert.equal(speakable("Le CAC est en hausse de +0,39 % aujourd'hui", "fr"), "Le CAC est en hausse de plus 0,39 pour cent aujourd'hui");
+  assert.equal(speakable("**+0.39%** → live", undefined), "+0.39%, live");
+  assert.equal(speakable("e\u0301te\u0301", "fr"), "été");
+});
+
+test("a reply's language is told by its script or its common words, and unknown when unsure", () => {
+  assert.equal(textLanguage("The market is open and the prices are rising for this week."), "en");
+  assert.equal(textLanguage("Le marché est ouvert et les prix sont en hausse pour la semaine."), "fr");
+  assert.equal(textLanguage("Der Markt ist heute offen und die Preise sind für die Woche gestiegen."), "de");
+  assert.equal(textLanguage("आज बाज़ार खुला है और कीमतें बढ़ रही हैं"), "hi");
+  assert.equal(textLanguage("Nifty 50 +0.39%"), undefined);
+  assert.equal(speechLocale("en", ["fr-FR", "en-GB", "en"]), "en-GB");
+  assert.equal(speechLocale("de", ["en-GB"]), "de");
+  assert.equal(speechLocale(undefined, ["en-GB"]), undefined);
+});
+
+const node = (type: string, props: Record<string, unknown>, children: ResolvedNode[] = []): ResolvedNode => ({ key: type, id: type, type, props, children });
+
+test("an interface is said as content: no component names, controls or actions", () => {
+  const rows = Array.from({ length: 8 }, (_, i) => ({ stock: `S${i}`, price: `${i}.5`, change: "+0.39%" }));
+  const surface = {
+    id: "s", title: "Market snapshot",
+    root: node("stack", {}, [
+      node("card", { title: "Nifty 50", subtitle: "closing", badge: "live", body: "Index rose +0.39% today." }),
+      node("stat", { label: "Change", value: "24,812.5", delta: "+0.39%" }),
+      node("table", { columns: [{ key: "stock", label: "Stock" }, { key: "price", label: "Price" }, { key: "change", label: "Change" }], rows }),
+      node("select", { label: "Period", options: ["1D", "1W"] }),
+      node("button", { label: "Refresh", action: "refresh_quotes" }),
+      node("chart", { kind: "line", labels: ["Mon", "Wed"], series: [{ name: "Nifty", values: [24700.1, 24812.5] }] }),
+      node("alert", { tone: "warning", title: "Delayed", body: "Prices lag by 15 minutes." }),
+    ]),
+  } as unknown as ResolvedSurface;
+  const said = spokenSurface(surface, "en");
+  assert.doesNotMatch(said, /\[|Card|Button|Select|Refresh|refresh_quotes|1D|→|\|/);
+  assert.match(said, /^Market snapshot\.\nNifty 50, closing, live\.\nIndex rose \+0\.39% today\.\nChange, 24,812\.5, up 0\.39%\.\nS0: Price 0\.5, Change \+0\.39%\./);
+  assert.match(said, /And 2 more rows\.\nNifty, Mon to Wed: from 24700\.1 to 24812\.5\.\nWarning: Delayed\.\nPrices lag by 15 minutes\.$/);
+  assert.doesNotMatch(spokenSurface(surface, "de"), /\b(And|up|Warning)\b/);
+  assert.doesNotMatch(spokenSurface(surface), /And 2 more|up 0|Warning/);
+});
+
+test("a reply is read by a voice that speaks its language, never a billed one nobody chose", () => {
+  const voice = (id: string, languages?: string[], voices = ["default", "Zoey"]) => ({ id, label: id, voices: voices.map((v) => ({ id: v, name: v })), languages });
+  const provider = (id: string, local: boolean, models: ReturnType<typeof voice>[], packs: VoiceProvider["packs"] = []): VoiceProvider =>
+    ({ id, label: id, publisher: "", summary: "", description: "", icon: "voice", local, cost: "", available: true, models, packs, transcribes: false });
+  const english = { provider: "ollama", model: "phonon:latest", voice: "Zoey" };
+  const packs = [{ id: "phonon:fr", label: "Phonon · French", size: "", license: "", installed: false, languages: ["fr"] }];
+  const onlyEnglish = [provider("ollama", true, [voice("phonon:latest", ["en"])], packs), provider("openai", false, [voice("tts-1")])];
+  assert.deepEqual(voiceFor(onlyEnglish, english, "en"), { choice: english });
+  assert.deepEqual(voiceFor(onlyEnglish, english, undefined), { choice: english });
+  const fr = voiceFor(onlyEnglish, english, "fr");
+  assert.deepEqual(fr.choice, english);
+  assert.match(fr.missing!, /No French voice is installed.*Install Phonon · French/);
+  // The single-language pack wins over the multilingual one, and the voice name carries over when it exists.
+  const both = [provider("ollama", true, [voice("phonon:latest", ["en"]), voice("phonon:multilingual", ["en", "fr", "de", "es", "pt"]), voice("phonon:fr", ["fr"], ["default"])])];
+  assert.deepEqual(voiceFor(both, english, "fr"), { choice: { provider: "ollama", model: "phonon:fr", voice: "default", options: undefined } });
+  assert.equal(voiceFor(both, english, "de").choice.model, "phonon:multilingual");
+  assert.equal(voiceFor(both, english, "de").choice.voice, "Zoey");
+  // A hosted multilingual voice is kept as chosen.
+  const hosted = { provider: "openai", model: "tts-1", voice: "nova" };
+  assert.deepEqual(voiceFor(onlyEnglish, hosted, "fr"), { choice: hosted });
+});
+
+test("dictation gives a model the most exact language it honours", () => {
+  assert.equal(dictationLanguage("en-GB"), "en-GB");
+  assert.equal(dictationLanguage("en-GB", ["en", "de"]), "en");
+  assert.equal(dictationLanguage("hi-IN", ["en", "de"]), undefined);
+  assert.equal(dictationLanguage("", ["en"]), undefined);
+});
+
 test("Ollama lists installed speech models with their voices, default first", async () => {
   const { f } = fake({
     "/api/tags": () => Response.json({ models: [{ name: "phonon:latest", capabilities: ["speech"] }, { name: "qwen3.5:4b-mlx", capabilities: ["completion"] }] }),
@@ -53,6 +129,8 @@ test("Ollama lists installed speech models with their voices, default first", as
   const [ollama, , openai, gemini, eleven] = await voiceProviders({}, f);
   assert.equal(ollama!.available, true);
   assert.deepEqual(ollama!.models.map((m) => m.id), ["phonon:latest"]);
+  assert.deepEqual(ollama!.models[0]!.languages, ["en"]);
+  assert.deepEqual(ollama!.packs!.find((p) => p.id === "phonon:multilingual")!.languages, ["en", "fr", "de", "es", "pt"]);
   assert.deepEqual(ollama!.models[0]!.voices.map((v) => v.id), ["default", "Zoey", "Easton"]);
   assert.equal(ollama!.packs!.find((p) => p.id === "phonon:latest")!.installed, true);
   assert.equal(ollama!.packs!.find((p) => p.id === "phonon:fr")!.installed, false);
@@ -191,6 +269,7 @@ test("dictation reaches each provider in its own form", async () => {
   const form = calls[0]!.init!.body as FormData;
   assert.equal(form.get("model"), "gpt-4o-mini-transcribe");
   assert.equal(form.get("language"), "en");
+  assert.equal(form.get("prompt"), "American English spelling.");
   assert.equal((form.get("file") as File).type, "audio/wav");
   assert.equal(await transcribe({ provider: "elevenlabs", model: "scribe_v1", audio: recording }, env, f), "hello");
   assert.equal((calls[1]!.init!.body as FormData).get("model_id"), "scribe_v1");
@@ -198,6 +277,25 @@ test("dictation reaches each provider in its own form", async () => {
   assert.equal((body(calls[2]!) as { contents: { parts: unknown[] }[] }).contents[0]!.parts.length, 1);
   assert.equal(await transcribe({ provider: "gemini", model: "gemini-flash-latest", audio: recording }, env, f), "general");
   assert.equal((body(calls[3]!) as { contents: { parts: unknown[] }[] }).contents[0]!.parts.length, 2);
+  await transcribe({ provider: "gemini", model: "gemini-flash-latest", language: "en-GB", audio: recording }, env, f);
+  assert.match(JSON.stringify(body(calls[4]!)), /in British English spelling \(en-GB\)/);
+  await transcribe({ provider: "openai", model: "whisper-1", language: "zh-CN", audio: recording }, env, f);
+  assert.equal((calls[5]!.init!.body as FormData).get("language"), "zh");
+  assert.equal((calls[5]!.init!.body as FormData).get("prompt"), "Simplified Chinese characters.");
+});
+
+test("read aloud tells a voice the language where the model takes one", async () => {
+  const { f, calls } = fake({ "/v1/audio/speech": pcm, ":generateContent": () => Response.json({ candidates: [{ content: { parts: [{ inlineData: { data: "AAA=" } }] } }] }), "api.elevenlabs.io": pcm });
+  const env = { OPENAI_API_KEY: "o", GEMINI_API_KEY: "g", ELEVENLABS_API_KEY: "e" };
+  await speak({ provider: "openai", model: "gpt-4o-mini-tts", voice: "nova", text: "Watch it live", language: "en-GB", options: { style: "Calm" } }, env, f);
+  assert.equal(body(calls[0]!).instructions, "Calm Speak British English.");
+  await speak({ provider: "openai", model: "tts-1", voice: "nova", text: "hi", language: "en-GB" }, env, f);
+  assert.equal(body(calls[1]!).instructions, undefined);
+  await speak({ provider: "gemini", model: "gemini-2.5-flash-preview-tts", voice: "Kore", text: "hi", language: "en-IN" }, env, f);
+  assert.equal((body(calls[2]!) as { generationConfig: { speechConfig: { languageCode?: string } } }).generationConfig.speechConfig.languageCode, "en-IN");
+  await speak({ provider: "elevenlabs", model: "eleven_flash_v2_5", voice: "abc", text: "hi", language: "fr-FR" }, env, f);
+  assert.equal(body(calls[3]!).language_code, "fr");
+  await assert.rejects(speak({ provider: "openai", model: "tts-1", voice: "nova", text: "hi", language: "british!" }, env, f), /invalid language/);
 });
 
 const appleSilicon = { skip: !whistleSupported() && "Whistle runs on Apple Silicon Macs" };

@@ -4,6 +4,11 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Whistle dictation on this Mac:** a new voice provider transcribes on the CPU in seven languages, free and offline, in both the browser and the app window. Once installed, it becomes the app window's default. One click installs its pinned and checksum-verified pack; it runs with no environment and no network. Voice packs now install through a general `POST /api/voice/install`.
+- **Read aloud sounds human:** interfaces are read as content, never as component names, controls or actions. Tables are summarised after six rows. Numbers, signs, currency and abbreviations are said in the reply's own language, with text normalized to NFC. Voices that accept a language are told it with the Mac's region. Voice style and slider settings now reach the provider; the engine had been dropping them.
+- **The voice follows the reply's language:** a French reply is read by an installed French or multilingual Phonon pack even when English is the chosen voice. If none is installed, the reply is read anyway and a note names the pack to install. The app never switches to a billed voice on its own.
+- **Dictation languages per model:** Settings → Voice lists only the languages the chosen model transcribes. Hosted models receive the full regional tag (spelling or script hints for OpenAI and Gemini) instead of the bare language, and "Same as this Mac" sends the Mac's regional language.
+
 - Saved task Markdown preserves the latest assistant prose alongside its canonical surfaces, including mixed narrative/interface results.
 
 - Task setup accepts bounded selected UTF-8 snapshots and an optional local Markdown destination. Saved output receipts include read-back hashes, size and available surface versions, with verify/download and save retry without generation. Missing/changed/stale outputs block acceptance.

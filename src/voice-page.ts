@@ -5,7 +5,7 @@
 import { api, el } from "./core.ts";
 import { tile } from "./icons.ts";
 import { group, pill, row, secretField, segmented, select, type Setting, title, toggle } from "./ui.ts";
-import { dictationPrefs, systemDictation } from "./dictation.ts";
+import { dictationLanguage, dictationPrefs, systemDictation } from "./dictation.ts";
 import { type VoiceOption, lastError, loadVoices, readAloud, resolveChoice, SPEEDS, stopReading, voicePrefs, voiceState, type VoiceChoice, type VoiceProvider } from "./voice.ts";
 
 const inUse = (p: VoiceProvider) => voicePrefs.choice?.provider === p.id && resolveChoice([p]) !== undefined;
@@ -185,7 +185,14 @@ export async function voiceSettingsPage(openProvider: (id: string) => void): Pro
   ];
 }
 
-const LANGUAGES: [string, string][] = [["", "Same as this Mac"], ["en-US", "English (US)"], ["en-GB", "English (UK)"], ["en-IN", "English (India)"], ["hi-IN", "Hindi"], ["fr-FR", "French"], ["de-DE", "German"], ["es-ES", "Spanish"], ["pt-BR", "Portuguese"], ["it-IT", "Italian"], ["ja-JP", "Japanese"], ["zh-CN", "Chinese"]];
+const LANGUAGES: [string, string][] = [["en-US", "English (US)"], ["en-GB", "English (UK)"], ["en-IN", "English (India)"], ["hi-IN", "Hindi"], ["fr-FR", "French"], ["de-DE", "German"], ["es-ES", "Spanish"], ["pt-BR", "Portuguese (Brazil)"], ["it-IT", "Italian"], ["ja-JP", "Japanese"], ["zh-CN", "Chinese (Simplified)"]];
+
+/** The languages a model honours, named in the person's own language; any model without a list takes the full set. */
+function languageOptions(supported?: readonly string[]): [string, string][] {
+  const names = (() => { try { return new Intl.DisplayNames(undefined, { type: "language" }); } catch { return undefined; } })();
+  const list = supported ? supported.map((t) => [t, names?.of(t) ?? t] as [string, string]) : LANGUAGES;
+  return [["", "Same as this Mac"], ...list];
+}
 
 /** Settings → Voice → Dictation: the mic, which model transcribes, its language. */
 function dictationGroup(list: VoiceProvider[]): HTMLElement {
@@ -205,8 +212,18 @@ function dictationGroup(list: VoiceProvider[]): HTMLElement {
       : provider ? "Sent to the provider when you stop; billed per minute."
       : "Install Whistle, or add a hosted provider's key, in Integrations → Voice to dictate.";
   };
+  const languageBox = el("span");
+  /** Only the languages this model honours; a saved choice it cannot honour narrows to one it can, or to this Mac's. */
+  const paintLanguages = (c?: { provider: string; model: string }) => {
+    const supported = list.find((p) => p.id === c?.provider)?.stt?.find((m) => m.id === c?.model)?.languages;
+    const saved = dictationPrefs.language;
+    if (saved && dictationLanguage(saved, supported) !== saved) dictationPrefs.language = dictationLanguage(saved, supported) ?? "";
+    languageBox.replaceChildren(select(languageOptions(supported), dictationPrefs.language, (v) => { dictationPrefs.language = v; }));
+  };
+  const first = options[0] ? (JSON.parse(options[0][0]) as { provider: string; model: string }) : undefined;
+  paintLanguages(chosen ?? first);
   const pick = options.length
-    ? select(options, chosen ? JSON.stringify({ provider: chosen.provider, model: chosen.model }) : options[0]![0], (v) => { const c = JSON.parse(v) as { provider: string; model: string }; dictationPrefs.choice = c; describe(c.provider); })
+    ? select(options, chosen ? JSON.stringify({ provider: chosen.provider, model: chosen.model }) : options[0]![0], (v) => { const c = JSON.parse(v) as { provider: string; model: string }; dictationPrefs.choice = c; describe(c.provider); paintLanguages(c); })
     : el("span", { className: "row-hint", textContent: "None ready" });
   const which = row("Transcribe with", " ", pick);
   hint = which.querySelector(".row-hint");
@@ -215,7 +232,7 @@ function dictationGroup(list: VoiceProvider[]): HTMLElement {
     "Dictation",
     row("Microphone button", "Speak instead of typing: ⌘D or the mic in the message box. Enter stops; Esc discards.", toggle(dictationPrefs.enabled, (on) => { dictationPrefs.enabled = on; })),
     which,
-    row("Language", null, select(LANGUAGES, dictationPrefs.language, (v) => { dictationPrefs.language = v; })),
+    row("Language", "Only the languages the chosen model transcribes. A regional choice sets spelling where the model supports it.", languageBox),
     row("Send when dictation ends", "Otherwise the words wait in the message box for you to edit.", toggle(dictationPrefs.send, (on) => { dictationPrefs.send = on; })),
   );
 }

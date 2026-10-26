@@ -32,7 +32,8 @@ The site describes where Vakyartha is going. Here is what this repository does t
 | Pick up the thread (commitments) | Not yet. |
 | Vakyartha and seven companions | Not yet. |
 | Headless & Cloud, scheduled routines | Not yet. `npm run web` serves the same app on loopback for development only. |
-| Voice, email and calendar | Not yet. |
+| Voice | **Works.** Replies read aloud as natural speech, interfaces included, by a voice in the reply's language. Dictation in the message box. Both run free on this Mac (Phonon through Ollama; Whistle for dictation) or through a hosted provider with your key. |
+| Email and calendar | Not yet. |
 | macOS and Linux | macOS only so far. |
 | `vak setup`, `vak doctor`, `vak serve` | Those belong to the [earlier codebase](https://github.com/nranjan2code/code) the site still links to; the rebuild installs from source as below. |
 

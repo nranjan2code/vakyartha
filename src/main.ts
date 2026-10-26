@@ -20,6 +20,7 @@ import { TasksPanel } from "./tasks-panel.ts";
 import { Drafts } from "./drafts.ts";
 import { cancelDictation, dictationPrefs, dictationState, startDictation, stopDictation } from "./dictation.ts";
 import { lastError, readAloud, replyText, stopReading, voicePrefs, voiceState } from "./voice.ts";
+import { spokenSurface, textLanguage } from "./speech-text.ts";
 
 applyAppearance();
 defineVakElements();
@@ -435,9 +436,21 @@ function turnText(turn: Turn): string {
   return parts.filter((p) => p.trim()).join("\n\n");
 }
 
+/** A reply as speech: its prose, then what each interface says, in the reply's language. */
+function turnSpeech(turn: Turn): string {
+  const prose = replyText(turn.text);
+  const surfaces = turnSurfaces(turn).flatMap((id) => {
+    const resolved = client.store.resolve(id);
+    return resolved ? [resolved.title && titleRepeated(resolved.title, resolved.root) ? { ...resolved, title: undefined } : resolved] : [];
+  });
+  // Prose says the most about the language; an interface alone is judged by its own text.
+  const lang = textLanguage(prose) ?? textLanguage(surfaces.map((s) => projectText(s)).join("\n"));
+  return [prose, ...surfaces.map((s) => spokenSurface(s, lang))].filter((p) => p.trim()).join("\n\n");
+}
+
 // --- read aloud ---------------------------------------------------------------------
 function speakButton(turn: Turn): HTMLButtonElement {
-  const b = action("voice", "Read aloud", () => toggleReading(turn.root, () => turnText(turn)));
+  const b = action("voice", "Read aloud", () => toggleReading(turn.root, () => turnSpeech(turn)));
   b.classList.add("speak");
   return b;
 }
@@ -579,7 +592,7 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         if (e.limit) limited(turn, e.limit);
         recordVersions(turn);
         tidySurfaces();
-        if (voicePrefs.enabled && voicePrefs.auto && turnSession === session && !turn.status.classList.contains("error")) toggleReading(turn.root, () => turnText(turn));
+        if (voicePrefs.enabled && voicePrefs.auto && turnSession === session && !turn.status.classList.contains("error")) toggleReading(turn.root, () => turnSpeech(turn));
         break;
     }
   };

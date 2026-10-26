@@ -3,17 +3,18 @@
 // after its first sentence. Anything that reads aloud hears "vak:voice".
 
 import { engine, prefs } from "./core.ts";
-import { speechChunks } from "./speech-text.ts";
+import { speechChunks, speechLocale, textLanguage } from "./speech-text.ts";
 
 export interface Voice { id: string; name: string }
 export type VoiceOption =
   | { id: string; kind: "text"; label: string; hint: string; presets: string[]; max: number }
   | { id: string; kind: "range"; label: string; hint: string; min: number; max: number; step: number; default: number };
-export interface VoiceModel { id: string; label: string; voices: Voice[]; note?: string; options?: VoiceOption[] }
-export interface VoicePack { id: string; label: string; size: string; license: string; installed: boolean }
+export interface VoiceModel { id: string; label: string; voices: Voice[]; note?: string; options?: VoiceOption[]; languages?: string[] }
+export interface SttModel { id: string; label: string; languages?: string[] }
+export interface VoicePack { id: string; label: string; size: string; license: string; installed: boolean; languages?: string[] }
 export interface VoiceProvider {
   id: string; label: string; publisher: string; summary: string; description: string; icon: string;
-  local: boolean; cost: string; keyVar?: string; available: boolean; reason?: string; models: VoiceModel[]; packs?: VoicePack[]; stt?: { id: string; label: string }[]; transcribes: boolean;
+  local: boolean; cost: string; keyVar?: string; available: boolean; reason?: string; models: VoiceModel[]; packs?: VoicePack[]; stt?: SttModel[]; transcribes: boolean;
 }
 
 /** `options`: values for the model's declared options (style, stability…). */
@@ -51,6 +52,34 @@ export function resolveChoice(list: VoiceProvider[], want = voicePrefs.choice): 
   return undefined;
 }
 
+const languageWord = (lang: string) => {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "language" }).of(lang) ?? lang;
+  } catch {
+    return lang;
+  }
+};
+
+/**
+ * The voice for a reply in `lang`: the chosen one when it speaks that language;
+ * otherwise an installed voice that does, from the same provider first and then
+ * from free local providers, never a billed one the person did not choose. A
+ * single-language pack comes before a multilingual one. `missing` names the
+ * pack to install when nothing fits, and the chosen voice reads anyway.
+ */
+export function voiceFor(list: VoiceProvider[], c: VoiceChoice, lang?: string): { choice: VoiceChoice; missing?: string } {
+  const p = list.find((x) => x.id === c.provider);
+  const m = p?.models.find((x) => x.id === c.model);
+  if (!lang || !p || !m?.languages || m.languages.includes(lang)) return { choice: c };
+  const fits = (q: VoiceProvider) => q.models.filter((x) => x.voices.length && x.languages?.includes(lang)).sort((a, b) => a.languages!.length - b.languages!.length);
+  for (const q of [p, ...list.filter((x) => x.local && x.id !== p.id)].filter((x) => x.available)) {
+    const n = fits(q)[0];
+    if (n) return { choice: { provider: q.id, model: n.id, voice: n.voices.find((v) => v.id === c.voice)?.id ?? n.voices[0]!.id, options: q.id === c.provider ? c.options : undefined } };
+  }
+  const pack = list.filter((x) => x.local).flatMap((x) => x.packs ?? []).filter((k) => !k.installed && k.languages?.includes(lang)).sort((a, b) => a.languages!.length - b.languages!.length)[0];
+  return { choice: c, missing: pack ? `No ${languageWord(lang)} voice is installed, so the reply was read in ${m.label}. Install ${pack.label} in Integrations → Voice.` : `No ${languageWord(lang)} voice is set up, so the reply was read in ${m.label}.` };
+}
+
 export type VoiceState = "idle" | "loading" | "playing";
 let state: VoiceState = "idle";
 let target: unknown;
@@ -86,19 +115,20 @@ export function loadVoices(fresh = false): Promise<VoiceProvider[]> {
   return cachedProviders;
 }
 
-function fetchPiece(c: VoiceChoice, text: string, signal: AbortSignal): Promise<Blob> {
-  const p = requestPiece(c, text, signal);
+function fetchPiece(c: VoiceChoice, text: string, language: string | undefined, signal: AbortSignal): Promise<Blob> {
+  const p = requestPiece(c, text, language, signal);
   // Fetched ahead: a failure surfaces when its turn to play comes, or never if stopped first.
   p.catch(() => {});
   return p;
 }
 
-async function requestPiece(c: VoiceChoice, text: string, signal: AbortSignal): Promise<Blob> {
+async function requestPiece(c: VoiceChoice, text: string, language: string | undefined, signal: AbortSignal): Promise<Blob> {
   const res = await fetch(`${engine().url}/api/speech`, {
     method: "POST",
     signal,
     headers: { "content-type": "application/json", authorization: `Bearer ${engine().token}` },
-    body: JSON.stringify({ ...c, text }),
+    // The language lets a voice that accepts one pick the accent and the reading of words spelled alike (live, read, record).
+    body: JSON.stringify({ ...c, text, language }),
   });
   if (!res.ok) {
     let message = `speech failed (${res.status})`;
@@ -135,21 +165,28 @@ export function stopReading(): void {
 export async function readAloud(text: string, owner: unknown, choice?: VoiceChoice): Promise<void> {
   stopReading();
   const mine = run;
-  const pieces = speechChunks(text);
+  const lang = textLanguage(text);
+  const language = speechLocale(lang);
+  const pieces = speechChunks(text, lang);
   if (!pieces.length) return;
   target = owner;
   lastError = "";
+  let note = "";
   announce("loading");
   const ctrl = new AbortController();
   abort = ctrl;
   try {
-    const c = choice ?? resolveChoice(await loadVoices());
-    if (!c) throw new Error("No voice is ready. Set one up in Integrations → Voice.");
-    let next = fetchPiece(c, pieces[0]!, ctrl.signal);
+    const list = await loadVoices();
+    const chosen = choice ?? resolveChoice(list);
+    if (!chosen) throw new Error("No voice is ready. Set one up in Integrations → Voice.");
+    // A preview names its voice on purpose; a reply is read by a voice that speaks its language.
+    const { choice: c, missing } = choice ? { choice } : voiceFor(list, chosen, lang);
+    note = missing ?? "";
+    let next = fetchPiece(c, pieces[0]!, language, ctrl.signal);
     for (let i = 0; i < pieces.length; i++) {
       const blob = await next;
       if (run !== mine) return;
-      if (i + 1 < pieces.length) next = fetchPiece(c, pieces[i + 1]!, ctrl.signal);
+      if (i + 1 < pieces.length) next = fetchPiece(c, pieces[i + 1]!, language, ctrl.signal);
       await playPiece(blob, mine);
       if (run !== mine) return;
     }
@@ -158,6 +195,8 @@ export async function readAloud(text: string, owner: unknown, choice?: VoiceChoi
     lastError = (err as Error).message;
   }
   if (run === mine) {
+    // Said once the reply has been read, so the person knows why it sounded off and what fixes it.
+    if (!lastError && note) lastError = note;
     target = undefined;
     abort = undefined;
     announce("idle");

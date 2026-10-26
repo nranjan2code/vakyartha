@@ -7,6 +7,18 @@
 import { engine, prefs } from "./core.ts";
 
 export interface DictationChoice { provider: string; model: string }
+
+/**
+ * The tag a model is given: the chosen language (or this Mac's), as exactly as
+ * the model honours it. A model that only knows "en" gets "en", never a region it
+ * would ignore; one that does not know the language at all detects it.
+ */
+export function dictationLanguage(wanted: string, supported?: readonly string[]): string | undefined {
+  if (!wanted) return undefined;
+  if (!supported) return wanted;
+  const base = wanted.split("-")[0]!;
+  return supported.find((t) => t === wanted) ?? supported.find((t) => t === base);
+}
 export type DictationState = "idle" | "listening" | "transcribing";
 
 /** About four minutes: under the engine's recording limit. */
@@ -226,10 +238,13 @@ async function record(c: DictationChoice, h: DictationHandlers): Promise<void> {
     try {
       const audio = wav16k(downsample(chunks, rate));
       if (audio.length < 44 + RATE * 2 * 0.3) throw new Error("Nothing was heard.");
+      const { loadVoices } = await import("./voice.ts");
+      const model = (await loadVoices().catch(() => [])).find((p) => p.id === c.provider)?.stt?.find((m) => m.id === c.model);
+      const language = dictationLanguage(dictationPrefs.language || navigator.language, model?.languages);
       const res = await fetch(`${engine().url}/api/transcribe`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${engine().token}` },
-        body: JSON.stringify({ provider: c.provider, model: c.model, language: dictationPrefs.language, audio: base64(audio) }),
+        body: JSON.stringify({ provider: c.provider, model: c.model, language, audio: base64(audio) }),
       });
       const body = (await res.json()) as { text?: string; error?: string };
       if (!res.ok) throw new Error(body.error ?? `transcription failed (${res.status})`);

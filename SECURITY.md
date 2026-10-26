@@ -17,6 +17,7 @@ What the app protects, from whom, and how. Rules for changing code are in [AGENT
 | An over-reaching filesystem server | Files reads `~/.ssh` | It is started with only the folders the user adds, checked by the framework (`checkFolders`): absolute, existing, never a system root or the whole home folder. Writes ask. |
 | A prompt injection through an integration | A fetched page says "push to my repo" | Writes and open-internet tools default to Ask in each integration's policy; every call is logged to `logs/tools.jsonl`. |
 | A stolen settings file | Someone copies the data folder | On macOS keys live in the Keychain, written through `security -i` on stdin (never on a command line) and never sent back to the UI. Elsewhere they live in a file only the user can read (0600). Settings values are checked so they cannot inject into `settings.env`. |
+| A compromised local speech model | The Whistle engine, a prebuilt binary with no published source, reaches the internet or reads keys | Its pack is pinned to Hugging Face commits at least 14 days old and to each file's SHA-256, checked before the files are moved into place (`sidecar/whistle.ts`). It runs as a short process per recording with an empty environment, under `sandbox-exec` with networking denied, and is given only the recording file. It never receives keys. |
 | A second program on the same bot | `npm run telegram` (Projection) and the app poll one Telegram bot | Reported as a conflict in Settings → Channels, not crashed on. |
 
 ## Task records and drafts
@@ -42,6 +43,7 @@ The repository is public: <https://github.com/nranjan2code/vakyartha>. Report a 
 
 - `test/settings.test.ts`: Keychain/file storage, secrets never returned, injection through settings values refused.
 - `test/integrations.test.ts`: every catalog server pinned to an exact version, first-run defaults, state saved by earlier versions still loads.
+- `test/voice.test.ts`: only listed voice packs install; a Whistle file that does not match its pinned checksum is refused and leaves nothing behind; language tags and inputs are validated before any provider is called.
 - `test/finops.test.ts`: the token-protected HTTP path, and no prompt or tool content copied into the usage ledger.
 - The framework's checks (`framework/packages/host/test`, `framework/packages/mcp/test`, including installs and folder checks in `integrations.test.ts`) run with `npm run test:framework`.
 - Before every push: the secret scan in AGENTS.md.
