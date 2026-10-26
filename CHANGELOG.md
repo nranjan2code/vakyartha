@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Window chrome:** the traffic lights are centred in the 40px title bar on the same line as the sidebar hide/show buttons; the logo moved from the sidebar top to the right of Settings.
+
 - **Interface font:** the app and generated interfaces use Inter 4.1 (variable upright and italic, SIL OFL, bundled under `public/fonts/` with its licence; no network font), with tabular numbers in answer tables.
 
 - **Response typography:** text answers style headings, lists, links, inline code, code blocks, quotes, rules and tables with one rhythm instead of browser defaults.

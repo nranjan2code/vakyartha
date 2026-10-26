@@ -140,9 +140,6 @@ body.collapsed .canvas-expanded .canvas-head { padding-left: 84px; }
 .sidebar { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; background: var(--side); border-right: 1px solid var(--border); }
 /* The mark sits right of the macOS traffic lights. */
 .side-top { height: var(--titlebar); display: flex; align-items: center; justify-content: space-between; padding: 0 10px 0 84px; }
-.brand { display: inline-flex; align-items: center; gap: 7px; font-weight: 650; font-size: 0.95rem; letter-spacing: -0.01em; user-select: none; }
-.brand img { flex: none; }
-.brand-wordmark { display: block; width: 88px; height: 24px; flex: none; background: light-dark(#101D3D, #F6F5F1); -webkit-mask: url("/brand/wordmark-colour.svg") center / contain no-repeat; mask: url("/brand/wordmark-colour.svg") center / contain no-repeat; }
 .empty-mark { display: block; margin: 0 auto 14px; border-radius: 10px; opacity: 0.92; }
 .side-head { padding: 0 10px 8px; }
 .side-pages { padding: 0 10px 8px; }
@@ -166,11 +163,14 @@ body.collapsed .canvas-expanded .canvas-head { padding-left: 84px; }
 .chat .del { visibility: hidden; flex: none; width: 24px; height: 24px; margin-right: 4px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
 .chat:hover .del, .chat:focus-within .del { visibility: visible; }
 .chat .del:hover { color: var(--danger); }
-.side-foot { padding: 8px 10px 12px; }
+.side-foot { padding: 8px 10px 12px; display: flex; align-items: center; gap: 8px; }
+.side-foot #open-settings { flex: 1; min-width: 0; }
+.foot-mark { flex: none; border-radius: 6px; margin-right: 4px; opacity: 0.9; }
+#collapse { margin-left: auto; }
 
 /* main column */
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.drag { flex: none; height: var(--titlebar); display: flex; align-items: center; padding-left: 86px; }
+.drag { flex: none; height: var(--titlebar); display: flex; align-items: center; padding-left: 92px; }
 .icon-btn { display: grid; place-items: center; width: 30px; height: 28px; border: 0; border-radius: 7px; background: none; color: var(--muted); cursor: pointer; }
 .icon-btn:hover { background: var(--hover); color: var(--fg); }
 /* The expand button sits right of the macOS traffic lights, only while the sidebar is hidden. */
