@@ -748,7 +748,10 @@ function toggleDictation(): void {
       input.setSelectionRange(input.value.length, input.value.length);
       if (final && dictationPrefs.send && input.value.trim() && !isRunning(session)) submit(input.value);
     },
-    onError: composerHint,
+    onError(message) {
+      composerHint(message);
+      report(`dictation (${dictationPrefs.choice?.provider ?? "none"}): ${message}`);
+    },
   });
 }
 mic.addEventListener("click", toggleDictation);

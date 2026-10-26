@@ -109,6 +109,7 @@ function listenSystem(h: DictationHandlers): void {
   rec.interimResults = true;
   let text = "";
   let cancelled = false;
+  let failed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   rec.onresult = (e) => {
     const parts: string[] = [];
@@ -118,12 +119,15 @@ function listenSystem(h: DictationHandlers): void {
   };
   rec.onerror = (e) => {
     if (e.error === "aborted") return;
+    failed = true;
     if (e.error !== "no-speech" || !text) h.onError(RECOGNITION_ERRORS[e.error] ?? `Speech recognition failed (${e.error}).`);
   };
   rec.onend = () => {
     clearTimeout(timer);
     finish = cancelNow = undefined;
     if (!cancelled && text) h.onText(text, true);
+    // The app window's recognizer can end without a word or an error; say so rather than nothing.
+    else if (!cancelled && !failed) h.onError("No speech was recognized. If this keeps happening, choose a hosted model in Settings → Voice → Dictation.");
     announce("idle");
   };
   finish = () => rec.stop();
