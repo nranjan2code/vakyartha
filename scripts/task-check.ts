@@ -1,6 +1,6 @@
 // Deterministic task + multi-surface WebKit check. No model or external service calls.
 import { execFile } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -32,6 +32,12 @@ const fake = createServer(async (req, res) => {
 await new Promise<void>((resolve) => fake.listen(0, "127.0.0.1", resolve));
 const previous = process.env.OPENAI_COMPAT_BASE_URL;
 process.env.OPENAI_COMPAT_BASE_URL = `http://127.0.0.1:${(fake.address() as { port: number }).port}/v1`;
+const taskDir = path.join(out, "data", "tasks");
+await mkdir(taskDir, { recursive: true });
+for (const width of [1100, 620]) {
+  const id = `recovery-${width}`, runId = `recovery-run-${width}`, at = new Date(Date.now() - 10000).toISOString();
+  await writeFile(path.join(taskDir, `${id}.json`), JSON.stringify({ version: 5, revision: 0, id, session: id, goal: "Review interrupted operation", criteria: "Record exact reviewed effect before continuing", provider: "compatible", model: "scripted", integrations: [], confirmedFree: [], spending: { kind: "api_allowed", acknowledged: true }, limits: { runs: 3, modelRequests: 6, toolCalls: 6, activeMs: 60000 }, budget: { modelRequests: 0, toolCalls: 1, activeMs: 0 }, state: "interrupted", created: at, updated: at, note: "Check the uncertain operation", runs: 1, runHistory: [{ id: runId, sequence: 1, inputId: "original", inputKind: "message", state: "interrupted", started: at, recovered: at, activeMs: 0, chargedMs: 0, modelRequests: 0, toolCalls: 1, note: "Effect may have happened" }], pending: [], activity: [], accepted: [], operations: [{ id: `effect-${width}`, tool: "service__write", runId, state: "uncertain" }] }));
+}
 const app = await startAppServer({ dataDir: path.join(out, "data"), keychainService: "com.nranjan2code.vakyartha.task-check", access: "open", uiDir: path.join(root, "dist") });
 const setup = `
  // Offscreen WebKit may leave grid transitions at their first frame. Check the settled layout.
@@ -71,6 +77,8 @@ const steps = [
    window.dispatchEvent(new Event('vak:model'));check(!document.getElementById('task-spending-ack').checked,'model change retained spending acknowledgement');
    check(!document.getElementById('task-create-form').checkValidity(),'API charges require no acknowledgement');
    document.getElementById('task-goal').value='Create two independent forms and a table';document.getElementById('task-criteria').value='All three stay interactive';
+   const selected=new DataTransfer();selected.items.add(new File(['A bounded input snapshot'],'facts.txt',{type:'text/plain'}));document.getElementById('task-files').files=selected.files;
+   document.getElementById('task-output').value='markdown';document.getElementById('task-diagnostic-days').value='0';
    document.getElementById('task-budget-runs').value='3';document.getElementById('task-budget-model').value='6';document.getElementById('task-budget-tools').value='0';
    const oldIds=(await(await fetch('/api/tasks')).json()).map(t=>t.id);
    document.getElementById('task-spending').value='api_allowed';document.getElementById('task-spending').dispatchEvent(new Event('change'));document.getElementById('task-spending-ack').checked=true;document.getElementById('task-create-form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
@@ -79,7 +87,7 @@ const steps = [
    await wait(()=>document.querySelector('#schedule-page .schedule-detail-actions'));Array.from(document.querySelectorAll('#schedule-page button')).find(b=>b.textContent==='Open workspace').click();await wait(()=>document.querySelectorAll('vak-surface').length===3);flush();
    await wait(()=>!document.getElementById('task-bar').hidden);
    check(document.getElementById('canvas-pick').options.length===3,'missing task surfaces');
-   check((await task()).state==='needs_input','task should require review');return 'task setup and three live surfaces';`,
+   const saved=await task();check(saved.state==='needs_input','task should require review');check(saved.runHistory[0].output.state==='saved'&&saved.runHistory[0].output.surfaces.length===3,'output receipt missing');check(saved.diagnosticDays===0,'diagnostic retention not saved');check(saved.inputs[0].name==='facts.txt'&&saved.inputs[0].sha256.length===64,'input snapshot was not recorded');return 'task setup, saved output receipt and three live surfaces';`,
   `const a=pick('first');window.qaFirst=a;a.shadowRoot.querySelector('button').click();flush();
    check(Boolean(a.shadowRoot.querySelector('.invalid')),'invalid form was not checked');
    check((await task()).runs===1,'invalid form ran the agent');
@@ -126,7 +134,11 @@ const steps = [
    document.querySelector('.schedule-run-usage').click();await wait(()=>document.querySelector('.schedule-run [role="status"]').textContent.includes('Model API estimate'));
    check(document.querySelector('.schedule-run [role="status"]').textContent.includes('unknown'),'missing usage became zero');
    check(document.documentElement.scrollWidth<=innerWidth,'run history overflow');
-   return 'distinct run history, accepted outcome and expandable receipts';`,
+   const output=history.runHistory[2].output;check(output.state==='saved','latest output was not saved');
+   const content=await(await fetch('/api/tasks/'+window.qaTask+'/runs/'+history.runHistory[2].id+'/output')).json();check(content.filename===output.filename&&content.content.includes('Row 0'),'saved output download did not read canonical Markdown');
+   const verified=await fetch('/api/tasks/'+window.qaTask+'/runs/'+history.runHistory[2].id+'/output',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({operation:'verify',revision:history.revision})});check(verified.ok,'output verification failed');
+   check((await task()).budget.modelRequests===history.budget.modelRequests,'output verification dispatched model work');
+   return 'distinct run history, accepted outcome and verified downloadable receipts';`,
   `Array.from(document.querySelectorAll('.schedule-run button')).find(b=>b.textContent==='Open FinOps').click();
    await wait(()=>document.querySelector('[aria-label="FinOps work type"]'));
    const scope=document.querySelector('[aria-label="FinOps work type"]');scope.value='tasks';scope.dispatchEvent(new Event('change'));
@@ -160,6 +172,11 @@ const steps = [
    check(!(await(await fetch('/api/tasks')).json()).some(t=>t.id===window.qaScheduled),'paused schedule not deleted');
    check(document.documentElement.scrollWidth<=innerWidth,'schedule detail overflow');
    return 'one-time setup, paused lifecycle and guarded deletion';`,
+  `document.getElementById('open-schedule').click();await wait(()=>document.querySelector('.schedule-card[data-task="recovery-'+innerWidth+'"]'));document.querySelector('.schedule-card[data-task="recovery-'+innerWidth+'"]').click();await wait(()=>document.querySelector('#schedule-page .schedule-detail-actions'));Array.from(document.querySelectorAll('#schedule-page button')).find(b=>b.textContent==='Open workspace').click();await wait(()=>!document.getElementById('task-bar').hidden);
+   document.getElementById('input').value='Continue after checking the effect';document.getElementById('input').dispatchEvent(new Event('input'));document.getElementById('composer').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
+   await wait(()=>document.querySelector('dialog.schedule-reconcile[open]'));const dialog=document.querySelector('dialog.schedule-reconcile');check(dialog.textContent.includes('effect-'+innerWidth),'exact operation ID missing');check(!dialog.querySelector('form').checkValidity(),'reconciliation accepts no evidence');check(dialog.getBoundingClientRect().width<=innerWidth,'reconciliation overflow');return 'exact operation reconciliation and required evidence note';`,
+  `const dialog=document.querySelector('dialog.schedule-reconcile');dialog.querySelector('input[type="checkbox"]').checked=true;dialog.querySelector('textarea').value='Checked the service and confirmed the prior operation effect; no repeat requested.';dialog.querySelector('button[value="reviewed"]').click();
+   await wait(async()=>(await(await fetch('/api/tasks/recovery-'+innerWidth)).json()).state==='needs_input');const checked=await(await fetch('/api/tasks/recovery-'+innerWidth)).json();check(checked.operations[0].state==='reviewed'&&checked.operations[0].reconciliation.note.includes('Checked the service'),'reconciliation evidence not persisted');check(checked.runs===2,'reconciliation did not continue exactly once');return 'reviewed operation evidence persists and continuation stays bounded';`,
 ];
 try {
   const bin = path.join(out, "webkit-check");
@@ -169,7 +186,7 @@ try {
     console.log(`${width}px: ${stdout.trim()}`);
     if (/step \d+ error:/.test(stdout) || !stdout.includes("interactive continuation")) throw new Error(`Task WebKit check failed at ${width}px`);
   }
-  if (calls !== 12) throw new Error(`Unexpected model calls: ${calls}; local interaction must not call the model`);
+  if (calls !== 16) throw new Error(`Unexpected model calls: ${calls}; local interaction must not call the model`);
   console.log(`Task WebKit checks passed. Screenshots: ${out}`);
 } catch (err) {
   console.error(err); process.exitCode = 1;

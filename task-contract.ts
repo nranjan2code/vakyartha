@@ -1,4 +1,5 @@
 import { parseResearchReceipt, type ResearchReceipt } from "./research-contract.ts";
+import { parseTaskFiles, parseTaskOutput, parseOutputReceipt, parseDiagnosticDays, type TaskFileInput, type TaskOutput, type OutputReceipt } from "./task-files.ts";
 import { parseTaskResultPolicy, type TaskResultPolicy } from "./task-result.ts";
 import { parseSchedule, type OnceSchedule } from "./schedule.ts";
 
@@ -57,6 +58,7 @@ export interface TaskRun {
   note: string;
   review?: ResultReview;
   retrievals?: ResearchReceipt[];
+  output?: OutputReceipt;
 }
 export const TASK_RUN_LABELS: Record<TaskRunState, string> = { running: "In progress", review: "Ready for review", accepted: "Accepted", failed: "Could not finish", cancelled: "Cancelled", interrupted: "Interrupted" };
 export interface TaskView {
@@ -72,6 +74,9 @@ export interface TaskView {
   confirmedFree: string[];
   spending: TaskSpending;
   resultPolicy?: TaskResultPolicy;
+  inputs?: TaskFileInput[];
+  output?: TaskOutput;
+  diagnosticDays?: number;
   limits: TaskLimits;
   budget: TaskBudget;
   state: TaskState;
@@ -83,7 +88,7 @@ export interface TaskView {
   pending: TaskInput[];
   approval?: TaskApproval;
   activity: TaskActivity[];
-  operations: { id: string; tool: string; runId?: string; state: "started" | "returned" | "failed" | "uncertain" | "reviewed" }[];
+  operations: { id: string; tool: string; runId?: string; state: "started" | "returned" | "failed" | "uncertain" | "reviewed"; reconciliation?: { at: string; note: string } }[];
   accepted: string[];
   schedule?: OnceSchedule;
 }
@@ -134,10 +139,14 @@ export function parseTaskView(value: unknown): TaskView {
   const operations = array(raw.operations, 768).map((value) => {
     const op = taskObject(value);
     if (!isOperationState(op.state)) throw new Error("Invalid operation state");
-    return { id: taskString(op.id, 120), tool: taskString(op.tool, 240), state: op.state, ...(op.runId === undefined ? {} : { runId: taskString(op.runId, 120) }) };
+    const review = op.reconciliation === undefined ? undefined : taskObject(op.reconciliation);
+    const reconciliation = review ? { at: taskString(review.at, 40), note: taskString(review.note, 1000) } : undefined;
+    if ((op.state === "reviewed") !== Boolean(reconciliation) || reconciliation && !Number.isFinite(Date.parse(reconciliation.at))) throw new Error("Reviewed operations need a dated reconciliation note");
+    return { id: taskString(op.id, 120), tool: taskString(op.tool, 240), state: op.state, ...(op.runId === undefined ? {} : { runId: taskString(op.runId, 120) }), ...(reconciliation ? { reconciliation } : {}) };
   });
   const runs = integer(raw.runs, 32);
   const runHistory = array(raw.runHistory, 32).map(parseTaskRun);
+  if (runHistory.some((run) => run.output && run.output.filename !== `${id}--${run.id}.md`)) throw new Error("Output receipt belongs to another task or run");
   const identities = new Set<string>();
   let sequence = 0;
   for (const run of runHistory) {
@@ -158,6 +167,7 @@ export function parseTaskView(value: unknown): TaskView {
     version: 5, revision: integer(raw.revision, Number.MAX_SAFE_INTEGER), id, session, goal: taskString(raw.goal, 8000), criteria: taskString(raw.criteria, 4000), provider: taskString(raw.provider, 120), model: taskString(raw.model, 240),
     integrations: array(raw.integrations, 16).map((v) => taskString(v, 120)), state: raw.state, created, updated, note, runs, runHistory, limits, budget,
     ...(raw.resultPolicy === undefined ? {} : { resultPolicy: parseTaskResultPolicy(raw.resultPolicy) }), spending: parseTaskSpending(raw.spending), confirmedFree: array(raw.confirmedFree, 16).map((v) => taskString(v, 120)),
+    ...(raw.inputs === undefined ? {} : { inputs: parseTaskFiles(raw.inputs, true) }), ...(raw.output === undefined ? {} : { output: parseTaskOutput(raw.output) }), ...(raw.diagnosticDays === undefined ? {} : { diagnosticDays: parseDiagnosticDays(raw.diagnosticDays) }),
     pending: array(raw.pending, TASK_LIMITS.pending).map(parseTaskInput), accepted: array(raw.accepted, 256).map((v) => taskString(v, 120)), operations,
     activity: array(raw.activity, 100).map((v) => { const a = taskObject(v); return { at: taskString(a.at, 40), text: taskString(a.text, 1000) }; }),
     ...(schedule ? { schedule } : {}),
@@ -190,10 +200,11 @@ function parseTaskRun(value: unknown): TaskRun {
   if ((raw.state === "running" && (ended || recovered)) || (["review", "accepted", "failed", "cancelled"].includes(raw.state) && !ended) || (raw.state !== "interrupted" && recovered) || (ended && Date.parse(ended) < Date.parse(started))) throw new Error("Run timestamps do not match its state");
   if (integer(raw.activeMs, TASK_LIMITS.activeMs) > integer(raw.chargedMs, TASK_LIMITS.activeMs)) throw new Error("Recorded active time exceeds its budget charge");
   const review = raw.review === undefined ? undefined : parseResultReview(raw.review);
+  const output = raw.output === undefined ? undefined : parseOutputReceipt(raw.output);
   const retrievals = raw.retrievals === undefined ? undefined : array(raw.retrievals, 8).map(parseResearchReceipt);
   if (retrievals && (new Set(retrievals.map((read) => read.url)).size !== retrievals.length || retrievals.some((read) => Date.parse(read.retrievedAt) < Date.parse(started) || ended && Date.parse(read.retrievedAt) > Date.parse(ended)))) throw new Error("Retrieval receipts must be unique and belong to this run");
   if ((raw.state === "accepted") !== Boolean(review) || (review && review.runId !== raw.id)) throw new Error("Acceptance requires a matching user review");
-  return { ...(review ? { review } : {}), ...(retrievals ? { retrievals } : {}), id: taskString(raw.id, 120), sequence, inputId: taskString(raw.inputId, 120), inputKind: raw.inputKind, state: raw.state as TaskRunState, started, activeMs: integer(raw.activeMs, TASK_LIMITS.activeMs), chargedMs: integer(raw.chargedMs, TASK_LIMITS.activeMs), toolCalls: integer(raw.toolCalls, TASK_LIMITS.tools), modelRequests: integer(raw.modelRequests, TASK_LIMITS.rounds), note: typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "", ...(ended ? { ended } : {}), ...(recovered ? { recovered } : {}), ...(raw.stop === undefined ? {} : { stop: taskString(raw.stop, 120) }) };
+  return { ...(review ? { review } : {}), ...(retrievals ? { retrievals } : {}), ...(output ? { output } : {}), id: taskString(raw.id, 120), sequence, inputId: taskString(raw.inputId, 120), inputKind: raw.inputKind, state: raw.state as TaskRunState, started, activeMs: integer(raw.activeMs, TASK_LIMITS.activeMs), chargedMs: integer(raw.chargedMs, TASK_LIMITS.activeMs), toolCalls: integer(raw.toolCalls, TASK_LIMITS.tools), modelRequests: integer(raw.modelRequests, TASK_LIMITS.rounds), note: typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "", ...(ended ? { ended } : {}), ...(recovered ? { recovered } : {}), ...(raw.stop === undefined ? {} : { stop: taskString(raw.stop, 120) }) };
 }
 
 

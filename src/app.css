@@ -645,6 +645,12 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 
 .schedule-contract { white-space: pre-wrap; overflow-wrap: anywhere; }
 
+.schedule-reconcile { width: min(36rem, calc(100vw - 2rem)); max-height: 85vh; overflow: auto; border: 1px solid var(--border); border-radius: 12px; padding: 24px; background: var(--bg); color: var(--fg); }
+.schedule-reconcile form { display: grid; gap: 16px; }
+.schedule-reconcile label { display: flex; gap: 8px; align-items: start; overflow-wrap: anywhere; }
+.schedule-reconcile label:has(textarea) { display: grid; }
+.schedule-reconcile textarea { width: 100%; }
+
 /* A turn's working, in order, behind its footer toggle: never while it runs (the
    live status says what is happening), on hover once done, always if a step failed. */
 .status:not(.done) .steps-toggle { display: none; }

@@ -242,7 +242,9 @@ test("interrupted journals expire approval authority and require reconciliation 
     assert.equal(tasks.get(task.id).operations[0]?.state, "uncertain");
     await assert.rejects(tasks.answer(task.id, "expired", "allow"));
     await assert.rejects(tasks.input(task.id, { id: "resume", message: "Continue" }), /Review uncertain/);
-    await tasks.input(task.id, { id: "resume", message: "I checked the effect", reconciled: true });
+    await assert.rejects(tasks.input(task.id, { id: "resume", message: "Continue", reconciled: true }), /Review uncertain/);
+    await assert.rejects(tasks.input(task.id, { id: "resume", message: "Continue", reconciliation: { revision: tasks.get(task.id).revision, operationIds: ["wrong"], note: "Checked the service" } }), /exact operation IDs/);
+    await tasks.input(task.id, { id: "resume", message: "I checked the effect", reconciliation: { revision: tasks.get(task.id).revision, operationIds: ["unknown"], note: "Checked the connected service and confirmed the previous effect" } });
     await until(() => tasks.get(task.id).state === "needs_input");
     assert.equal(tasks.get(task.id).operations[0]?.state, "reviewed");
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }

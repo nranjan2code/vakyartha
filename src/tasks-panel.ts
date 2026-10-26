@@ -105,17 +105,24 @@ export class TasksPanel {
     const id = this.session();
     if (!this.owns(id)) throw new Error("No selected task");
     const detail = parseTaskView(await api<unknown>(`/api/tasks/${encodeURIComponent(id)}`));
-    let reconciled = false;
-    if (detail.operations.some((op) => op.state === "uncertain")) {
-      reconciled = await ask("Some operations may already have happened. Check the connected service or files first. Continue only after reviewing their effects.", "I checked; continue");
-      if (!reconciled) throw new Error("Review uncertain operations before continuing");
+    const uncertain = detail.operations.filter((op) => op.state === "uncertain");
+    let reconciliation: { revision: number; operationIds: string[]; note: string } | undefined;
+    if (uncertain.length) {
+      const note = el("textarea", { required: true, minLength: 12, maxLength: 1000, rows: 4, "aria-label": "What did you check?" });
+      const dialog = el("dialog", { className: "schedule-reconcile", "aria-label": "Review uncertain operations" });
+      const form = el("form", { method: "dialog" }, el("h2", { textContent: "Review uncertain operations" }), el("p", { textContent: "Check the affected service or files. Record what happened before continuing. This records your review; it does not repeat an operation or verify its meaning automatically." }), ...uncertain.map((op) => el("label", {}, el("input", { type: "checkbox", required: true }), `${op.tool} · ${op.id}`)), el("label", {}, "What did you check?", note), el("div", { className: "task-controls" }, el("button", { value: "cancel", formNoValidate: true, textContent: "Cancel" }), el("button", { value: "reviewed", textContent: "Record review and continue" })));
+      dialog.append(form); document.body.append(dialog); dialog.showModal();
+      const confirmed = await new Promise<boolean>((resolve) => dialog.addEventListener("close", () => resolve(dialog.returnValue === "reviewed"), { once: true }));
+      const checked = note.value.trim(); dialog.remove();
+      if (!confirmed) throw new Error("Review uncertain operations before continuing");
+      reconciliation = { revision: detail.revision, operationIds: uncertain.map((op) => op.id), note: checked };
     }
-    await api(`/api/tasks/${encodeURIComponent(id)}/input`, { method: "POST", body: JSON.stringify({ id: crypto.randomUUID(), message, action, revision, reconciled }) });
+    await api(`/api/tasks/${encodeURIComponent(id)}/input`, { method: "POST", body: JSON.stringify({ id: crypto.randomUUID(), message, action, revision, ...(reconciliation ? { reconciliation } : {}) }) });
     await this.refresh();
   }
 
   private async remove(t: TaskView): Promise<void> {
-    if (!(await ask(`Delete “${t.goal.slice(0, 120)}”? This removes its conversation, drafts and raw diagnostic transcript. External changes, shared memory, integrations, credentials, integration logs and numeric usage records are kept.`, "Delete"))) return;
+    if (!(await ask(`Delete “${t.goal.slice(0, 120)}”? This removes its conversation, drafts, input snapshots, local task output files and raw diagnostic transcript. Downloaded copies, external changes, shared memory, integrations, credentials, integration logs and numeric usage records are kept.`, "Delete"))) return;
     let confirmUncertain = false;
     if (t.operations.some((op) => op.state === "uncertain" || op.state === "started")) {
       confirmUncertain = await ask("Some external effects are uncertain. Deleting removes the recovery record, but cannot undo those effects. Review the affected service or files first.", "Delete recovery record");

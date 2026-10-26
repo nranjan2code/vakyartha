@@ -30,7 +30,7 @@ test("research completion rejects failed/missing reads, invented quotes, scope g
   const sources = new Map(urls.map((url) => [url, { text: quote, retrievedAt: retrieved_at }]));
   assert.deepEqual(checkTaskResult(policy, good, sources), []);
   assert.ok(checkTaskResult(policy, good, new Map()).length);
-  assert.ok(checkTaskResult(policy, result("evidence", [{ source: urls[0], quote: "This invented claim does not occur in the actual source response.", retrieved_at }], ["source", "quote", "retrieved_at"]), sources).some((issue) => issue.includes("verbatim")));
+  assert.ok(checkTaskResult(policy, result("evidence", [{ source: urls[0], quote: "This invented claim does not occur in the actual source response.", retrieved_at }], ["source", "quote", "retrieved_at"]), sources).some((issue) => issue.includes("contiguous")));
   assert.ok(checkTaskResult(policy, result("evidence", [{ source: urls[0], quote }], ["source", "quote", "conclusion"]), sources).some((issue) => issue.includes("Evidence columns")));
   const row = (evidence.root.children[0]!.props.rows as Record<string, unknown>[])[0]!;
   row.retrieved_at = "2000-01-01T00:00:00.000Z";
@@ -110,4 +110,12 @@ test("user-supplied notices must be visible; metadata and negated word fragments
 test("visible notices are optional, bounded and supported for either checked layout", () => {
   for (const notices of [[], [""], ["x".repeat(121)], Array(9).fill("Notice"), "Fictional"]) assert.throws(() => parseTaskResultPolicy({ kind: "comparison", notices }));
   assert.deepEqual(parseTaskResultPolicy({ kind: "research", notices: ["Unverified", "Unverified"] }), { kind: "research", notices: ["Unverified"] });
+});
+
+test("quote correction hints use only a contiguous actual source span and never rewrite a claim", async () => {
+  const { matchingExcerpt } = await import("../research-contract.ts");
+  const source = "A number of domains are maintained for documentation purposes without coordination.";
+  assert.equal(matchingExcerpt("Heading - " + source, source), source);
+  assert.equal(matchingExcerpt("An unrelated unsupported recommendation", source), undefined);
+  assert.ok(matchingExcerpt("x".repeat(1000), "x".repeat(20000))!.length <= 240);
 });

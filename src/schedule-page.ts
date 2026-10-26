@@ -1,4 +1,5 @@
 import { parseTaskResultPolicy } from "../task-result.ts";
+import { parseTaskFiles } from "../task-files.ts";
 import { parseRunUsage } from "../finops.ts";
 import { TASK_LABELS, TASK_RUN_LABELS, TASK_LIMITS, TASK_BUDGET_DEFAULTS, TASK_BUDGET_MAX, parseTaskLimits, parseReviewSnapshot, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../task-contract.ts";
 import { scheduleLabel } from "../schedule.ts";
@@ -6,6 +7,7 @@ import { $, api, ask, el } from "./core.ts";
 import { icon } from "./icons.ts";
 import { current } from "./models.ts";
 import { openSettings } from "./settings.ts";
+import { downloadMarkdown } from "./backend.ts";
 
 interface Capability { id: string; name: string; summary: string; ready: boolean; free: boolean; access: string[] }
 type Filter = "all" | "upcoming" | "attention" | "active" | "history";
@@ -172,7 +174,7 @@ export class SchedulePage {
       const operations = task.operations.filter((operation) => operation.runId === snapshot.runId);
       if (operations.length) {
         result.append(el("h3", { textContent: "Tool call records" }), el("p", { className: "hint", textContent: "Returned means a response was received. Verify the external outcome separately." }));
-        for (const operation of operations) result.append(el("p", { textContent: `${operation.tool} · ${operation.state} · ${operation.id}` }));
+        for (const operation of operations) result.append(el("p", { textContent: `${operation.tool} · ${operation.state} · ${operation.id}${operation.reconciliation ? ` · Reviewed ${operation.reconciliation.at}: ${operation.reconciliation.note}` : ""}` }));
       }
       const note = el("textarea", { id: "review-evidence", required: true, maxLength: 4000, rows: 5, placeholder: "What did you check? Reference the sources, values, output or operation receipts that support the criteria." });
       const confirm = el("input", { id: "review-confirm", type: "checkbox", required: true });
@@ -218,7 +220,20 @@ export class SchedulePage {
         const item = el("details", { className: "schedule-run" }, el("summary", {}, el("span", { className: "schedule-run-sequence", textContent: String(run.sequence).padStart(2, "0") }), el("span", {}, el("strong", { textContent: run.inputKind === "action" ? "Surface interaction" : run.sequence === 1 ? "Initial run" : "Continuation" }), el("small", { textContent: date(run.started) })), el("span", { className: `schedule-badge ${run.state === "review" ? "needs_input" : run.state === "accepted" ? "completed" : run.state}`, textContent: TASK_RUN_LABELS[run.state] })));
         item.append(el("p", { textContent: run.note }), el("p", { className: "hint", textContent: `${run.modelRequests} model requests reserved · ${(run.chargedMs / 1000).toFixed(1)}s charged to the task budget` }), el("p", { className: "hint", textContent: `${timing} · ${run.state === "running" || run.recovered ? "Active time incomplete" : `${(run.activeMs / 1000).toFixed(1)}s active`} · ${run.toolCalls} tool ${run.toolCalls === 1 ? "call" : "calls"}${run.stop ? ` · Stop: ${run.stop}` : ""}` }), el("code", { className: "schedule-run-id", textContent: `Run ${run.id} · Input ${run.inputId}` }));
         if (run.review) item.append(el("p", { className: "hint", textContent: `Reviewed by you ${date(run.review.at)} · ${run.review.surfaces.length} saved surfaces · versions recorded` }), el("blockquote", { textContent: run.review.note }));
+        const reconciled = task.operations.filter((op) => op.runId === run.id && op.reconciliation);
+        for (const op of reconciled) item.append(el("p", { className: "hint", textContent: `${op.tool} · ${op.id} · Reviewed ${op.reconciliation!.at}: ${op.reconciliation!.note}` }));
         if (run.retrievals?.length) item.append(el("details", {}, el("summary", { textContent: "Source retrieval receipts" }), ...run.retrievals.map((read) => el("p", { className: "hint", textContent: `${read.url} · Retrieved ${read.retrievedAt}` }))));
+        if (run.output) {
+          const receipt = run.output;
+          const verify = (operation: "verify" | "retry") => async () => {
+            if (this.busy) return; this.busy = true;
+            try { await api(`/api/tasks/${task.id}/runs/${run.id}/output`, { method: "POST", body: JSON.stringify({ operation, revision: task.revision }) }); }
+            catch (error) { this.error((error as Error).message); return; }
+            finally { this.busy = false; }
+            await this.refresh(); await this.showDetail(task.id, false);
+          };
+          item.append(el("details", {}, el("summary", { textContent: `Saved output: ${receipt.state}` }), el("p", { textContent: `${receipt.filename} · ${receipt.bytes} bytes · ${receipt.at}` }), el("code", { className: "schedule-contract", textContent: `SHA-256 ${receipt.sha256}` }), el("p", { className: "hint", textContent: "Surfaces: " + ((receipt.surfaces ?? []).map((surface) => `${surface.id} v${surface.version}`).join(" · ") || "No surface references recorded") }), el("p", { className: "hint", textContent: receipt.error || "Hash and size verified when saved. Verify again to detect later modification or removal; the receipt does not verify the meaning of the result." }), el("div", { className: "task-controls" }, button("Download saved result", async () => { try { const saved = await api<{ filename: string; content: string }>(`/api/tasks/${task.id}/runs/${run.id}/output`); await downloadMarkdown(saved.filename, saved.content); } catch (error) { this.error((error as Error).message); } }), button("Verify saved file", verify("verify")), ...(run === task.runHistory.at(-1) ? [button("Retry saving result", verify("retry"))] : []))));
+        }
         const usage = el("p", { className: "hint", role: "status" });
         const loadUsage = button("Show usage", async () => {
           loadUsage.disabled = true;
@@ -243,6 +258,8 @@ export class SchedulePage {
         facts.append(el("dt", { textContent: "Exact comparison checks" }), el("dd", {}, el("details", {}, el("summary", { textContent: `${contract.rows.length} expected rows · ${contract.criteria ? "submitted criteria with checked calculations" : "fixed declared cells"}` }), el("pre", { textContent: JSON.stringify(contract, null, 2), className: "schedule-contract" }))));
       }
       if (task.resultPolicy?.notices?.length) facts.append(el("dt", { textContent: "Required visible notices" }), el("dd", { textContent: task.resultPolicy.notices.join(" · ") }));
+      if (task.inputs?.length) facts.append(el("dt", { textContent: "Input snapshots" }), el("dd", {}, ...task.inputs.map((input) => el("p", { textContent: `${input.name} · ${input.bytes} bytes · SHA-256 ${input.sha256} · captured input, current file freshness unverified` }))));
+      facts.append(el("dt", { textContent: "Saved output" }), el("dd", { textContent: task.output ? "Markdown in this app's data folder/outputs; one file per run, removed with this task" : "Workspace only" }), el("dt", { textContent: "Raw diagnostics" }), el("dd", { textContent: (task.diagnosticDays ?? 7) === 0 ? "Discard after each run" : `Remove after ${task.diagnosticDays ?? 7} days without model activity; checked after runs, hourly while idle and at startup` }));
       const aside = el("aside", {}, this.section("At a glance", facts), this.section("Your control", el("p", { textContent: "Each run is bounded. Changes follow your integration permissions, and results wait for your review." }), button("Manage integrations", () => void openSettings("integrations"))));
       if (task.state === "scheduled" || task.state === "paused") {
         const value = new Date(task.schedule!.at); const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
@@ -353,10 +370,14 @@ export class SchedulePage {
       const exact = $<HTMLTextAreaElement>("task-comparison-checks").value.trim();
       const resultPolicy = layout ? parseTaskResultPolicy({ kind: layout, ...(layout === "comparison" && exact ? { table: JSON.parse(exact) } : {}), ...(layout === "research" ? { sources: entries } : { labels: entries }), ...(notices.length ? { notices } : {}) }) : undefined;
       const limits = parseTaskLimits({ runs: Number($<HTMLInputElement>("task-budget-runs").value), modelRequests: Number($<HTMLInputElement>("task-budget-model").value), toolCalls: Number($<HTMLInputElement>("task-budget-tools").value), activeMs: Number($<HTMLInputElement>("task-budget-minutes").value) * 60000 });
+      const selectedFiles = Array.from($<HTMLInputElement>("task-files").files ?? []);
+      if (selectedFiles.length > 4 || selectedFiles.some((file) => file.size > 16000)) throw new Error("Choose up to four files of at most 16,000 bytes each");
+      const inputs = parseTaskFiles(await Promise.all(selectedFiles.map(async (file) => ({ name: file.name, content: new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer()) }))));
+      const outputKind = $<HTMLSelectElement>("task-output").value;
       const chosen = [...$("task-capabilities").querySelectorAll<HTMLInputElement>("input:checked")];
       const confirmedFree = chosen.filter((c) => c.dataset.free !== "true").map((c) => c.value);
       if (confirmedFree.length && !(await ask("You selected a server you configured. Continue only after checking its source, permissions and that there are no service fees for this work.", "I checked; continue"))) return;
-      const task = parseTaskView(await api<unknown>("/api/tasks", { method: "POST", body: JSON.stringify({ goal: $<HTMLTextAreaElement>("task-goal").value, criteria: $<HTMLTextAreaElement>("task-criteria").value, provider: current.provider, model: current.model, ...(resultPolicy ? { resultPolicy } : {}), limits, spending: $<HTMLSelectElement>("task-spending").value === "api_allowed" ? { kind: "api_allowed", acknowledged: $<HTMLInputElement>("task-spending-ack").checked } : { kind: "local_only" }, integrations: chosen.map((c) => c.value), confirmedFree, ...(later ? { schedule: { kind: "once", at: at.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, status: "armed", missed: "review" } } : {}) }) }));
+      const task = parseTaskView(await api<unknown>("/api/tasks", { method: "POST", body: JSON.stringify({ goal: $<HTMLTextAreaElement>("task-goal").value, criteria: $<HTMLTextAreaElement>("task-criteria").value, provider: current.provider, model: current.model, ...(resultPolicy ? { resultPolicy } : {}), inputs: inputs.map(({ name, content }) => ({ name, content })), ...(outputKind ? { output: { kind: outputKind } } : {}), diagnosticDays: Number($<HTMLSelectElement>("task-diagnostic-days").value), limits, spending: $<HTMLSelectElement>("task-spending").value === "api_allowed" ? { kind: "api_allowed", acknowledged: $<HTMLInputElement>("task-spending-ack").checked } : { kind: "local_only" }, integrations: chosen.map((c) => c.value), confirmedFree, ...(later ? { schedule: { kind: "once", at: at.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, status: "armed", missed: "review" } } : {}) }) }));
       $<HTMLFormElement>("task-create-form").reset(); this.formReady = false;
       await this.refresh(); await this.showDetail(task.id);
     } catch (err) { error.textContent = (err as Error).message; }

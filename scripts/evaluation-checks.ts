@@ -39,6 +39,12 @@ export function tableRows(view: SessionView): unknown[][] {
 
 export function tableOutputText(view: SessionView): string { return JSON.stringify(tableRows(view)); }
 
+/** Markdown text is still visible text; text-projector formatting is not an
+ * exact-content comparator for multiline headings, lists and separators. */
+export function visibleTextValues(view: SessionView): { surface: string; content: string }[] {
+  return resolvedSurfaces(view).flatMap((surface) => nodesOf(surface.root).filter((node) => node.type === "text" && typeof node.props.content === "string").map((node) => ({ surface: surface.id, content: node.props.content as string })));
+}
+
 /** Read reachable controls at their actual binding, including template instances. */
 export function boundFieldValues(view: SessionView): { label: string; value: unknown }[] {
   return resolvedSurfaces(view).flatMap((surface) => nodesOf(surface.root).filter((node) => ["input", "select", "checkbox", "textarea", "date"].includes(node.type) && node.bindPath !== undefined).map((node) => ({ label: String(node.props.label ?? ""), value: getAt(surface.data, node.bindPath!) })));

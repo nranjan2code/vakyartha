@@ -45,3 +45,12 @@ The repository is public: <https://github.com/nranjan2code/vakyartha>. Report a 
 - `test/finops.test.ts`: the token-protected HTTP path, and no prompt or tool content copied into the usage ledger.
 - The framework's checks (`framework/packages/host/test`, `framework/packages/mcp/test`, including installs and folder checks in `integrations.test.ts`) run with `npm run test:framework`.
 - Before every push: the secret scan in AGENTS.md.
+
+
+## Task-selected files and local outputs
+
+Only explicitly selected UTF-8 `.txt`, `.md`, `.csv`, `.json` snapshots are accepted for task input (four files, 16,000 bytes each/48,000 total). The browser supplies filename/content, never a host path or folder grant. The server computes snapshot hashes; contents are untrusted model context and are sent to the selected task model. They grant no tool or network authority. Live external access remains governed by the existing integration scope/approval lifecycle.
+
+Optional task Markdown exports use a fixed private app-data output directory and generated task/run filenames. Exclusive creation and no-follow reads refuse overwrite/symlink substitution; hash/size read-back produces receipts, and missing/changed/stale output blocks acceptance. Manual save retry never repeats model or integration work. Task-local diagnostic retention expires the named transcript after the configured idle interval, while necessary canonical content persists until task deletion. Deletion removes owned snapshots, outputs, checkpoints, transcript and UI drafts. Downloaded copies, external effects, shared memory/integration logs, credentials and numeric usage remain according to the explicit UI scope.
+
+A dispatched operation with an uncertain outcome stops automatic work. Continuation needs the exact current operation IDs, task revision and a dated user review note. Same-run duplicate call IDs and accepted input IDs are not replayed; this does not assert exactly-once behavior by arbitrary external services. Raw file content is not copied into numeric telemetry or credentials. No new native IPC or dependency is introduced.

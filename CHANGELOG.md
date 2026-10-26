@@ -4,6 +4,10 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Task setup accepts bounded selected UTF-8 snapshots and an optional local Markdown destination. Saved output receipts include read-back hashes, size and available surface versions, with verify/download and save retry without generation. Missing/changed/stale outputs block acceptance.
+- Task diagnostic retention and scoped deletion now include owned input/output/checkpoint content. Uncertain operations require exact-ID, revision-bound evidence review; duplicate call IDs are not redispatched and uncertain dispatched effects stop work.
+- Projection pin `d1248e2` adds caller constraints during surface correction, schema-governed recovery of sibling settings inside serialized lists, and abandoned session-checkpoint removal. Checked research reaches user review and saves a verified output; general semantic/reliability gates remain open.
+
 - Checked comparisons can declare immutable facts/formulas and editable numeric criteria; validated form submissions update expected claims, so old boolean claims are rejected after criteria change.
 - Checked research requires a visible answer and limitations, verbatim evidence and application retrieval dates. Successful source receipts persist with each run and appear in details; fabricated dates and missing output fail checks. Full local research authoring reliability remains open.
 - Projection pin `558ca0c` includes merged PR #2: cyclic ancestor references are removed without discarding valid sibling content or data. Checked tasks use the existing strict schema mode.

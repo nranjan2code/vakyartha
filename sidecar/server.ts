@@ -14,6 +14,7 @@ import { Channels, CHANNELS } from "./channels.ts";
 import { createIntegrations } from "./integrations.ts";
 import { runUsage } from "../finops.ts";
 import { Finops } from "./finops.ts";
+import { TaskFiles } from "./task-files.ts";
 import { fileSecrets, keychainStore, Settings, SettingsError } from "./settings.ts";
 import { checkTaskSpending } from "./task-policy.ts";
 import { Tasks } from "./tasks.ts";
@@ -259,6 +260,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
   integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm });
   const freeCapabilities = new Set(["time", "web", "files", "memory"]);
   tasks = await Tasks.open({
+    files: new TaskFiles(path.join(dataDir, "outputs"), opts.transcriptsDir ?? path.join(dataDir, "transcripts")),
     dir: path.join(dataDir, "tasks"), run: host.run, view: host.view, remove: host.remove,
     tools: (session) => integrations!.toolsFor(session), instructions: INSTRUCTIONS,
     observe: (session, work, run) => finops.chat(async () => { finops.session(session); await work(); }, run), warn: log,
@@ -275,6 +277,12 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
 
   async function tasksRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     const p = url.pathname;
+    const outputRun = /^\/api\/tasks\/([\w-]+)\/runs\/([\w-]+)\/output$/.exec(p);
+    if (outputRun && (req.method === "POST" || req.method === "GET")) {
+      try { json(res, 200, req.method === "GET" ? await tasks!.outputContent(outputRun[1]!, outputRun[2]!) : await tasks!.output(outputRun[1]!, outputRun[2]!, await readJson(req))); }
+      catch (error) { json(res, 409, { error: (error as Error).message }); }
+      return true;
+    }
     // A task's session is controlled through task commands even between runs.
     const sessionId = /^\/api\/sessions\/([^/]+)$/.exec(p)?.[1];
     if (sessionId && req.method !== "GET" && tasks?.owns(decodeURIComponent(sessionId))) {

@@ -69,3 +69,12 @@ test("hidden and unreachable nodes cannot supply evaluation facts or criterion d
   assert.deepEqual(boundFieldValues(view), []);
   assert.equal(resultText(view).includes("Fictional"), false);
 });
+
+test("multiline Markdown explanation is checked at canonical visible text nodes", async () => {
+  const { visibleTextValues } = await import("../scripts/evaluation-checks.ts");
+  const answer = "### Documentation\nUseful for examples.\n\n---\nProduction use needs a real service.";
+  const view: SessionView = { id: "research", title: "", updated: "", timeline: [], surfaces: [{ id: "evidence", version: 1, data: { research: { answer } }, nodes: [{ id: "root", type: "stack", children: ["answer"] }, { id: "answer", type: "text", props: { content: "{/research/answer}" } }] }] };
+  assert.deepEqual(visibleTextValues(view), [{ surface: "evidence", content: answer }]);
+  view.surfaces[0]!.nodes[1]!.props!.visibleIf = false;
+  assert.deepEqual(visibleTextValues(view), []);
+});

@@ -42,18 +42,18 @@ Owner: Vakyartha for product behavior; framework fixes only after D7. Acceptance
 - [x] P0.4. Preserve independent drafts across canvas closing, surface/task switches and restart; expose conflicts with incoming updates.
 - [x] P0.5. Replace implicit cancellation by follow-up submissions with explicit queue/rejection behavior and separate cancellation.
 - [x] P0.6. Make complete approval arguments inspectable, define scope/revocation, and keep permission decisions outside generated surfaces.
-- [ ] P0.7. Define deletion and transcript retention together; verify deletion removes raw content within the stated scope.
+- [x] P0.7. Task-local diagnostic retention and scoped deletion are defined together (ADR-026): owned raw transcripts, inputs, local outputs, checkpoints and drafts are removed; downloaded/shared/external records retained as explained. Filesystem and WebKit deletion checks cover the stated scope.
 
 ## P1 — Bounded task execution
 
 Owner: Vakyartha; any missing general execution contract goes through D7. Acceptance: M1–M4.
 
-- [ ] P1.1. Create and persist a task with goal, inputs, completion conditions, model, tool scope, output destination and limits.
+- [x] P1.1. Persist goal, bounded selected UTF-8 input snapshots, completion conditions, model/tool scope, optional local Markdown output destination and limits (ADR-026). No implicit folder access.
 - [x] P1.2. Implement persisted lifecycle states and allowed transitions, including waiting, interruption and explicit continuation.
 - [x] P1.3. Execute one task at a time with a durable queue; release the slot during user waits. Approval suspends the same host call, resumes through the dispatcher and rechecks authority; three two-task interleavings and shutdown/restart covered in `test/tasks.test.ts`.
 - [x] P1.4. Keep execution alive across view changes, hidden windows and event-stream disconnects while the app remains running.
 - [x] P1.5. Separate progress/surface publication from task completion without breaking existing framework clients. Projection `dbae5c2` adds opt-in response completion; app tasks use it, ordinary clients retain projection completion. Host/provider regressions and app task WebKit checks pass. Product completion still requires user evidence review.
-- [ ] P1.6. Record operation identity and outcome; reconcile uncertain effects before retrying. Repeated submissions do not duplicate external effects.
+- [x] P1.6. Record operation identity/outcome; uncertain effects stop work and require exact-ID, revision-bound user reconciliation. Durable input deduplication and same-run call-ID guards prevent redispatch of those identities. Service-level exactly-once behavior is not claimed.
 - [x] P1.7. Stop new work on cancellation and report completed or uncertain in-flight effects honestly.
 - [x] P1.8. Persist pending approval identity and scope; enforce task tool restrictions and fresh checks for delayed, changed or resumed operations. Existing chat-wide grants do not silently transfer.
 - [ ] P1.9. Verify completion conditions with evidence and retain useful partial results on failure. Manual evidence review implemented (ADR-011): required note/confirmation, current-run result, revision/fingerprint guard and recorded surface versions. Automatic/source verification remains open.
@@ -68,7 +68,7 @@ Owner: Vakyartha. Reuse framework rendering and actions. Acceptance: M5 and M8.
 - [x] P2.4. Route any surface's action to its owning task/outside agent, independently of which task is visible.
 - [x] P2.5. Preserve all supported interactions after completion; additional work becomes an explicit continuation with its own record.
 - [x] P2.6. Prevent background updates from stealing focus, opening another task's canvas or changing the user's selection unexpectedly.
-- [ ] P2.7. Link evidence and output receipts to artifacts; distinguish real, sample, missing and stale information. User review now records run/surface version references and rejects stale results; output-file receipts and provenance classification remain open.
+- [ ] P2.7. Link evidence and output receipts to artifacts; distinguish real, sample, missing and stale information. User review now records run/surface version references and rejects stale results; output-file receipts now have hash/size/version references, verify/download and missing/modified states (ADR-026). Broader provenance classification remains open.
 - [ ] P2.8. Verify keyboard, assistive-technology status announcements, focus return and wide/narrow layouts.
 
 ## P3 — Limits, data and recovery
@@ -78,9 +78,9 @@ Owner: Vakyartha for policies and records; general enforcement gaps through D7. 
 - [x] P3.1. Enforce finite active-time, model-request, tool-attempt and retry limits with understandable stop reasons. ADR-013: per-run guards plus persisted cumulative reservations, monotonic deadline checks, and no reset across continuations/restart. `test/task-budget.test.ts` covers limits, retries, effects, waits and recovery; task WebKit smoke exercises a shared three-request/three-run budget. In-flight effects still follow cooperative cancellation/reconciliation rules.
 - [x] P3.2. Attribute usage to tasks/runs; identify unknown costs and prevent silent paid-model switching. Dispatcher-owned IDs reach the numeric ledger, Schedule summaries, FinOps work filters/details and CSV. HTTP tests reject forged attribution; concurrent-run isolation and unknown/missing costs are covered. Runs retain their explicit model, with no fallback. Tool/server charges are unmeasured and explicitly excluded; ceilings remain P3.3.
 - [x] P3.3. Define behavior when a required monetary ceiling cannot be conservatively enforced. ADR-012: reject strict-ceiling requests before admission; local-only is default, external model API charges require acknowledgement, and operating/tool costs remain explicitly separate. `test/task-spending.test.ts`, HTTP admission tests and WebKit acknowledgement checks. Cumulative execution budgets are now implemented (ADR-013); actual monetary enforcement remains open.
-- [ ] P3.4. Checkpoint safely, expose failed saves and recover interrupted tasks without blindly repeating writes.
-- [ ] P3.5. Store necessary drafts/content separately from numeric telemetry and credentials; apply retention controls.
-- [ ] P3.6. Delete task-owned records, drafts and applicable diagnostics; retain shared/external data only according to the explained scope.
+- [x] P3.4. Persist expected output identity/hash before writes, expose failures, check pending saves after restart and offer explicit local save retry without model/tool replay. Dispatched uncertainty stops work; canonical host saves propagate errors.
+- [x] P3.5. Content/drafts remain separate from numeric usage and credentials. Raw task diagnostics have discard/1/7/30 idle-day controls; canonical content remains until task deletion. Shared logs keep the stated separate scope.
+- [x] P3.6. Scoped deletion removes task records, selected snapshots, local outputs, drafts, canonical session, raw transcript and abandoned checkpoints. Downloaded/shared/external data remain according to the explicit confirmation.
 - [ ] P3.7. Show completion, failure, input and approval attention without unchanged repeat notifications.
 - [ ] P3.8. Detect unavailable models/tools, lost authorization and unsupported inputs with actionable next steps.
 - [x] P3.9. Keep native supervision/platform/file operations in Rust where justified; do not add native relays for task commands, surface streaming or field edits. Core task behavior remains available through the shared app server without the native window.
@@ -216,3 +216,8 @@ ADR-023/024 implemented: bounded caller-authored calculations, validated numeric
 
 
 Clean local install verified (2026-10-26): pushed code `2c71c44`/Projection main `558ca0c`, new Rust target and regenerated UI/sidecar, successful app+DMG, exact 1,949-file installed-bundle match and native About/new setup checks. Both repos have only pushed `main`. Unsigned/unnotarized, no public release or installed-model smoke. Final strict research report `2026-10-26T07-33-30.445Z-4c46b1ff` fails at the active-time cap; research correctness/reliability and P1.9/P4.1/P4.9 stay open. See EVALUATION.md for full provenance and the next raw replay.
+
+
+## Research and scoped task-file checkpoint — 2026-10-26
+
+ADR-025/026 implemented. Projection main includes batch-level caller constraints (`11b9123`), serialized list-member repair (`4b1131d`) and temporary-session cleanup (`d1248e2`). 99 app/287 framework tests and typecheck pass; native test and wide/narrow task/canvas checks pass, including snapshot selection, output read-back/download, no extra generation for verification, and exact-ID reconciliation. Research report `2026-10-26T08-15-19.960Z-08795b1b` reaches user review with matching source receipts and a verified 1,656-byte Markdown export in 10 requests/194.6s. Original harness verdict is retained; `review.json` records the corrected Markdown-visibility false negative. No automatic acceptance or broad reliability threshold claim. P1.9/P2.7/P4.1/P4.2/P4.9 remain open beyond this bounded evidence slice.

@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import type { SessionView } from "@vak/host";
 import type { IntegrationView, ToolPolicy } from "@vak/mcp/client";
-import { boundFieldValues, resultText, separateFormAndTable, tableOutputText, tableRows, tablePayloads } from "./evaluation-checks.ts";
+import { boundFieldValues, resultText, separateFormAndTable, tableOutputText, tableRows, tablePayloads, visibleTextValues } from "./evaluation-checks.ts";
 import { parseResearchSummary } from "../research-contract.ts";
 import { CATALOG } from "../sidecar/integrations.ts";
 import { startAppServer } from "../sidecar/server.ts";
@@ -75,7 +75,7 @@ const cases: Case[] = [
     check: async (task, view, integrations) => { const text = resultText(view); const calls = integrations.find((i) => i.entry.id === "web")?.calls.filter((c) => c.at >= task.created && c.ok === true) ?? [];
       const receipts = task.runHistory.at(-1)?.retrievals ?? [], rows = tablePayloads(view).flatMap((table) => Array.isArray(table.rows) ? table.rows : []);
       let explanationVisible = false;
-      for (const surface of view.surfaces) { try { const summary = parseResearchSummary(surface.data.research); explanationVisible ||= text.includes(JSON.stringify(summary.answer).slice(1, -1)) && text.includes(JSON.stringify(summary.limitations).slice(1, -1)); } catch {} }
+      for (const surface of view.surfaces) { try { const summary = parseResearchSummary(surface.data.research); explanationVisible ||= [summary.answer, summary.limitations].every((content) => visibleTextValues(view).some((text) => text.surface === surface.id && text.content === content)); } catch {} }
       return { explanationVisible, retrievalDatesMatch: urls.every((url) => receipts.some((receipt) => new URL(receipt.url).href === new URL(url).href && rows.some((row) => row && typeof row === "object" && row.source === receipt.url && row.retrieved_at === receipt.retrievedAt))), bothSourcesRead: urls.every((url) => calls.some((c) => new URL(String(taskObject(c.args).url)).href === new URL(url).href)), bothSourcesCited: urls.every((url) => text.includes(url)), evidenceRowsPresent: tableRows(view).filter((row) => row.some((cell) => cell !== undefined && cell !== null && cell !== "")).length >= 2, independentSurfaces: separateFormAndTable(view), form: types(view).has("form"), table: types(view).has("table"), subjectPresent: /documentation/i.test(text) && /production/i.test(text) }; } },
   { id: "memory-operation", integrations: ["memory"],
     goal: `Use memory__create_entities to create exactly one entity with name "${entity}", entityType "evaluation", observations ["${marker}"]. Then use memory__open_nodes with names ["${entity}"] to read it back. Show the actual read-back result in an interactive confirmation. Do not change any other entity. Do not claim verification without reading it back.`,
@@ -109,7 +109,7 @@ try {
       integrations = await request<IntegrationView[]>("/api/integrations");
       if (scenario.integrations.some((id) => !integrations.some((i) => i.entry.id === id && i.status === "ready"))) { results.push({ case: scenario.id, verdict: "blocked", reason: "Required installed integration is not ready" }); continue; }
       const started = Date.now();
-      const made = parseTaskView(await request("/api/tasks", { goal: scenario.goal, criteria: scenario.criteria, provider: "ollama", model, ...(scenario.id === "interactive-comparison" ? { resultPolicy: { kind: "comparison", labels: COMPARISON_FIXTURE.options.map((option) => option.name), table: interactiveComparisonContract(COMPARISON_FIXTURE), notices: ["Fictional"] } } : scenario.id === "public-source-research" ? { resultPolicy: { kind: "research", sources: urls } } : {}), integrations: scenario.integrations, spending: { kind: "local_only" }, limits: { runs: 2, modelRequests: 12, toolCalls: 6, activeMs: 300000 } }));
+      const made = parseTaskView(await request("/api/tasks", { goal: scenario.goal, criteria: scenario.criteria, ...(args.includes("--save-output") ? { output: { kind: "markdown" } } : {}), provider: "ollama", model, ...(scenario.id === "interactive-comparison" ? { resultPolicy: { kind: "comparison", labels: COMPARISON_FIXTURE.options.map((option) => option.name), table: interactiveComparisonContract(COMPARISON_FIXTURE), notices: ["Fictional"] } } : scenario.id === "public-source-research" ? { resultPolicy: { kind: "research", sources: urls } } : {}), integrations: scenario.integrations, spending: { kind: "local_only" }, limits: { runs: 2, modelRequests: 12, toolCalls: 6, activeMs: 300000 } }));
       active = made.id; let task = made, nextLog = 0; const decisions: { tool: string; decision: string }[] = [], answered = new Set<string>();
       while (["queued", "running", "needs_approval"].includes(task.state)) {
         if (task.approval && !answered.has(task.approval.id)) {
@@ -123,7 +123,7 @@ try {
       active = undefined;
       const view = await request<SessionView>(`/api/sessions/${task.id}`);
       integrations = await request<IntegrationView[]>("/api/integrations");
-      const checks = { awaitingUserReview: task.state === "needs_input", ...await scenario.check(task, view, integrations) };
+      const checks = { awaitingUserReview: task.state === "needs_input", ...await scenario.check(task, view, integrations), ...(args.includes("--save-output") ? { savedOutputVerified: await (async () => { const receipt = task.runHistory.at(-1)?.output; if (!receipt || receipt.state !== "saved") return false; const content = await readFile(path.join(root, "outputs", receipt.filename)); const { createHash } = await import("node:crypto"); return content.length === receipt.bytes && createHash("sha256").update(content).digest("hex") === receipt.sha256; })() } : {}) };
       const result = { case: scenario.id, task: task.id, verdict: evaluationVerdict(checks), checks, ...(scenario.id === "interactive-comparison" ? { comparisonReview: comparisonReview(view, COMPARISON_FIXTURE) } : {}), decisions, state: task.state, note: task.note, seconds: (Date.now() - started) / 1000, budget: task.budget, surfaces: view.surfaces.map((s) => ({ id: s.id, types: [...new Set(s.nodes.map((n) => n.type))] })), manualReviewRequired: true };
       results.push(result); await writeFile(path.join(reportDir, `${scenario.id}.json`), JSON.stringify({ result, task, view }, null, 2), { mode: 0o600 }); console.log(`${scenario.id}: ${result.verdict}`);
       if (scenario.id === "interactive-comparison" && args.includes("--change-criteria") && task.state === "needs_input") {

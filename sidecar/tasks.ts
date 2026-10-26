@@ -1,6 +1,8 @@
-import { parseTaskResultPolicy, resultInstructions, reviewTaskResult } from "../task-result.ts";
+import { checkTaskResult, parseTaskResultPolicy, resultInstructions, reviewTaskResult } from "../task-result.ts";
 import { reviseComparisonCriteria } from "../comparison-contract.ts";
 import type { ResearchRead } from "../research-contract.ts";
+import { parseTaskFiles, parseTaskOutput, parseDiagnosticDays } from "../task-files.ts";
+import { TaskFiles, digest, inputInstructions, taskMarkdown } from "./task-files.ts";
 import { MAX_TOOL_OUTPUT } from "@vak/mcp/client";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
@@ -13,6 +15,7 @@ import { TASK_LIMITS, TASK_BUDGET_DEFAULTS, parseTaskLimits, parseTaskSpending, 
 import { parseSchedule, SCHEDULE_GRACE_MS } from "../schedule.ts";
 
 interface Dependencies {
+  files?: TaskFiles;
   dir: string;
   run(input: HostTurn, options: HostRunOptions): Promise<{ stop: string }>;
   view(session: string): Promise<SessionView>;
@@ -42,9 +45,13 @@ export class Tasks {
   private readonly answers = new Map<string, (decision: "allow" | "deny") => void>();
   private readonly deciding = new Set<string>();
   private readonly deleting = new Set<string>();
+  private readonly outputBusy = new Set<string>();
   private readonly deps: Dependencies;
   private wake?: ReturnType<typeof setTimeout>;
   private checking?: Promise<void>;
+  private retention?: ReturnType<typeof setInterval>;
+  private retentionWork?: Promise<void>;
+  private readonly pruning = new Set<string>();
 
   private constructor(deps: Dependencies) { this.deps = deps; }
 
@@ -52,10 +59,16 @@ export class Tasks {
     const owner = new Tasks(deps);
     await mkdir(deps.dir, { recursive: true, mode: 0o700 });
     for (const file of await readdir(deps.dir)) {
+      if (/^[\w-]{1,120}\.json\.[a-f0-9-]{36}\.tmp$/.test(file)) { await rm(path.join(deps.dir, file), { force: true }); continue; }
       if (!/^[\w-]{1,120}\.json$/.test(file)) continue;
       const t = parseTaskView(JSON.parse(await readFile(path.join(deps.dir, file), "utf8")));
+      if (t.inputs?.some((input) => digest(input.content) !== input.sha256)) throw new Error("Input snapshot hash does not match its content");
       if (file !== `${t.id}.json`) throw new Error("Task identity does not match its journal");
       let recovered = false;
+      for (const run of t.runHistory) if (run.output?.state === "pending" && deps.files) {
+        run.output = await deps.files.verify(run.output);
+        recovered = true;
+      }
       for (const run of t.runHistory) if (run.state === "running") {
         run.state = "interrupted"; run.recovered = new Date().toISOString();
         run.note = "Execution stopped before a final record was saved. End time and external effects may be unknown.";
@@ -73,11 +86,67 @@ export class Tasks {
     // Past triggers are held for review after restart, never silently replayed.
     await owner.checkSchedules(true);
     owner.planWake();
+    if (deps.files) {
+      await owner.pruneDiagnostics();
+      owner.retention = setInterval(() => {
+        if (owner.retentionWork) return;
+        owner.retentionWork = owner.pruneDiagnostics().catch((error: unknown) => deps.warn(`Diagnostic cleanup failed: ${String(error)}`)).finally(() => { owner.retentionWork = undefined; });
+      }, 3600000);
+      owner.retention.unref();
+    }
     return owner;
   }
 
   list(): TaskSummary[] { return [...this.tasks.values()].map(({ id, session, goal, state, updated, revision, note, schedule }) => ({ id, session, goal: goal.slice(0, 120), state, updated, revision, note, ...(schedule ? { schedule: structuredClone(schedule) } : {}) })).sort((a, b) => b.updated.localeCompare(a.updated)); }
   get(id: string): TaskView { const t = this.tasks.get(id); if (!t) throw new Error("Task not found"); return this.copy(t); }
+  private async pruneDiagnostics(): Promise<void> {
+    for (const task of this.tasks.values()) if (!this.running.has(task.id)) {
+      this.pruning.add(task.id);
+      try { await this.deps.files?.prune(task.id, task.diagnosticDays ?? 7); }
+      finally { this.pruning.delete(task.id); this.pump(); }
+    }
+  }
+
+  private async exportResult(t: TaskView, run: TaskRun): Promise<void> {
+    if (!t.output) return;
+    const files = this.deps.files;
+    if (!files) throw new Error("Local task output storage is unavailable");
+    const view = await this.deps.view(t.session), content = taskMarkdown(view);
+    const surfaces = view.surfaces.map(({ id, version }) => ({ id, version }));
+    if (run.output?.surfaces && JSON.stringify(run.output.surfaces) !== JSON.stringify(surfaces)) throw new Error("Saved result versions changed; use the output of a new run");
+    run.output ??= files.prepare(t.id, run.id, content, surfaces);
+    await this.persist(t); // Expected identity/hash is durable before the write.
+    try { run.output = await files.save(run.output, content); }
+    catch (error) {
+      run.output = { ...run.output, state: "failed", error: (error as Error).message.slice(0, 1000) };
+      await this.persist(t);
+      throw new Error(`Output could not be saved: ${run.output.error}. Review the result and retry saving; no model or tool operation will be repeated.`);
+    }
+    await this.persist(t);
+  }
+
+  async output(id: string, runId: string, value: unknown): Promise<TaskView> {
+    const t = this.tasks.get(id), body = taskObject(value);
+    if (!t || this.running.has(id) || this.outputBusy.has(id) || this.deleting.has(id) || body.revision !== t.revision) throw new Error("Wait for work to stop and refresh the task before checking its output");
+    const run = t.runHistory.find((run) => run.id === runId);
+    if (!run?.output || !this.deps.files || !["verify", "retry"].includes(String(body.operation))) throw new Error("Choose a recorded output and verify or retry it");
+    this.outputBusy.add(id);
+    try {
+      if (body.operation === "verify") run.output = await this.deps.files.verify(run.output);
+      else {
+        if (run !== t.runHistory.at(-1) || !["end", "projected"].includes(run.stop ?? "")) throw new Error("Only the latest generated result can be saved again");
+        await this.exportResult(t, run);
+        if (t.state === "failed" || t.state === "interrupted") { t.state = "needs_input"; run.state = "review"; t.note = run.note = "Output saved. Review the recorded result against your criteria."; }
+      }
+      await this.persist(t);
+      return this.copy(t);
+    } finally { this.outputBusy.delete(id); }
+  }
+  async outputContent(id: string, runId: string): Promise<{ filename: string; content: string }> {
+    const t = this.tasks.get(id), receipt = t?.runHistory.find((run) => run.id === runId)?.output;
+    if (!t || !receipt || !this.deps.files || this.running.has(id) || this.deleting.has(id)) throw new Error("A saved idle task output is required");
+    return { filename: receipt.filename, content: await this.deps.files.read(receipt) };
+  }
   owns(session: string): boolean { return this.tasks.has(session); }
   inTask(): boolean { return Boolean(this.scope.getStore()); }
   providerSpending(id: string): TaskSpending | undefined {
@@ -126,8 +195,10 @@ export class Tasks {
     const work = previous.catch(() => {}).then(async () => {
       const file = path.join(this.deps.dir, `${t.id}.json`);
       const temporary = `${file}.${randomUUID()}.tmp`;
-      await writeFile(temporary, body, { mode: 0o600, flag: "wx" });
-      await rename(temporary, file);
+      try {
+        await writeFile(temporary, body, { mode: 0o600, flag: "wx" });
+        await rename(temporary, file);
+      } finally { await rm(temporary, { force: true }).catch(() => this.deps.warn("A temporary task checkpoint could not be removed; check storage permissions")); }
     }).catch((err: unknown) => {
       this.running.get(t.id)?.ctrl.abort(new Error("Task state could not be saved"));
       if (t.state !== "cancelled") t.state = "failed";
@@ -154,6 +225,10 @@ export class Tasks {
     const integrations = [...new Set(body.integrations as string[])];
     const confirmedFree = Array.isArray(body.confirmedFree) && body.confirmedFree.length <= 16 && body.confirmedFree.every(identifier) ? [...new Set(body.confirmedFree as string[])] : [];
     const resultPolicy = body.resultPolicy === undefined ? undefined : parseTaskResultPolicy(body.resultPolicy);
+    const inputs = body.inputs === undefined ? undefined : parseTaskFiles(body.inputs).map((input) => ({ ...input, sha256: digest(input.content) }));
+    const output = body.output === undefined ? undefined : parseTaskOutput(body.output);
+    const diagnosticDays = parseDiagnosticDays(body.diagnosticDays ?? 7);
+    if (output && !this.deps.files) throw new Error("Local output storage is unavailable");
     if (resultPolicy?.kind === "research" && !integrations.includes("web")) throw new Error("Source-backed research needs the ready Web pages capability selected");
     const spending = parseTaskSpending(body.spending);
     const limits = body.limits === undefined ? { ...TASK_BUDGET_DEFAULTS } : parseTaskLimits(body.limits);
@@ -162,7 +237,7 @@ export class Tasks {
     const schedule = body.schedule === undefined ? undefined : parseSchedule(body.schedule);
     if (schedule && (schedule.status !== "armed" || Date.parse(schedule.at) <= Date.now())) throw new Error("Choose a future date and time");
     const id = randomUUID(), at = new Date().toISOString();
-    const t: TaskView = { version: 5, revision: 0, id, session: id, goal, criteria, provider, model, integrations, confirmedFree, spending, ...(resultPolicy ? { resultPolicy } : {}), limits, budget: { modelRequests: 0, toolCalls: 0, activeMs: 0 }, state: "queued", created: at, updated: at, note: "Waiting to start", runs: 0, runHistory: [], pending: [{ id: randomUUID(), kind: "message", message: goal }], activity: [], operations: [], accepted: [] };
+    const t: TaskView = { version: 5, revision: 0, id, session: id, goal, criteria, provider, model, integrations, confirmedFree, spending, ...(resultPolicy ? { resultPolicy } : {}), ...(inputs ? { inputs } : {}), ...(output ? { output } : {}), diagnosticDays, limits, budget: { modelRequests: 0, toolCalls: 0, activeMs: 0 }, state: "queued", created: at, updated: at, note: "Waiting to start", runs: 0, runHistory: [], pending: [{ id: randomUUID(), kind: "message", message: goal }], activity: [], operations: [], accepted: [] };
     if (schedule) { t.schedule = schedule; t.state = "scheduled"; t.note = "Will run once at the selected time while this app is running and the computer is awake."; }
     await this.persist(t);
     this.tasks.set(id, t);
@@ -172,6 +247,7 @@ export class Tasks {
   }
 
   async input(id: string, value: unknown): Promise<TaskView> {
+    if (this.outputBusy.has(id)) throw new Error("Wait for the output operation to finish");
     const body = taskObject(value), input = parseTaskInput(value);
     const t = this.tasks.get(id); if (!t) throw new Error("Task not found");
     if (this.deleting.has(id)) throw new Error("Task is being deleted");
@@ -182,8 +258,13 @@ export class Tasks {
     if (t.accepted.length >= 256 || t.runs + t.pending.filter((p) => p.id !== this.running.get(id)?.inputId).length >= t.limits.runs) throw new Error("Task continuation limit reached; start a new task");
     if (t.budget.modelRequests >= t.limits.modelRequests || t.budget.activeMs >= t.limits.activeMs) throw new Error("Task budget exhausted or reserved by active work. Review the recorded limits before starting new work.");
     if (this.closed || t.state === "needs_approval" || t.pending.length >= TASK_LIMITS.pending) throw new Error("Resolve the pending approval or wait for queued inputs");
-    if (t.operations.some((o) => o.state === "uncertain") && body.reconciled !== true) throw new Error("Review uncertain external effects before continuing");
-    if (body.reconciled === true) for (const op of t.operations) if (op.state === "uncertain") op.state = "reviewed";
+    const uncertain = t.operations.filter((op) => op.state === "uncertain");
+    if (uncertain.length) {
+      if (!body.reconciliation) throw new Error("Review uncertain external effects before continuing");
+      const review = taskObject(body.reconciliation), note = text(review.note, 1000), ids = review.operationIds;
+      if (review.revision !== t.revision || note.length < 12 || !Array.isArray(ids) || ids.length !== uncertain.length || new Set(ids).size !== ids.length || uncertain.some((op) => !ids.includes(op.id))) throw new Error("Reconcile the current exact operation IDs and record what you checked; refresh if the task changed");
+      for (const op of uncertain) { op.state = "reviewed"; op.reconciliation = { at: new Date().toISOString(), note }; }
+    }
     if (["interrupted", "cancelled", "failed"].includes(t.state)) t.pending = [];
     t.pending.push(input);
     t.accepted.push(input.id);
@@ -208,11 +289,14 @@ export class Tasks {
   }
 
   async review(id: string): Promise<ReviewSnapshot> {
+    if (this.outputBusy.has(id)) throw new Error("Wait for the output operation to finish");
     const t = this.tasks.get(id);
     if (!t || this.deleting.has(id) || t.state !== "needs_input" || t.pending.length || t.runHistory.at(-1)?.state !== "review") throw new Error("Only a saved result awaiting review can be accepted");
     if (t.operations.some((o) => o.state === "started" || o.state === "uncertain")) throw new Error("Review unresolved operations first");
     const revision = t.revision, run = t.runHistory.at(-1)!;
+    if (t.output && (!run.output || !this.deps.files || (await this.deps.files.verify(run.output)).state !== "saved")) throw new Error("The requested saved output is missing or changed. Verify or retry its save before accepting the result");
     const view = await this.deps.view(t.session);
+    if (run.output?.surfaces && JSON.stringify(run.output.surfaces) !== JSON.stringify(view.surfaces.map(({ id, version }) => ({ id, version })))) throw new Error("The output's surface versions are stale; review the latest saved run");
     if (this.deleting.has(id) || t.revision !== revision || t.state !== "needs_input" || t.pending.length) throw new Error("Task changed during review. Open a fresh review.");
     const assistant = view.timeline.findLast((e) => e.kind === "assistant" && Date.parse(e.at) >= Date.parse(run.started));
     if (!assistant) throw new Error("This run has no saved assistant result to review");
@@ -239,6 +323,7 @@ export class Tasks {
   }
 
   async remove(id: string, value: unknown): Promise<void> {
+    if (this.outputBusy.has(id)) throw new Error("Wait for the output operation to finish");
     if (!this.deps.remove) throw new Error("Task deletion is unavailable");
     if (this.deleting.has(id)) throw new Error("Task is being deleted");
     const t = this.tasks.get(id); if (!t) throw new Error("Task not found");
@@ -251,7 +336,9 @@ export class Tasks {
       await this.writes.get(id);
       if (body.revision !== t.revision) throw new Error("Task changed while you reviewed deletion; check it again");
       await this.deps.remove(id);
+      await this.deps.files?.remove(id, t.runHistory.flatMap((run) => run.output ? [run.output] : []));
       await rm(path.join(this.deps.dir, `${id}.json`), { force: true });
+      for (const file of await readdir(this.deps.dir)) if (file.startsWith(`${id}.json.`) && /^[a-f0-9-]{36}\.tmp$/.test(file.slice(id.length + 6))) await rm(path.join(this.deps.dir, file), { force: true });
       this.tasks.delete(id);
       this.planWake();
     } finally { this.deleting.delete(id); }
@@ -318,7 +405,7 @@ export class Tasks {
       resume();
       return;
     }
-    const t = [...this.tasks.values()].find((t) => t.state === "queued" && t.pending.length && !this.running.has(t.id));
+    const t = [...this.tasks.values()].find((t) => t.state === "queued" && t.pending.length && !this.running.has(t.id) && !this.pruning.has(t.id));
     if (!t) return;
     const allowance = Math.max(0, Math.min(TASK_LIMITS.activeMs, t.limits.activeMs - t.budget.activeMs));
     const e: Execution = { sources: new Map(), allowance, reserved: false, task: t, inputId: t.pending[0]!.id, ctrl: new AbortController(), remaining: allowance, since: performance.now() };
@@ -396,6 +483,9 @@ export class Tasks {
           spec: tool.spec,
           execute: async (args, ctx) => {
             this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree, t.spending);
+            const previous = ctx.callId ? t.operations.find((op) => op.runId === run.id && op.id === ctx.callId) : undefined;
+            if (previous) return `Operation ${previous.id} already has recorded state ${previous.state}; it was not dispatched again. Use its prior receipt or request a user review of uncertain effects.`;
+            if (t.operations.some((op) => op.state === "uncertain")) throw new Error("Review uncertain operation effects before dispatching more work");
             if (t.resultPolicy?.kind === "research" && t.resultPolicy.sources && tool.spec.name === "web__fetch_page" && !t.resultPolicy.sources.includes(new URL(String(args.url)).href)) throw new Error("This page is outside the task's declared source scope");
             if (!this.available(e) || t.state === "cancelled") throw e.ctrl.signal.reason ?? new Error("Task stopped");
             if (++calls > TASK_LIMITS.tools || t.budget.toolCalls >= t.limits.toolCalls) {
@@ -422,15 +512,17 @@ export class Tasks {
             } catch (err) {
               Object.assign(op, { state: dispatched ? "uncertain" : "failed" });
               await this.persist(t);
+              if (dispatched) e.ctrl.abort(new Error("An operation may have taken effect. Review its recorded identity and the affected service before continuing; it will not be replayed automatically."));
               throw err;
             }
           },
         }));
         const result = await this.deps.run({ session: t.session, provider: t.provider, model: t.model, message: input.message, action: input.action, ...(t.resultPolicy ? { schemaMode: "strict" } : {}), history: 10 }, {
           completion: "response", validateCompletion: t.resultPolicy ? (result) => reviewTaskResult(t.resultPolicy!, result, e.sources) : undefined, signal: e.ctrl.signal, tools, maxSteps: TASK_LIMITS.rounds,
+          validateEdits: t.resultPolicy ? (result) => checkTaskResult(t.resultPolicy!, { ...result, response: "" }, e.sources) : undefined,
           // Gathering never takes the last model request: the engine keeps it for the closing answer.
           toolRounds: TASK_LIMITS.rounds - 1, maxTokens: TASK_LIMITS.outputTokens,
-          instructions: `${this.deps.instructions()}\nYou are working on a task. Goal: ${t.goal}\nCompletion criteria: ${t.criteria}\nKeep every existing surface interactive. Use evidence from the available tools; do not claim an external effect without a receipt. The user reviews your result before marking the task complete.\n${resultInstructions(t.resultPolicy)}`,
+          instructions: `${this.deps.instructions()}\nYou are working on a task. Goal: ${t.goal}\nCompletion criteria: ${t.criteria}\nKeep every existing surface interactive. Use evidence from the available tools; do not claim an external effect without a receipt. The user reviews your result before marking the task complete.\n${resultInstructions(t.resultPolicy)}${inputInstructions(t.inputs ?? [])}${t.output ? "\nThe app will save the canonical result as Markdown in local task outputs after successful generation. Do not call a file-writing tool or claim it saved before the app issues a receipt." : ""}`,
           emit: (event) => {
             if (event.type === "tool_start") this.activity(t, `Using ${event.name}`);
             if (event.type === "error") t.note = event.message.slice(0, 2000);
@@ -440,6 +532,8 @@ export class Tasks {
         t.pending.shift();
         if (e.ctrl.signal.aborted) throw e.ctrl.signal.reason ?? new Error("Run stopped");
         if (["error", "max_steps", "aborted"].includes(result.stop)) throw new Error(t.note === "Working" ? `Run ended: ${result.stop}` : t.note);
+        await this.exportResult(t, run);
+        if (e.ctrl.signal.aborted) throw e.ctrl.signal.reason ?? new Error("Run stopped during output save");
         t.state = t.pending.length ? "queued" : "needs_input";
         t.note = t.pending.length ? "Waiting for the next input" : "Review the saved result against your criteria. Continue interacting with any surface, or open an evidence review to accept the result.";
       }, { taskId: t.id, runId: run.id }));
@@ -457,6 +551,7 @@ export class Tasks {
       clearTimeout(e.timer);
       delete t.approval;
       await this.persist(t);
+      await this.deps.files?.prune(t.id, t.diagnosticDays ?? 7).catch((error: unknown) => this.deps.warn(`Diagnostic cleanup failed: ${String(error)}`));
     }
   }
 
@@ -533,8 +628,10 @@ export class Tasks {
   async close(): Promise<void> {
     this.closed = true;
     clearTimeout(this.wake);
+    clearInterval(this.retention);
     for (const e of this.running.values()) e.ctrl.abort(new Error("Application stopped; review before continuing"));
     await Promise.all(this.inflight);
+    await this.retentionWork;
     await this.checking;
     await Promise.all(this.writes.values());
   }
