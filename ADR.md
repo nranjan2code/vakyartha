@@ -222,3 +222,10 @@ A comparison retained correct associated numbers/defaults and independent surfac
 Instructions copy notices into visible surface titles/content. Completion checks match normalized, case-insensitive whole phrases in resolved text; unused or hidden data and larger negated word fragments do not count. A failed notice returns concrete feedback into the same budget. No app renderer inserts or edits the generated surface, and no notice grants tools, establishes source provenance or proves semantic correctness. The evaluation explicitly supplies `Fictional` for its fictional fixture rather than inferring it from arbitrary prose. Numeric/default/recommendation checks remain separate; in particular, the latest machine candidate is overturned because its recommendation contradicts its correct numbers (EVALUATION.md).
 
 Boundary/unit tests cover bounds, deduplication, both policies, visible vs unused data and word boundaries. Wide/narrow WebKit checks cover the field, flexible-layout hiding, persisted scheduled-task notices/details and existing interaction paths. No dependency, IPC or new persistence writer.
+
+
+## ADR-021 — Conservative evaluation verdicts and independent constraint references
+
+Status: implemented evaluation slice, 2026-10-26. Owner: Vakyartha's development evaluation; product execution/acceptance unchanged.
+
+Automated layout/numeric checks cannot certify arbitrary recommendation prose. Replace evaluation `candidate-pass` with `needs-semantic-review` when checks pass, retaining `failed` otherwise. Compute row-local reference facts from a single typed fixture, beside canonical visible output, without guessing what prose means or rewriting it. Historical/manual failure evidence remains authoritative. Public resolution APIs suffice; no framework, dependency or persistence authority is added. Tests reproduce the retained contradictory Atlas row and exclude hidden/orphan/unused data. Automatic semantic verification and product acceptance remain separate open gates.

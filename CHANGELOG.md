@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- **Outcome evaluation:** passing automated checks now require semantic review. Reports show independent constraint references beside canonical visible rows; hidden/unused data no longer supplies output evidence. This does not certify generated recommendations.
+
 - **Inline or canvas, by size:** small interfaces stay in the conversation again; tables, charts, tabs, maps, boards, long code, forms with more than five fields and large or long surfaces leave a reference card and open in the canvas (`src/placement.ts`). Growing past the limit while streaming moves a surface to the canvas; nothing jumps back. The canvas no longer opens before the first snapshot shows how big a surface is. Inline surfaces have no extra header; open one in the canvas from the reply's actions.
 - **Reply actions for interfaces:** replies that are only an interface now get copy, read aloud and open in canvas; copy and speech use the interface's text.
 - **Plain answers stay text:** the app's instructions now say when to answer without UI (greetings, thanks, small talk, a fact or short explanation, or a request for text), matching Projection's new prompt rule. A title the content repeats is no longer drawn twice.
