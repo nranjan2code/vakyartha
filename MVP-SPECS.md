@@ -219,3 +219,7 @@ Cumulative execution limits (ADR-013) persist across runs and restart: by defaul
 
 
 The initial outcome evaluation is repeatable through `scripts/task-evaluate.ts`, with retained real outputs and WebKit inspection described in `EVALUATION.md`. Response-oriented task runs now continue after progress publication via Projection's public opt-in completion API; default projection clients remain unchanged. This mechanism does not establish outcome correctness: current research and comparison trials still fail recorded requirements.
+
+### Result layout enforcement checkpoint (2026-10-26)
+
+Setup offers a flexible workspace, separate editable criteria and comparison, or separate editable criteria and source excerpts. Typed option/source manifests bound the selected layout. Completion checks repair within the same execution budget and retain manual evidence review; arbitrary IDs and all existing interactive surfaces remain supported. Source excerpts match successful current-run tool responses; numeric correctness, interpretation, supplied defaults and general semantic completion remain open. See ADR-015 and EVALUATION.md.

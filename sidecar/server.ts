@@ -200,7 +200,7 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     log,
   });
 
-  integrations = createIntegrations({ dataDir, secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm });
+  integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm });
   const freeCapabilities = new Set(["time", "web", "files", "memory"]);
   tasks = await Tasks.open({
     dir: path.join(dataDir, "tasks"), run: host.run, view: host.view, remove: host.remove,

@@ -1,3 +1,4 @@
+import { parseTaskResultPolicy, type TaskResultPolicy } from "./task-result.ts";
 import { parseSchedule, type OnceSchedule } from "./schedule.ts";
 
 export type TaskSpending = { kind: "local_only" } | { kind: "api_allowed"; acknowledged: true } | { kind: "ceiling"; usd: number };
@@ -68,6 +69,7 @@ export interface TaskView {
   integrations: string[];
   confirmedFree: string[];
   spending: TaskSpending;
+  resultPolicy?: TaskResultPolicy;
   limits: TaskLimits;
   budget: TaskBudget;
   state: TaskState;
@@ -153,7 +155,7 @@ export function parseTaskView(value: unknown): TaskView {
   return {
     version: 5, revision: integer(raw.revision, Number.MAX_SAFE_INTEGER), id, session, goal: taskString(raw.goal, 8000), criteria: taskString(raw.criteria, 4000), provider: taskString(raw.provider, 120), model: taskString(raw.model, 240),
     integrations: array(raw.integrations, 16).map((v) => taskString(v, 120)), state: raw.state, created, updated, note, runs, runHistory, limits, budget,
-    spending: parseTaskSpending(raw.spending), confirmedFree: array(raw.confirmedFree, 16).map((v) => taskString(v, 120)),
+    ...(raw.resultPolicy === undefined ? {} : { resultPolicy: parseTaskResultPolicy(raw.resultPolicy) }), spending: parseTaskSpending(raw.spending), confirmedFree: array(raw.confirmedFree, 16).map((v) => taskString(v, 120)),
     pending: array(raw.pending, TASK_LIMITS.pending).map(parseTaskInput), accepted: array(raw.accepted, 256).map((v) => taskString(v, 120)), operations,
     activity: array(raw.activity, 100).map((v) => { const a = taskObject(v); return { at: taskString(a.at, 40), text: taskString(a.text, 1000) }; }),
     ...(schedule ? { schedule } : {}),

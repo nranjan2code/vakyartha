@@ -367,3 +367,38 @@ test("result acceptance binds explicit evidence to the latest saved result and r
     await assert.rejects(tasks.review(t.id), /no saved assistant result/);
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });
+
+test("checked task output repairs in the same run and withholds rejected completion prose", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-checked-task-"));
+  let requests = 0;
+  const provider: Provider = { ...scripted, async *stream() {
+    requests++;
+    if (requests === 1) {
+      yield { type: "text", delta: "Unsupported result summary." };
+    } else if (requests === 2) {
+      const outputs = [
+        { surface: "criteria", data: { budget: 20 }, nodes: [{ id: "root", type: "form", props: { submit: "apply" }, children: [{ id: "budget", type: "input", props: { label: "Budget", bind: "/budget" } }] }] },
+        { surface: "comparison", data: { rows: [{ label: "Atlas" }, { label: "Birch" }] }, nodes: [{ id: "root", type: "table", props: { columns: ["label"], rows: "{/rows}" } }] },
+      ];
+      for (const output of outputs) {
+        yield { type: "tool_start", id: output.surface, name: "vak_render" };
+        yield { type: "tool_args", id: output.surface, delta: JSON.stringify(output) };
+        yield { type: "tool_end", id: output.surface };
+      }
+      yield { type: "done", stop: "tool_use" }; return;
+    } else yield { type: "text", delta: "Ready for review." };
+    yield { type: "done", stop: "end" };
+  } };
+  const host = createHost({ providers: () => [{ id: "scripted", label: "Scripted", available: true, make: () => provider }], profiles: new ProfileCache(path.join(dir, "profiles.json")), instructions: "test", sessionsDir: path.join(dir, "sessions"), log: () => {} });
+  const tasks = await Tasks.open({ dir: path.join(dir, "tasks"), run: host.run, view: host.view, tools: async () => [], instructions: () => "test", observe: async (_session, work) => work(), ready: () => {}, warn: () => {} });
+  try {
+    const task = await tasks.create({ goal: "Compare options", criteria: "Editable criteria and visible option identities", provider: "scripted", model: "fake", spending: { kind: "local_only" }, integrations: [], resultPolicy: { kind: "comparison", labels: ["Atlas", "Birch"] } });
+    await until(() => tasks.get(task.id).state === "needs_input");
+    assert.equal(requests, 3);
+    assert.equal(tasks.get(task.id).runs, 1);
+    const view = await host.view(task.session);
+    assert.equal(view.surfaces.length, 2);
+    assert.ok(!JSON.stringify(view.timeline).includes("Unsupported result summary."));
+    assert.ok(JSON.stringify(view.timeline).includes("Ready for review."));
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});

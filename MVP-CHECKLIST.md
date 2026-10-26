@@ -165,3 +165,7 @@ This first checkpoint did not close the remaining composite gates. Approval-slot
 
 
 - Follow-up replay checkpoint: Projection `9c6a0ae` normalizes known wrapped absolute list references using schema and existing array data; 240 framework / 52 app tests, typecheck/build/bundle and task WebKit checks pass. Targeted research rerun still fails output separation and source correctness (EVALUATION.md). P1.9/P2.7/P4.1 remain open; neither correct retrieval nor a repaired table binding certifies the answer.
+
+- Typed result-layout checkpoint: ADR-015 adds opt-in same-run structure/visible-identity checks and successful-read excerpt matching. Flexible work remains available; no automatic user acceptance, arbitrary semantic-verification claim or extra execution process. Supplied form defaults, numeric correctness and general interpretation remain open under P1.9/P2.7/P4.9.
+
+- Validation for ADR-015: 57 app/243 pinned framework tests, typecheck/build/bundle and responsive WebKit setup/lifecycle checks. Real local-model comparison/research diagnostics still fail (combined outputs, unresolved rows or upstream tool-format error); see EVALUATION.md. P1.9/P2.7/P4.9 remain unchecked. No app-side surface synthesis or automatic acceptance.

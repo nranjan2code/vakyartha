@@ -34,6 +34,8 @@ const previous = process.env.OPENAI_COMPAT_BASE_URL;
 process.env.OPENAI_COMPAT_BASE_URL = `http://127.0.0.1:${(fake.address() as { port: number }).port}/v1`;
 const app = await startAppServer({ dataDir: path.join(out, "data"), keychainService: "com.nranjan2code.vakyartha.task-check", access: "open", uiDir: path.join(root, "dist") });
 const setup = `
+ // Offscreen WebKit may leave grid transitions at their first frame. Check the settled layout.
+ document.querySelector('.app').style.transition='none';
  const check=(ok,message)=>{if(!ok)throw new Error(message)};
  const wait=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await new Promise(r=>setTimeout(r,40))}throw new Error('UI did not settle')};
  const flush=()=>document.querySelectorAll('vak-surface').forEach(s=>{s.renderNow();s.shadowRoot.querySelectorAll('.enter').forEach(n=>n.classList.remove('enter'))});
@@ -54,6 +56,14 @@ const steps = [
    document.getElementById('open-schedule').click();document.getElementById('create-schedule').click();
    await wait(()=>!document.getElementById('schedule-compose').hidden&&!document.getElementById('task-create-start').disabled);check(!document.querySelector('dialog[open]'),'creation should be a page');
    check(document.getElementById('task-spending').value==='local_only','local-only is not the default');
+   const layout=document.getElementById('task-result-layout');layout.value='research';layout.dispatchEvent(new Event('change'));
+   check(!document.getElementById('task-result-inputs-row').hidden&&document.getElementById('task-result-inputs').required,'research source manifest is not required');
+   check(document.getElementById('task-result-inputs-label').textContent.includes('source URLs'),'research manifest label missing');
+   document.getElementById('task-result-inputs').value='https://example.com/';
+   check(document.documentElement.scrollWidth<=innerWidth,'result setup overflow');
+   check(innerWidth>720||document.getElementById('schedule-page').getBoundingClientRect().left===0,'collapsed sidebar leaves a blank gutter');return 'typed result layout and required source manifest';`,
+  `const layout=document.getElementById('task-result-layout');
+   layout.value='';layout.dispatchEvent(new Event('change'));check(!document.getElementById('task-result-inputs').required,'flexible layout retained manifest requirement');
    document.getElementById('task-spending').value='api_allowed';document.getElementById('task-spending').dispatchEvent(new Event('change'));document.getElementById('task-spending-ack').checked=true;
    window.dispatchEvent(new Event('vak:model'));check(!document.getElementById('task-spending-ack').checked,'model change retained spending acknowledgement');
    check(!document.getElementById('task-create-form').checkValidity(),'API charges require no acknowledgement');

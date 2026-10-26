@@ -99,6 +99,9 @@
           <section class="schedule-section"><div class="schedule-step">01 / THE OUTCOME</div><h2>What would you like done?</h2>
             <label for="task-goal">Instructions</label><textarea id="task-goal" rows="4" required maxlength="8000" placeholder="Describe the work, the information to use, and the result you want."></textarea>
             <label for="task-criteria">What will a good result look like?</label><textarea id="task-criteria" rows="2" required maxlength="4000" placeholder="A clear finish line helps you review the result."></textarea>
+            <label for="task-result-layout">Result layout</label><select id="task-result-layout"><option value="">Flexible workspace</option><option value="comparison">Editable criteria + comparison</option><option value="research">Editable criteria + source excerpts</option></select>
+            <label id="task-result-inputs-row" hidden><span id="task-result-inputs-label">Options, one per line</span><textarea id="task-result-inputs" rows="2" maxlength="8000"></textarea></label>
+            <p id="task-result-help" class="hint">Flexible work still needs your evidence review.</p>
           </section>
           <section class="schedule-section"><div class="schedule-step">02 / THE TIMING</div><h2>When should it begin?</h2>
             <label for="schedule-timing">Run</label><select id="schedule-timing"><option value="now">Now</option><option value="once">Once, at a chosen time</option></select>

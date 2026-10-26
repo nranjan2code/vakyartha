@@ -1,3 +1,5 @@
+import { parseTaskResultPolicy, resultInstructions, checkTaskResult } from "../task-result.ts";
+import { MAX_TOOL_OUTPUT } from "@vak/mcp/client";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -21,7 +23,7 @@ interface Dependencies {
   permitted?(server: string, tool: string): boolean;
   warn(message: string): void;
 }
-type Execution = { allowance: number; reserved: boolean; run?: TaskRun; task: TaskView; inputId: string; ctrl: AbortController; remaining: number; since: number; timer?: ReturnType<typeof setTimeout> };
+type Execution = { sources: Map<string, string>; allowance: number; reserved: boolean; run?: TaskRun; task: TaskView; inputId: string; ctrl: AbortController; remaining: number; since: number; timer?: ReturnType<typeof setTimeout> };
 const text = (v: unknown, max: number) => typeof v === "string" && v.trim().length <= max ? v.trim() : "";
 const identifier = (v: unknown) => typeof v === "string" && /^[\w-]{1,120}$/.test(v);
 
@@ -83,6 +85,13 @@ export class Tasks {
     if (id !== e.task.provider) throw new Error("Task provider changed");
     return e.task.spending;
   }
+  observeResult(request: { session: string; server: string; tool: string; args: Record<string, unknown> }, result: { text: string; isError?: boolean }): void {
+    const e = this.scope.getStore();
+    if (!e || e.task.session !== request.session || e.task.resultPolicy?.kind !== "research" || request.server !== "web" || request.tool !== "fetch_page" || result.isError || e.ctrl.signal.aborted) return;
+    let url: URL;
+    try { url = new URL(String(request.args.url)); } catch { return; }
+    if (url.protocol === "https:" && (e.sources.size < 8 || e.sources.has(url.href))) e.sources.set(url.href, result.text.slice(0, MAX_TOOL_OUTPUT));
+  }
   private available(e: Execution): boolean {
     if (e.remaining <= 0 || (e.timer && performance.now() - e.since >= e.remaining)) e.ctrl.abort(new Error("Active time limit reached"));
     return !e.ctrl.signal.aborted;
@@ -138,6 +147,8 @@ export class Tasks {
     if (!goal || !criteria || !provider || !model || !Array.isArray(body.integrations) || body.integrations.length > 16 || !body.integrations.every(identifier)) throw new Error("Goal, completion criteria, model and explicit tool selection are required");
     const integrations = [...new Set(body.integrations as string[])];
     const confirmedFree = Array.isArray(body.confirmedFree) && body.confirmedFree.length <= 16 && body.confirmedFree.every(identifier) ? [...new Set(body.confirmedFree as string[])] : [];
+    const resultPolicy = body.resultPolicy === undefined ? undefined : parseTaskResultPolicy(body.resultPolicy);
+    if (resultPolicy?.kind === "research" && !integrations.includes("web")) throw new Error("Source-backed research needs the ready Web pages capability selected");
     const spending = parseTaskSpending(body.spending);
     const limits = body.limits === undefined ? { ...TASK_BUDGET_DEFAULTS } : parseTaskLimits(body.limits);
     if (spending.kind === "ceiling") throw new Error("Strict monetary ceilings cannot be enforced yet. No task was started.");
@@ -145,7 +156,7 @@ export class Tasks {
     const schedule = body.schedule === undefined ? undefined : parseSchedule(body.schedule);
     if (schedule && (schedule.status !== "armed" || Date.parse(schedule.at) <= Date.now())) throw new Error("Choose a future date and time");
     const id = randomUUID(), at = new Date().toISOString();
-    const t: TaskView = { version: 5, revision: 0, id, session: id, goal, criteria, provider, model, integrations, confirmedFree, spending, limits, budget: { modelRequests: 0, toolCalls: 0, activeMs: 0 }, state: "queued", created: at, updated: at, note: "Waiting to start", runs: 0, runHistory: [], pending: [{ id: randomUUID(), kind: "message", message: goal }], activity: [], operations: [], accepted: [] };
+    const t: TaskView = { version: 5, revision: 0, id, session: id, goal, criteria, provider, model, integrations, confirmedFree, spending, ...(resultPolicy ? { resultPolicy } : {}), limits, budget: { modelRequests: 0, toolCalls: 0, activeMs: 0 }, state: "queued", created: at, updated: at, note: "Waiting to start", runs: 0, runHistory: [], pending: [{ id: randomUUID(), kind: "message", message: goal }], activity: [], operations: [], accepted: [] };
     if (schedule) { t.schedule = schedule; t.state = "scheduled"; t.note = "Will run once at the selected time while this app is running and the computer is awake."; }
     await this.persist(t);
     this.tasks.set(id, t);
@@ -304,7 +315,7 @@ export class Tasks {
     const t = [...this.tasks.values()].find((t) => t.state === "queued" && t.pending.length && !this.running.has(t.id));
     if (!t) return;
     const allowance = Math.max(0, Math.min(TASK_LIMITS.activeMs, t.limits.activeMs - t.budget.activeMs));
-    const e: Execution = { allowance, reserved: false, task: t, inputId: t.pending[0]!.id, ctrl: new AbortController(), remaining: allowance, since: performance.now() };
+    const e: Execution = { sources: new Map(), allowance, reserved: false, task: t, inputId: t.pending[0]!.id, ctrl: new AbortController(), remaining: allowance, since: performance.now() };
     this.execution = e;
     this.running.set(t.id, e);
     const work = this.execute(e).catch((err) => this.deps.warn(`Task persistence/execution failed: ${(err as Error).message}`)).finally(() => {
@@ -361,6 +372,7 @@ export class Tasks {
           spec: tool.spec,
           execute: async (args, ctx) => {
             this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree, t.spending);
+            if (t.resultPolicy?.kind === "research" && t.resultPolicy.sources && tool.spec.name === "web__fetch_page" && !t.resultPolicy.sources.includes(new URL(String(args.url)).href)) throw new Error("This page is outside the task's declared source scope");
             if (!this.available(e) || t.state === "cancelled") throw e.ctrl.signal.reason ?? new Error("Task stopped");
             if (++calls > TASK_LIMITS.tools || t.budget.toolCalls >= t.limits.toolCalls) {
               const error = new Error("Tool-call budget exhausted; no new tool attempt started");
@@ -386,8 +398,8 @@ export class Tasks {
           },
         }));
         const result = await this.deps.run({ session: t.session, provider: t.provider, model: t.model, message: input.message, action: input.action, history: 10 }, {
-          completion: "response", signal: e.ctrl.signal, tools, maxSteps: TASK_LIMITS.rounds, maxTokens: TASK_LIMITS.outputTokens,
-          instructions: `${this.deps.instructions()}\nYou are working on a task. Goal: ${t.goal}\nCompletion criteria: ${t.criteria}\nKeep every existing surface interactive. Use evidence from the available tools; do not claim an external effect without a receipt. The user reviews your result before marking the task complete.`,
+          completion: "response", validateCompletion: t.resultPolicy ? (result) => checkTaskResult(t.resultPolicy!, result, e.sources) : undefined, signal: e.ctrl.signal, tools, maxSteps: TASK_LIMITS.rounds, maxTokens: TASK_LIMITS.outputTokens,
+          instructions: `${this.deps.instructions()}\nYou are working on a task. Goal: ${t.goal}\nCompletion criteria: ${t.criteria}\nKeep every existing surface interactive. Use evidence from the available tools; do not claim an external effect without a receipt. The user reviews your result before marking the task complete.\n${resultInstructions(t.resultPolicy)}`,
           emit: (event) => {
             if (event.type === "tool_start") this.activity(t, `Using ${event.name}`);
             if (event.type === "error") t.note = event.message.slice(0, 2000);

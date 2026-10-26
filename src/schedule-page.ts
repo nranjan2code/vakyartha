@@ -1,3 +1,4 @@
+import { parseTaskResultPolicy } from "../task-result.ts";
 import { parseRunUsage } from "../finops.ts";
 import { TASK_LABELS, TASK_RUN_LABELS, TASK_LIMITS, TASK_BUDGET_DEFAULTS, TASK_BUDGET_MAX, parseTaskLimits, parseReviewSnapshot, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../task-contract.ts";
 import { scheduleLabel } from "../schedule.ts";
@@ -235,7 +236,7 @@ export class SchedulePage {
       history.append(el("p", { className: "hint", textContent: "Runs share the live workspace. This history records execution; earlier surface versions are not snapshotted." }));
       main.append(this.section("Run history", history));
       const facts = el("dl", { className: "schedule-facts" });
-      for (const [label, value] of [["Task budget", `${task.runs} / ${task.limits.runs} runs · ${task.budget.modelRequests} / ${task.limits.modelRequests} model requests · ${task.budget.toolCalls} / ${task.limits.toolCalls} tool attempts`], ["Time charged", `${(task.budget.activeMs / 60000).toFixed(2)} / ${task.limits.activeMs / 60000} active minutes (includes unfinished reservations)`], ["Spending", task.spending.kind === "local_only" ? "Local provider only" : task.spending.kind === "api_allowed" ? "Model API charges allowed · no monetary ceiling" : `Required ceiling $${task.spending.usd}`], ["When", scheduleLabel(task.schedule)], ["Timing", task.schedule ? `Once · ${task.schedule.status === "dispatched" ? "Dispatched" : task.schedule.status === "paused" ? "Paused" : "Upcoming"}` : "Started manually"], ["Model", task.model], ["Capabilities", task.integrations.join(", ") || "None selected"], ["Runs", String(task.runs)], ["Created", date(task.created)]]) facts.append(el("dt", { textContent: label }), el("dd", { textContent: value }));
+      for (const [label, value] of [["Result layout", task.resultPolicy?.kind === "research" ? "Criteria + checked source excerpts" : task.resultPolicy?.kind === "comparison" ? "Criteria + named comparison" : "Flexible workspace"], ["Task budget", `${task.runs} / ${task.limits.runs} runs · ${task.budget.modelRequests} / ${task.limits.modelRequests} model requests · ${task.budget.toolCalls} / ${task.limits.toolCalls} tool attempts`], ["Time charged", `${(task.budget.activeMs / 60000).toFixed(2)} / ${task.limits.activeMs / 60000} active minutes (includes unfinished reservations)`], ["Spending", task.spending.kind === "local_only" ? "Local provider only" : task.spending.kind === "api_allowed" ? "Model API charges allowed · no monetary ceiling" : `Required ceiling $${task.spending.usd}`], ["When", scheduleLabel(task.schedule)], ["Timing", task.schedule ? `Once · ${task.schedule.status === "dispatched" ? "Dispatched" : task.schedule.status === "paused" ? "Paused" : "Upcoming"}` : "Started manually"], ["Model", task.model], ["Capabilities", task.integrations.join(", ") || "None selected"], ["Runs", String(task.runs)], ["Created", date(task.created)]]) facts.append(el("dt", { textContent: label }), el("dd", { textContent: value }));
       const aside = el("aside", {}, this.section("At a glance", facts), this.section("Your control", el("p", { textContent: "Each run is bounded. Changes follow your integration permissions, and results wait for your review." }), button("Manage integrations", () => void openSettings("integrations"))));
       if (task.state === "scheduled" || task.state === "paused") {
         const value = new Date(task.schedule!.at); const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
@@ -278,6 +279,8 @@ export class SchedulePage {
     $("task-change-model").onclick = () => void openSettings("models");
     if (template) { $<HTMLTextAreaElement>("task-goal").value = template.goal; $<HTMLTextAreaElement>("task-criteria").value = template.criteria; }
     this.updateTiming();
+    this.updateResultLayout();
+    $("task-result-layout").onchange = () => this.updateResultLayout();
     this.updateSpending();
     for (const [id, field, divisor] of [["task-budget-runs", "runs", 1], ["task-budget-model", "modelRequests", 1], ["task-budget-tools", "toolCalls", 1], ["task-budget-minutes", "activeMs", 60000]] as const) {
       const input = $<HTMLInputElement>(id); input.max = String(TASK_BUDGET_MAX[field] / divisor);
@@ -303,6 +306,14 @@ export class SchedulePage {
     finally { if (generation === this.formGeneration) $<HTMLButtonElement>("task-create-start").disabled = false; }
     $("task-goal").focus();
   }
+  private updateResultLayout(): void {
+    const kind = $<HTMLSelectElement>("task-result-layout").value;
+    $("task-result-inputs-row").hidden = !kind;
+    $("task-result-inputs-label").textContent = kind === "research" ? "Public source URLs, one per line (up to 8)" : "Option names, one per line (up to 16)";
+    $<HTMLTextAreaElement>("task-result-inputs").required = Boolean(kind);
+    $("task-result-help").textContent = kind === "research" ? "Select Web pages below. This layout checks verbatim excerpts against successful reads and keeps interpretations for your review." : kind === "comparison" ? "Requires two separate outputs: an editable criteria form and a comparison with named rows. It checks structure, not the truth of every value." : "Flexible work still needs your evidence review.";
+  }
+
   private updateSpending(): void {
     const allowed = $<HTMLSelectElement>("task-spending").value === "api_allowed";
     $("task-spending-ack-row").hidden = !allowed;
@@ -328,11 +339,14 @@ export class SchedulePage {
     if (later && (!Number.isFinite(at.getTime()) || at.getTime() <= Date.now())) { error.textContent = "Choose a future date and time."; return; }
     this.creationBusy = true; $<HTMLButtonElement>("task-create-start").disabled = true;
     try {
+      const layout = $<HTMLSelectElement>("task-result-layout").value;
+      const entries = $<HTMLTextAreaElement>("task-result-inputs").value.split("\n").map((value) => value.trim()).filter(Boolean);
+      const resultPolicy = layout ? parseTaskResultPolicy({ kind: layout, ...(layout === "research" ? { sources: entries } : { labels: entries }) }) : undefined;
       const limits = parseTaskLimits({ runs: Number($<HTMLInputElement>("task-budget-runs").value), modelRequests: Number($<HTMLInputElement>("task-budget-model").value), toolCalls: Number($<HTMLInputElement>("task-budget-tools").value), activeMs: Number($<HTMLInputElement>("task-budget-minutes").value) * 60000 });
       const chosen = [...$("task-capabilities").querySelectorAll<HTMLInputElement>("input:checked")];
       const confirmedFree = chosen.filter((c) => c.dataset.free !== "true").map((c) => c.value);
       if (confirmedFree.length && !(await ask("You selected a server you configured. Continue only after checking its source, permissions and that there are no service fees for this work.", "I checked; continue"))) return;
-      const task = parseTaskView(await api<unknown>("/api/tasks", { method: "POST", body: JSON.stringify({ goal: $<HTMLTextAreaElement>("task-goal").value, criteria: $<HTMLTextAreaElement>("task-criteria").value, provider: current.provider, model: current.model, limits, spending: $<HTMLSelectElement>("task-spending").value === "api_allowed" ? { kind: "api_allowed", acknowledged: $<HTMLInputElement>("task-spending-ack").checked } : { kind: "local_only" }, integrations: chosen.map((c) => c.value), confirmedFree, ...(later ? { schedule: { kind: "once", at: at.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, status: "armed", missed: "review" } } : {}) }) }));
+      const task = parseTaskView(await api<unknown>("/api/tasks", { method: "POST", body: JSON.stringify({ goal: $<HTMLTextAreaElement>("task-goal").value, criteria: $<HTMLTextAreaElement>("task-criteria").value, provider: current.provider, model: current.model, ...(resultPolicy ? { resultPolicy } : {}), limits, spending: $<HTMLSelectElement>("task-spending").value === "api_allowed" ? { kind: "api_allowed", acknowledged: $<HTMLInputElement>("task-spending-ack").checked } : { kind: "local_only" }, integrations: chosen.map((c) => c.value), confirmedFree, ...(later ? { schedule: { kind: "once", at: at.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, status: "armed", missed: "review" } } : {}) }) }));
       $<HTMLFormElement>("task-create-form").reset(); this.formReady = false;
       await this.refresh(); await this.showDetail(task.id);
     } catch (err) { error.textContent = (err as Error).message; }

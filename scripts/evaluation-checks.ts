@@ -1,4 +1,4 @@
-import { resolveValue } from "@vak/core";
+import { getAt, resolveValue } from "@vak/core";
 import type { SessionView } from "@vak/host";
 
 /** Instructions are not result evidence, even when they contain the expected answer. */
@@ -23,3 +23,8 @@ export function tableRows(view: SessionView): unknown[][] {
 }
 
 export function tableOutputText(view: SessionView): string { return JSON.stringify(tableRows(view)); }
+
+/** Read bound control values, rather than counting expected numbers in instructions or unused data. */
+export function boundFieldValues(view: SessionView): { label: string; value: unknown }[] {
+  return view.surfaces.flatMap((surface) => surface.nodes.filter((node) => ["input", "select", "checkbox", "textarea", "date"].includes(node.type) && typeof node.props?.bind === "string").map((node) => ({ label: String(node.props?.label ?? ""), value: getAt(surface.data, String(node.props!.bind)) })));
+}
