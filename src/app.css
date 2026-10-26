@@ -1,3 +1,6 @@
+/* Conditional setup fields must stay out of layout and the accessibility tree. */
+.schedule-form [hidden] { display: none !important; }
+
 :root {
   color-scheme: light dark;
   --bg: light-dark(#fbfbfc, #111215);
