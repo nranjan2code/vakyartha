@@ -8,7 +8,7 @@
 // not enough, and anything unclear or silent leaves the request on screen.
 // Voice can only allow once; "for this chat" stays a click.
 
-import { type AgendaItem, answerWords, question, resolveAnswer } from "@vak/core";
+import { AGREEMENT_WORDS, type AgendaItem, answerWords, question, resolveAnswer } from "@vak/core";
 
 export interface ApprovalRequest { id: string; tool: string; server: string; title: string }
 
@@ -22,7 +22,7 @@ const VAGUE = new Set(["the", "a", "an", "to", "of", "and", "in", "on", "for", "
 
 /** The approval as an agenda item: its words are the tool's own ("write_file" → write, file), never the model's. */
 export function approvalItem(r: ApprovalRequest, serverName = r.server): AgendaItem & { kind: "approval" } {
-  const named = (s: string) => [...new Set(answerWords(s.replace(/[_-]+/g, " ")).split(" ").filter((w) => w.length > 2 && !VAGUE.has(w)))];
+  const named = (s: string) => [...new Set(answerWords(s.replace(/[_-]+/g, " ")).split(" ").filter((w) => w.length > 2 && !VAGUE.has(w) && !AGREEMENT_WORDS.has(w)))];
   const words = named(`${r.tool} ${r.title}`);
   return { kind: "approval", id: r.id, title: `${serverName} wants to ${r.title.charAt(0).toLowerCase()}${r.title.slice(1)}`, change: true, words: words.length ? words : [...named(r.server), "this"] };
 }
