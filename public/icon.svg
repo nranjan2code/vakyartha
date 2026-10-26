@@ -1,15 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <title>Vakyartha</title>
-  <desc>An ivory speech bubble on an ink tile, holding a V (the Vakyartha wing) and two interface bars; saffron marks the live line. Sibling of the Vakyartha Songbird: same ink, ivory and saffron.</desc>
-  <!-- Tile: the Vakyartha app-icon proportions and ink. -->
-  <rect x="100" y="100" width="824" height="824" rx="150" fill="#101D3D"/>
-  <!-- Speech bubble with a tail at the lower left. -->
-  <path fill="#F6F4EF" d="M300 250h424c50 0 90 40 90 90v300c0 50-40 90-90 90H430l-118 96c-14 11-34 1-34-17v-80c-38-10-68-45-68-86V340c0-50 40-90 90-90z"/>
-  <!-- The V: the wing's open check, one ink stroke. -->
-  <path d="M322 436 L446 584 L606 362" fill="none" stroke="#101D3D" stroke-width="72" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- Interface bars: what the answer becomes. -->
-  <rect x="656" y="452" width="110" height="34" rx="17" fill="#101D3D" opacity="0.85"/>
-  <rect x="656" y="518" width="78" height="34" rx="17" fill="#101D3D" opacity="0.5"/>
-  <!-- Saffron: the one accent, the live line. -->
-  <rect x="300" y="656" width="466" height="30" rx="15" fill="#F5A400"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 608 608"><rect width="608" height="608" rx="114" fill="#101D3D"/><g transform="translate(54.72 54.72)"><svg width="498.56" height="498.56" viewBox="80 80 440 440"><path fill="#F6F5F1" fill-rule="evenodd" d="M270 105C278 132 311 146 348 152C394 156 425 174 446 201L494 231L450 238C426 249 420 274 423 300C430 357 407 411 368 451C332 487 295 502 253 485L195 462C159 447 131 452 108 479C114 429 126 384 149 347C177 301 223 265 257 229C273 213 283 199 289 182C274 185 265 181 263 172C277 180 298 178 316 172C287 174 268 167 269 147C281 163 310 166 333 159C299 159 271 141 270 105ZM448 231C430 207 410 188 389 189C362 190 351 211 356 237C359 257 374 276 398 296C402 267 418 244 448 231ZM162 371C190 346 220 352 245 376L273 413C304 377 335 331 367 297C358 366 331 432 291 483C268 442 235 407 204 388C189 379 175 376 162 380Z"/>
+  <circle cx="405" cy="218" r="13" fill="#F6F5F1"/>
+  <path fill="#F5A400" d="M494 231C445 231 417 241 405 267C389 300 401 338 402 370C413 349 420 327 423 303C423 275 426 252 450 238Z"/>
+</svg></g></svg>

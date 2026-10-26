@@ -434,7 +434,7 @@ async function aboutPage(): Promise<HTMLElement[]> {
   const mark = el("div", { className: "about-mark" }, el("img", { src: "/icon.svg", alt: "", width: 72, height: 72 }));
   return [
     mark,
-    ...title("About vak", "Ask any model, get an interface. A sibling of Vakyartha: same ink, ivory and saffron."),
+    ...title("About Vakyartha", "Ask any model, get an interface."),
     group(
       null,
       row("Version", null, el("span", { textContent: info?.version ?? "?" })),

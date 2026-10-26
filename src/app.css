@@ -120,8 +120,9 @@ body.collapsed .canvas-expanded .canvas-head { padding-left: 84px; }
 /* The mark sits right of the macOS traffic lights. */
 .side-top { height: var(--titlebar); display: flex; align-items: center; justify-content: space-between; padding: 0 10px 0 84px; }
 .brand { display: inline-flex; align-items: center; gap: 7px; font-weight: 650; font-size: 0.95rem; letter-spacing: -0.01em; user-select: none; }
-.brand img { border-radius: 5px; }
-.empty-mark { display: block; margin: 0 auto 14px; border-radius: 15px; box-shadow: 0 6px 24px var(--shadow); }
+.brand img { flex: none; }
+.brand-wordmark { display: block; width: 88px; height: 24px; flex: none; background: light-dark(#101D3D, #F6F5F1); -webkit-mask: url("/brand/wordmark-colour.svg") center / contain no-repeat; mask: url("/brand/wordmark-colour.svg") center / contain no-repeat; }
+.empty-mark { display: block; margin: 0 auto 14px; }
 .side-head { padding: 0 10px 8px; }
 .side-pages { padding: 0 10px 8px; }
 #open-artifacts[aria-current="page"], #open-schedule[aria-current="page"] { color: var(--fg); background: var(--hover); }
@@ -395,7 +396,7 @@ body:not(.notes) details.diag { display: none; }
 kbd { font: 0.8rem ui-monospace, SFMono-Regular, Menlo, monospace; min-width: 34px; text-align: center; padding: 2px 6px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; background: var(--panel); }
 .back { margin-bottom: 4px; }
 .about-mark { margin-top: 12px; }
-.about-mark img { display: block; border-radius: 16px; }
+.about-mark img { display: block; }
 
 /* integration icons */
 .tile { flex: none; display: inline-grid; place-items: center; border-radius: 10px; color: var(--tint); background: color-mix(in srgb, var(--tint) 14%, var(--panel)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tint) 22%, transparent); }

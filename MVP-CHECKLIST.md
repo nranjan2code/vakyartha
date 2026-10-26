@@ -193,3 +193,8 @@ ADR-021: reconciled app `8f2d6dd`/Projection `a1537c3` changes, including backgr
 ## Exact comparison assertion checkpoint — 2026-10-26
 
 ADR-022: opt-in expected visible rows are bounded, persisted and inspectable. Exact scalar/type, identity and column checks feed corrections into the existing bounded run. Deterministic tests cover wrong booleans, numeric/string mismatch, missing/duplicate rows, hidden data, invalid/oversized inputs and same-run repair. Setup and scheduled persistence are checked in WebKit. 89 app/277 pinned framework tests, typecheck/build/bundle, native and task/canvas checks pass. Local report `2026-10-26T06-27-59.817Z-e242767d` fails after 12 requests/140.2s; the checker correctly rejects missing Atlas and wrong Birch claims. No automatic task acceptance, new dependency, framework pin change or IPC. P1.9/P4.9 remain open for reliable end-to-end outcomes and arbitrary prose review.
+
+## Vakyartha identity checkpoint — 2026-10-26
+
+- Applied the original Songbird, outlined full-name wordmark and complete existing desktop/tray icon set from `Vak/code`; About uses the Vakyartha name without sibling wording. Asset provenance and font license are retained in `public/brand/`.
+- Validation: typecheck and UI build pass; WebKit checks light/dark branding, loaded images, sidebar fit and About identity. All 18 native icon files match the source exports. No framework, dependency, native IPC or installed-app change is included.
