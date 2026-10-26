@@ -12,6 +12,21 @@ import { type CatalogEntry, Integrations, type IntegrationsOptions, timeServer, 
 import { ollamaOcrServer } from "./ocr.ts";
 import type { Media } from "./media/index.ts";
 
+/** Only documented workspace MCP endpoints may receive this integration's bearer token. */
+export function databricksEndpoint(config: Record<string, unknown>): string {
+  const value = String(config.endpoint ?? "").trim();
+  let url: URL;
+  try { url = new URL(value); }
+  catch { throw new Error("Enter the full HTTPS MCP server URL from your Databricks workspace."); }
+  const hosts = [".cloud.databricks.com", ".azuredatabricks.net", ".gcp.databricks.com"];
+  if (url.protocol !== "https:" || !hosts.some((suffix) => url.hostname.endsWith(suffix) && url.hostname.length > suffix.length) ||
+      url.username || url.password || url.port || url.search || url.hash ||
+      !(/^\/ai-gateway\/mcp-services\/[^/]+\/?$/.test(url.pathname) || /^\/api\/2\.0\/mcp\/[^/]+(?:\/[^/]+)*\/?$/.test(url.pathname))) {
+    throw new Error("Use a Databricks workspace HTTPS MCP URL (/ai-gateway/mcp-services/… or /api/2.0/mcp/…), without credentials, a port, query or fragment. Databricks Apps require OAuth and are not supported here.");
+  }
+  return url.href;
+}
+
 /** Versions picked on 2026-10-25: each the newest published at least 14 days before. */
 export const CATALOG: CatalogEntry[] = [
   {
@@ -118,6 +133,22 @@ export const CATALOG: CatalogEntry[] = [
     access: ["Your GitHub account, within the token's permissions", "Asks before anything that changes a repository"],
     source: { kind: "http", url: "https://api.githubcopilot.com/mcp/" },
     config: [{ key: "token", label: "GitHub token", kind: "secret", required: true, header: { name: "authorization", format: "Bearer {value}" }, help: "A fine-grained personal access token with only the repositories and permissions you want it to have." }],
+  },
+  {
+    id: "databricks",
+    name: "Databricks",
+    publisher: "Databricks",
+    trust: "vendor",
+    summary: "Query governed data and use workspace tools.",
+    description: "Connects to a Databricks-provided or registered remote MCP in your workspace, or a legacy workspace MCP endpoint. Available tools and data depend on the server URL and your permissions. Uses a personal access token for local testing; browser sign-in, automatic token refresh and servers hosted on Databricks Apps are not supported.",
+    homepage: "https://docs.databricks.com/aws/en/agents/mcp-tools/built-in-mcp-services",
+    icon: "table",
+    access: ["Sends tool inputs to the workspace MCP URL you configure", "Can query data, run code or change resources within your account permissions", "Calls may incur workspace compute or service charges", "Tools use the existing per-tool approval policies"],
+    source: { kind: "http", url: databricksEndpoint },
+    config: [
+      { key: "endpoint", label: "Databricks MCP server URL", kind: "text", required: true, help: "Copy the full MCP URL from your workspace. Example: https://<workspace-hostname>/ai-gateway/mcp-services/system.ai.dbsql. Choose only the service you want to expose; workspace features and grants must be enabled." },
+      { key: "token", label: "Databricks personal access token", kind: "secret", required: true, header: { name: "authorization", format: "Bearer {value}" }, help: "Create a short-lived token in your workspace with only the access you need. Saved in the app's secret store and sent only as an Authorization header. Replace it here when it expires. Databricks recommends OAuth for production/team use." },
+    ],
   },
   {
     id: "notion",
