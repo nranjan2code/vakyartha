@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Add `sandbox` built-in skill teaching the LLM when and how to use OS-level process isolation. On/off supported via Settings → Skills.
+
 - Integrate vak-sandbox for OS-level process isolation of MCP servers (macOS Seatbelt). Add sandbox integration in app catalog, Tauri dependencies, and framework MCP client support. See [docs/sandbox/OVERVIEW.md](docs/sandbox/OVERVIEW.md).
 
 - Adopt pushed Projection `d330d99`: common surface-property guidance is emitted once instead of repeated in every strict component branch, reducing the primary local core-tier tool definition by 4,392 characters. The required record-view model gate still fails; this is a measured context-size improvement, not a proven latency or authoring-outcome pass.
