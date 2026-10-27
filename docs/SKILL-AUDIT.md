@@ -1,6 +1,17 @@
 # Skill and dynamic-surface audit — 2026-10-27
 
-Current follow-on: all bundled defaults now use Agent Skills folders; `market-dashboard` has reviewed references and a validated fictional Projection example. The original audit below records the earlier baseline. [Current outcome evidence](EVALUATION.md#bundled-packages-and-market-dashboard--2026-10-27).
+## Current package and runtime review — 2026-10-27
+
+The [current external package specification](https://agentskills.io/specification) retains a folder with `SKILL.md`, required `name`/`description`, optional `scripts/`, `references/` and `assets/`, and staged loading of metadata, instructions and resources. Vakyartha has this folder and staged-loading shape for supported text references. Its parser accepts a documented YAML subset; it does not claim full YAML syntax, executable scripts or binary assets. The root-level import is a stated extension. The experimental `allowed-tools` field never grants authority. An unsupported resource must remain visible as omitted, because its absence can make a third-party skill incomplete. This is useful interoperability with a declared subset, not full package/runtime parity.
+
+Actual execution evidence matters more than folder shape. The installed one-card smoke selected only `surface-design`, then rendered the requested card; it did not load `market-dashboard`. Recorded usage was 899 input tokens for selection (3.7s) and 15,732 for the authoring step (63.9s). The second request carried 37,190 characters of authoring schema, 17,518 characters of system instructions and 3,556 characters of returned skill context. These are character counts, not a token attribution. The frozen fictional market request selected its domain skill, read both references and produced one canonical five-row history with mapped chart/table and checked 5% price return after a general complete-data instruction correction. Its first run's empty-data failure remains retained. See [evaluation](EVALUATION.md#bundled-packages-and-market-dashboard--2026-10-27). One supplied-data success does not establish real-source freshness, calendar/adjustment handling, continuation or output receipts.
+
+Next evidence gates, in order:
+
+1. Run a frozen, real source-backed market request on the primary local provider. Independently check source identity/time, observation window, values, return basis, chart/table and spoken interpretation, interactions and any requested receipt. Retain failures. This is the missing product outcome.
+2. Measure a general reduction of the authoring contract's schema/system cost in Projection, with the same outcome cases and all supported surface kinds. The simple card's 15,732-token authoring input shows that shortening skill prose alone cannot address most latency. Keep multiple surfaces and canonical validation; avoid app-side output repair.
+3. Add a small interoperability corpus of representative external folders and standard optional frontmatter/reference forms. Report accepted, omitted and blocked content explicitly. Decide on any broader YAML or asset support separately; executable resources require the existing governed tool/approval boundary, not a skill-file authority shortcut.
+4. Expand built-in reusable examples only where a measured domain outcome benefits. Keep examples as replaceable structure, with source facts and derived results checked at runtime.
 
 ## Scope and evidence
 
