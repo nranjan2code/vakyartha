@@ -1,6 +1,11 @@
 ---
 name: sandbox
 description: Use when the user wants to run code, shell commands, or tools safely in an isolated environment, or asks about sandboxing, process isolation, or secure code execution.
+license: MIT
+compatibility: Requires macOS 11+ with vak-sandbox (vaksb binary) installed. Linux support is planned.
+metadata:
+  author: nranjan2code
+  version: "1.0"
 ---
 
 # Sandbox
@@ -12,7 +17,7 @@ Vakyartha can run commands under OS-level process isolation using vak-sandbox (m
 - User wants to run untrusted or third-party code safely
 - User asks to execute a command with isolation
 - User mentions "sandbox", "isolate", "jail", or "secure execution"
-- Running build/test/lint commands that should not touch the host
+- Running build, test, or lint commands that should not touch the host
 - Executing code from external sources (MCP servers, fetched scripts)
 
 ## How it works
@@ -48,9 +53,8 @@ When the Sandbox integration is enabled (Settings → Integrations → Sandbox),
 - Network-dependent tools will fail unless network is explicitly enabled
 - The sandbox does not provide full VM isolation; it restricts process capabilities
 
-## Related
+## Reference files
 
-- Settings → Integrations → Sandbox: enable/disable
-- Read `references/sandbox-policy.md` for detailed policy configuration
-- Read `references/sandbox-examples.md` for usage examples and troubleshooting
-- [vak-sandbox repository](https://github.com/nranjan2code/sandbox): full documentation
+See `references/sandbox-policy.md` for detailed policy configuration and common failure modes.
+
+See `references/sandbox-examples.md` for usage examples and troubleshooting.
