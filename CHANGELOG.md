@@ -4,6 +4,10 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Add shared surface-design and Vakyartha skill-creation guidance, operational/sales/finance dashboards, periodic reporting, daily news, market review, data review, tracking, meeting actions and research briefs. Existing procedures reuse the same data/action/design skills; no new domain runtime or tool authority. [Authoring guide](docs/SKILL-AUTHORING.md) is discoverable from README, AGENTS, specs and canvas docs.
+- Adopt pushed Projection `c045a3c` for semantic measures across components, stable explicit grid columns, responsive alignment and bounded chart sizing/redraw. Strengthen app typography/spacing tokens. The chart support matrix distinguishes eight standard kinds from unsupported specialist/statistical capabilities.
+- Preserve decimal findings in the short spoken projection; reports use one canonical surface for visual and spoken content. Source-only verification does not replace the installed app or close the failed primary-local mapped-table gate (one of three cases passed). No paid run, new dependency or recurring-delivery claim.
+
 - Adopt pushed Projection `adf0604`: validate supported native tool arguments before effects, preserve MCP errors/denials, invalidate stale integration handles/grants, recheck approval authority, abort/cap MCP transport work and bound Retry-After retries. Incomplete native calls and ambiguous tool names dispatch nothing. Task receipt wrapping preserves structured tool results. No new dependency or compatibility shim.
 - Stale enabled-skill context fails explicitly; root-level skill reviews correctly disclose omitted supporting files. [Pipeline review](docs/PIPELINE-REVIEW.md) records execution flow and remaining capability limits.163 app/393 framework tests, typechecks, framework package/UI builds and wide/narrow canvas WebKit pass. Source adoption only; installed build and prior live outcome failures remain as recorded.
 

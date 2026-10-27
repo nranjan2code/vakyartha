@@ -39,6 +39,10 @@ Vakyartha is an app built on the [Projection framework](https://github.com/nranj
 
 For model-output work, prove the smallest real primary-provider contract before expanding the workflow. Run the matching Projection gate in its owning repo (`node scripts/record-view-check.ts --run-local --table-only` for record mappings, `node scripts/provider-contract-check.ts --run-local` for free-form graph authoring; source-backed tasks also retain their original independent source/value/receipt checks), retaining failures in other capabilities as open, then independently check the original task’s sources, values, interpretation, interactions and output receipt. Native tool schemas are guidance unless actual schema decoding is used. Retain failed evidence and freeze outcome checks before evaluation; do not weaken requirements after failure. Passing tests, safe rejection, a committed change or an installed build never closes a failed user-outcome gate. Diagnose the earliest boundary offline instead of accumulating prompt/parser variants. Do not call the repair complete until the original outcome passes; record partial mechanism improvements separately. Apply this gate in handover and release notes as well as code review.
 
+## Skills, reports and dynamic surfaces
+
+Before changing skill behavior or building a dashboard, report, form, table or chart workflow, read [SKILL-AUTHORING.md](docs/SKILL-AUTHORING.md). It is the maintained method: domain procedures chain to enabled `interactive-ui` and `surface-design`, one canonical data owner feeds visual and spoken projections, and existing integrations/tasks keep execution authority. [SKILLS.md](docs/SKILLS.md) owns loading/import/update contracts; [CANVAS.md](docs/CANVAS.md) owns placement and interaction. Read the chart support matrix before promising a specialist visualization. Do not rebuild a domain compiler, expression engine, connector path or narration store for a new report type. Update the guide when changing the method; put verification/current state in [HANDOVER.md](docs/HANDOVER.md) and [EVALUATION.md](docs/EVALUATION.md).
+
 ## Commands
 
 ```bash
@@ -52,6 +56,8 @@ npm run web                      # the app in a browser on http://127.0.0.1:5178
 npm run desktop:build            # release .app and .dmg in src-tauri/target/release/bundle
 node scripts/version.ts X.Y.Z    # set the version in all three places
 node scripts/canvas-check.ts     # WebKit smoke of the canvas (after npm run build)
+node scripts/surface-design-check.ts # mixed layouts + every standard chart kind in WebKit
+node scripts/skills-check.ts     # reviewed built-in updates, wide/narrow WebKit
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 

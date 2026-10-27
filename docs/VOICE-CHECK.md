@@ -14,3 +14,6 @@ Use the installed local dictation and read-aloud providers already configured in
 8. If testing media playback, speak over a local clip. Playback pauses; the overlapping utterance is discarded before transcription. Repeat the command after the pause and confirm one local action without model/tool work.
 
 Record each observation against its tracker item. Keep failed or untried items open; capture the relevant local transcript/log without publishing personal recordings or credentials. Tune endpoint/echo behavior only from retained observations.
+
+
+Report/skill authoring now has a maintained [visual and spoken contract](SKILL-AUTHORING.md#design-the-visual-and-spoken-projections-together). The canonical weekly-report regression in `test/voice.test.ts` preserves decimal findings, period and caveat through gist/screen/details and a bound edit. These offline checks do not replace the live microphone/audio procedure in this document.

@@ -77,6 +77,8 @@ Current: Node 24.22.1 (Krypton LTS, security release of 2026-10-20) with npm 11.
    cargo test --manifest-path src-tauri/Cargo.toml --lib
    npm run build && node scripts/canvas-check.ts      # WebKit smoke, wide and narrow
    ```
+   For skill or dynamic-surface changes, also follow [the authoring guide](SKILL-AUTHORING.md): run `node scripts/skills-check.ts` and `node scripts/surface-design-check.ts` after the UI build, and retain the voice projection regression. In the installed window check that new defaults seed once, changed defaults offer reviewed updates, custom/removal/on-off choices survive, and the same surface remains intelligible through visual and spoken projections. Synthetic spoken text does not certify live audio/microphone behavior. Keep failed model/source/interaction/receipt gates open in release notes; do not replace skill files silently during installation.
+
 5. **Build:** `npm run desktop:build`. It bundles the sidecar (framework included), the Node binary and npm. Output: `src-tauri/target/release/bundle/macos/Vakyartha.app` and `bundle/dmg/Vakyartha_X.Y.Z_<arch>.dmg`.
 6. **Install locally and smoke-test the installed app:**
    ```bash

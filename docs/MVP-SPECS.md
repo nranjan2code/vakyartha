@@ -1,5 +1,7 @@
 # Vakyartha agent MVP
 
+Authoring implementation method: [SKILL-AUTHORING.md](SKILL-AUTHORING.md) defines reusable procedures, data/view contracts, supported charts and visual/spoken projection requirements. It reuses canonical runtime ownership; new report types do not require new domain engines.
+
 Current authoring boundary (2026-10-27): skills guide procedures and composition; shared record mappings, canonical transactions and governed capabilities execute them. Source-specific derive/prepare/workspace compilation is deleted. Original source/calculation/interaction/output requirements below remain acceptance requirements; historical compiler-path results do not close them for the current implementation.
 
 

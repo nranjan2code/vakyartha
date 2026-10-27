@@ -147,7 +147,8 @@ function say(node: ResolvedNode, out: string[], w?: Words): void {
       return kids();
     case "text": {
       const content = str(p.content);
-      const first = mode === "gist" ? /^[^.!?…।]*[.!?…।]/.exec(content)?.[0] : undefined;
+      // A decimal is part of the finding, not the end of its spoken gist.
+      const first = mode === "gist" ? /^[\s\S]*?[.!?…।](?=\s|$)/.exec(content)?.[0] : undefined;
       if (first && first.length < content.length) left = true;
       return put(first ?? content);
     }

@@ -2,6 +2,8 @@
 
 Scope: app chat/tasks, skill import/selection/loading, integration discovery/install/configuration, MCP transport, agent dispatch, approvals, result propagation and channel wiring. This is a source/contract review with offline and loopback regressions. No paid model call, external integration installation, installed-app replacement or live-channel restart was performed.
 
+The maintained creation/extension method is [SKILL-AUTHORING.md](SKILL-AUTHORING.md), including chart and spoken-projection limits. This audit records execution evidence rather than a second implementation recipe.
+
 ## How execution works
 
 1. The app owns the curated/imported integration definitions and skill files. Projection owns integration installation, connections, tool adaptation and default policies. Credentials remain in the app's secret store.

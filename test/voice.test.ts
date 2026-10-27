@@ -632,3 +632,33 @@ test("the model only fills what the rules cannot, and only with values the surfa
   await v.hear("near the station");
   assert.match(said.at(-1)!, /^Sorry, which one\?/, "a value outside the schema is dropped");
 });
+
+test("a canonical report keeps decimal findings, period and caveats in visual and spoken projections", async () => {
+  const { basicCatalog, SurfaceStore, projectText } = await import("@vak/core");
+  const store = new SurfaceStore(basicCatalog);
+  const readings = [10, 11, 12, 13, 9, 10.5, 11.5, 12.5];
+  store.render({ surface: "report", title: "Weekly observations", data: { records: readings.map((reading, i) => ({ label: `Day ${i + 1}`, reading })) }, nodes: [
+    { id: "root", type: "stack", children: ["summary", "coverage", "table", "chart", "form"] },
+    { id: "summary", type: "text", props: { content: "The latest reading is {/records/7/reading} units for the week ending 23 October 2026; this is a supplied snapshot. More detail follows.", priority: "primary" } },
+    { id: "coverage", type: "alert", props: { tone: "warning", title: "Coverage", body: "No live feed is connected." } },
+    { id: "table", type: "table", props: { columns: ["Day", "Reading in units"], rows: { records: "{/records}", fields: ["label", "reading"] }, maxWidth: "full" } },
+    { id: "chart", type: "chart", props: { kind: "line", series: { records: "{/records}", label: "label", fields: ["reading"] }, maxWidth: "md" } },
+    { id: "form", type: "form", props: { submit: "review", maxWidth: "sm" }, children: ["reading"] },
+    { id: "reading", type: "input", props: { kind: "number", label: "Last reading", bind: "/records/7/reading" } },
+  ] });
+  const check = (reading: number) => {
+    const resolved = store.resolve("report")!;
+    assert.match(projectText(resolved), new RegExp(`latest reading is ${reading} units for the week ending 23 October 2026`));
+    for (const mode of ["screen", "gist", "details"] as const) {
+      const speech = spokenSurface(resolved, "en", mode);
+      assert.ok(speech.includes(`latest reading is ${reading} units for the week ending 23 October 2026; this is a supplied snapshot.`), "the spoken finding must not stop at a decimal point");
+      assert.ok(speech.includes("No live feed is connected."), "coverage cannot be lost in the gist");
+      assert.doesNotMatch(speech, /Last reading|\/records\/7|submit|measure-/);
+      const voiced = speechChunks(speech, "en").join(" ");
+      assert.ok(voiced.includes(String(reading).replace(".", " point ")), "speech chunks retain decimal meaning");
+    }
+  };
+  check(12.5);
+  store.setValue("report", "/records/7/reading", 14.5);
+  check(14.5);
+});

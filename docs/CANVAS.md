@@ -3,6 +3,8 @@
 The desktop app and playground own the canvas and the Artifacts library. The
 framework continues to own surfaces, rendering, bindings, validation and actions.
 
+For composition rather than canvas mechanics, read [SKILL-AUTHORING.md](SKILL-AUTHORING.md): shared surface-design guidance, content measures, chart selection and the visual/spoken contract. The app's spoken projection uses the same resolved surface, not a second report payload. Keep findings, reporting periods, units and important caveats in readable content; controls and visual position alone do not carry them into TTS.
+
 ## Experience
 
 Tables, charts and stat aggregates can map fields of one bound record collection. Form edits to that collection update every mapped view through the existing surface store. Display values participate in renderer refresh; controls with explicit synchronization preserve their focused DOM. Mappings do not create separate data copies or execute formula strings. Repeated field names retain their canonical paths when submitted, so editing several records cannot collapse their values.

@@ -260,3 +260,8 @@ Pipeline audit checkpoint (2026-10-27): dispatch revalidation, supported native 
 
 
 Fresh pipeline install (2026-10-27): exact committed source, fresh dependencies/empty Rust target and matching installed/standard file manifests; About, Skills and saved/new canvas rendering checked. The single local smoke omitted the explicitly requested Ready status in raw authoring, so content correctness fails and no model-outcome checkbox closes. Raw failure retained; no repeat attempt. [Evaluation](EVALUATION.md), [installation provenance](RELEASING.md).
+
+
+## Skill and surface-layout audit checkpoint — 2026-10-27
+
+[Maintained guide](SKILL-AUTHORING.md) and [audit](SKILL-AUDIT.md): thirteen focused built-ins and shared design chaining, plus Vakyartha instruction-creation guidance. Projection `c045a3c` adds semantic measures for all components, sparse-grid stability, explicit responsive alignment and bounded chart drawing. Mixed-layout and existing canvas WebKit checks preserve local controls and drafts. The canonical visual/spoken report regression retains decimal findings and caveats; all eight standard chart paths and dated heatmap are checked. 164 app/393 framework tests, typechecks and builds pass. Primary-local mapped-table gate passes only one of three cases; two abort before canonical publication. A1/A2 and all existing source/value/semantic/interaction/receipt/installed outcome gates remain open. No broad reliability claim, installed replacement or new dependency.

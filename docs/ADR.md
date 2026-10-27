@@ -389,3 +389,12 @@ The old deterministic per-row computation guarantee is removed with that code. G
 Accepted. Remove the unused compact/strict runtime choice and duplicate transactional prompt helper. Active transactional/progressive turns each use one protocol owner and typed component descriptors. Share root/descendant schema definitions instead of copying the catalog. Dynamic JSON data is validated by mappings or optional caller-known schemas; native tool descriptions are not represented as constrained decoding.
 
 Skills contain concise task procedures. Their trusted local loader uses the existing counted loop as context work, including when external-operation allowance is zero; it cannot authorize external effects or bypass answer-step limits. External tools remain budgeted by default. Repeated form leaf names submit distinct canonical pointer keys. No per-domain authoring stack, implicit fact conversion or additional persistence/IPC is introduced.
+
+
+## ADR-038: reusable domain skills share visual and spoken composition (2026-10-27)
+
+Accepted. Repeated dashboard/report procedures belong in focused app skills, chained through the existing enabled-skill loader to shared interactive-ui and surface-design guidance. No new per-domain compiler, formula engine, integration lifecycle or narration store is introduced. Reporting periods and automatic delivery are distinct capabilities.
+
+Projection supplies general semantic content measures and responsive layout; the app owns workflow instructions, theme tokens and voice projection. One canonical resolved surface feeds both the visual canvas and lowered spoken content. Essential findings, units, periods and limitations belong in readable content, with spoken gist limits considered during authoring. Unsupported chart kinds and computation semantics remain explicit rather than being implied by an alias.
+
+[SKILL-AUTHORING.md](SKILL-AUTHORING.md) is the maintained method, discoverable from README, AGENTS, specs and canvas docs. SKILLS owns lifecycle details; audit/evaluation/handover own evidence and current state. A source documentation or renderer pass does not close primary-provider, factual, semantic, receipt or installed outcome gates. The fresh mapped-table gate remains failed (one of three passes). A canonical report regression reproduced decimal truncation in spoken gist; its fix preserves the full first sentence and does not change report facts or introduce additional generation.

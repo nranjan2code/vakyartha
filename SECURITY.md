@@ -82,3 +82,6 @@ External endpoint validation excludes embedded credentials, query/fragment, lite
 ## Capability dispatch revalidation
 
 Integration changes invalidate tools captured by an existing run and its chat-wide grants. Approval waits recheck authority/cancellation before dispatch. Supported native tool arguments are validated before effects; incomplete native generations and ambiguous tool names dispatch nothing. MCP errors/denials remain explicit failures through task receipts and agent events. HTTP cancellation/timeout/close abort pending work and MCP parsing is bounded at 8 MiB. This cannot undo an operation already received by a service. Skills remain instructions only; stale prepared selection context fails explicitly. Verification and remaining transport/schema/skill/channel limits are in [the pipeline review](docs/PIPELINE-REVIEW.md).
+
+
+Reusable skill/report authoring follows [the maintained method](docs/SKILL-AUTHORING.md). Skills remain instruction-only: common layout measures are validated semantic props, not arbitrary executable styling, and spoken content comes from canonical surfaces rather than a separate model-authorized payload. Domain names, report cadence and visible buttons do not grant integration access or create recurrence.

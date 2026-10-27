@@ -83,6 +83,10 @@ npm run typecheck
 
 For development, provider keys can also go in a local `.env` (see [`.env.example`](.env.example)). Changes to the engine belong in [Projection](https://github.com/nranjan2code/Projection), never in `framework/`; [RELEASING.md](docs/RELEASING.md) explains how to pull them in. Working rules: [AGENTS.md](AGENTS.md).
 
+### Build a skill, report or dashboard
+
+Start with the [reusable authoring guide](docs/SKILL-AUTHORING.md): existing daily workflows, how skills select and chain, canonical data/bindings, responsive layout, supported chart types, visual/spoken projections and verification. [Skills](docs/SKILLS.md) explains installing/editing and reviewed built-in updates. A report's daily/weekly/monthly window does not create automatic recurring delivery. The [audit](docs/SKILL-AUDIT.md) records implementation evidence and remaining reliability limits.
+
 ### How it fits together
 
 | Part | Where | What |
@@ -92,6 +96,7 @@ For development, provider keys can also go in a local `.env` (see [`.env.example
 | Engine | `sidecar/main.ts` → `sidecar/server.ts` | `@vak/host` plus settings, channels, integrations, client-log and info routes; token-protected for the window, loopback-only for `npm run web` |
 | Settings store | `sidecar/settings.ts` | provider and channel keys in the Keychain; plain values in `settings.env` |
 | Integrations | `sidecar/integrations.ts`, `sidecar/marketplaces.ts` | curated catalog plus external discovery/review and imported definitions; installing and running them is Projection's `Integrations` |
+| Skills | `sidecar/skills-builtin.ts`, `sidecar/skills.ts`, `src/skills-page.ts` | reusable procedures, counted selection, instruction-only import and reviewed updates ([guide](docs/SKILL-AUTHORING.md)) |
 | FinOps | `sidecar/finops.ts`, `src/finops-page.ts` | local usage ledger, model rates, per-turn charts and CSV export ([FINOPS.md](docs/FINOPS.md)) |
 | Channels | `sidecar/channels.ts` | Telegram (`runTelegram`); Slack and Discord slots |
 | UI | `src/` | chats, thread, composer, approvals, canvas and Artifacts ([CANVAS.md](docs/CANVAS.md)), Settings, themes, right-click menus |
@@ -114,6 +119,8 @@ Each folder holds `sessions/`, `integrations/`, `integrations.json`, `channels.j
 - **Inspector:** Option-right-click in a dev build.
 
 ## Documentation
+
+- [SKILL-AUTHORING.md](docs/SKILL-AUTHORING.md): start here for reusable skills, reports, dashboards, chart selection and visual/spoken composition; [SKILLS.md](docs/SKILLS.md) defines the lifecycle, and [SKILL-AUDIT.md](docs/SKILL-AUDIT.md) retains evidence.
 
 - [SPECS.md](docs/SPECS.md): what the app is, its framework dependency and identity.
 - [MVP-SPECS.md](docs/MVP-SPECS.md), [MVP-CHECKLIST.md](docs/MVP-CHECKLIST.md) and [ADR.md](docs/ADR.md): agent MVP implementation, preserved interactive surfaces, architecture decisions, progress gates and later scope.

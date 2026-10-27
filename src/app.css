@@ -50,6 +50,12 @@ vak-surface {
   --vak-accent-fg: var(--accent-fg);
   --vak-accent-soft: var(--soft);
   --vak-series-1: var(--accent);
+  --vak-weight-heading: 600;
+  --vak-weight-label: 500;
+  --vak-weight-value: 650;
+  --vak-radius: 12px;
+  --vak-card-padding: 18px;
+  --vak-space-lg: 24px;
   font-size: var(--base);
 }
 * { box-sizing: border-box; }

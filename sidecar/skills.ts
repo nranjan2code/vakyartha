@@ -1,3 +1,4 @@
+// Maintained authoring method: docs/SKILL-AUTHORING.md; lifecycle: docs/SKILLS.md.
 // Skills are reviewed instruction files (SKILL.md), never code: bundled scripts
 // are listed at review and not imported. The system prompt carries only each
 // enabled skill's name and description; `use_skill` loads the instructions when
