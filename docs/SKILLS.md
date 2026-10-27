@@ -25,7 +25,7 @@ The interactive-ui skill teaches related views mapped from one collection of rec
 
 The source-specific CSV bridge, derive/prepare tools, parameter options and automatic form/report compiler are removed. There is one general authoring path; ordinary task input snapshots and governed external tool results remain available as untrusted data. Validation, permissions, canonical persistence, revision checks and output receipts remain execution code.
 
-Skill selection is verified separately from answer correctness. Historical local trials and the current authorized provider comparison are in [EVALUATION.md](EVALUATION.md). No provider result implies a platform reliability threshold. The installed app is unchanged by source edits. Built-ins are seeded once; existing files are never silently replaced. Updates are reviewed explicitly, and edited/removed skills stay preserved until the user chooses a replacement. Catalog skills remain pinned to their reviewed version; built-in update availability does not claim an upstream catalog check.
+Skill selection is verified separately from answer correctness. Historical local trials and the current authorized provider comparison are in [EVALUATION.md](EVALUATION.md). No provider result implies a platform reliability threshold. The installed app now uses the verified cleanup build; source edits alone still require a rebuild/restart before becoming installed behavior. Built-ins are seeded once; existing files are never silently replaced. Updates are reviewed explicitly, and edited/removed skills stay preserved until the user chooses a replacement. Catalog skills remain pinned to their reviewed version; built-in update availability does not claim an upstream catalog check.
 
 ## Catalog and review
 
@@ -45,7 +45,7 @@ Data: `<data>/skills/<name>/SKILL.md` and `<data>/skills/skills.json` (on/off st
 
 ## Skill and prompt audit (2026-10-27)
 
-The interactive-ui skill is222 words (1,753 characters), reduced from355 (2,822). It retains the non-obvious mapping/binding contract and action handling; it does not prescribe a domain or require unrelated views to share data. Discovery offers names/descriptions, then selected bodies load on demand. No reference router or forced extra authoring stage was added for this short skill.
+The interactive-ui skill is 222 words (1,753 characters), reduced from355 (2,822). It retains the non-obvious mapping/binding contract and action handling; it does not prescribe a domain or require unrelated views to share data. Discovery offers names/descriptions, then selected bodies load on demand. No reference router or forced extra authoring stage was added for this short skill.
 
 The larger context cost was a duplicated root/descendant catalog schema, reduced from about66k to34k characters. Runtime compact/strict controls were removed: transactional and progressive execution each receive their active typed protocol, with no contradictory helper variant. Caller dataSchema is optional and describes only known canonical data; it is not inferred from each user request. Native tool schemas remain guidance unless actual decoding is supported, followed by runtime validation. Existing catalog ingestion handles declared aliases and supported scalar conversions; it does not justify guessing facts, treating missing values as zero or executing formula text.
 

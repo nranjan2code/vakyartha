@@ -1,6 +1,6 @@
 # RELEASING.md: Vakyartha
 
-Current source-only checkpoint (2026-10-27): the source-specific execution API/compiler is deleted and the app dependency pin adopts that breaking framework change and the subsequent prompt/schema/context-budget cleanup. The current source checkpoint is383 framework/161 app checks with wide/narrow task/canvas/fresh-output WebKit. No local installed bundle has been updated for this cleanup. Historical manifests and outcomes below describe their recorded revisions only; reverify skill-led source calculations, interactions and output receipts before attributing them to a new build.
+Current local checkpoint (2026-10-27): app code `0d7ab3d` / Projection `6ca8487` is freshly built, installed and relaunched.161 app/383 framework checks, native/type/build and wide/narrow WebKit checks pass; exact provenance and installed smoke are recorded below. Historical manifests/outcomes apply only to their recorded revisions.
 
 
 How Vakyartha is versioned, how it takes framework updates from Projection, and how a release is built, checked, installed and published. Rules for any change: [AGENTS.md](../AGENTS.md).
@@ -185,6 +185,22 @@ Both frozen local authoring trials failed and published/exported no invalid cand
 
 Exact committed app source `68fd14acfd552e71ceca8dd38d2bac4777a87ff1`, pushed Projection `ca9f512178d0f17df0f20ebba5bb5faecaca0bf7`. Fresh git archives, `npm ci`,158 app tests/typecheck and an initially absent Rust target;373 pinned framework tests/replay pass. The same snapshot passes wide/narrow task WebKit checks. Release compilation took2m11s. DMG packaging initially failed to detach its own temporary image; verified its build-owned path, ejected normally, then rebuilt frontend/sidecar and packaged successfully from the same fresh source/target. No stale target or source changes.
 
-Replaced `/Applications/Vakyartha.app` and the standard app/DMG artifacts as complete bundles. All 1,931 regular files/symlinks match the fresh bundle; manifest SHA256 `f1e19b432ce1f6e8739880759b42044ed7310ce028a7ffcde18012197f8a62fc`. Receipt `.vak/builds/2026-10-27-source-workspace-install.json` retains exact source/target and recoverable previous-install paths. Relaunched explicitly from `/Applications/Vakyartha.app`; native About verifies0.2.0 / Node24.22.1, Keychain/existing data, and Schedule loads. No installed model call, paid run, channel test, public release or tag.
+Replaced `/Applications/Vakyartha.app` and the standard app/DMG artifacts as complete bundles. All 1,931 regular files/symlinks match the fresh bundle; manifest SHA256 `f1e19b432ce1f6e8739880759b42044ed7310ce028a7ffcde18012197f8a62fc`. Receipt `.vak/builds/2026-10-27-source-workspace-install.json` retains exact source/target and recoverable previous-install paths. Relaunched explicitly from `/Applications/Vakyartha.app`; native About verifies 0.2.0 / Node 24.22.1, Keychain/existing data, and Schedule loads. No installed model call, paid run, channel test, public release or tag.
 
 The original selected-file report and changed-budget continuation are independently verified on the source workspace path; broader no-total/source-only and free-form probes remain open (EVALUATION.md). Installation does not close those gates. Subsequent documentation-only provenance commits do not change executable contents. Concurrent planning/research edits remain outside this build snapshot.
+
+
+## Local skill-led cleanup install — 2026-10-27
+
+Built executable source `0d7ab3d` with pushed Projection `6ca8487` in a newly created target `/tmp/vakyartha-skill-release.0DA05T`. After adding the reviewed skill-update UI, the app package was cleaned/rebuilt and previous intermediate bundles were moved aside; the final hook regenerated frontend, sidecar and bundled runtime resources. Node 24.22.1 passes its Foundation-signature/latest-LTS check. No dependency, signing setting or public release changed.
+
+Replaced `/Applications/Vakyartha.app` as a whole bundle, preserving a recoverable previous-app/skills backup. All 1,931 regular files/links/modes match the final build and standard app artifact. The app and DMG are also at the standard `src-tauri/target/release/bundle/` paths. Local receipt `.vak/builds/2026-10-27-skill-install.json` records exact paths, full manifest, backup and skill changes.
+
+- Manifest SHA-256: `f9d0bb30a8d2d92b56481ad3e7857f352179fbedb9fde202a0f9dc0f9bcf1f9d`.
+- Native SHA-256: `2d1b8a9fba1d22b28d8ffc6ee576ccb152f62cb369e1e4d616d4776e34a4376b`.
+- Sidecar SHA-256: `e4f4205b9f7a7de32f21cc97072531fcd0a480687a93d52c35546d97cd6b7747`.
+- DMG SHA-256: `f903decbbb69558ddfc14bd794efb27f27379f0364557e7387b5fedf694d629b`.
+
+Refreshed 11 built-ins only after exact comparison with their previously shipped defaults, seeded assistant/interactive-ui, preserved the removed commit-message skill and the pinned catalog skill. Installed list is 13 built-ins plus 1 catalog skill, with no pending built-in update. Future changes use the Updates filter, current/proposed preview and explicit update action; stale previews cannot overwrite later edits.
+
+Launched explicitly from `/Applications/Vakyartha.app`. Native About verifies 0.2.0, Node 24.22.1, Keychain and installed data path. The local primary model renders Installation check / Ready in 67.1 seconds, and the same result opens in canvas. Current skill selection is recorded in the receipt. This is a bounded installed smoke, separate from the fresh Luna outcome and wider open reliability gates. No installed paid model call, public release or tag. Subsequent documentation-only commits do not alter this executable snapshot.
