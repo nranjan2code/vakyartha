@@ -46,6 +46,8 @@ export interface AppServerOptions {
   access: "token" | "open";
   /** npm for installing integrations: a command or a path to npm-cli.js (the release app bundles one). */
   npm?: string;
+  /** Path to vaksb binary for OS-level sandboxing (release app bundles one). */
+  sandboxBin?: string;
   /** Discovery transport override for deterministic catalog/lifecycle checks. */
   marketplaceFetch?: typeof fetch;
   marketplaceImageFetch?: typeof pinnedFetch;
@@ -236,7 +238,8 @@ ${skills.index()}`;
   });
 
   marketplaces = new Marketplaces(dataDir, [...CATALOG, ...media.entries()], opts.marketplaceFetch, opts.marketplaceImageFetch);
-  integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: true, binaryPath: "vaksb" } }, media, marketplaces.catalog);
+  const sandboxBin = opts.sandboxBin || "vaksb";
+  integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: true, binaryPath: sandboxBin } }, media, marketplaces.catalog);
   // Refresh app-owned tool schemas after an upgrade; the integration journal
   // may otherwise retain an older model's controls indefinitely.
   for (const entry of integrations.view().filter((i) => i.enabled && i.entry.id.startsWith("media-"))) {

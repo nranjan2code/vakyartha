@@ -4,3 +4,4 @@ node_modules/
 .vak/
 *.tmp
 dist/
+src-tauri/binaries/

@@ -169,6 +169,11 @@ fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
             // Dev keys stay apart from the installed app's.
             .env("VAK_KEYCHAIN_SERVICE", "com.nranjan2code.vakyartha.dev")
             .env("VAK_ENV_FILES", repo.join(".env"));
+        // Dev: point at the sandbox binary if built.
+        let dev_vaksb = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("sandbox").join("target").join("release").join("vaksb");
+        if dev_vaksb.exists() {
+            cmd.env("VAK_SANDBOX_BIN", dev_vaksb);
+        }
         Ok(cmd)
     } else {
         // externalBin binaries land next to the app executable, without the target triple.
@@ -190,8 +195,12 @@ fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
             .resource_dir()
             .map_err(|e| format!("resource dir: {e}"))?
             .join("resources/npm/bin/npm-cli.js");
+        let vaksb = dir.join(if cfg!(windows) { "vaksb.exe" } else { "vaksb" });
         let mut cmd = Command::new(node);
         cmd.arg("--disable-warning=ExperimentalWarning").arg(script).env("VAK_DATA_DIR", data).env("VAK_APP_VERSION", env!("CARGO_PKG_VERSION")).env("VAK_NPM_CLI", npm);
+        if vaksb.exists() {
+            cmd.env("VAK_SANDBOX_BIN", vaksb);
+        }
         Ok(cmd)
     }
 }

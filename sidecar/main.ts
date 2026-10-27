@@ -21,6 +21,7 @@ const app = await startAppServer({
   access: "token",
   version: process.env.VAK_APP_VERSION,
   npm: process.env.VAK_NPM_CLI,
+  sandboxBin: process.env.VAK_SANDBOX_BIN,
 });
 console.log(`VAK_READY ${JSON.stringify({ port: app.port, token: app.token })}`);
 

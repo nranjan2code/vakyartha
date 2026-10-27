@@ -68,3 +68,21 @@ chmodSync(bin, 0o755);
 const npmDir = path.resolve(path.dirname(realpathSync(process.execPath)), "../lib/node_modules/npm");
 cpSync(npmDir, path.join(tauri, "resources", "npm"), { recursive: true, dereference: true });
 console.log(`sidecar → ${path.relative(app, path.join(tauri, "resources/sidecar.mjs"))}, node ${process.version} → ${path.relative(app, bin)}`);
+
+// Bundle vaksb (vak-sandbox CLI) as an external binary alongside node.
+const sandboxRepo = path.resolve(app, "..", "sandbox");
+const vaksbSrc = path.join(sandboxRepo, "target", "release", "vaksb");
+// Build if not already built
+const { existsSync } = await import("node:fs");
+if (!existsSync(vaksbSrc)) {
+  console.log("Building vaksb from sandbox repo...");
+  spawnSync("cargo", ["build", "--release", "-p", "vak-sandbox-ctl"], { cwd: sandboxRepo, stdio: "inherit" });
+}
+const vaksbBin = path.join(tauri, "binaries", `vaksb-${triple}${ext}`);
+if (existsSync(vaksbSrc)) {
+  copyFileSync(vaksbSrc, vaksbBin);
+  chmodSync(vaksbBin, 0o755);
+  console.log(`vaksb → ${path.relative(app, vaksbBin)}`);
+} else {
+  console.warn("warning: vaksb binary not found; sandbox isolation will be unavailable in this build");
+}
