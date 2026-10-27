@@ -4,6 +4,7 @@
 // instructions are reviewed, and starts off.
 
 import { api, ask, el } from "./core.ts";
+import { skillPublisherIcon } from "./catalog-icons.ts";
 import { icon, tile } from "./icons.ts";
 import { group, pill, row, segmented, title, toggle } from "./ui.ts";
 import { SKILL_SOURCES, type SkillListing, type SkillReview, type SkillView } from "../shared/skills.ts";
@@ -49,7 +50,8 @@ export async function skillsPage(): Promise<HTMLElement[]> {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     const shown = list.filter(s => (filter === "all" || (filter === "on" ? s.enabled : filter === "updates" ? Boolean(s.update) : origin(s) === filter)) && words.every(w => `${s.name} ${s.description}`.toLowerCase().includes(w)));
     grid.replaceChildren(...shown.map(s => {
-      const card = el("button", { type: "button", className: "market-card" }, tile(SKILL_GLYPHS[s.name] ?? "spark", 40), el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-pub", textContent: originLabel(s) }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(originLabel(s)), pill(s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.update ? pill("Update", "bad") : null, el("span", { className: "market-card-action" }, "Manage", icon("arrow", 14))));
+      const mark = s.source ? skillPublisherIcon(s.source.repo, 40) : tile(SKILL_GLYPHS[s.name] ?? "spark", 40);
+      const card = el("button", { type: "button", className: "market-card" }, mark, el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-pub", textContent: originLabel(s) }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(originLabel(s)), pill(s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.update ? pill("Update", "bad") : null, el("span", { className: "market-card-action" }, "Manage", icon("arrow", 14))));
       card.addEventListener("click", () => detail(s.name));
       return card;
     }));
@@ -106,13 +108,13 @@ export async function skillsPage(): Promise<HTMLElement[]> {
     catalog.replaceChildren(el("div", { className: "catalog-skeleton", "aria-hidden": "true" }), el("p", { className: "row-hint", role: "status", textContent: `Reading ${repo}…` }));
     try {
       const items = await api<SkillListing[]>(`/api/skills/catalog?repo=${encodeURIComponent(repo)}`);
-      const results = el("div", { className: "market" });
+      const results = el("div", { className: "market skills-catalog-market" });
       const find = el("input", { type: "search", className: "market-search", placeholder: `Search ${items.length} skills`, "aria-label": "Search catalog skills" });
       const paintResults = () => {
         const words = find.value.toLowerCase().split(/\s+/).filter(Boolean);
         results.replaceChildren(...items.filter(i => words.every(w => i.path.toLowerCase().includes(w))).map(i => {
           const action = el("span", { className: "catalog-action" }, list.some(s => s.name === i.name) ? "Installed" : "Review", icon("arrow", 14));
-          const b = el("button", { type: "button", className: "market-card external-card" }, el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: i.name }), el("div", { className: "market-pub", textContent: i.path || "/" })), el("div", { className: "market-foot" }, el("span", { className: "catalog-origin", textContent: repo }), action));
+          const b = el("button", { type: "button", className: "market-card external-card" }, skillPublisherIcon(repo, 40), el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: i.name }), el("div", { className: "market-pub", textContent: i.path || "/" })), el("div", { className: "market-foot" }, el("span", { className: "catalog-origin", textContent: repo }), action));
           b.addEventListener("click", () => void review(i)); return b;
         }));
         if (!results.children.length) results.append(el("p", { className: "row-hint", textContent: "Nothing matches." }));

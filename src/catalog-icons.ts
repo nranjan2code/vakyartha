@@ -78,6 +78,11 @@ export function publisherIcon(item: MarketplaceListing, query: string, cursor: s
   const route = item.iconUrl ? `/api/marketplaces/${source}/icon?q=${encodeURIComponent(query)}&cursor=${encodeURIComponent(cursor)}&key=${encodeURIComponent(item.key)}` : undefined;
   return imageTile(item.title, route, size);
 }
+/** Publisher identity for a public GitHub skill repository. */
+export function skillPublisherIcon(repo: string, size = 40): HTMLElement {
+  const owner = repo.split("/")[0] ?? "Skill";
+  return imageTile(owner, `/api/skills/icon?repo=${encodeURIComponent(repo)}`, size);
+}
 export function importedIcon(id: string, title: string, size = 40, available = true): HTMLElement {
   return imageTile(title, available ? `/api/integrations/${id}/icon` : undefined, size);
 }

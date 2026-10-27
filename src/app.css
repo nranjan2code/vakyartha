@@ -810,13 +810,14 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 .integrations-layout .market-text { min-width: 0; }
 .integrations-layout .market-name { margin: 0; overflow-wrap: anywhere; }
 .integrations-layout .market-foot { align-self: end; align-items: center; }
-.skills-market { grid-auto-rows: 216px; }
-.skills-market .market-card { height: 100%; min-height: 0; box-sizing: border-box; }
-.skills-market .market-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; line-height: 1.25; }
-.skills-market .market-pub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.skills-market .market-sum { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; line-height: 1.5; }
+.skills-market, .skills-catalog-market { grid-auto-rows: 216px; }
+.skills-market .market-card, .skills-catalog-market .market-card { height: 100%; min-height: 0; box-sizing: border-box; }
+.skills-market .market-name, .skills-catalog-market .market-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; line-height: 1.25; }
+.skills-market .market-pub, .skills-catalog-market .market-pub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skills-market .market-sum, .skills-catalog-market .market-sum { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; line-height: 1.5; }
 .skills-market .market-foot { min-width: 0; }
 .skills-market .market-foot > .pill:first-child { min-width: 0; max-width: 35%; overflow: hidden; text-overflow: ellipsis; }
+.skills-catalog-market .catalog-origin { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brand-tile, .publisher-icon { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 10px; background: #fff; overflow: hidden; }
 .brand-tile img, .publisher-icon img { display: block; width: calc(100% - 12px); height: calc(100% - 12px); object-fit: contain; }
 .publisher-icon { font-size: .8rem; font-weight: 600; color: var(--muted); background: var(--hover); }

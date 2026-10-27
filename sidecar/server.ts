@@ -314,9 +314,14 @@ ${skills.index()}`;
     const p = url.pathname;
     if (!p.startsWith("/api/skills")) return false;
     try {
-      const m = /^\/api\/skills(?:\/(catalog|review|add)|\/([a-z0-9-]+))?$/.exec(p);
+      const m = /^\/api\/skills(?:\/(catalog|review|add|icon)|\/([a-z0-9-]+))?$/.exec(p);
       if (!m) json(res, 404, { error: "Unknown skill route" });
       else if (m[1] === "catalog" && req.method === "GET") json(res, 200, await skills.search(url.searchParams.get("repo") ?? ""));
+      else if (m[1] === "icon" && req.method === "GET") {
+        const image = await skills.icon(url.searchParams.get("repo") ?? "");
+        res.writeHead(200, { "content-type": image.type, "content-length": image.bytes.length, "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox", "cache-control": "private, max-age=3600" });
+        res.end(image.bytes);
+      }
       else if (m[1] === "review" && req.method === "POST") { const b = await readJson(req); json(res, 200, await skills.review(String(b.repo ?? ""), String(b.path ?? ""))); }
       else if (m[1] === "add" && req.method === "POST") { const b = await readJson(req); json(res, 200, { name: skills.add(String(b.fingerprint ?? ""), b.acknowledged === true) }); }
       else if (!m[1] && !m[2] && req.method === "GET") json(res, 200, skills.view());

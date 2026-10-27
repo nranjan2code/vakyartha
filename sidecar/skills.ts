@@ -43,6 +43,8 @@ export class Skills {
   private listings = new Map<string, { at: number; items: SkillListing[] }>();
   private files = new Map<string, string[]>();
   private reviews = new Map<string, { review: SkillReview; text: string }>();
+  private icons = new Map<string, { bytes: Buffer; type: string }>();
+  private iconRequests = new Map<string, Promise<{ bytes: Buffer; type: string }>>();
 
   constructor(dataDir: string, fetcher: typeof fetch = fetch, now = () => Date.now()) {
     this.now = now;
@@ -216,6 +218,52 @@ export class Skills {
     const res = await this.fetcher(url, { headers: { accept, "user-agent": "vakyartha" }, redirect: "error", signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new Error(res.status === 403 || res.status === 429 ? "The repository host is rate limiting requests. Try again later." : `The repository could not be read (${res.status})`);
     return res;
+  }
+
+  /** Publisher identity only: a validated GitHub account avatar, never skill files. */
+  async icon(repo: string): Promise<{ bytes: Buffer; type: string }> {
+    if (!REPO.test(repo)) throw new Error("Enter a repository as owner/name");
+    const owner = repo.split("/", 1)[0]!.toLowerCase();
+    const cached = this.icons.get(owner);
+    if (cached) return cached;
+    let pending = this.iconRequests.get(owner);
+    if (!pending) {
+      pending = (async () => {
+        const profile = await (await this.get(`https://api.github.com/users/${encodeURIComponent(owner)}`, "application/vnd.github+json")).json() as { avatar_url?: unknown };
+        let avatar: URL;
+        try { avatar = new URL(typeof profile.avatar_url === "string" ? profile.avatar_url : ""); }
+        catch { throw new Error("The publisher has no usable icon"); }
+        if (avatar.protocol !== "https:" || avatar.hostname !== "avatars.githubusercontent.com" || !/^\/u\/\d+$/.test(avatar.pathname)) throw new Error("The publisher has no usable icon");
+        avatar.search = "";
+        const response = await this.fetcher(avatar.href, { headers: { accept: "image/png,image/jpeg,image/webp", "user-agent": "vakyartha" }, redirect: "error", signal: AbortSignal.timeout(8000) });
+        if (!response.ok) throw new Error("Publisher icon is unavailable");
+        if (!response.body) throw new Error("Publisher icon is unavailable");
+        const reader = response.body.getReader(), chunks: Uint8Array[] = [];
+        let length = 0;
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            length += value.byteLength;
+            if (length > 262_144) { await reader.cancel(); throw new Error("Publisher icon is too large"); }
+            chunks.push(value);
+          }
+        } finally { reader.releaseLock(); }
+        if (!length) throw new Error("Publisher icon is unavailable");
+        const bytes = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)), length);
+        const type = bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? "image/png"
+          : bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 ? "image/jpeg"
+          : bytes.subarray(0, 4).toString() === "RIFF" && bytes.subarray(8, 12).toString() === "WEBP" ? "image/webp" : "";
+        if (!type) throw new Error("Unsupported publisher icon format");
+        const result = { bytes, type };
+        this.icons.set(owner, result);
+        if (this.icons.size > 64) this.icons.delete(this.icons.keys().next().value!);
+        return result;
+      })();
+      this.iconRequests.set(owner, pending);
+    }
+    try { return await pending; }
+    finally { this.iconRequests.delete(owner); }
   }
 
   /** Lists skills at the newest commit at least 14 days old, the same age rule integrations follow. */
