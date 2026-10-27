@@ -321,7 +321,7 @@ ${skills.index()}`;
       else if (m[1] === "add" && req.method === "POST") { const b = await readJson(req); json(res, 200, { name: skills.add(String(b.fingerprint ?? ""), b.acknowledged === true) }); }
       else if (!m[1] && !m[2] && req.method === "GET") json(res, 200, skills.view());
       else if (!m[1] && !m[2] && req.method === "POST") { const b = await readJson(req); json(res, 200, skills.save(String(b.text ?? ""))); }
-      else if (m[2] && req.method === "PUT") { const b = await readJson(req); if (typeof b.enabled === "boolean") skills.setEnabled(m[2], b.enabled); else skills.save(String(b.text ?? ""), m[2]); json(res, 200, skills.view()); }
+      else if (m[2] && req.method === "PUT") { const b = await readJson(req); if (typeof b.enabled === "boolean") skills.setEnabled(m[2], b.enabled); else if (typeof b.updateFingerprint === "string") skills.updateBuiltin(m[2], b.updateFingerprint, String(b.currentFingerprint ?? "")); else skills.save(String(b.text ?? ""), m[2]); json(res, 200, skills.view()); }
       else if (m[2] && req.method === "DELETE") { skills.remove(m[2]); json(res, 200, skills.view()); }
       else json(res, 405, { error: "method not allowed" });
     } catch (err) { json(res, 400, { error: (err as Error).message }); }

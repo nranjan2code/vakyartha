@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { BUILTIN_SKILLS } from "../sidecar/skills-builtin.ts";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,18 +26,23 @@ test("built-ins are planted on, once; a removed one stays removed", () => {
   assert.ok(!new Skills(d).view().some(x => x.name === "plan-my-day"));
 });
 
-test("builtin upgrades refresh untouched defaults while preserving edits, removals and disabled state", () => {
+test("builtin updates require a current preview and preserve edits, removals and disabled state", () => {
   const d = dir(), manager = new Skills(d), name = "explain-simply";
   manager.setEnabled(name, false);
   const previous = "---\nname: explain-simply\ndescription: Previous default.\n---\nPrevious instructions.\n";
-  const file = path.join(d, "skills", "skills.json"), saved = JSON.parse(readFileSync(file, "utf8"));
-  saved[name].builtinHash = createHash("sha256").update(previous).digest("hex");
-  writeFileSync(path.join(d, "skills", name, "SKILL.md"), previous); writeFileSync(file, JSON.stringify(saved));
-  const upgraded = new Skills(d);
+  writeFileSync(path.join(d, "skills", name, "SKILL.md"), previous);
+  const upgraded = new Skills(d), preview = upgraded.view().find(skill => skill.name === name)!;
+  assert.equal(preview.enabled, false); assert.equal(preview.body, "Previous instructions."); const update = preview.update; assert.ok(update);
+  assert.throws(() => upgraded.updateBuiltin(name, "stale", update.currentFingerprint), /review/);
+  upgraded.updateBuiltin(name, update.fingerprint, update.currentFingerprint);
   assert.equal(upgraded.view().find(skill => skill.name === name)!.enabled, false);
+  assert.equal(upgraded.view().find(skill => skill.name === name)!.update, undefined);
   assert.equal(readFileSync(path.join(d, "skills", name, "SKILL.md"), "utf8"), BUILTIN_SKILLS.find(skill => skill.includes("name: explain-simply\n")));
   const custom = previous.replace("Previous instructions.", "My instructions."); upgraded.save(custom, name);
+  const pending = upgraded.view().find(skill => skill.name === name)!.update!;
   assert.equal(new Skills(d).view().find(skill => skill.name === name)!.body, "My instructions.");
+  upgraded.save(custom.replace("My instructions.", "Changed after preview."), name);
+  assert.throws(() => upgraded.updateBuiltin(name, pending.fingerprint, pending.currentFingerprint), /review/);
   upgraded.remove(name); assert.ok(!new Skills(d).view().some(skill => skill.name === name));
 });
 

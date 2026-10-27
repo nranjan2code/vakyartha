@@ -4,7 +4,7 @@ Skills are reusable instructions the assistant follows when a request matches. S
 
 ## Built in
 
-Fourteen skills ship on: assistant, interactive-ui, plan-my-day, write-email, summarize, explain-simply, compare-options, trip-planner, meal-plan, budget-helper, debug-error, shell-command, code-review, commit-message (`sidecar/skills-builtin.ts`). Each is planted once (`seeded.json`); removals stay removed, while content fingerprints allow updates only to provably untouched defaults. User edits and on/off choices are preserved. The assistant skill holds general response/presentation guidance formerly embedded in the app server. The interactive-ui skill covers forms, data, bindings, tables, charts and submitted actions without domain-specific execution handlers.
+Fourteen skills ship on: assistant, interactive-ui, plan-my-day, write-email, summarize, explain-simply, compare-options, trip-planner, meal-plan, budget-helper, debug-error, shell-command, code-review, commit-message (`sidecar/skills-builtin.ts`). Each is planted once (`seeded.json`); removals stay removed. Changed built-ins show Update available in the Updates filter, with current/proposed instructions and an explicit Update skill action. Matching content fingerprints reject stale previews; on/off choices stay unchanged. The assistant skill holds general response/presentation guidance formerly embedded in the app server. The interactive-ui skill covers forms, data, bindings, tables, charts and submitted actions without domain-specific execution handlers.
 
 ## Format
 
@@ -25,7 +25,7 @@ The interactive-ui skill teaches related views mapped from one collection of rec
 
 The source-specific CSV bridge, derive/prepare tools, parameter options and automatic form/report compiler are removed. There is one general authoring path; ordinary task input snapshots and governed external tool results remain available as untrusted data. Validation, permissions, canonical persistence, revision checks and output receipts remain execution code.
 
-Skill selection is verified separately from answer correctness. Historical local trials and the current authorized provider comparison are in [EVALUATION.md](EVALUATION.md). No provider result implies a platform reliability threshold. The installed app is unchanged by source edits. Built-ins are seeded once; fingerprinted untouched defaults can update on restart, while edited/removed installed skill files are preserved. Unknown older files are not silently overwritten.
+Skill selection is verified separately from answer correctness. Historical local trials and the current authorized provider comparison are in [EVALUATION.md](EVALUATION.md). No provider result implies a platform reliability threshold. The installed app is unchanged by source edits. Built-ins are seeded once; existing files are never silently replaced. Updates are reviewed explicitly, and edited/removed skills stay preserved until the user chooses a replacement. Catalog skills remain pinned to their reviewed version; built-in update availability does not claim an upstream catalog check.
 
 ## Catalog and review
 
@@ -50,3 +50,7 @@ The interactive-ui skill is222 words (1,753 characters), reduced from355 (2,822)
 The larger context cost was a duplicated root/descendant catalog schema, reduced from about66k to34k characters. Runtime compact/strict controls were removed: transactional and progressive execution each receive their active typed protocol, with no contradictory helper variant. Caller dataSchema is optional and describes only known canonical data; it is not inferred from each user request. Native tool schemas remain guidance unless actual decoding is supported, followed by runtime validation. Existing catalog ingestion handles declared aliases and supported scalar conversions; it does not justify guessing facts, treating missing values as zero or executing formula text.
 
 Fixed assembly conflicts: related views may share a surface; follow-ups can use prior context; research evidence can use the same record mappings/positional cells the authoring contract supports. The fresh trial's first field-loss failure was in submission, not skill discovery. The later malformed native tree remains a retained failure. The final shortened-skill/general-runtime trial and actual WebKit replay pass; EVALUATION.md records the exact scope.
+
+## Updates
+
+New bundled skills seed once. Existing built-ins whose instructions differ from the current bundle appear under **Updates**, with an **Update available** badge. Their detail page shows both versions; **Update skill** replaces instructions only after that explicit choice and preserves on/off state. A changed file or offered version invalidates the old preview. Removed skills are not restored. Catalog skills remain on their reviewed commit; automatic upstream checks/replacements are not implemented.

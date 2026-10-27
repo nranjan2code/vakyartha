@@ -9,7 +9,7 @@ import { group, pill, row, segmented, title, toggle } from "./ui.ts";
 import { SKILL_SOURCES, type SkillListing, type SkillReview, type SkillView } from "../shared/skills.ts";
 
 const TEMPLATE = "---\nname: my-skill\ndescription: When to use this skill, in one sentence.\n---\n\nSteps the assistant follows when this skill applies.\n";
-type Filter = "all" | "on" | "builtin" | "catalog" | "yours";
+type Filter = "all" | "on" | "updates" | "builtin" | "catalog" | "yours";
 let filter: Filter = "all", query = "";
 
 const origin = (s: SkillView) => s.source ? "catalog" : s.builtin ? "builtin" : "yours";
@@ -25,7 +25,7 @@ export async function skillsPage(): Promise<HTMLElement[]> {
   const grid = el("div", { className: "market" });
   const search = el("input", { type: "search", className: "market-search", placeholder: "Search skills", value: query, "aria-label": "Search skills" });
   search.addEventListener("input", () => { query = search.value; paint(); });
-  const filters = segmented([["all", "All"], ["on", "On"], ["builtin", "Built in"], ["catalog", "From catalogs"], ["yours", "Yours"]] as const, filter, v => { filter = v; paint(); });
+  const filters = segmented([["all", "All"], ["on", "On"], ["updates", "Updates"], ["builtin", "Built in"], ["catalog", "From catalogs"], ["yours", "Yours"]] as const, filter, v => { filter = v; paint(); });
   filters.classList.add("catalog-filters");
   const installed = el("div", {}, el("div", { className: "market-bar" }, search, button("New skill…", () => editor()), filters), grid);
   const catalog = el("div");
@@ -33,13 +33,13 @@ export async function skillsPage(): Promise<HTMLElement[]> {
 
   function paint(): void {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    const shown = list.filter(s => (filter === "all" || (filter === "on" ? s.enabled : origin(s) === filter)) && words.every(w => `${s.name} ${s.description}`.toLowerCase().includes(w)));
+    const shown = list.filter(s => (filter === "all" || (filter === "on" ? s.enabled : filter === "updates" ? Boolean(s.update) : origin(s) === filter)) && words.every(w => `${s.name} ${s.description}`.toLowerCase().includes(w)));
     grid.replaceChildren(...shown.map(s => {
-      const card = el("button", { type: "button", className: "market-card" }, el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-pub", textContent: originLabel(s) }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(s.enabled ? "On" : "Off", s.enabled ? "ok" : "")));
+      const card = el("button", { type: "button", className: "market-card" }, el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-pub", textContent: originLabel(s) }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.update ? pill("Update available") : null));
       card.addEventListener("click", () => detail(s.name));
       return card;
     }));
-    if (!shown.length) grid.append(el("p", { className: "row-hint", textContent: list.length ? "Nothing matches." : "No skills yet." }));
+    if (!shown.length) grid.append(el("p", { className: "row-hint", textContent: filter === "updates" && !query.trim() ? "No built-in updates available." : list.length ? "Nothing matches." : "No skills yet." }));
   }
 
   async function reload(): Promise<void> { list = await api<SkillView[]>("/api/skills"); paint(); }
@@ -56,12 +56,21 @@ export async function skillsPage(): Promise<HTMLElement[]> {
     const s = list.find(x => x.name === name);
     if (!s) { home(); return; }
     const remove = button("Remove", async () => { if (await ask(`Remove the skill ${s.name}?`, "Remove")) { await api(`/api/skills/${s.name}`, { method: "DELETE" }); await reload(); home(); } });
+    const note = el("p", { className: "row-hint", role: "status" });
+    const update = s.update;
+    const apply = button("Update skill", async () => {
+      if (!update) return;
+      apply.disabled = true;
+      try { await api(`/api/skills/${s.name}`, { method: "PUT", body: JSON.stringify({ updateFingerprint: update.fingerprint, currentFingerprint: update.currentFingerprint }) }); await reload(); detail(s.name); }
+      catch (err) { note.textContent = (err as Error).message; apply.disabled = false; }
+    }, "primary small");
     root.replaceChildren(backHome(), ...title(s.name, s.description),
       el("div", { className: "badges" }, pill(originLabel(s)), pill(s.enabled ? "On" : "Off", s.enabled ? "ok" : "")),
       group(null,
         row("Use this skill", "When on, the assistant sees its name and description and loads the instructions when a request matches.", toggle(s.enabled, async on => { list = await api<SkillView[]>(`/api/skills/${s.name}`, { method: "PUT", body: JSON.stringify({ enabled: on }) }); paint(); detail(s.name); })),
         s.source ? row("Source", `${s.source.repo} · ${s.source.path || "/"} · commit ${s.source.sha.slice(0, 12)} · added ${new Date(s.source.addedAt).toLocaleDateString()}`, el("a", { href: `https://github.com/${s.source.repo}/tree/${s.source.sha}/${s.source.path}`, target: "_blank", rel: "noopener noreferrer", textContent: "View source ↗" })) : null),
-      group("Instructions", el("pre", { className: "skill-body", textContent: s.body })),
+      group("Current instructions", el("pre", { className: "skill-body", textContent: s.body })),
+      ...(update ? [group("Update available", el("p", { className: "row-hint", textContent: "Review the built-in update below. Updating replaces your current instructions and keeps your on/off choice." }), el("p", { textContent: update.description }), el("pre", { className: "skill-body", textContent: update.body }), el("div", { className: "row-actions" }, apply), note)] : []),
       el("div", { className: "row-actions" }, button("Edit", () => editor(s)), remove));
   }
 

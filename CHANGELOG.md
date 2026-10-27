@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Built-in skills have an Updates filter, Update available badges, current/proposed previews and explicit update actions. New skills seed once; edits/removals and on/off choices are preserved, and stale previews are rejected. Wide/narrow WebKit covers the update flow. Catalog pins are not silently advanced.
+
 - Skill-led authoring uses shared record mappings for forms, tables, charts and metrics. The old CSV bridge, source options, derive/prepare tools and automatic source-report compiler are deleted; no compatibility wrapper or new source executor remains.
 - Chat/tasks select enabled skills in a counted generation. Local context loading remains available with zero external-operation allowance and consumes answer-step limits. Selection, usage and external permissions retain their proper owners.
 - The interactive-ui skill is reduced from355 to222 words and permits separate datasets for unrelated views. Runtime prompts now have one owner per active protocol. Removed the compact/strict runtime setting, context-erasing latest-message-only advice and conflicting research row instructions.

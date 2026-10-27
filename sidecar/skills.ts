@@ -14,7 +14,7 @@ const NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const REPO = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/;
 const MAX_BODY = 32_768;
 const DAY = 86_400_000;
-interface Saved { enabled: boolean; builtin?: boolean; builtinHash?: string; source?: SkillView["source"] }
+interface Saved { enabled: boolean; builtin?: boolean; source?: SkillView["source"] }
 
 /** Frontmatter is a flat `key: value` block; anything richer is ignored, not executed. */
 export function parseSkill(text: string): { name: string; description: string; body: string } {
@@ -50,40 +50,42 @@ export class Skills {
     this.seedBuiltins();
   }
 
-  /** Update only provably untouched defaults; removals and edits stay owned by the user. */
+  /** Seed new defaults once. Existing instructions change only after review. */
   private seedBuiltins(): void {
     const seededFile = path.join(this.dir, "seeded.json");
     let seeded: string[] = [];
     try { seeded = JSON.parse(readFileSync(seededFile, "utf8")); } catch { /* first run */ }
-    let changed = false;
-    for (const text of BUILTIN_SKILLS) {
-      const { name } = parseSkill(text), hash = createHash("sha256").update(text).digest("hex"), saved = this.saved[name];
-      if (!seeded.includes(name)) {
-        if (!saved) this.write(name, text, { enabled: true, builtin: true, builtinHash: hash });
-        seeded.push(name); changed = true;
-      } else if (saved?.builtin) {
-        let current: string;
-        try { current = readFileSync(this.skillFile(name), "utf8"); } catch { continue; }
-        const currentHash = createHash("sha256").update(current).digest("hex");
-        if ((current === text || currentHash === saved.builtinHash) && saved.builtinHash !== hash) this.write(name, text, { ...saved, builtinHash: hash });
-      }
-    }
-    if (changed) writeFileSync(seededFile, JSON.stringify(seeded), { mode: 0o600 });
+    const fresh = BUILTIN_SKILLS.map(text => ({ text, name: parseSkill(text).name })).filter(b => !seeded.includes(b.name));
+    if (!fresh.length) return;
+    for (const b of fresh) if (!this.saved[b.name]) this.write(b.name, b.text, { enabled: true, builtin: true });
+    writeFileSync(seededFile, JSON.stringify([...seeded, ...fresh.map(b => b.name)]), { mode: 0o600 });
   }
 
   private persist(): void {
     writeFileSync(`${this.file}.tmp`, JSON.stringify(this.saved, null, 2), { mode: 0o600 }); renameSync(`${this.file}.tmp`, this.file);
   }
   private skillFile(name: string): string { return path.join(this.dir, name, "SKILL.md"); }
-  private read(name: string): ReturnType<typeof parseSkill> | undefined {
-    try { return parseSkill(readFileSync(this.skillFile(name), "utf8")); } catch { return undefined; }
+  private read(name: string): (ReturnType<typeof parseSkill> & { text: string }) | undefined {
+    try { const text = readFileSync(this.skillFile(name), "utf8"); return { ...parseSkill(text), text }; } catch { return undefined; }
   }
 
   view(): SkillView[] {
     return Object.entries(this.saved).flatMap(([name, s]) => {
       const skill = this.read(name);
-      return skill ? [{ name, description: skill.description, body: skill.body, enabled: s.enabled, builtin: s.builtin, source: s.source }] : [];
+      if (!skill) return [];
+      const text = s.builtin ? BUILTIN_SKILLS.find(text => parseSkill(text).name === name) : undefined;
+      const next = text ? parseSkill(text) : undefined;
+      const update = text && next && (next.description !== skill.description || next.body !== skill.body) ? { description: next.description, body: next.body, fingerprint: createHash("sha256").update(text).digest("hex"), currentFingerprint: createHash("sha256").update(skill.text).digest("hex") } : undefined;
+      return [{ name, description: skill.description, body: skill.body, enabled: s.enabled, builtin: s.builtin, source: s.source, ...(update ? { update } : {}) }];
     }).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** Apply exactly the bundled/current versions shown in the update preview. */
+  updateBuiltin(name: string, fingerprint: string, currentFingerprint: string): void {
+    const current = this.view().find(skill => skill.name === name);
+    if (!current?.update || current.update.fingerprint !== fingerprint || current.update.currentFingerprint !== currentFingerprint) throw new Error("The skill changed; review its update again");
+    const text = BUILTIN_SKILLS.find(text => parseSkill(text).name === name)!;
+    this.write(name, text, { ...this.saved[name]!, builtin: true });
   }
 
   /** Writes a skill the user authored; an edit keeps its on/off state. */

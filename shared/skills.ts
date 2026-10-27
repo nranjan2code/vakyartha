@@ -1,5 +1,6 @@
 export interface SkillView {
   name: string; description: string; enabled: boolean; body: string; builtin?: boolean;
+  update?: { description: string; body: string; fingerprint: string; currentFingerprint: string };
   source?: { repo: string; path: string; sha: string; addedAt: string };
 }
 /** Publisher-owned repositories of SKILL.md folders, checked October 2026. Any other owner/name can be searched too. */
