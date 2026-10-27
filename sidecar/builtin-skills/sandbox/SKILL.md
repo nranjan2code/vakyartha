@@ -51,4 +51,6 @@ When the Sandbox integration is enabled (Settings → Integrations → Sandbox),
 ## Related
 
 - Settings → Integrations → Sandbox: enable/disable
+- Read `references/sandbox-policy.md` for detailed policy configuration
+- Read `references/sandbox-examples.md` for usage examples and troubleshooting
 - [vak-sandbox repository](https://github.com/nranjan2code/sandbox): full documentation
