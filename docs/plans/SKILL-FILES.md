@@ -6,7 +6,7 @@ This is the retained design and acceptance record. Each phase lists the files ch
 
 ## Problem
 
-Before this change, a catalog skill was reviewed as a folder but `Skills.add` stored only `SKILL.md`. Instructions pointing to a form reference or a nested API guide could not be followed because those files were absent. Built-in and user-written skills were single files and were not affected.
+Before this change, a catalog skill was reviewed as a folder but `Skills.add` stored only `SKILL.md`. Instructions pointing to a form reference or a nested API guide could not be followed because those files were absent. At that time, built-in and user-written skills were single files and were not affected. Built-ins now use packages; see ADR-041.
 
 ## Outcome
 
@@ -212,3 +212,7 @@ Done when all of the following hold:
 - Tier 2: scripts, which need explicit per-run approval, an existing code-execution integration, and no ambient environment.
 - Tier 3: assets such as templates and images, plus user-authored files for "Yours" skills.
 - Later authoring work may package reusable text skeletons, form/layout examples and projection examples as references under tier 1. Reusable executable scripts and binary/design assets need their own reviewed contracts before import or use.
+
+## Follow-on bundled package work (2026-10-27)
+
+ADR-041 adds Agent Skills folders for all bundled defaults and reviewed text-reference updates. `market-dashboard` now has a domain procedure, reusable layout reference and fictional Projection example. Package files are bundled beside the release sidecar; Settings previews current and proposed references. This does not authorize script/asset execution or close the general source-backed market outcome gate. Verification and retained local-model receipts are in EVALUATION.md.

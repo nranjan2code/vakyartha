@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, 
 import path from "node:path";
 import { validate } from "@vak/core";
 import type { AgentTool, Provider, ProviderEvent, ChatRequest } from "@vak/providers";
-import { BUILTIN_SKILLS } from "./skills-builtin.ts";
+import { BUILTIN_PACKAGES, type BuiltinPackage } from "./skills-builtin.ts";
 import type { SkillFile, SkillListing, SkillReview, SkillView } from "../shared/skills.ts";
 
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -33,6 +33,11 @@ function classify(file: string, bytes: number): SkillFile["status"] {
   return bytes > MAX_FILE ? "too-large" : "added";
 }
 const hash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
+function packageFingerprint(text: string, files: { path: string; sha256: string }[]): string {
+  const digest = createHash("sha256").update(text);
+  for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) digest.update(`\n${file.path}\0${file.sha256}`);
+  return digest.digest("hex");
+}
 
 /** Parse the supported scalar frontmatter subset; nested optional metadata is ignored. */
 export function parseSkill(text: string): { name: string; description: string; body: string; compatibility?: string } {
@@ -86,19 +91,19 @@ export class Skills {
     const seededFile = path.join(this.dir, "seeded.json");
     let seeded: string[] = [];
     try { seeded = JSON.parse(readFileSync(seededFile, "utf8")); } catch { /* first run */ }
-    const fresh = BUILTIN_SKILLS.map(text => ({ text, name: parseSkill(text).name })).filter(b => !seeded.includes(b.name));
+    const fresh = BUILTIN_PACKAGES.filter(pkg => !seeded.includes(pkg.name));
     if (!fresh.length) return;
-    for (const b of fresh) if (!this.saved[b.name]) this.write(b.name, b.text, { enabled: true, builtin: true });
+    for (const pkg of fresh) if (!this.saved[pkg.name]) this.writeBuiltinPackage(pkg, { enabled: true, builtin: true });
     writeFileSync(seededFile, JSON.stringify([...seeded, ...fresh.map(b => b.name)]), { mode: 0o600 });
   }
 
   /** Required shared guidance is restored and enabled even after an older removal/off choice. */
   private ensureRequiredSkill(): void {
-    const text = BUILTIN_SKILLS.find(value => parseSkill(value).name === REQUIRED_SKILL);
-    if (!text) throw new Error(`Missing required built-in skill: ${REQUIRED_SKILL}`);
+    const pkg = BUILTIN_PACKAGES.find(value => value.name === REQUIRED_SKILL);
+    if (!pkg) throw new Error(`Missing required built-in skill: ${REQUIRED_SKILL}`);
     const saved = this.saved[REQUIRED_SKILL];
     if (!saved || !this.read(REQUIRED_SKILL) || !saved.builtin) {
-      this.write(REQUIRED_SKILL, text, { ...(saved ?? {}), enabled: true, builtin: true, source: undefined });
+      this.writeBuiltinPackage(pkg, { ...(saved ?? {}), enabled: true, builtin: true, source: undefined });
       return;
     }
     if (!saved.enabled) { saved.enabled = true; this.persist(); }
@@ -116,9 +121,11 @@ export class Skills {
     return Object.entries(this.saved).flatMap(([name, s]) => {
       const skill = this.read(name);
       if (!skill) return [];
-      const text = s.builtin ? BUILTIN_SKILLS.find(text => parseSkill(text).name === name) : undefined;
-      const next = text ? parseSkill(text) : undefined;
-      const update = text && next && (next.description !== skill.description || next.body !== skill.body) ? { description: next.description, body: next.body, fingerprint: createHash("sha256").update(text).digest("hex"), currentFingerprint: createHash("sha256").update(skill.text).digest("hex") } : undefined;
+      const pkg = s.builtin ? BUILTIN_PACKAGES.find(value => value.name === name) : undefined;
+      const next = pkg ? parseSkill(pkg.text) : undefined;
+      const proposedFiles = pkg ? this.builtinManifest(pkg) : [];
+      const currentFingerprint = packageFingerprint(skill.text, s.files ?? []);
+      const update = pkg && next && packageFingerprint(pkg.text, proposedFiles) !== currentFingerprint ? { description: next.description, body: next.body, files: proposedFiles.map(f => ({ ...f, status: "added" as const })), fingerprint: packageFingerprint(pkg.text, proposedFiles), currentFingerprint } : undefined;
       return [{ name, description: skill.description, body: skill.body, compatibility: skill.compatibility, enabled: s.enabled, builtin: s.builtin, required: name === REQUIRED_SKILL, source: s.source, files: s.files?.map(f => ({ ...f, status: "added" as const })), omitted: s.omitted, ...(update ? { update } : {}) }];
     }).sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -127,8 +134,58 @@ export class Skills {
   updateBuiltin(name: string, fingerprint: string, currentFingerprint: string): void {
     const current = this.view().find(skill => skill.name === name);
     if (!current?.update || current.update.fingerprint !== fingerprint || current.update.currentFingerprint !== currentFingerprint) throw new Error("The skill changed; review its update again");
-    const text = BUILTIN_SKILLS.find(text => parseSkill(text).name === name)!;
-    this.write(name, text, { ...this.saved[name]!, enabled: this.isRequired(name) || this.saved[name]!.enabled, builtin: true });
+    for (const file of this.saved[name]?.files ?? []) this.fileText(name, file.path);
+    const pkg = BUILTIN_PACKAGES.find(value => value.name === name)!;
+    this.writeBuiltinPackage(pkg, { ...this.saved[name]!, enabled: this.isRequired(name) || this.saved[name]!.enabled, builtin: true });
+  }
+
+  proposedBuiltinFile(name: string, fingerprint: string, file: string): string {
+    const pkg = BUILTIN_PACKAGES.find(value => value.name === name);
+    if (!pkg || this.view().find(value => value.name === name)?.update?.fingerprint !== fingerprint) throw new Error("Review this update again");
+    const bytes = pkg.files.get(file);
+    if (!bytes) throw new Error("Unknown proposed file");
+    return bytes.toString("utf8");
+  }
+
+  private builtinManifest(pkg: BuiltinPackage): { path: string; bytes: number; sha256: string }[] {
+    if (parseSkill(pkg.text).name !== pkg.name) throw new Error(`Built-in skill name must match its folder: ${pkg.name}`);
+    const result: { path: string; bytes: number; sha256: string }[] = []; let total = 0;
+    for (const [file, bytes] of [...pkg.files].sort(([a], [b]) => a.localeCompare(b))) {
+      if (classify(file, bytes.length) !== "added" || new TextDecoder("utf-8", { fatal: true }).decode(bytes).includes("\0")) throw new Error(`Unsupported built-in file: ${pkg.name}/${file}`);
+      total += bytes.length;
+      if (result.length >= MAX_FILES || total > MAX_TOTAL) throw new Error(`Built-in files exceed limits: ${pkg.name}`);
+      result.push({ path: file, bytes: bytes.length, sha256: hash(bytes) });
+    }
+    return result;
+  }
+
+  private writeBuiltinPackage(pkg: BuiltinPackage, state: Saved): void {
+    const files = this.builtinManifest(pkg), target = path.join(this.dir, pkg.name);
+    const partial = path.join(this.dir, `${pkg.name}.partial-${randomUUID()}`);
+    const backup = path.join(this.dir, `${pkg.name}.previous-${randomUUID()}`);
+    const previous = this.saved[pkg.name]; let moved = false, installed = false;
+    try {
+      mkdirSync(partial, { recursive: true, mode: 0o700 });
+      writeFileSync(path.join(partial, "SKILL.md"), pkg.text, { mode: 0o600 });
+      for (const [file, bytes] of pkg.files) {
+        const destination = path.join(partial, "files", file);
+        mkdirSync(path.dirname(destination), { recursive: true, mode: 0o700 });
+        writeFileSync(destination, bytes, { mode: 0o600 });
+      }
+      if (existsSync(target)) {
+        if (!previous && pkg.name !== REQUIRED_SKILL) throw new Error(`A folder named ${pkg.name} already exists`);
+        renameSync(target, backup); moved = true;
+      }
+      renameSync(partial, target); installed = true;
+      this.saved[pkg.name] = { ...state, files };
+      this.persist();
+    } catch (error) {
+      if (installed) rmSync(target, { recursive: true, force: true });
+      if (moved) renameSync(backup, target);
+      if (previous) this.saved[pkg.name] = previous; else delete this.saved[pkg.name];
+      throw error;
+    } finally { rmSync(partial, { recursive: true, force: true }); }
+    if (moved) rmSync(backup, { recursive: true, force: true });
   }
 
   /** Writes a skill the user authored; an edit keeps its on/off state. */

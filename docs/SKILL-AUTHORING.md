@@ -8,7 +8,7 @@ Catalog skills may include reviewed supporting text files for reusable examples,
 
 | Need | Existing owner | Change here |
 | --- | --- | --- |
-| Repeated domain procedure or reporting practice | Instruction skill | `sidecar/skills-builtin.ts`, or a reviewed personal SKILL.md |
+| Repeated domain procedure or reporting practice | Instruction skill | `sidecar/builtin-skills/<name>/SKILL.md`, or a reviewed personal SKILL.md |
 | Record mappings, bound input and submitted action guidance | `interactive-ui` | Its built-in body; runtime enforcement stays in Projection |
 | Visual hierarchy, widths, chart choice and spoken readability | `surface-design` | Its built-in body; app theme in `src/app.css` |
 | Operational dashboard composition | `dashboard` plus the matching domain skill | Reuse the existing loader and canonical surfaces |
@@ -57,7 +57,7 @@ Daily, weekly and monthly describe a reporting window unless the person requests
 
 ## Author and activate a skill
 
-Use a flat frontmatter block with `name` and `description`, followed by a self-contained body. Names use lowercase letters, digits and hyphens, up to 64 characters. Description is up to 1024 characters; body is up to 32768 characters. Rich YAML metadata is not a feature contract. Vakyartha imports only the reviewed SKILL.md, not referenced scripts, guides or assets.
+Use a flat frontmatter block with `name` and `description`, followed by a self-contained body. Names use lowercase letters, digits and hyphens, up to 64 characters. Description is up to 1024 characters; body is up to 32768 characters. Rich YAML metadata is not a feature contract. Vakyartha stores reviewed UTF-8 text references with SKILL.md; scripts and binary assets remain listed but unavailable.
 
 Example instruction file:
 
@@ -83,7 +83,7 @@ Claim a saved or delivered report only from the matching receipt.
 
 For personal use, ask the assistant to create/audit the skill, then open **Settings → Skills → New skill…**, review the complete file, save and switch **Use this skill** on. The required `surface-design` built-in is always on and has no disable or remove action; its reviewed instruction updates remain explicit. New personal/catalog skills start off. Editing preserves their current on/off state. A model-facing skill-management tool is not currently offered, so an assistant-produced draft is not installed by default. A separately authorized file tool can write a file, but that alone does not establish activation in the app index.
 
-For bundled defaults, edit/add the `skill(...)` entry in `sidecar/skills-builtin.ts`; do not create a second default-skill registry. Keep each description narrow enough for selection and its body focused on domain decisions. New bundled names seed once. Existing changed built-ins show a current/proposed review and explicit **Update skill** action; stale fingerprints reject replacement. Custom edits, disabled choices and removals remain protected. Source edits do not update the installed executable or its local skill files. [Full lifecycle](SKILLS.md#updates).
+For bundled defaults, edit/add `sidecar/builtin-skills/<name>/SKILL.md` and optional readable text under `references/`. The loader in `sidecar/skills-builtin.ts` discovers these folders; do not create a second registry. Keep each description narrow enough for selection and its body focused on domain decisions. Reference files are examples or checklists, not executable authority. New bundled names seed once. Existing changed packages show current/proposed instructions and file previews with an explicit **Update skill** action; stale fingerprints reject replacement. Custom edits, disabled choices and removals remain protected. Source edits do not update the installed executable or its local skill files. [Full lifecycle](SKILLS.md#updates).
 
 ## Compose canonical data and views
 
@@ -184,4 +184,4 @@ When changing this method, update the canonical guide and the appropriate contra
 | Voice loses a caveat or number | Resolved content, gist truncation and speechChunks before provider/audio calls |
 | Apparent refresh/delivery without evidence | Tool result and task/output receipt, not the button text |
 
-The source map is intentionally small: `sidecar/skills-builtin.ts` (defaults), `sidecar/skills.ts` (parse/store/select/import/update), `sidecar/server.ts` (chat/task wiring), `src/skills-page.ts` (review/edit UI), `src/app.css` (theme tokens), `src/canvas.ts`/`src/drafts.ts` (canvas/drafts), `src/voice/speech-text.ts` (spoken content), and `src/voice/decisions.ts` (voice choices/forms). Framework contracts/projectors live in Projection; app code imports only package exports.
+The source map is intentionally small: `sidecar/builtin-skills/` (bundled packages), `sidecar/skills-builtin.ts` (discovery), `sidecar/skills.ts` (parse/store/select/import/update), `sidecar/server.ts` (chat/task wiring), `src/skills-page.ts` (review/edit UI), `src/app.css` (theme tokens), `src/canvas.ts`/`src/drafts.ts` (canvas/drafts), `src/voice/speech-text.ts` (spoken content), and `src/voice/decisions.ts` (voice choices/forms). Framework contracts/projectors live in Projection; app code imports only package exports.

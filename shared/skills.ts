@@ -1,6 +1,6 @@
 export interface SkillView {
   name: string; description: string; enabled: boolean; body: string; builtin?: boolean; required?: boolean;
-  update?: { description: string; body: string; fingerprint: string; currentFingerprint: string };
+  update?: { description: string; body: string; files?: SkillFile[]; fingerprint: string; currentFingerprint: string };
   source?: { repo: string; path: string; sha: string; addedAt: string };
   /** Reviewed supporting text files stored with the skill; read on demand, never run. */
   files?: SkillFile[];

@@ -1,5 +1,7 @@
 # Skill and dynamic-surface audit — 2026-10-27
 
+Current follow-on: all bundled defaults now use Agent Skills folders; `market-dashboard` has reviewed references and a validated fictional Projection example. The original audit below records the earlier baseline. [Current outcome evidence](EVALUATION.md#bundled-packages-and-market-dashboard--2026-10-27).
+
 ## Scope and evidence
 
 Reviewed the app specs, current handover, MVP spec/checklist, skill seed/import/selection/update code, task inputs/output receipts, integration catalog, pipeline audit and recent interactive-skill evaluation procedure. Read the pinned public component catalog, record mappings, web layout/chart code and local interaction behavior. Runtime repairs belong in Projection; no framework dependency files are edited in place.
@@ -20,7 +22,7 @@ This is an audit and implementation of instruction coverage and layout mechanism
 | Context and memory | Selected user-configured external tools; local canonical chat/task state | No parallel retrieval store or implicit cross-chat memory |
 | Background work | Bounded app-owned tasks and one-time schedules while running/awake | A displayed agenda or tracker is not recurrence, notifications or continuous monitoring |
 | Skill loading | Enabled names/descriptions, counted selection, then selected bodies | Keep descriptions distinct and collaborators conditional; no hard-coded keyword router |
-| Skill imports | Only the reviewed SKILL.md; supporting files are disclosed but omitted | Vakyartha's own creator must produce self-contained instructions |
+| Skill imports | Reviewed SKILL.md and supported text references; scripts/assets are disclosed but omitted | The creator should make references self-contained and avoid required executable assets |
 | Other channels | Separate execution wiring | Do not claim chat/task skill or interaction parity everywhere |
 
 ## Existing fourteen skills

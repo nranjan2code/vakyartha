@@ -2,7 +2,7 @@
 // Scripted records isolate renderer behavior from model authoring quality.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startAppServer } from "../sidecar/server.ts";
@@ -10,6 +10,8 @@ import { startAppServer } from "../sidecar/server.ts";
 const run = promisify(execFile), out = await mkdtemp(path.join(tmpdir(), "vak-surface-design-"));
 const bin = path.join(out, "webkit-check");
 await run("swiftc", ["-O", path.resolve("scripts/webkit-check.swift"), "-o", bin]);
+const marketExample = JSON.parse(await readFile(path.resolve("sidecar/builtin-skills/market-dashboard/references/market-dashboard-example.json"), "utf8")).surfaces[0];
+const marketSurface = { surface: marketExample.surface, title: marketExample.title, data: marketExample.data, nodes: [{ id: "root", ...marketExample.root }] };
 const records = Array.from({ length: 30 }, (_, i) => ({ label: `Team ${i + 1}`, value: i + 1 }));
 const surface = { surface: "operations", title: "Operations review", data: { records, owner: "Asha" }, nodes: [{ id: "root", type: "stack", props: { gap: "lg" }, children: [
   { id: "intro", type: "text", props: { content: "Weekly delivery · supplied snapshot", variant: "heading" } },
@@ -51,11 +53,12 @@ for (const width of [1440, 1100, 620]) {
     `const s=window.qaDesign,q=s.shadowRoot;window.qaActions=0;s.addEventListener('vak-action',e=>{window.qaActions++;e.stopPropagation()});const input=q.querySelector('input:not(.filter)');input.value='Meera';input.dispatchEvent(new Event('input',{bubbles:true}));const filter=q.querySelector('.table-box .filter');filter.value='Team 30';filter.dispatchEvent(new Event('input',{bubbles:true}));check(q.querySelector('tbody').textContent.includes('Team 30'),'local search failed');check(window.qaActions===0,'local edit/filter dispatched action');await project('vak_update',{surface:'operations',nodes:[{id:'notes',props:{content:'Snapshot reviewed. No live synchronization.'}}]});check(s===document.querySelector('#canvas-content vak-surface'),'surface replaced');check(s.shadowRoot.querySelector('input:not(.filter)').value==='Meera','draft lost on layout update');check(s.shadowRoot.querySelector('tbody').textContent.includes('Team 30'),'table filter lost');return 'local controls and drafts preserved';`,
     `await project('vak_update',{surface:'operations',nodes:[{id:'panels',props:{align:'end'}}]});const row=window.qaDesign.shadowRoot.querySelector('.stack.horizontal');check(getComputedStyle(row).alignItems==='flex-end','explicit row alignment ignored');document.documentElement.dataset.mode='dark';document.documentElement.dataset.theme='ocean';window.qaDesign.setAttribute('theme','dark');return 'explicit alignment and dark theme pass';`,
     `await project('vak_render',${JSON.stringify(gallery)});const s=document.querySelector('#canvas-content vak-surface');check(s.surfaceId==='chart-gallery','chart gallery not active');s.setAttribute('theme','dark');await new Promise(r=>setTimeout(r,200));flush();const charts=[...s.shadowRoot.querySelectorAll('.chart')];check(charts.length===9,'missing supported chart kind or dated heatmap');for(const chart of charts){const svg=chart.querySelector('svg[role="img"]');check(svg&&svg.childElementCount>0,'chart did not draw');check(!/NaN|Infinity/.test(svg.outerHTML),'nonfinite chart geometry');check(svg.getBoundingClientRect().width<=chart.getBoundingClientRect().width+1,'chart overflow');}check(document.documentElement.scrollWidth<=innerWidth,'gallery page overflow');return 'all eight chart kinds and dated heatmap render without overflow';`,
+    `await project('vak_render',${JSON.stringify(marketSurface)});const s=document.querySelector('#canvas-content vak-surface');check(s.surfaceId==='illustrative-market-review','market template not active');const q=s.shadowRoot;check(q.textContent.includes('fictional figures'),'market caveat missing');check(q.querySelectorAll('.stat').length===2,'market measures missing');check(q.querySelector('.chart svg[role="img"]'),'market trend missing');check(q.querySelectorAll('tbody tr').length===5,'market exact rows missing');check(!q.querySelector('.table-box').textContent.includes('Total'),'price table has an unwanted total');check(document.documentElement.scrollWidth<=innerWidth,'market template overflow');return 'market reference template renders with dated trend, exact rows and caveat';`,
   ];
   try {
     const { stdout } = await run(bin, [`${app.url}/?session=surface-design-check`, path.join(out, `width-${width}`), ...steps.map(step => setup + step)], { env: { ...process.env, WK_WIDTH: String(width), WK_HEIGHT: "1200" }, timeout: 45000 });
     console.log(`${width}px: ${stdout.trim()}`);
-    if (stdout.includes(" error:") || !stdout.includes("dated heatmap render without overflow")) throw new Error("Surface design WebKit checks failed");
+    if (stdout.includes(" error:") || !stdout.includes("market reference template renders")) throw new Error("Surface design WebKit checks failed");
   } finally { await app.shutdown(); }
 }
 console.log(`Surface design checks passed. Screenshots: ${out}`);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { BUILTIN_SKILLS } from "../sidecar/skills-builtin.ts";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { BUILTIN_PACKAGES, BUILTIN_SKILLS } from "../sidecar/skills-builtin.ts";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -32,6 +32,36 @@ test("built-ins are planted on, once; a removed one stays removed", () => {
   assert.throws(() => s.remove("surface-design"), /required/);
   s.remove("plan-my-day");
   assert.ok(!new Skills(d).view().some(x => x.name === "plan-my-day"));
+});
+
+test("built-in folders seed reviewed references and update the whole package", async () => {
+  assert.equal(new Set(BUILTIN_PACKAGES.map(pkg => pkg.name)).size, BUILTIN_PACKAGES.length);
+  for (const pkg of BUILTIN_PACKAGES) assert.equal(parseSkill(pkg.text).name, pkg.name);
+  const d = dir(), first = new Skills(d), name = "market-dashboard";
+  const original = first.view().find(skill => skill.name === name)!;
+  assert.deepEqual(original.files?.map(file => file.path), ["references/market-dashboard-example.json", "references/market-dashboard-layout.md"]);
+  assert.match(first.fileText(name, "references/market-dashboard-layout.md").text, /Reusable market dashboard layout/);
+  const [use, read] = first.tools();
+  assert.ok(use && read);
+  assert.match(String(await use.execute({ names: [name] }, {})), /read_skill_file/);
+  assert.match(String(await read.execute({ skill: name, path: "references\/market-dashboard-layout.md" }, {})), /window return/);
+
+  first.setEnabled(name, false);
+  const statePath = path.join(d, "skills", "skills.json"), state = JSON.parse(readFileSync(statePath, "utf8"));
+  delete state[name].files; writeFileSync(statePath, JSON.stringify(state));
+  rmSync(path.join(d, "skills", name, "files"), { recursive: true });
+  const upgraded = new Skills(d), preview = upgraded.view().find(skill => skill.name === name)!.update!;
+  assert.ok(preview);
+  assert.equal(preview.files?.length, 2);
+  assert.match(upgraded.proposedBuiltinFile(name, preview.fingerprint, "references/market-dashboard-example.json"), /"history"/);
+  assert.throws(() => upgraded.proposedBuiltinFile(name, "stale", "references/market-dashboard-example.json"), /Review/);
+  assert.throws(() => upgraded.updateBuiltin(name, "stale", preview.currentFingerprint), /review/);
+  upgraded.updateBuiltin(name, preview.fingerprint, preview.currentFingerprint);
+  const installed = upgraded.view().find(skill => skill.name === name)!;
+  assert.equal(installed.enabled, false);
+  assert.equal(installed.update, undefined);
+  assert.equal(installed.files?.length, 2);
+  assert.match(upgraded.fileText(name, "references/market-dashboard-example.json").text, /"history"/);
 });
 
 test("builtin updates require a current preview and preserve edits, removals and disabled state", () => {

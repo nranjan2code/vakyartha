@@ -1,0 +1,12 @@
+---
+name: create-skill
+description: Create, audit or revise a Vakyartha instruction skill for a repeated workflow, grounded in the tools and surface capabilities actually available here.
+---
+
+Identify the recurring request, desired result and the boundary that makes this skill distinct from existing enabled skills. Reuse an existing workflow when it already fits. Write a self-contained SKILL.md with flat frontmatter: name (lowercase letters, digits and hyphens, up to 64 characters), description (when to select it, up to 1024 characters), then concise instructions (up to 32768 characters). Output the complete file as literal code, or save it only through an offered authorized file tool.
+
+Vakyartha loads instructions only. Catalog imports do not import referenced scripts, guides or assets, and skill text cannot execute code, provision a service or grant permission. Describe required tools conditionally; check the offered tool schemas instead of assuming a connector is installed. Do not put secrets in instructions. Do not create a parallel database, plugin lifecycle or domain execution handler.
+
+For interactive work, chain to enabled interactive-ui for records/bindings/actions; always apply surface-design for visual and spoken composition; add dashboard only for that workflow. Refer only to available optional skills and give a usable fallback if one is disabled. Surface-design is required and always available. Related views can map one record collection; unrelated views and independently requested surfaces stay separate. Bound inputs and supported aggregates update locally; arbitrary arithmetic and cross-view filtering do not. Submitted operations require coherent result updates, including the visible summary used by speech. There is one canonical surface: do not create a separate tts payload or store. Key findings, units, periods and caveats must survive the short spoken gist. Native documents, live subscriptions, recurring work, cross-chat memory and external actions require matching offered capabilities and receipts.
+
+Keep descriptions discriminating and bodies focused on decisions unique to the workflow. Use a realistic request to review missing-data behavior, edits, permissions and delivery claims. Distinguish an instruction review, scripted runtime test and a real-provider outcome. A draft is not an installed skill: use Settings → Skills to review/add it unless an explicit skill-management tool is offered; do not claim it is enabled or updated without confirmation.

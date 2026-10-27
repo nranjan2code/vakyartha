@@ -96,7 +96,7 @@ Start with the [reusable authoring guide](docs/SKILL-AUTHORING.md): existing dai
 | Engine | `sidecar/main.ts` → `sidecar/server.ts` | `@vak/host` plus settings, channels, integrations, client-log and info routes; token-protected for the window, loopback-only for `npm run web` |
 | Settings store | `sidecar/settings.ts` | provider and channel keys in the Keychain; plain values in `settings.env` |
 | Integrations | `sidecar/integrations.ts`, `sidecar/marketplaces.ts` | curated catalog plus external discovery/review and imported definitions; installing and running them is Projection's `Integrations` |
-| Skills | `sidecar/skills-builtin.ts`, `sidecar/skills.ts`, `src/skills-page.ts` | reusable procedures, counted selection, reviewed supporting text imports and updates ([guide](docs/SKILL-AUTHORING.md)) |
+| Skills | `sidecar/builtin-skills/`, `sidecar/skills.ts`, `src/skills-page.ts` | reusable procedures, counted selection, reviewed supporting text imports and updates ([guide](docs/SKILL-AUTHORING.md)) |
 | FinOps | `sidecar/finops.ts`, `src/finops-page.ts` | local usage ledger, model rates, per-turn charts and CSV export ([FINOPS.md](docs/FINOPS.md)) |
 | Channels | `sidecar/channels.ts` | Telegram (`runTelegram`); Slack and Discord slots |
 | UI | `src/` | chats, thread, composer, approvals, canvas and Artifacts ([CANVAS.md](docs/CANVAS.md)), Settings, themes, right-click menus |

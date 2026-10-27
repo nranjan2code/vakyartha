@@ -55,6 +55,7 @@ await build({
   // Inline the workspace packages; only node: built-ins remain external.
   ssr: { noExternal: true, target: "node" },
 });
+cpSync(path.join(app, "sidecar/builtin-skills"), path.join(tauri, "resources/builtin-skills"), { recursive: true });
 
 const triple = /host: (\S+)/.exec(execFileSync("rustc", ["-vV"], { encoding: "utf8" }))?.[1];
 if (!triple) throw new Error("could not read the Rust host triple from `rustc -vV`");

@@ -1,0 +1,54 @@
+{
+  "surfaces": [
+    {
+      "op": "replace",
+      "surface": "illustrative-market-review",
+      "title": "Illustrative market review",
+      "data": {
+        "history": [
+          { "date": "2026-10-19", "close": 100 },
+          { "date": "2026-10-20", "close": 102 },
+          { "date": "2026-10-21", "close": 101 },
+          { "date": "2026-10-22", "close": 103 },
+          { "date": "2026-10-23", "close": 105 }
+        ],
+        "summary": {
+          "lastClose": 105,
+          "weekPriceReturnPercent": 5,
+          "finding": "Illustrative Sample Index rose 5% in price from 100 to 105 points over the five observations dated 19–23 October 2026. These are fictional figures, with no live quote or verified exchange source.",
+          "source": "Illustrative data only. Observation window: 2026-10-19 through 2026-10-23, UTC. Price-return basis; dividend effects and corporate-action adjustments are unknown."
+        }
+      },
+      "root": {
+        "type": "stack",
+        "children": [
+          { "type": "text", "props": { "variant": "heading", "content": "Sample Index — completed observation window" } },
+          { "type": "text", "props": { "content": "{/summary/finding}" } },
+          {
+            "type": "grid",
+            "props": { "columns": 2 },
+            "children": [
+              { "type": "stat", "props": { "label": "Last close (points)", "value": "{/summary/lastClose}" } },
+              { "type": "stat", "props": { "label": "Window price return (%)", "value": "{/summary/weekPriceReturnPercent}" } }
+            ]
+          },
+          {
+            "type": "section",
+            "props": { "title": "Dated close trend", "description": "Fictional price levels, in points; dates are observations, not a continuous time scale." },
+            "children": [
+              { "type": "chart", "props": { "kind": "line", "series": { "records": "{/history}", "label": "date", "fields": ["close"] }, "maxWidth": "lg" } }
+            ]
+          },
+          {
+            "type": "section",
+            "props": { "title": "Close history", "description": "Exact observations behind the trend." },
+            "children": [
+              { "type": "table", "props": { "columns": [{ "key": "date", "label": "Date" }, { "key": "close", "label": "Close (points)", "align": "end" }], "rows": { "records": "{/history}", "fields": ["date", "close"] }, "totals": false, "maxWidth": "full" } }
+            ]
+          },
+          { "type": "text", "props": { "variant": "caption", "content": "{/summary/source}" } }
+        ]
+      }
+    }
+  ]
+}
