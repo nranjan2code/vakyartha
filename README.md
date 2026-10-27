@@ -92,6 +92,7 @@ Start with the [reusable authoring guide](docs/SKILL-AUTHORING.md): existing dai
 | Part | Where | What |
 |---|---|---|
 | Framework | `framework/` (submodule) | Projection: engine, catalog, projectors, providers, `@vak/host`, MCP client and `Integrations`, Telegram runner |
+| Sandbox | `vak-sandbox` (separate repo) | OS-level process isolation for MCP servers via Seatbelt/Landlock, deny-by-default policies, reviewable promotion model |
 | Shell | `src-tauri/src/lib.rs` | starts the engine, hands the window its address and token, tray, close-to-background, single instance, launch at login, graceful stop |
 | Engine | `sidecar/main.ts` → `sidecar/server.ts` | `@vak/host` plus settings, channels, integrations, client-log and info routes; token-protected for the window, loopback-only for `npm run web` |
 | Settings store | `sidecar/settings.ts` | provider and channel keys in the Keychain; plain values in `settings.env` |

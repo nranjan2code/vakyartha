@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Integrate vak-sandbox for OS-level process isolation of MCP servers (macOS Seatbelt). Add sandbox integration in app catalog, Tauri dependencies, and framework MCP client support. See [docs/sandbox/OVERVIEW.md](docs/sandbox/OVERVIEW.md).
+
 - Adopt pushed Projection `d330d99`: common surface-property guidance is emitted once instead of repeated in every strict component branch, reducing the primary local core-tier tool definition by 4,392 characters. The required record-view model gate still fails; this is a measured context-size improvement, not a proven latency or authoring-outcome pass.
 - Preserve standard optional skill frontmatter in Settings edits, show license/author metadata/requested tools without granting access, and import reviewed UTF-8 script source as inert supporting text. Binary assets and script execution remain unsupported. Pinned external reviews and responsive WebKit checks cover the declared subset.
 - Selecting a provider in Settings now applies its displayed installed/default model to the composer. Previously the model row could show the local model while a new chat still used the earlier hosted model.
