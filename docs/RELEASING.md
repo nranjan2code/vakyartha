@@ -1,6 +1,6 @@
 # RELEASING.md: Vakyartha
 
-Current local checkpoint (2026-10-27): app source `0714a9c` / pushed Projection `c045a3c` is freshly built from committed archives, installed and relaunched.164 app/393 framework checks, native/type/build and responsive layout/skills/canvas WebKit pass. Exact manifests, recoverable backups and the successful single installed local-model smoke are recorded below. Earlier failed model-outcome gates remain open.
+Current local checkpoint (2026-10-27): pushed app source `11c30cf` / Projection `c045a3c` was freshly cloned, tested, built and installed. 173 app/393 framework tests, native/type/build and responsive skills/surface/canvas WebKit checks pass. The exact bundle manifest and recoverable backup are recorded below. Three web-mode local-model skill-file outcomes and one installed local-model card/canvas smoke pass. Earlier failed model-outcome gates remain open.
 
 
 How Vakyartha is versioned, how it takes framework updates from Projection, and how a release is built, checked, installed and published. Rules for any change: [AGENTS.md](../AGENTS.md).
@@ -254,3 +254,17 @@ Pushed app `c4449d6ed2a05858ddd527b7604a395975a9d6f0` with Projection pin `c045a
 Installed `/Applications/Vakyartha.app` as a whole bundle, keeping the previous app at `/tmp/vakyartha-surface-release-c4449d6/backup/Vakyartha.previous.app`. All 2,390 files, links, modes and directories match the clean build; manifest SHA-256 `77fe0d86b72fec0fc88c7d74f151101ec39c950821a63836ce9c82ed173440d9`. About confirms 0.2.0, Node 24.22.1 and the existing user data path. The user-data receipt is `.vak/builds/2026-10-27-surface-design-install.json` (gitignored).
 
 All 26 installed built-ins exactly matched their previous bundled defaults before update; 18 changed defaults were applied through the fingerprint-bound reviewed UI flow. Current built-in bodies now match the pushed bundle, all remain enabled, the removed `commit-message` remains removed, and no update is pending. The installed Skills UI shows `surface-design` Always on with no disable/remove action. Recent engine logs have zero error/exception markers in the last 300 lines. No model trial, paid call, tag or public GitHub release was made; the previously observed market-dashboard return-window omission remains open pending its original outcome check.
+
+## Skill supporting files — installed 2026-10-27
+
+Pushed app source `11c30cfff7ec06399b74c85d2ce48e7fbb530c56` with Projection pin `c045a3c3b303a3fc2380a71701cbe4077db9fc8a` was cloned recursively to `/tmp/vakyartha-skill-files-release-IglMtk/source`. Fresh `npm ci` reported zero vulnerabilities. In that clone, 173 app and 393 framework tests, typecheck, Rust library test, UI build, Skills WebKit at 1100/620/375, surface-design WebKit at 1440/1100/620 and canvas WebKit at 1100/620 passed. An initially absent Rust target at `/tmp/vakyartha-skill-files-release-IglMtk/rust-release` produced a fresh optimized app (134.63 MiB) and DMG (43.78 MiB) with bundled Node 24.22.1. Package and Cargo lockfiles were unchanged.
+
+The whole app bundle was installed at `/Applications/Vakyartha.app`; the previous bundle and standard artifacts are recoverable in `/tmp/vakyartha-skill-files-release-IglMtk/backup/`. The build, installed app and refreshed standard app match across all 2,390 files, links, directories, modes and hashes. Manifest SHA-256: `f6baa355901f6f025bbfd75e5eaaf22371938ff8646f6b4f7710a885e2a59e9f`. The DMG matches the fresh build. Ignored receipt `.vak/builds/2026-10-27-skill-files-install.json` retains full provenance and manifests. Native About shows 0.2.0, Node 24.22.1, Keychain and the existing data path; Skills shows 26 installed skills and `surface-design` Always on. No built-in instruction body changed in this tier or in the installed user data.
+
+Three fresh local `qwen3.5:4b-mlx` web-mode sessions passed the frozen `use_skill` → `read_skill_file` → exact-value outcome after the final source correction; see [EVALUATION.md](EVALUATION.md#skill-supporting-files--2026-10-27). In the installed app, the user switched the chat model to local `qwen3.5:4b-mlx`. One native chat asked for a single card titled Installation check with body Ready; the visible response rendered that heading and exact body, then Open in canvas showed the same heading and body. This is a bounded installed rendering smoke, not a second installed skill-file retrieval outcome. No paid model call, new dependency, tag or public release. Existing source/value/interpretation/interaction/receipt and market-dashboard outcome failures remain open. This documentation-only follow-up does not change the executable snapshot.
+
+Artifact SHA-256:
+
+- Native: `688d8ff7e7ab3eedf2c3ec6928961f8225c322ffd82cfba4e9486b653157821d`.
+- Sidecar: `46aa2f4f5c7550cddd9619bbfa125160354d1deb978dd832cc2e147e7bfb5c98`.
+- DMG: `569cdcee0e4adbcb4c6246403ebf5dfc0a16fa7c3d88a832d7dd86bc16c2faba`.
