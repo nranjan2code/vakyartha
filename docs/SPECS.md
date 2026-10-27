@@ -123,3 +123,8 @@ Trusted local instruction loading consumes bounded model/answer steps, not exter
 ### Built-in skill updates
 
 New bundled skills seed once. Existing instruction files are not overwritten on startup. When a built-in differs from the installed body/description, Skills shows an Updates filter/badge and current/proposed preview. Updating verifies both offered and current fingerprints before replacing instructions and preserves enabled state. User edits remain until explicit replacement; removed skills remain removed. Catalog skills keep their reviewed pin; upstream auto-update discovery is not implemented.
+
+
+### Governed capability dispatch (2026-10-27)
+
+Projection validates supported native argument schemas before approval/execution, preserves explicit MCP error/denial status and rejects incomplete native generations or ambiguous tool names before external effects. Integration settings/metadata changes invalidate captured handles and chat grants; authority and cancellation are checked after approval. MCP HTTP work aborts on cancellation/timeout/close, response parsing is bounded at 8 MiB, and Retry-After consumes finite retries. Task receipt wrapping preserves structured results. Stale skill selection context fails explicitly; root skill review discloses supporting files that are not installed. [Pipeline review](PIPELINE-REVIEW.md) records the supported subset and remaining limits; these mechanisms do not certify model reasoning or external exactly-once execution.

@@ -254,3 +254,6 @@ Implemented under ADR-027: source browsing/search/pagination and review-bound un
 
 
 External discovery UI correction (2026-10-26): screenshot-reported axes and card actions now have geometric WebKit checks at wide/medium/narrow widths. Source/publisher identity assets are distinct from trust status; external icons use authenticated bounded image fetches and passive rendering. No change to task acceptance/free-capability gates or runtime ownership. See EXTERNAL-CATALOGS.md for checks and RELEASING.md for the requested clean local installation.
+
+
+Pipeline audit checkpoint (2026-10-27): dispatch revalidation, supported native argument checks, explicit MCP failure status, bounded/cancellable transport and finite retries are covered by offline regressions. Stale skill selection fails explicitly and root skill review discloses omitted supporting files.163 app/393 framework tests/replay, typechecks, packages/UI and wide/narrow canvas WebKit pass. This does not close any unchecked live outcome, source/value/interaction, accessibility, channel-parity or sustained-operation gate. See [review](PIPELINE-REVIEW.md).
