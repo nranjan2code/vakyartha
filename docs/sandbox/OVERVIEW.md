@@ -37,11 +37,13 @@ Sandbox is enabled globally for all stdio MCP servers. Default policies follow t
 - Seatbelt profiles use safe quoting to prevent injection
 - Graceful degradation if vaksb unavailable (no silent failures)
 
-## Requirements
+## Bundling
 
-- `vaksb` binary installed and on PATH
-- macOS 11+ (Seatbelt) or Linux with Landlock support (planned)
-- Build from [sandbox repo](https://github.com/nranjan2code/sandbox)
+`vaksb` is built and bundled with vakyartha during `npm run desktop:build`. The binary is placed at `src-tauri/binaries/vaksb-<triple>` and shipped as a Tauri external binary. At runtime, the Tauri shell sets `VAK_SANDBOX_BIN` to the bundled path, and the sidecar passes it to the framework.
+
+In dev mode (`npm run desktop`), the sidecar looks for `vaksb` at `../sandbox/target/release/vaksb` or on PATH.
+
+If `vaksb` is not available, the framework gracefully degrades: MCP servers run without OS-level isolation (no crash, no silent failure).
 
 ## See Also
 - [vak-sandbox Repository](https://github.com/nranjan2code/sandbox)
