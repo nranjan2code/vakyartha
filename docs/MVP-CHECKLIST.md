@@ -6,6 +6,8 @@ Check an implementation item only after its acceptance behavior is verified. App
 
 ## Planning and design
 
+- [ ] A1. Implement the [data-first authoring contract](plans/DATA-FIRST-AUTHORING.md): skills guide the agent; records, field mappings and operations replace independently authored table/chart/metric copies. Broad rewrite proposal deleted. No old-code/backward-compatibility requirement; preserve security and product capabilities.
+- [ ] A2. Verify skill-led interactive authoring after cleanup. Shared record mappings, forms and transactional execution remain; source-specific execution and duplicate-array guidance are deleted. Fresh skill-led linked-view/edit/submit/independent-notes outcome and wide/narrow WebKit pass. Broader local intent, source interpretation/continuation and installed outcomes remain open. See [skills](SKILLS.md) and [evidence](EVALUATION.md).
 - [x] D1. Draft MVP scope, existing capability inventory and later boundaries — `MVP-SPECS.md`.
 - [x] D2. Create this tracker with ownership and acceptance gates.
 - [x] D3. Independent design review completed; findings incorporated into spec sections 3, 4, 6 and 9 and the gates below. See evidence log.
@@ -92,7 +94,7 @@ Owner: Vakyartha for policies and records; general enforcement gaps through D7. 
 Owners: Vakyartha end-to-end; Projection verifies any changed framework contract in its own repository. Record environment, change references and evidence. Use the primary local model; paid evaluation requires explicit approval.
 
 - [ ] P4.1. Research comparison completes with cited evidence and an interactive criteria form plus comparison surface.
-- [ ] P4.2. Workspace report completes from supported scoped files, with checked values, independent surfaces and requested output receipt. Original selected-file report and changed-budget continuation pass independent source/value/export and WebKit checks through ADR-035. Broader source-only requested-operation probes fail0/3; free-form placement passes2/3. Preserve failed receipts and fix intent at its owning boundary before a broader reliability claim. User acceptance remains explicit; hashes or JSON shape alone do not close this gate (EVALUATION.md).
+- [ ] P4.2. Workspace report completes from supported scoped files, with checked values, independent surfaces and requested output receipt. The earlier compiler-path success is historical: that execution is removed. Verify original source facts, arithmetic, changed-criterion continuation and saved receipts through skill-led generic authoring before closing this gate. Preserve failures and explicit user acceptance (EVALUATION.md).
 - [ ] P4.3. Connected work review prepares a concrete change, waits for approval, applies only the approved operation and verifies the outcome.
 - [ ] P4.4. Multi-surface regression: keep two independently edited forms and a sortable/filterable/pageable table; update another surface, switch selections/tasks and restart. Drafts persist, local operations make no model calls and exact validated payloads reach the right owner. Within a mounted task, picker, close/reopen, Preview/Text, full/split and library opening preserve live element identity. Test with an active task and pending approval too.
 - [ ] P4.5. Interaction regression: invalid/stale submissions, duplicate clicks, queued actions and actions after completion have defined outcomes; failure/cancellation releases affected controls.

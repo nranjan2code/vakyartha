@@ -174,6 +174,28 @@ const steps = [
    check(document.getElementById('canvas').hidden, 'keyboard hide failed');
    document.dispatchEvent(new KeyboardEvent('keydown',{key:'b',metaKey:true,altKey:true,bubbles:true}));
    check(!document.getElementById('canvas').hidden, 'keyboard reopen failed'); return 'removal, submit and keyboard toggle';`,
+  `await project('vak_render', {surface:'records',title:'Shared measurements',data:{records:[{label:'East',value:9},{label:'West',value:14}]},nodes:[{id:'root',type:'stack',children:[
+     {id:'edit',type:'form',props:{submit:'review'},children:[{id:'reading',type:'input',props:{label:'Reading',kind:'number',bind:'/records/0/value'}}]},
+     {id:'table',type:'table',props:{columns:['Label','Reading'],rows:{records:'{/records}',fields:['label','value']}}},
+     {id:'chart',type:'chart',props:{kind:'bar',series:{records:'{/records}',label:'label',fields:['value']}}},
+     {id:'total',type:'stat',props:{label:'Total',value:{records:'{/records}',field:'value',aggregate:'sum'}}}
+   ]}]});
+   const s=document.querySelector('#canvas-content vak-surface');
+   check(s?.surfaceId==='records','mapped surface not open');
+   const verify=(reading,total)=>{
+     const cells=[...s.shadowRoot.querySelectorAll('td')].map(n=>n.textContent);
+     check(cells.includes('East') && cells.includes(String(reading)) && cells.includes('14'),'mapped table stale');
+     check(s.shadowRoot.querySelector('.stat .value')?.textContent===String(total),'mapped total stale');
+     const titles=[...s.shadowRoot.querySelectorAll('svg title')].map(n=>n.textContent);
+     check(titles.includes('value · East: '+reading) && titles.includes('value · West: 14'),'mapped chart stale');
+     check(!s.shadowRoot.textContent.includes('/records'),'binding leaked into display');
+   };
+   verify(9,23);
+   const input=s.shadowRoot.querySelector('input[type="number"]'); input.value='20'; input.dispatchEvent(new Event('input',{bubbles:true})); flush(); verify(20,34);
+   let action; s.addEventListener('vak-action',e=>{action=e.detail.action;e.stopPropagation()});
+   s.shadowRoot.querySelector('button[type="submit"]').click();
+   check(action?.action==='review' && action.data.value===20,'mapped form submitted stale value');
+   await project('vak_remove',{surface:'records'}); return 'shared records edit table, chart, total and submitted value';`,
   `for (let i=0;i<26;i++) {
      const r=await fetch('/api/project',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session:'library-other',tool:'vak_render',args:{surface:'notes-'+i,title:'Notes '+String(i).padStart(2,'0'),nodes:[{id:'root',type:'text',props:{content:'Saved notes'}}]}})});
      check(r.ok, 'could not seed library');

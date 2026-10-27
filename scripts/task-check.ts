@@ -10,7 +10,7 @@ import { startAppServer } from "../sidecar/server.ts";
 
 const run = promisify(execFile), root = fileURLToPath(new URL("..", import.meta.url));
 const out = await mkdtemp(path.join(tmpdir(), "vak-task-check-"));
-let calls = 0;
+let calls = 0, selections = 0;
 const fake = createServer(async (req, res) => {
   if (req.url?.endsWith("/models")) { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ data: [{ id: "scripted" }] })); return; }
   let body = ""; for await (const chunk of req) body += chunk;
@@ -18,7 +18,13 @@ const fake = createServer(async (req, res) => {
   const messages: unknown = parsed && typeof parsed === "object" && "messages" in parsed ? parsed.messages : [];
   const action = Array.isArray(messages) && messages.some((m: unknown) => m && typeof m === "object" && "role" in m && m.role === "user" && "content" in m && typeof m.content === "string" && m.content.startsWith("[ui action]"));
   calls++;
-  if (Array.isArray(messages) && messages.at(-1)?.role === "tool") {
+  const tools = parsed && typeof parsed === "object" && "tools" in parsed ? parsed.tools : undefined;
+  if (Array.isArray(tools) && tools.length === 1 && tools[0]?.function?.name === "use_skill") {
+    selections++;
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    res.end(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: `skill-${calls}`, type: "function", function: { name: "use_skill", arguments: '{"names":["assistant","interactive-ui"]}' } }] }, finish_reason: "tool_calls" }] })}\n\ndata: [DONE]\n\n`); return;
+  }
+  if (Array.isArray(messages) && messages.at(-1)?.role === "tool" && !String(messages.at(-1)?.tool_call_id).startsWith("skill-")) {
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.end(`data: ${JSON.stringify({ choices: [{ delta: { content: "Ready for review" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`); return;
   }
@@ -79,7 +85,7 @@ const steps = [
    document.getElementById('task-goal').value='Create two independent forms and a table';document.getElementById('task-criteria').value='All three stay interactive';
    const selected=new DataTransfer();selected.items.add(new File(['A bounded input snapshot'],'facts.txt',{type:'text/plain'}));document.getElementById('task-files').files=selected.files;
    document.getElementById('task-output').value='markdown';document.getElementById('task-diagnostic-days').value='0';
-   document.getElementById('task-budget-runs').value='3';document.getElementById('task-budget-model').value='6';document.getElementById('task-budget-tools').value='0';
+   document.getElementById('task-budget-runs').value='3';document.getElementById('task-budget-model').value='9';document.getElementById('task-budget-tools').value='0';
    const oldIds=(await(await fetch('/api/tasks')).json()).map(t=>t.id);
    document.getElementById('task-spending').value='api_allowed';document.getElementById('task-spending').dispatchEvent(new Event('change'));document.getElementById('task-spending-ack').checked=true;document.getElementById('task-create-form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
    await wait(async()=>{const list=await(await fetch('/api/tasks')).json();window.qaTask=list.find(t=>!oldIds.includes(t.id))?.id;return Boolean(window.qaTask)});
@@ -129,7 +135,7 @@ const steps = [
    check(document.documentElement.scrollWidth<=innerWidth,'page overflow');return 'reviewed completion and interactive continuation';`,
   `document.getElementById('open-schedule').click();await wait(()=>document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]'));document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]').click();
    await wait(()=>document.querySelectorAll('.schedule-run').length===3);
-   const history=await task();check(history.runHistory.length===3,'run records missing');check(history.limits.runs===3&&history.limits.modelRequests===6&&history.budget.modelRequests===6,'cumulative limits or counters missing');check(history.runHistory[1].state==='accepted','review decision absent from run history');
+   const history=await task();check(history.runHistory.length===3,'run records missing');check(history.limits.runs===3&&history.limits.modelRequests===9&&history.budget.modelRequests===9,'cumulative limits or counters missing');check(history.runHistory[1].state==='accepted','review decision absent from run history');
    document.querySelector('.schedule-run summary').click();check(document.querySelector('.schedule-run').open,'run receipt will not expand');check(document.querySelector('.schedule-run-id').textContent.includes(history.runHistory[2].id),'wrong run receipt');
    document.querySelector('.schedule-run-usage').click();await wait(()=>document.querySelector('.schedule-run [role="status"]').textContent.includes('Model API estimate'));
    check(document.querySelector('.schedule-run [role="status"]').textContent.includes('unknown'),'missing usage became zero');
@@ -200,7 +206,7 @@ try {
     console.log(`${width}px: ${stdout.trim()}`);
     if (/step \d+ error:/.test(stdout) || !stdout.includes("interactive continuation")) throw new Error(`Task WebKit check failed at ${width}px`);
   }
-  if (calls !== 16) throw new Error(`Unexpected model calls: ${calls}; local interaction must not call the model`);
+  if (calls - selections !== 16 || selections !== 8) throw new Error(`Unexpected model calls: ${calls}, selections: ${selections}; local interaction must not call the model`);
   console.log(`Task WebKit checks passed. Screenshots: ${out}`);
 } catch (err) {
   console.error(err); console.error(`Screenshots: ${out}`); process.exitCode = 1;

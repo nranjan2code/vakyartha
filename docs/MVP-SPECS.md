@@ -1,5 +1,8 @@
 # Vakyartha agent MVP
 
+Current authoring boundary (2026-10-27): skills guide procedures and composition; shared record mappings, canonical transactions and governed capabilities execute them. Source-specific derive/prepare/workspace compilation is deleted. Original source/calculation/interaction/output requirements below remain acceptance requirements; historical compiler-path results do not close them for the current implementation.
+
+
 Planning baseline: 2026-10-25. Status: implementation in progress; the checklist distinguishes working behavior from planned requirements. Progress and release evidence: [MVP-CHECKLIST.md](MVP-CHECKLIST.md). Current implementation: [SPECS.md](SPECS.md). Working rules: [AGENTS.md](../AGENTS.md).
 
 Architecture decisions: [ADR.md](ADR.md). Implementation is now authorized; the checklist records which parts actually work.

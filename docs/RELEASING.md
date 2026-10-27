@@ -1,5 +1,8 @@
 # RELEASING.md: Vakyartha
 
+Current source-only checkpoint (2026-10-27): the source-specific execution API/compiler is deleted and the app dependency pin adopts that breaking framework change and the subsequent prompt/schema/context-budget cleanup. The current source checkpoint is383 framework/161 app checks with wide/narrow task/canvas/fresh-output WebKit. No local installed bundle has been updated for this cleanup. Historical manifests and outcomes below describe their recorded revisions only; reverify skill-led source calculations, interactions and output receipts before attributing them to a new build.
+
+
 How Vakyartha is versioned, how it takes framework updates from Projection, and how a release is built, checked, installed and published. Rules for any change: [AGENTS.md](../AGENTS.md).
 
 ## Versions
@@ -77,10 +80,10 @@ Current: Node 24.22.1 (Krypton LTS, security release of 2026-10-20) with npm 11.
 5. **Build:** `npm run desktop:build`. It bundles the sidecar (framework included), the Node binary and npm. Output: `src-tauri/target/release/bundle/macos/Vakyartha.app` and `bundle/dmg/Vakyartha_X.Y.Z_<arch>.dmg`.
 6. **Install locally and smoke-test the installed app:**
    ```bash
-   osascript -e 'quit app "Vakyartha"' 2>/dev/null       # a running copy cannot be replaced (a dmg drag fails silently)
-   rm -rf /Applications/Vakyartha.app                    # ditto merges into an existing bundle; replace it whole
+   # Quit the app normally after checking it is idle.
+   # Move the previous .app to a recoverable backup; replace the whole bundle.
    ditto src-tauri/target/release/bundle/macos/Vakyartha.app /Applications/Vakyartha.app
-   open /Applications/Vakyartha.app
+   # Launch the installed bundle and verify About, data path and behavior.
    ```
    Check Settings → About shows `X.Y.Z` and the data folder; send one chat on local Ollama and see an interface; open it in the canvas; check `logs/engine.log` has no errors.
 7. **Commit, tag, push** (after the secret scan in AGENTS.md):

@@ -22,7 +22,7 @@ const store = new SurfaceStore(basicCatalog);
 const model = "qwen3.5:4b-mlx";
 const result = await runAgent({ provider: ollama(), model, store,
   messages: [{ role: "user", content: "Make an image of a blue songbird sitting on a branch. Use my enabled Images integration and its configured model. Start just one job and tell me where I can review it." }],
-  tools: await integrations.toolsFor("authoring"), generation: "tools", completion: "response", schemaMode: "strict", maxSteps: 5, toolRounds: 2, maxTokens: 1800, extra: { think: false }, signal: AbortSignal.timeout(120_000), emit: (e) => events.push(e),
+  tools: await integrations.toolsFor("authoring"), generation: "tools", completion: "response", maxSteps: 5, toolRounds: 2, maxTokens: 1800, extra: { think: false }, signal: AbortSignal.timeout(120_000), emit: (e) => events.push(e),
 });
 await new Promise((r) => setTimeout(r, 20));
 const jobs = (await media.view("image")).jobs;

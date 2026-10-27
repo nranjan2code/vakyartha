@@ -21,6 +21,8 @@ This repository is the **rebuild** of the app described on [vakyartha.com](https
 
 The site describes where Vakyartha is going. Here is what this repository does today.
 
+Current authoring cleanup uses skills and shared record mappings for forms, tables, charts and metrics. The earlier specialized source-report compiler is removed. General source calculations and continuations still require live outcome verification; [evaluation](docs/EVALUATION.md) distinguishes current results from older installed builds.
+
 | On vakyartha.com | In this rebuild |
 |---|---|
 | Ask, and get something you can use | **Works.** Answers project as live surfaces; chats are saved; an **Artifacts** library gathers every surface across chats and reopens it in the canvas. |

@@ -663,7 +663,6 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         provider,
         model,
         think: opt("think") === "true",
-        schemaMode: opt("schema", "compact"),
         generation: opt("generation", "auto"),
         effort: opt("effort") || undefined,
         // Long everyday chats would otherwise send every turn and overflow a small model's context.

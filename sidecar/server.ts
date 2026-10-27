@@ -161,10 +161,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   const skills = new Skills(dataDir, opts.marketplaceFetch);
   const INSTRUCTIONS = () => `You are the assistant inside ${opts.appName ?? "Vakyartha, a desktop app"}.
 Today is ${new Date().toISOString().slice(0, 10)}.
-Answer with rich UI when the answer has structure the user will scan, compare or act on (options, comparisons, metrics, steps, forms); keep the accompanying text to one short sentence, the UI carries the content.
-Answer conversation and short answers in plain text, without UI: greetings, thanks, small talk, a fact or an explanation of a few sentences, or whatever the user asks for as text.
-When the user asks for examples or you lack real data, use realistic sample data and say it is sample data in a caption.
-When you receive a "[ui action]" message, the user interacted with your UI: respond to it, usually by updating that surface (vak_update) or rendering a confirmation.${skills.index()}`;
+${skills.index()}`;
 
   const profiles = new ProfileCache(opts.profilesPath ?? path.join(dataDir, "models.json"));
   const finops = new Finops(dataDir, log);
@@ -212,10 +209,10 @@ When you receive a "[ui action]" message, the user interacted with your UI: resp
     // Refused requests never reach either the provider or its usage observer.
     return finops.providers(entries).map((entry) => ({ ...entry, make: (options) => {
       const provider = entry.make(options);
-      return { ...provider, async *stream(request) {
+      return skills.provider({ ...provider, async *stream(request) {
         await tasks?.beforeModelRequest(entry.id, request.model);
         yield* provider.stream(tasks?.inTask() ? { ...request, maxTokens: Math.min(request.maxTokens ?? 4096, 4096) } : request);
-      } };
+      } });
     } }));
   }
   const host = createHost({

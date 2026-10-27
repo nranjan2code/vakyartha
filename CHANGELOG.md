@@ -4,8 +4,12 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
-- Checked CSV workspaces now preserve selected source records, hashes and context, compute declared values in Projection, and compile separate criteria/report surfaces from references. Caller parameter relations remain inspectable. Added strict bounded CSV parsing and an end-to-end changed-budget regression using different source facts.
-- Original selected-file report and changed-budget continuation pass independent value/export and WebKit checks. Broader source-only and free-form probes still fail; retained evidence and next owning-boundary repair are explicit in EVALUATION.md. No general reliability or user-acceptance claim.
+- Skill-led authoring uses shared record mappings for forms, tables, charts and metrics. The old CSV bridge, source options, derive/prepare tools and automatic source-report compiler are deleted; no compatibility wrapper or new source executor remains.
+- Chat/tasks select enabled skills in a counted generation. Local context loading remains available with zero external-operation allowance and consumes answer-step limits. Selection, usage and external permissions retain their proper owners.
+- The interactive-ui skill is reduced from355 to222 words and permits separate datasets for unrelated views. Runtime prompts now have one owner per active protocol. Removed the compact/strict runtime setting, context-erasing latest-message-only advice and conflicting research row instructions.
+- Root/descendant tool schemas share one definition, reducing the native authoring schema from roughly66k to34k characters. Distinct form fields with the same leaf name submit canonical pointer keys instead of overwriting one another.
+- Fresh authorized Luna trial passes initial authoring, local table/chart/total updates, all three submitted counts, visible acknowledgement and independent notes preservation. Actual retained output passes WebKit at1100px/620px. Earlier failed trials remain recorded; this is bounded evidence, not broad reliability or a local-model pass.
+- Projection `6ca8487` is pushed/adopted.383 framework tests/replay,161 app tests, typechecks/builds and wide/narrow task/canvas WebKit pass. OpenAI uses Responses with no Chat Completions fallback; compatible-provider routes remain explicit. Installed app unchanged. See [evaluation](docs/EVALUATION.md) for exact receipts and unresolved outcomes.
 
 - Transactional table authoring uses positional cell arrays, so row keys cannot drift from column keys. Resolved bindings are checked before admission. Rejected-candidate feedback no longer treats private IDs as saved surfaces.
 
@@ -29,7 +33,7 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 - **New chat screen:** a quieter time-of-day greeting and five ideas drawn from a mix of everyday and technical starters. Choosing one fills the message box to edit before sending instead of sending at once.
 
-- **Skills:** Settings → Skills installs, writes, edits and toggles `SKILL.md` instruction skills. Enabled skills are indexed in the system instructions and loaded on demand with `use_skill`, so they chain with each other and with integration tools without granting access. A catalog of six publisher repositories (plus any `owner/repository`) reads skills at a commit at least 14 days old; review shows the exact text and bundled files (never imported); added skills start off. Twelve everyday built-in skills ship on. [Guide](docs/SKILLS.md).
+- **Skills:** Settings → Skills installs, writes, edits and toggles `SKILL.md` instruction skills. Enabled skills are indexed in the system instructions and loaded on demand with `use_skill`, so they chain with each other and with integration tools without granting access. A catalog of six publisher repositories (plus any `owner/repository`) reads skills at a commit at least 14 days old; review shows the exact text and bundled files (never imported); added skills start off. Fourteen built-in skills ship on. [Guide](docs/SKILLS.md).
 
 - **Settings navigation:** Integrations is now a group holding **MCP** and **Skills**; every settings item has an icon.
 

@@ -5,6 +5,8 @@ framework continues to own surfaces, rendering, bindings, validation and actions
 
 ## Experience
 
+Tables, charts and stat aggregates can map fields of one bound record collection. Form edits to that collection update every mapped view through the existing surface store. Display values participate in renderer refresh; controls with explicit synchronization preserve their focused DOM. Mappings do not create separate data copies or execute formula strings. Repeated field names retain their canonical paths when submitted, so editing several records cannot collapse their values.
+
 - Media results use the canonical host session and dedicated media projection. Image/video results prefer the canvas; compact audio can remain inline. Playback controls are local and voice-addressable, while multiple result surfaces remain independently discoverable. Private resource resolution and the media library do not create another rendered-surface authority. See [MEDIA-TOOLS.md](MEDIA-TOOLS.md).
 
 - **Artifacts** is one permanent sidebar entry. Its page lists saved surfaces

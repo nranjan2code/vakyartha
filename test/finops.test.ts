@@ -100,10 +100,12 @@ test("authenticated app HTTP chats record real request metrics and replace recon
   const { startAppServer } = await import("../sidecar/server.ts");
   const { dir } = manager(t);
   const fake = createServer((req, res) => {
-    req.resume();
+    let raw = ""; req.on("data", chunk => { raw += chunk; });
     req.on("end", () => {
+      const body = JSON.parse(raw);
+      const selecting = body.tools?.length === 1 && body.tools[0]?.function?.name === "use_skill";
       res.writeHead(200, { "content-type": "text/event-stream" });
-      res.end(`data: ${JSON.stringify({ choices: [{ delta: { content: "Local test response" }, finish_reason: "stop" }], usage: { prompt_tokens: 100, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60 } } })}\n\ndata: [DONE]\n\n`);
+      res.end(`data: ${JSON.stringify({ choices: [{ delta: selecting ? { tool_calls: [{ index: 0, id: "select", type: "function", function: { name: "use_skill", arguments: '{"names":[]}' } }] } : { content: "Local test response" }, finish_reason: selecting ? "tool_calls" : "stop" }], usage: { prompt_tokens: 100, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60 } } })}\n\ndata: [DONE]\n\n`);
     });
   });
   await new Promise<void>((resolve) => fake.listen(0, "127.0.0.1", resolve));
@@ -127,6 +129,7 @@ test("authenticated app HTTP chats record real request metrics and replace recon
   const turn = view.turns[0]!;
   assert.equal(turn.source, "recorded"); assert.equal(turn.session, "http-test"); assert.equal(turn.task, undefined);
   assert.equal(turn.steps[0]?.input, 100); assert.equal(turn.steps[0]?.cachedInput, 60);
+  assert.equal(turn.steps.length, 2, "selection and answer are both metered");
   assert.ok(turn.steps[0]!.systemChars > 0); assert.ok(turn.steps[0]!.schemaChars > 0);
   const clock = await fetch(`${app.url}/api/integrations/time/test`, { method: "POST", headers, body: JSON.stringify({ tool: "now", args: { timezone: "UTC" } }) });
   assert.equal(clock.status, 200);
@@ -137,7 +140,7 @@ test("authenticated app HTTP chats record real request metrics and replace recon
     assert.equal(blocked.status, 400);
   }
   assert.equal(((await (await fetch(`${app.url}/api/finops`, { headers })).json()) as { turns: Turn[] }).turns.length, 1);
-  const created = await fetch(`${app.url}/api/tasks`, { method: "POST", headers, body: JSON.stringify({ goal: "Synthetic task", criteria: "Review synthetic result", provider: "compatible", model: "fake", spending: { kind: "api_allowed", acknowledged: true }, integrations: ["time"] }) });
+  const created = await fetch(`${app.url}/api/tasks`, { method: "POST", headers, body: JSON.stringify({ goal: "Synthetic task", criteria: "Review synthetic result", provider: "compatible", model: "fake", spending: { kind: "api_allowed", acknowledged: true }, integrations: [], limits: { runs: 1, modelRequests: 2, toolCalls: 0, activeMs: 60000 } }) });
   assert.equal(created.status, 201);
   const { parseTaskView } = await import("../shared/task-contract.ts");
   const task = parseTaskView(await created.json());
@@ -148,8 +151,10 @@ test("authenticated app HTTP chats record real request metrics and replace recon
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   assert.equal(finished.state, "needs_input");
-  assert.equal(finished.budget.modelRequests, 1);
-  assert.equal(finished.runHistory[0]!.modelRequests, 1);
+  assert.equal(finished.budget.modelRequests, 2);
+  assert.equal(finished.runHistory[0]!.modelRequests, 2);
+  assert.equal(finished.budget.toolCalls, 0, "loading local skills uses no external operation allowance");
+  assert.deepEqual(finished.operations, []);
   const taskUsage = await (await fetch(`${app.url}/api/finops`, { headers })).json() as { turns: Turn[] };
   const recorded = taskUsage.turns.find((turn) => turn.session === task.id)!;
   assert.deepEqual(recorded.task, { taskId: task.id, runId: finished.runHistory[0]!.id });
@@ -159,7 +164,7 @@ test("authenticated app HTTP chats record real request metrics and replace recon
   const usageUrl = `${app.url}/api/tasks/${task.id}/runs/${finished.runHistory[0]!.id}/usage`;
   assert.equal((await fetch(usageUrl)).status, 401);
   const measured = parseRunUsage(await (await fetch(usageUrl, { headers })).json());
-  assert.equal(measured.input, 100); assert.equal(measured.output, 25);
+  assert.equal(measured.input, 200); assert.equal(measured.output, 50);
   assert.equal((await fetch(`${app.url}/api/tasks/${task.id}/runs/not-this-run/usage`, { headers })).status, 400);
   const bypass = await fetch(`${app.url}/api/reset`, { method: "POST", headers, body: JSON.stringify({ session: task.id }) });
   assert.equal(bypass.status, 409);

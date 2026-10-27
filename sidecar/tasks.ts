@@ -1,4 +1,3 @@
-import { selectedTableSources } from "./csv-source.ts";
 import { parseTaskResultPolicy, resultInstructions, reviewTaskResult } from "../shared/task-result.ts";
 import { reviseComparisonCriteria } from "../shared/comparison-contract.ts";
 import type { ResearchRead } from "../shared/research-contract.ts";
@@ -481,7 +480,7 @@ export class Tasks {
       if (!this.available(e)) throw e.ctrl.signal.reason ?? new Error("Task stopped before execution");
       await this.scope.run(e, () => this.deps.observe(t.session, async () => {
         let calls = 0;
-        const tools = (await this.deps.tools(t.session)).filter((tool) => tool.spec.name === "use_skill" || t.integrations.includes(tool.spec.name.split("__")[0]!)).map((tool): AgentTool => ({
+        const tools = (await this.deps.tools(t.session)).filter((tool) => tool.kind === "context" || t.integrations.includes(tool.spec.name.split("__")[0]!)).map((tool): AgentTool => tool.kind === "context" ? tool : ({
           spec: tool.spec,
           execute: async (args, ctx) => {
             this.deps.ready(t.provider, t.model, t.integrations, t.confirmedFree, t.spending);
@@ -522,13 +521,10 @@ export class Tasks {
         // Initial-value assertions must not reset later user-submitted criteria.
         const resultPolicy = t.resultPolicy && run.sequence > 1 ? { ...t.resultPolicy, initialValues: undefined } : t.resultPolicy;
         const result = await this.deps.run({ session: t.session, provider: t.provider, model: t.model, message: input.message, action: input.action, history: 10 }, {
-          tableSources: t.resultPolicy?.kind === "comparison" && t.inputs?.length ? selectedTableSources(t.inputs, t.resultPolicy.notices, t.resultPolicy.kind === "comparison" ? t.resultPolicy.labels : undefined) : undefined,
-          tableParameters: t.resultPolicy?.initialValues,
-          tableRelations: t.resultPolicy?.parameterRelations,
           surfaceSubmission: Boolean(t.resultPolicy), completion: "response", validateCompletion: t.resultPolicy ? (result) => reviewTaskResult(resultPolicy!, result, e.sources) : undefined, signal: e.ctrl.signal, tools, maxSteps: TASK_LIMITS.rounds,
           // Gathering never takes the last model request: the engine keeps it for the closing answer.
           toolRounds: TASK_LIMITS.rounds - 1, maxTokens: TASK_LIMITS.outputTokens,
-          instructions: `${this.deps.instructions()}\nYou are working on a task. Goal: ${t.goal}\nCompletion criteria: ${t.criteria}\nKeep every existing surface interactive. Use evidence from the available tools; do not claim an external effect without a receipt. The user reviews your result before marking the task complete.\n${resultInstructions(resultPolicy)}${inputInstructions(t.inputs ?? [])}${t.output ? "\nThe app will save the canonical result as Markdown in local task outputs after successful generation. Do not call a file-writing tool or claim it saved before the app issues a receipt." : ""}`,
+          instructions: `${this.deps.instructions()}\nYou are working on a task. Goal: ${t.goal}\nCompletion criteria: ${t.criteria}\nPreserve unrelated surfaces and unsent edits while making the requested changes. Use evidence from the available tools; do not claim an external effect without a receipt. The user reviews your result before marking the task complete.\n${resultInstructions(resultPolicy)}${inputInstructions(t.inputs ?? [])}${t.output ? "\nThe app will save the canonical result as Markdown in local task outputs after successful generation. Do not call a file-writing tool or claim it saved before the app issues a receipt." : ""}`,
           emit: (event) => {
             if (event.type === "tool_start") this.activity(t, `Using ${event.name}`);
             if (event.type === "error") t.note = event.message.slice(0, 2000);

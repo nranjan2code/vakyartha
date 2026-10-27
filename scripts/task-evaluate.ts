@@ -1,5 +1,5 @@
 import { WORKSPACE_INPUTS, workspaceChecks, workspaceRows } from "./workspace-reference.ts";
-// Opt-in real local-model outcome checks. Reuses installed settings/runtime; retains dev evidence.
+// Opt-in real-provider outcome checks. Isolated state, installed configuration, retained evidence.
 import { COMPARISON_FIXTURE, interactiveComparisonContract, comparisonClaimIssues, comparisonReference, comparisonReview, evaluationVerdict } from "./evaluation-reference.ts";
 import { copyFile, mkdir, readFile, writeFile, symlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -11,6 +11,7 @@ import type { SessionView } from "@vak/host";
 import type { IntegrationView, ToolPolicy } from "@vak/mcp/client";
 import { boundFieldValues, resultText, separateFormAndTable, tableOutputText, tableRows, tablePayloads, visibleTextValues } from "./evaluation-checks.ts";
 import { parseResearchSummary } from "../shared/research-contract.ts";
+import { keychainStore } from "../sidecar/settings.ts";
 import { CATALOG } from "../sidecar/integrations.ts";
 import { startAppServer } from "../sidecar/server.ts";
 import { parseTaskView, taskObject, type TaskView, type TaskApproval } from "../shared/task-contract.ts";
@@ -18,11 +19,14 @@ import { parseTaskView, taskObject, type TaskView, type TaskApproval } from "../
 const revision = (cwd?: string) => execFileSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" }).trim();
 const sourceAtStart = { app: revision(), framework: revision("framework"), workingTreeModified: execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim().length > 0 };
 const args = process.argv.slice(2);
-if (!args.includes("--run-local") && !args.includes("--inspect")) throw new Error("Use --run-local for real local-model calls, or --inspect to view retained evaluations without starting new work.");
+if (!args.includes("--run-local") && !args.includes("--run-authorized") && !args.includes("--inspect")) throw new Error("Use --run-local, --run-authorized for an explicitly approved hosted trial, or --inspect for retained evidence.");
 const option = (name: string, fallback: string) => args.find((s) => s.startsWith(`--${name}=`))?.slice(name.length + 3) || fallback;
 const root = path.resolve(option("data", ".vak/evaluations/agent-mvp"));
 const installed = path.resolve(option("settings", path.join(homedir(), "Library/Application Support/com.nranjan2code.vakyartha")));
 const model = option("model", "qwen3.5:4b-mlx");
+const provider = option("provider", "ollama");
+if (!args.includes("--inspect") && provider !== "ollama" && !args.includes("--run-authorized")) throw new Error("Hosted trials require explicit authorization");
+if (args.includes("--installed-keychain") && provider === "openai") process.env.OPENAI_API_KEY = keychainStore("com.nranjan2code.vakyartha").get("OPENAI_API_KEY");
 const source = taskObject(JSON.parse(await readFile(path.join(installed, "integrations.json"), "utf8")));
 const saved = taskObject(source.integrations);
 await mkdir(root, { recursive: true, mode: 0o700 });
@@ -49,7 +53,7 @@ for (const id of ["time", "web", "memory"]) {
   }
   configurations[id] = { ...state, config: {}, policies: {} };
 }
-if (args.includes("--run-local") || !existsSync(path.join(root, "integrations.json"))) await writeFile(path.join(root, "integrations.json"), JSON.stringify({ integrations: configurations, custom: [] }), { mode: 0o600 });
+if (args.includes("--run-local") || args.includes("--run-authorized") || !existsSync(path.join(root, "integrations.json"))) await writeFile(path.join(root, "integrations.json"), JSON.stringify({ integrations: configurations, custom: [] }), { mode: 0o600 });
 const app = await startAppServer({ dataDir: root, access: "open", keychainService: "com.nranjan2code.vakyartha.evaluation", uiDir: path.resolve("dist"), appName: "Vakyartha evaluation" });
 console.log(`Evaluation workspace: ${app.url} · ${root}`);
 const request = async <T>(route: string, body?: unknown, method = "POST"): Promise<T> => {
@@ -101,8 +105,8 @@ try {
     console.log(`Evaluation workspace: ${app.url}\nData: ${root}`);
     await new Promise<void>((resolve) => { process.once("SIGINT", resolve); process.once("SIGTERM", resolve); });
   } else {
-    const models = await request<{ models: string[] }>("/api/models?provider=ollama");
-    if (!models.models.includes(model)) throw new Error("The requested primary local model is not installed; no fallback is permitted");
+    const models = await request<{ models: string[] }>(`/api/models?provider=${encodeURIComponent(provider)}`);
+    if (!models.models.includes(model)) throw new Error("The requested model is unavailable; no fallback is permitted");
     let integrations = await request<IntegrationView[]>("/api/integrations");
     for (const integration of integrations.filter((i) => ["web", "memory"].includes(i.entry.id) && i.enabled)) {
       await request(`/api/integrations/${integration.entry.id}/refresh`, {});
@@ -117,7 +121,7 @@ try {
       integrations = await request<IntegrationView[]>("/api/integrations");
       if (scenario.integrations.some((id) => !integrations.some((i) => i.entry.id === id && i.status === "ready"))) { results.push({ case: scenario.id, verdict: "blocked", reason: "Required installed integration is not ready" }); continue; }
       const started = Date.now();
-      const made = parseTaskView(await request("/api/tasks", { goal: scenario.goal, criteria: scenario.criteria, ...(scenario.inputs ? { inputs: scenario.inputs } : {}), ...(scenario.output || args.includes("--save-output") ? { output: { kind: "markdown" } } : {}), provider: "ollama", model, ...(scenario.id === "selected-file-report" ? { resultPolicy: { kind: "comparison", labels: workspaceRows().map((row) => row.item), initialValues: { "/criteria/budget": 100 }, parameterRelations: { "/criteria/budget": "at_most" }, notices: ["Fictional", "2026-10-01"] } } : scenario.id === "interactive-comparison" ? { resultPolicy: { kind: "comparison", labels: COMPARISON_FIXTURE.options.map((option) => option.name), table: interactiveComparisonContract(COMPARISON_FIXTURE), notices: ["Fictional"] } } : scenario.id === "public-source-research" ? { resultPolicy: { kind: "research", sources: urls } } : {}), integrations: scenario.integrations, spending: { kind: "local_only" }, limits: { runs: 2, modelRequests: 12, toolCalls: 6, activeMs: 300000 } }));
+      const made = parseTaskView(await request("/api/tasks", { goal: scenario.goal, criteria: scenario.criteria, ...(scenario.inputs ? { inputs: scenario.inputs } : {}), ...(scenario.output || args.includes("--save-output") ? { output: { kind: "markdown" } } : {}), provider, model, ...(scenario.id === "selected-file-report" ? { resultPolicy: { kind: "comparison", labels: workspaceRows().map((row) => row.item), initialValues: { "/criteria/budget": 100 }, notices: ["Fictional", "2026-10-01"] } } : scenario.id === "interactive-comparison" ? { resultPolicy: { kind: "comparison", labels: COMPARISON_FIXTURE.options.map((option) => option.name), table: interactiveComparisonContract(COMPARISON_FIXTURE), notices: ["Fictional"] } } : scenario.id === "public-source-research" ? { resultPolicy: { kind: "research", sources: urls } } : {}), integrations: scenario.integrations, spending: provider === "ollama" ? { kind: "local_only" } : { kind: "api_allowed", acknowledged: true }, limits: { runs: 2, modelRequests: 12, toolCalls: 6, activeMs: 300000 } }));
       active = made.id; let task = made, nextLog = 0; const decisions: { tool: string; decision: string }[] = [], answered = new Set<string>();
       while (["queued", "running", "needs_approval"].includes(task.state)) {
         if (task.approval && !answered.has(task.approval.id)) {
@@ -157,6 +161,6 @@ try {
 } finally {
   if (active) await request(`/api/tasks/${active}/cancel`, {}).catch(() => {});
   await app.shutdown();
-  await writeFile(path.join(reportDir, "summary.json"), JSON.stringify({ at: new Date().toISOString(), sourceAtStart, app: revision(), framework: revision("framework"), workingTreeModified: execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim().length > 0, model, settingsSource: installed, results, note: "Automated checks do not verify prose semantics. Passing checks require semantic review; consult review.json where present. No release readiness is established. No tasks were automatically accepted." }, null, 2), { mode: 0o600 });
+  await writeFile(path.join(reportDir, "summary.json"), JSON.stringify({ at: new Date().toISOString(), sourceAtStart, app: revision(), framework: revision("framework"), workingTreeModified: execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim().length > 0, provider, model, settingsSource: installed, results, note: "Automated checks do not verify prose semantics. Passing checks require semantic review; consult review.json where present. No release readiness is established. No tasks were automatically accepted." }, null, 2), { mode: 0o600 });
   console.log(`Evidence: ${reportDir}`);
 }

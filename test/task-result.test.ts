@@ -29,6 +29,13 @@ test("research completion rejects failed/missing reads, invented quotes, scope g
   evidence.root = { id: "wrapper", key: "wrapper", type: "stack", props: {}, children: [evidence.root!, ...Object.entries(summary).map(([id, content]) => ({ id, key: id, type: "text", props: { content }, children: [] }))] };
   const sources = new Map(urls.map((url) => [url, { text: quote, retrievedAt: retrieved_at }]));
   assert.deepEqual(checkTaskResult(policy, good, sources), []);
+  const positional = structuredClone(good);
+  const table = positional.resolved[1]!.root!.children.find(node => node.type === "table")!;
+  table.props.rows = urls.map(source => [source, quote, retrieved_at]);
+  assert.deepEqual(checkTaskResult(policy, positional, sources), [], "canonical positional evidence has the same semantics as record evidence");
+  (table.props.rows as string[][])[0]![1] = "Invented unsupported text that is not in the successful source read.";
+  assert.ok(checkTaskResult(policy, positional, sources).some(issue => issue.includes("contiguous")));
+
   assert.ok(checkTaskResult(policy, good, new Map()).length);
   assert.ok(checkTaskResult(policy, result("evidence", [{ source: urls[0], quote: "This invented claim does not occur in the actual source response.", retrieved_at }], ["source", "quote", "retrieved_at"]), sources).some((issue) => issue.includes("contiguous")));
   assert.ok(checkTaskResult(policy, result("evidence", [{ source: urls[0], quote }], ["source", "quote", "conclusion"]), sources).some((issue) => issue.includes("Evidence columns")));
@@ -142,9 +149,6 @@ test("ambiguous result roles report layout without falsely claiming existing con
   assert.match(issues[0]!, /two separate surfaces/);
 });
 
-test("aggregate parameter direction is a caller declaration, not inferred from its name", () => {
-  const policy = { kind: "comparison", initialValues: { "/criteria/limit": 100 }, parameterRelations: { "/criteria/limit": "at_most" } };
-  assert.deepEqual(parseTaskResultPolicy(policy), policy);
-  for (const parameterRelations of [{ "/criteria/missing": "at_most" }, { "/criteria/limit": "guess" }, { "/criteria/limit": ["at_most"] }, {}, []]) assert.throws(() => parseTaskResultPolicy({ ...policy, parameterRelations }));
-  assert.throws(() => parseTaskResultPolicy({ kind: "comparison", initialValues: { "/criteria/limit": "100" }, parameterRelations: { "/criteria/limit": "at_most" } }));
+test("removed source-compiler configuration is rejected rather than silently ignored", () => {
+  assert.throws(() => parseTaskResultPolicy({ kind: "comparison", initialValues: { "/criteria/limit": 100 }, parameterRelations: { "/criteria/limit": "at_most" } }), /unsupported fields/);
 });

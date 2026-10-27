@@ -368,8 +368,24 @@ Rejected candidate IDs never become canonical identities. App feedback now reque
 
 ## ADR-035: source computations and standard workspaces have runtime ownership (2026-10-27)
 
-Accepted. Requiring a model to copy selected records, calculate cells, bind controls and construct nested graphs conflated interpretation with mechanical execution. Schema validation alone cannot ensure correct values or requested operations.
+Superseded by ADR-036; retained as historical decision/evidence. Requiring a model to copy selected records, calculate cells, bind controls and construct nested graphs conflated interpretation with mechanical execution. Schema validation alone cannot ensure correct values or requested operations.
 
 The app parses bounded selected UTF-8 CSV snapshots and passes immutable records, hashes, context and notices through Projection's public tableSources option. Caller-declared initial parameters and optional at_most/at_least relations encode intent; the runtime uses current canonical control values on continuation. A unique declared summary label may be inferred from declared row labels absent from the source; ambiguous labels are not guessed. Projection's typed derive/prepare stages compute values. Semantic reports/criteria references compile the standard separate form/report surfaces and evidence text, inside the existing counted loop and atomic admission boundary. General graph authoring and other independent surfaces remain available. No new dependency, persistence writer, native relay or external authority.
 
 The original report and changed-budget continuation pass independent checks (EVALUATION.md). Source-only requests still provoke unwanted totals in the broader gate; free-form numeric placement also fails one case. These remain open. Exact schemas, immutable facts and outcome checks constrain this failure class; they do not prove semantic reliability. The next repair must constrain requested-operation intent generally, rather than increasing retries or adding example-specific output fixes.
+
+
+## ADR-036: skills guide authoring; shared records feed generic views (2026-10-27)
+
+Accepted. The user explicitly authorized deleting the specialized source-execution path before full replacement outcome parity. Delete its CSV-to-source bridge, source/parameter/relation host options, derive/prepare tools, automatic form/report compiler and obsolete API tests/script. No compatibility wrapper or second authoring stack remains.
+
+Source snapshots retain existing bounded task input ownership and untrusted-context treatment. Skills guide task procedures and select presentation/operations. Existing catalog mappings project one collection into tables/charts/stat aggregates; form edits use canonical pointers. Ordinary transactions, schema/relationship validation, stale-candidate checks, permissions, task recovery, persistence and export receipts remain executable responsibilities. Skills cannot create computation, verification or external authority by describing it.
+
+The old deterministic per-row computation guarantee is removed with that code. General per-record work must use an offered governed computation capability or independently check model-authored results. Existing source/value/interaction/receipt acceptance requirements remain open until the generic path passes; historical compiler results do not transfer. Multiple independently requested surfaces and chart types remain product requirements. No new dependency or IPC.
+
+
+## ADR-037: one active protocol; context loading has its own effect class (2026-10-27)
+
+Accepted. Remove the unused compact/strict runtime choice and duplicate transactional prompt helper. Active transactional/progressive turns each use one protocol owner and typed component descriptors. Share root/descendant schema definitions instead of copying the catalog. Dynamic JSON data is validated by mappings or optional caller-known schemas; native tool descriptions are not represented as constrained decoding.
+
+Skills contain concise task procedures. Their trusted local loader uses the existing counted loop as context work, including when external-operation allowance is zero; it cannot authorize external effects or bypass answer-step limits. External tools remain budgeted by default. Repeated form leaf names submit distinct canonical pointer keys. No per-domain authoring stack, implicit fact conversion or additional persistence/IPC is introduced.

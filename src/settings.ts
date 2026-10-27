@@ -416,7 +416,6 @@ async function generalPage(): Promise<HTMLElement[]> {
       "Model behaviour",
       row("Thinking", "Let local models think before answering (Ollama). Slower, sometimes better.", toggle(opt("think", "false") === "true", (on) => prefs.set("opt:think", String(on)))),
       row("Generation", "auto lets the capability plan decide.", select([["auto", "auto"], ["tools", "tools"], ["constrained", "constrained"]], opt("generation", "auto"), (v) => prefs.set("opt:generation", v))),
-      row("Tool schema", null, select([["compact", "compact"], ["strict", "strict"]], opt("schema", "compact"), (v) => prefs.set("opt:schema", v))),
       row("Reasoning effort", "For models that take one.", select([["", "default"], ["low", "low"], ["medium", "medium"], ["high", "high"]], opt("effort", ""), (v) => prefs.set("opt:effort", v))),
     ),
   ].filter(Boolean) as HTMLElement[];
