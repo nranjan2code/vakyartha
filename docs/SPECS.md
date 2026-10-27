@@ -122,7 +122,7 @@ Trusted local instruction loading consumes bounded model/answer steps, not exter
 
 ### Built-in skill updates
 
-New bundled skills seed once. Existing instruction files are not overwritten on startup. When a built-in differs from the installed body/description, Skills shows an Updates filter/badge and current/proposed preview. Updating verifies both offered and current fingerprints before replacing instructions and preserves enabled state. User edits remain until explicit replacement; removed skills remain removed, except required surface-design, which is restored and kept on. Catalog skills keep their reviewed pin; upstream auto-update discovery is not implemented.
+New bundled skills seed once. Existing instruction files are not overwritten on startup. Bundled defaults load from Agent Skills folders. When a built-in package differs from its installed instructions or text-reference manifest, Skills shows an Updates filter/badge and current/proposed file previews. Updating verifies both offered and current package fingerprints before replacing instructions and references, and preserves enabled state. User edits remain until explicit replacement; removed skills remain removed, except required surface-design, which is restored and kept on. Catalog skills keep their reviewed pin; upstream auto-update discovery is not implemented.
 
 
 ### Governed capability dispatch (2026-10-27)

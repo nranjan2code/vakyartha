@@ -1,7 +1,13 @@
 # RELEASING.md: Vakyartha
 
-Current local checkpoint (2026-10-27): pushed app source `11c30cf` / Projection `c045a3c` was freshly cloned, tested, built and installed. 173 app/393 framework tests, native/type/build and responsive skills/surface/canvas WebKit checks pass. The exact bundle manifest and recoverable backup are recorded below. Three web-mode local-model skill-file outcomes and one installed local-model card/canvas smoke pass. Earlier failed model-outcome gates remain open.
+Current local checkpoint (2026-10-27): pushed app `067c606` / Projection `dab83cf` was freshly cloned, built and installed with bundled skill folders and the reviewed market template. The exact bundle manifest and recoverable backup are recorded below. 175 app/393 framework tests, typecheck, UI build and responsive Skills/surface checks pass. The bounded fictional market outcome passes; the broader mapped-table and real-source gates remain open.
 
+
+## Market dashboard package local install — 2026-10-27
+
+Pushed app `067c606` on `main` pins pushed Projection `dab83cf` on `codex/market-dashboard-shapes`. A fresh recursive clone at `/tmp/vakyartha-market-release-p7Hbmd/source` ran `npm ci` and typecheck, then built an app and DMG using an initially absent Rust release target. The first DMG packaging attempt could not detach its own temporary image; only that build-owned disk was ejected and the unchanged source was rebuilt successfully. Node 24.22.1 passed its signature/current-LTS check. The app's 27 bundled `SKILL.md` folders and both market references are present in the packaged resources.
+
+The complete `/Applications/Vakyartha.app` replaces the prior bundle; all 1,960 installed file/link entries and modes match the fresh app, manifest SHA-256 `5cad11e06ae32b64932ac464992e40f344e0529dc1f06eddb507f50e349ddc5b`. The DMG SHA-256 is `b25d9b5562a3eac56d1fdc1ddb917571aa7d6a9bd0a60284fdf76535b4edb985`; standard app and DMG artifacts are refreshed. Recoverable prior app/artifacts and skill data are under `/tmp/vakyartha-market-release-p7Hbmd/backup/`. The installed `market-dashboard` matched the previous shipped default exactly before its reviewed package update; no other skill showed an update. Its two references now appear and open in native Settings. About shows 0.2.0, Node 24.22.1, Keychain and the existing data folder. A free installed `qwen3.5:4b-mlx` chat produced the exact Market build check / Ready card in 68.3s, and Open in canvas showed the same content. Local receipt: `.vak/builds/2026-10-27-market-dashboard-install.json`. This is a local replacement, with no tag or public release. The bounded fictional model outcome and remaining real-source gates are in EVALUATION.md.
 
 How Vakyartha is versioned, how it takes framework updates from Projection, and how a release is built, checked, installed and published. Rules for any change: [AGENTS.md](../AGENTS.md).
 
