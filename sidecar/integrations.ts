@@ -8,7 +8,7 @@
 // app's secret store (the Keychain on macOS).
 
 import path from "node:path";
-import { type CatalogEntry, Integrations, type IntegrationsOptions, timeServer, webFetchServer } from "@vak/mcp/client";
+import { type CatalogEntry, Integrations, type IntegrationsOptions, sandboxServer, timeServer, webFetchServer } from "@vak/mcp/client";
 import { ollamaOcrServer } from "./ocr.ts";
 import type { Media } from "./media/index.ts";
 
@@ -186,7 +186,7 @@ export const CATALOG: CatalogEntry[] = [
     homepage: "https://github.com/nranjan2code/sandbox",
     icon: "shield",
     access: ["Local process isolation only", "No network access by default", "Minimal environment variables"],
-    source: { kind: "builtin", server: () => timeServer() },
+    source: { kind: "builtin", server: () => sandboxServer() },
     config: [],
   },
 ];
