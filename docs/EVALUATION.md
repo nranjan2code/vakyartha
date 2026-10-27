@@ -8,7 +8,7 @@ Original receipt: `.vak/evaluations/reference-workspace/results/2026-10-27T03-34
 
 **Open:** the latest free-form provider probe passes2/3; the new source-only probe passes0/3 because unrequested totals are proposed. Rejections preserve canonical content, but safe rejection is not task completion. Projection receipts `primary-provider-2026-10-27T03-43-25.030Z.json` and `source-provider-2026-10-27T03-46-02.508Z.json` are retained under `.vak/contracts/`. Do not reuse the earlier3/3 provider result as the latest result. Next authoring work must address requested-operation intent at its owning boundary, retain these failing cases, and rerun the matching contract plus original outcome. Do not add fixture-specific prompt/parser repairs or expand trial limits.
 
-Validation:158 app tests,373 framework tests/replay, both typechecks and framework package build pass. A different Coffee/Tea fixture checks real Tasks/host parsing, source computations, changed controls and saved receipts. Latest source has not yet been installed at this checkpoint; the previous installed build is app0406e46/framework0138493. Astra's final follow-up was unavailable due to its usage limit; no final Astra review is claimed.
+Validation:158 app tests,373 framework tests/replay, both typechecks and framework package build pass. A different Coffee/Tea fixture checks real Tasks/host parsing, source computations, changed controls and saved receipts. App `68fd14a` / Projection `ca9f512` is now freshly built, installed and relaunched; all1,931 files/links match. RELEASING.md records exact provenance and the build-owned DMG retry. Astra's final follow-up was unavailable due to its usage limit; no final Astra review is claimed.
 
 
 ## Provider-contract foundation repair — 2026-10-27

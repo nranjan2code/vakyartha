@@ -1,4 +1,4 @@
-# HANDOVER.md: Vakyartha, state of work (2026-10-26)
+# HANDOVER.md: Vakyartha, state of work (2026-10-27)
 
 Start here in a new session. Rules: [AGENTS.md](../AGENTS.md). App: [SPECS.md](SPECS.md). Releases and framework updates: [RELEASING.md](RELEASING.md).
 
@@ -22,7 +22,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
-- **Source-workspace checkpoint (2026-10-27):** original selected-file report and changed-budget continuation independently pass; source facts/computations, separate editable surfaces and read-back export hashes verified. Runtime owns arithmetic, controls and standard workspace compilation (ADR-035). Broader source-only intent and free-form authoring probes still fail; P4.2 remains open. EVALUATION.md records exact receipts, intermediate failures and the next owning-boundary repair.158 app/373 framework checks pass. Latest code installation is not implied by those checks.
+- **Source-workspace checkpoint (2026-10-27):** original selected-file report and changed-budget continuation independently pass; source facts/computations, separate editable surfaces and read-back export hashes verified. Runtime owns arithmetic, controls and standard workspace compilation (ADR-035). Broader source-only intent and free-form authoring probes still fail; P4.2 remains open. EVALUATION.md records exact receipts, intermediate failures and the next owning-boundary repair.158 app/373 framework checks pass. App `68fd14a` / Projection `ca9f512` is freshly built, installed and relaunched;1,931 files/links match (RELEASING.md).
 
 - **Provider-contract foundation repair (2026-10-27):** Projection `a092631` includes actual schema decoding, recursive node types, required data/props, generated surface identities and typed scalar table cells; original raw report is retained as a regression. Small primary-provider gate passes3/3 in one request each. The first complete report still fails on untyped row wrappers/private-ID feedback; those earliest-boundary defects are corrected without fact synthesis. App feedback now resubmits rejected candidates instead of patching nonexistent canonical IDs. 153 app/363 framework tests/types and WebKit/native checks pass. Both AGENTS files require original-outcome evidence before completion claims. Final report verification is pending; do not treat test counts or installation as its completion.
 
