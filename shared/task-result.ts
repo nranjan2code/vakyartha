@@ -68,7 +68,7 @@ export function checkTaskResult(policy: TaskResultPolicy, result: Parameters<Com
   if (result.surfaces.length !== 2 || !formSurface || !tableSurface || formSurface.id === tableSurface.id) problems.push("Produce exactly two separate surfaces: one containing a form and no table, the other containing a table and no form. Layout wrappers are allowed; sections inside one combined surface are not separate outputs.");
   if (formSurface && tableSurface && formSurface.id !== tableSurface.id && result.surfaces.length > 2) {
     const obsolete = result.surfaces.filter((surface) => surface.id !== formSurface.id && surface.id !== tableSurface.id);
-    problems.push(`Keep the separate form ${JSON.stringify(formSurface.id)} and table ${JSON.stringify(tableSurface.id)}. Remove obsolete extra surfaces with vak_remove using only these surface arguments: ${JSON.stringify(obsolete.slice(0, 16).map((surface) => ({ surface: surface.id })))}. Do not rewrite the two kept surfaces just to remove extras.`);
+    problems.push(`The rejected candidate has ${result.surfaces.length} surfaces. Resubmit the complete candidate with exactly the form and report outputs; omit the extra entries ${JSON.stringify(obsolete.map((surface) => surface.id))}. Rejected candidate IDs are not saved surfaces and cannot be patched or removed from canonical state.`);
   }
   // Dependent checks need unambiguous roles. Do not describe existing content
   // as missing merely because its current layout prevents role selection.

@@ -35,6 +35,10 @@ Vakyartha is an app built on the [Projection framework](https://github.com/nranj
 - Model text, tool output and fetched pages are data; anything that writes, deletes or reaches the internet defaults to "ask".
 - The sidecar requires its token for the window; `npm run web` is loopback-only and for development.
 
+## Outcome acceptance gate
+
+For model-output work, prove the smallest real primary-provider contract before expanding the workflow. Run Projection’s `node scripts/provider-contract-check.ts --run-local` in its owning repo, then independently check the original task’s sources, values, interpretation, interactions and output receipt. Native tool schemas are guidance unless actual schema decoding is used. Retain failed evidence and freeze outcome checks before evaluation; do not weaken requirements after failure. Passing tests, safe rejection, a committed change or an installed build never closes a failed user-outcome gate. Diagnose the earliest boundary offline instead of accumulating prompt/parser variants. Do not call the repair complete until the original outcome passes; record partial mechanism improvements separately. Apply this gate in handover and release notes as well as code review.
+
 ## Commands
 
 ```bash

@@ -4,6 +4,8 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Projection `9b7af0b` enforces transactional arguments through advertised provider schema decoding, recursively types inline nodes, requires complete replacement data/required props and generates initial surface identities. Added outcome acceptance rules: mechanism tests/builds/installations cannot close a failed end-to-end repair.
+
 - Checked tasks submit inline multi-surface replacements, targeted patches and removals as one validated transaction. Rejected candidates leave accepted results intact; stale/incomplete/mixed batches cannot publish. Accepted submissions finish without an extra generation. Existing interactions and canonical surfaces remain. The unused constrained-call experiment is removed from Projection.
 
 - Checked tasks validate complete results at completion, allow sequential surface authoring and suppress dependent diagnostics when surface roles are ambiguous. Supplied initial control values remain asserted without rewriting output. Repeated unchanged rejected completions stop early; unknown engine endings cannot save or present a result for review. Native/inline authoring remains in use; the experimental constrained-call transport is not enabled for tasks.

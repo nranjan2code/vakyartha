@@ -69,8 +69,9 @@ test("surplus-output feedback names obsolete surfaces while preserving the valid
   store.apply("vak_render", { surface: "old-combined", nodes: [{ id: "root", type: "stack", children: [{ id: "old", type: "text", props: { content: "Prior attempt" } }] }] });
   candidate.surfaces.unshift(store.snapshot("old-combined")!); candidate.resolved.unshift(store.resolve("old-combined")!);
   const issues = checkTaskResult({ kind: "comparison", labels: ["Atlas", "Birch"] }, candidate, new Map());
-  assert.ok(issues.some((issue) => issue.includes('Keep the separate form "criteria" and table "author-table"')));
-  assert.ok(issues.some((issue) => issue.includes('[{"surface":"old-combined"}]')));
+  assert.ok(issues.some((issue) => issue.includes('Resubmit the complete candidate')));
+  assert.ok(issues.some((issue) => issue.includes('["old-combined"]')));
+  assert.ok(issues.every((issue) => !issue.includes('vak_remove')));
 });
 
 

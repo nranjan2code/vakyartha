@@ -500,7 +500,7 @@ test("checked task output repairs in the same run and withholds rejected complet
 test("checked task submits two independent surfaces as one candidate without a closing generation", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "vak-submitted-authoring-"));
   let requests = 0;
-  const provider: Provider = { id: "scripted", capabilities: { constrainedOutput: true }, async *stream(req) {
+  const provider: Provider = { id: "scripted", async *stream(req) {
     requests++;
     assert.equal(req.responseSchema, undefined);
     assert.deepEqual(req.tools!.map((tool) => tool.name), ["vak_submit"]);
