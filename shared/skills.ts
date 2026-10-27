@@ -1,5 +1,5 @@
 export interface SkillView {
-  name: string; description: string; enabled: boolean; body: string; builtin?: boolean;
+  name: string; description: string; enabled: boolean; body: string; builtin?: boolean; required?: boolean;
   update?: { description: string; body: string; fingerprint: string; currentFingerprint: string };
   source?: { repo: string; path: string; sha: string; addedAt: string };
 }

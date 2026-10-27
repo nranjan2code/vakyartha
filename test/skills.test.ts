@@ -22,6 +22,10 @@ test("built-ins are planted on, once; a removed one stays removed", () => {
   const s = new Skills(d);
   const builtins = s.view().filter(x => x.builtin);
   assert.ok(builtins.length >= 10 && builtins.every(x => x.enabled));
+  const required = builtins.find(x => x.name === "surface-design")!;
+  assert.equal(required.required, true);
+  assert.throws(() => s.setEnabled("surface-design", false), /required/);
+  assert.throws(() => s.remove("surface-design"), /required/);
   s.remove("plan-my-day");
   assert.ok(!new Skills(d).view().some(x => x.name === "plan-my-day"));
 });
@@ -46,18 +50,37 @@ test("builtin updates require a current preview and preserve edits, removals and
   upgraded.remove(name); assert.ok(!new Skills(d).view().some(skill => skill.name === name));
 });
 
+test("required surface-design is restored and re-enabled from older saved state", () => {
+  const d = dir();
+  const manager = new Skills(d);
+  manager.setEnabled("surface-design", true);
+  const statePath = path.join(d, "skills", "skills.json");
+  const state = JSON.parse(readFileSync(statePath, "utf8"));
+  state["surface-design"].enabled = false;
+  writeFileSync(statePath, JSON.stringify(state));
+  const restored = new Skills(d).view().find(skill => skill.name === "surface-design")!;
+  assert.equal(restored.enabled, true);
+  assert.equal(restored.required, true);
+  state["surface-design"].builtin = false;
+  writeFileSync(statePath, JSON.stringify(state));
+  const reinstalled = new Skills(d).view().find(skill => skill.name === "surface-design")!;
+  assert.equal(reinstalled.builtin, true);
+  assert.equal(reinstalled.body, parseSkill(BUILTIN_SKILLS.find(text => text.includes("name: surface-design\n"))!).body);
+});
+
 test("only enabled skills reach the prompt and the loader tool", async () => {
   const s = new Skills(dir());
-  for (const b of s.view()) s.remove(b.name);
+  for (const b of s.view()) if (!b.required) s.remove(b.name);
   s.save(SKILL);
-  assert.equal(s.index(), ""); assert.equal(s.tool(), undefined);
+  assert.match(s.index(), /surface-design: Design visual/); assert.ok(s.tool());
+  s.setEnabled("surface-design", true);
   s.setEnabled("weekly-report", true);
   assert.match(s.index(), /weekly-report: Use when/);
   const tool = s.tool()!;
   assert.match(String(await tool.execute({ names: ["weekly-report"] }, {})), /Summarise the week/);
   assert.match(String(await tool.execute({ names: [] }, {})), /No skill selected/);
   assert.throws(() => tool.execute({ names: ["other"] }, {}));
-  s.remove("weekly-report"); assert.equal(s.view().length, 0);
+  s.remove("weekly-report"); assert.deepEqual(s.view().map(skill => skill.name), ["surface-design"]);
 });
 
 test("catalog adds exactly the reviewed text, pinned and off", async () => {
@@ -68,15 +91,29 @@ test("catalog adds exactly the reviewed text, pinned and off", async () => {
     return new Response(body);
   }) as typeof fetch;
   const s = new Skills(dir(), fetcher);
-  for (const b of s.view()) s.remove(b.name);
+  for (const b of s.view()) if (!b.required) s.remove(b.name);
   const [item] = await s.search("owner/repo");
   const r = await s.review("owner/repo", item!.path);
   assert.deepEqual(r.extraFiles, ["run.sh"]);
   assert.throws(() => s.add(r.fingerprint, false));
   assert.equal(s.add(r.fingerprint, true), "weekly-report");
-  const [saved] = s.view();
-  assert.equal(saved!.enabled, false); assert.equal(saved!.source!.sha, sha);
+  const saved = s.view().find(skill => skill.name === "weekly-report")!;
+  assert.equal(saved.enabled, false); assert.equal(saved.source!.sha, sha);
   assert.throws(() => s.add(r.fingerprint, true));
+});
+
+test("required surface-design guidance is injected for authoring requests", async () => {
+  const skills = new Skills(dir());
+  const provider: Provider = { id: "scripted", async *stream(req) {
+    assert.match(req.system ?? "", /Required surface-design guidance/);
+    assert.match(req.system ?? "", /Before finalizing, check that a chart/);
+    yield { type: "text", delta: "ok" };
+  } };
+  for await (const _event of skills.provider(provider).stream({ model: "test", messages: [], tools: [{ name: "vak_render", description: "", inputSchema: { type: "object" } }] })) { /* consume */ }
+  let plainSystem = "plain";
+  const plain: Provider = { id: "plain", async *stream(req) { plainSystem = req.system ?? ""; yield { type: "text", delta: "ok" }; } };
+  for await (const _event of skills.provider(plain).stream({ model: "test", messages: [], system: "plain" })) { /* consume */ }
+  assert.equal(plainSystem, "plain");
 });
 
 test("skill selection precedes answer tools inside the existing counted loop", async () => {

@@ -167,7 +167,7 @@ ${skills.index()}`;
   const finops = new Finops(dataDir, log);
   const channels = new Channels({
     env: process.env,
-    providers: () => providersFromEnv(),
+    providers: () => providersFromEnv().map(entry => ({ ...entry, make: options => skills.provider(entry.make(options)) })),
     profiles,
     dataDir,
     log,

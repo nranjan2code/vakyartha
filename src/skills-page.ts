@@ -51,7 +51,7 @@ export async function skillsPage(): Promise<HTMLElement[]> {
     const shown = list.filter(s => (filter === "all" || (filter === "on" ? s.enabled : filter === "updates" ? Boolean(s.update) : origin(s) === filter)) && words.every(w => `${s.name} ${s.description}`.toLowerCase().includes(w)));
     grid.replaceChildren(...shown.map(s => {
       const mark = s.source ? skillPublisherIcon(s.source.repo, 40) : tile(SKILL_GLYPHS[s.name] ?? "spark", 40);
-      const card = el("button", { type: "button", className: "market-card" }, mark, el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-pub", textContent: originLabel(s) }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(originLabel(s)), pill(s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.update ? pill("Update", "bad") : null, el("span", { className: "market-card-action" }, "Manage", icon("arrow", 14))));
+      const card = el("button", { type: "button", className: "market-card" }, mark, el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-pub", textContent: originLabel(s) }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(originLabel(s)), pill(s.required ? "Always on" : s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.update ? pill("Update", "bad") : null, el("span", { className: "market-card-action" }, "Manage", icon("arrow", 14))));
       card.addEventListener("click", () => detail(s.name));
       return card;
     }));
@@ -71,7 +71,7 @@ export async function skillsPage(): Promise<HTMLElement[]> {
   function detail(name: string): void {
     const s = list.find(x => x.name === name);
     if (!s) { home(); return; }
-    const remove = button("Remove", async () => { if (await ask(`Remove the skill ${s.name}?`, "Remove")) { await api(`/api/skills/${s.name}`, { method: "DELETE" }); await reload(); home(); } });
+    const remove = s.required ? null : button("Remove", async () => { if (await ask(`Remove the skill ${s.name}?`, "Remove")) { await api(`/api/skills/${s.name}`, { method: "DELETE" }); await reload(); home(); } });
     const note = el("p", { className: "row-hint", role: "status" });
     const update = s.update;
     const apply = button("Update skill", async () => {
@@ -81,12 +81,12 @@ export async function skillsPage(): Promise<HTMLElement[]> {
       catch (err) { note.textContent = (err as Error).message; apply.disabled = false; }
     }, "primary small");
     root.replaceChildren(backHome(), ...title(s.name, s.description),
-      el("div", { className: "badges" }, pill(originLabel(s)), pill(s.enabled ? "On" : "Off", s.enabled ? "ok" : "")),
+      el("div", { className: "badges" }, pill(originLabel(s)), pill(s.required ? "Always on" : s.enabled ? "On" : "Off", s.enabled ? "ok" : "")),
       group(null,
-        row("Use this skill", "When on, the assistant sees its name and description and loads the instructions when a request matches.", toggle(s.enabled, async on => { list = await api<SkillView[]>(`/api/skills/${s.name}`, { method: "PUT", body: JSON.stringify({ enabled: on }) }); paint(); detail(s.name); })),
+        s.required ? row("Availability", "Required for canvas and surface authoring. Always on and applied by the runtime.", pill("Always on", "ok")) : row("Use this skill", "When on, the assistant sees its name and description and loads the instructions when a request matches.", toggle(s.enabled, async on => { list = await api<SkillView[]>(`/api/skills/${s.name}`, { method: "PUT", body: JSON.stringify({ enabled: on }) }); paint(); detail(s.name); })),
         s.source ? row("Source", `${s.source.repo} · ${s.source.path || "/"} · commit ${s.source.sha.slice(0, 12)} · added ${new Date(s.source.addedAt).toLocaleDateString()}`, el("a", { href: `https://github.com/${s.source.repo}/tree/${s.source.sha}/${s.source.path}`, target: "_blank", rel: "noopener noreferrer", textContent: "View source ↗" })) : null),
       group("Current instructions", el("pre", { className: "skill-body", textContent: s.body })),
-      ...(update ? [group("Update available", el("p", { className: "row-hint", textContent: "Review the built-in update below. Updating replaces your current instructions and keeps your on/off choice." }), el("p", { textContent: update.description }), el("pre", { className: "skill-body", textContent: update.body }), el("div", { className: "row-actions" }, apply), note)] : []),
+      ...(update ? [group("Update available", el("p", { className: "row-hint", textContent: s.required ? "Review the built-in update below. Updating replaces these instructions and preserves the required always-on status." : "Review the built-in update below. Updating replaces your current instructions and keeps your on/off choice." }), el("p", { textContent: update.description }), el("pre", { className: "skill-body", textContent: update.body }), el("div", { className: "row-actions" }, apply), note)] : []),
       el("div", { className: "row-actions" }, button("Edit", () => editor(s)), remove));
   }
 

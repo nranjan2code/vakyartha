@@ -31,7 +31,7 @@ flowchart TD
   F --> I[Task result review and requested export receipt]
 ```
 
-App chat/tasks with enabled skills first offer only selection. `use_skill` loads one or several enabled names; an empty list explicitly selects none. Further necessary skills can load through the same bounded loop. Selecting `dashboard`, `interactive-ui` and `surface-design` together avoids an unnecessary load round; do not reload instructions already active in this run. Chaining is a model decision, not a hard-coded router or guaranteed dependency resolver. Disabled skills cannot load. Historical loads do not stay active automatically in later runs. Channels have separate wiring; app chat/task behavior is not a channel-parity guarantee.
+App chat/tasks with enabled optional skills first offer only selection. `use_skill` loads one or several enabled names; an empty list explicitly selects none. Further necessary optional skills can load through the same bounded loop. `surface-design` is the exception: it is required, always on, cannot be removed or disabled, and its guidance is injected by the app whenever surface authoring tools or a render response are offered. This avoids relying on model selection for a shared quality rule. Channel providers use the same injection wrapper. Other chaining remains a model decision, not a hard-coded router or general dependency resolver. Historical optional-skill loads do not stay active automatically in later runs.
 
 The active framework protocol and tool schemas define the authoring envelope. Transactional replacements contain complete data and an inline root tree; later patches use canonical IDs. Progressive tools use their offered flat-node protocol. Follow the currently offered schema rather than copying an envelope from another mode. Runtime validation, approvals, revision checks, persistence and receipts execute outside skill text. Native schemas are not automatically constrained decoding.
 
@@ -49,7 +49,7 @@ The active framework protocol and tool schemas define the authoring envelope. Tr
 | Work/action register | task-tracker or meeting-actions | Status/assignment changes do not perform the work or notify anyone |
 | New reusable procedure | create-skill | Produces instructions, not new execution authority |
 
-The arrow means “reuse when enabled and needed,” not an automatic extra model call. Interactive work also uses `interactive-ui` and `surface-design`. A short text request need not become a dashboard.
+The arrow means “reuse when enabled and needed,” not an automatic extra model call. Interactive work uses `interactive-ui` when data, bindings or submitted actions are involved; the required `surface-design` guidance applies automatically. A short text request need not become a dashboard.
 
 Daily, weekly and monthly describe a reporting window unless the person requests delivery scheduling. Resolve date boundaries, timezone, source basis and whether the window is complete. A one-day price snapshot cannot establish monthly performance. A new report does not create recurrence: the current app supports bounded immediate/one-time task runs, not automatic recurring report delivery. See [MVP status](MVP-CHECKLIST.md).
 
@@ -68,8 +68,8 @@ Resolve the reporting week and timezone. Use supplied records or successful
 reads through offered tools; keep missing owners and dates explicit.
 Separate completed work during the week from the current open backlog.
 
-For an interactive report, load enabled dashboard, interactive-ui and
-surface-design when needed and not already active. Use one canonical collection
+For an interactive report, load dashboard and interactive-ui when enabled and needed. The always-on
+surface-design guidance applies automatically to this interactive report. Use one canonical collection
 for views of the same work. Keep the main finding, period and coverage caveat
 in short visible text that remains meaningful when spoken.
 
@@ -79,7 +79,7 @@ notification, recurring delivery or an external task update from a local edit.
 Claim a saved or delivered report only from the matching receipt.
 ```
 
-For personal use, ask the assistant to create/audit the skill, then open **Settings → Skills → New skill…**, review the complete file, save and switch **Use this skill** on. New personal/catalog skills start off. Editing preserves their current on/off state. A model-facing skill-management tool is not currently offered, so an assistant-produced draft is not installed by default. A separately authorized file tool can write a file, but that alone does not establish activation in the app index.
+For personal use, ask the assistant to create/audit the skill, then open **Settings → Skills → New skill…**, review the complete file, save and switch **Use this skill** on. The required `surface-design` built-in is always on and has no disable or remove action; its reviewed instruction updates remain explicit. New personal/catalog skills start off. Editing preserves their current on/off state. A model-facing skill-management tool is not currently offered, so an assistant-produced draft is not installed by default. A separately authorized file tool can write a file, but that alone does not establish activation in the app index.
 
 For bundled defaults, edit/add the `skill(...)` entry in `sidecar/skills-builtin.ts`; do not create a second default-skill registry. Keep each description narrow enough for selection and its body focused on domain decisions. New bundled names seed once. Existing changed built-ins show a current/proposed review and explicit **Update skill** action; stale fingerprints reject replacement. Custom edits, disabled choices and removals remain protected. Source edits do not update the installed executable or its local skill files. [Full lifecycle](SKILLS.md#updates).
 
@@ -140,6 +140,8 @@ All eight standard chart kinds render through the same dynamic component. Choose
 | Show dated events, process state or planned work | calendar, timeline, steps, gantt when offered | These are separate components; preserve supplied dates/states rather than coercing them into a numerical chart |
 
 Candlestick/OHLC, sized bubbles, box/violin plots, waterfall, treemap, dual-axis/combo charts, error bands and statistical overlays are not standard chart kinds. Offer a supported line/bar/scatter/table where suitable and state the limitation; a name alias is not a new computation capability. In particular, `histogram`/`bubble` aliases do not implement binning or point-size encoding. Complex new chart execution belongs in Projection only after identifying a real missing general capability.
+
+Before finalizing a chart, check that its plotted categories and series agree with its title, description and nearby interpretation. If it shows only part of the available data, name the selected categories or periods and say where the remaining values appear; do not describe a subset as complete.
 
 Use a descriptive section/title, time basis, units, source freshness and a visible interpretation. Avoid a chart for every number. Retain a detail table when exact values matter. Market reports need actual history for time charts; a weekly label cannot manufacture five trading sessions.
 
