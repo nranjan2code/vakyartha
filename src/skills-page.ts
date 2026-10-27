@@ -4,7 +4,7 @@
 // instructions are reviewed, and starts off.
 
 import { api, ask, el } from "./core.ts";
-import { icon } from "./icons.ts";
+import { icon, tile } from "./icons.ts";
 import { group, pill, row, segmented, title, toggle } from "./ui.ts";
 import { SKILL_SOURCES, type SkillListing, type SkillReview, type SkillView } from "../shared/skills.ts";
 
@@ -15,6 +15,20 @@ let filter: Filter = "all", query = "";
 const origin = (s: SkillView) => s.source ? "catalog" : s.builtin ? "builtin" : "yours";
 const originLabel = (s: SkillView) => s.source ? s.source.repo : s.builtin ? "Built in" : "Yours";
 const fileText = (s: SkillView) => `---\nname: ${s.name}\ndescription: ${s.description}\n---\n\n${s.body}\n`;
+
+// Capability glyphs reuse the app's own integration tile system. Specific
+// names get a recognizable symbol; unfamiliar catalog skills stay cohesive.
+const SKILL_GLYPHS: Record<string, string> = {
+  assistant: "spark", "budget-helper": "chart", "code-review": "code",
+  "commit-message": "edit", "compare-options": "split", "create-skill": "book",
+  "daily-news": "globe", dashboard: "chart", "data-review": "table",
+  "debug-error": "tool", "explain-simply": "book", "finance-dashboard": "chart",
+  "interactive-ui": "form", "meeting-actions": "check", "periodic-report": "calendar",
+  "market-dashboard": "chart", "meal-plan": "calendar", "operations-dashboard": "chart",
+  "plan-my-day": "calendar", "research-brief": "search", "sales-dashboard": "chart",
+  "shell-command": "code", "summarize": "page", "surface-design": "canvas",
+  "task-tracker": "check", "trip-planner": "globe", "write-email": "send",
+};
 
 export async function skillsPage(): Promise<HTMLElement[]> {
   const root = el("div", { className: "integrations-layout" });
@@ -35,7 +49,7 @@ export async function skillsPage(): Promise<HTMLElement[]> {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     const shown = list.filter(s => (filter === "all" || (filter === "on" ? s.enabled : filter === "updates" ? Boolean(s.update) : origin(s) === filter)) && words.every(w => `${s.name} ${s.description}`.toLowerCase().includes(w)));
     grid.replaceChildren(...shown.map(s => {
-      const card = el("button", { type: "button", className: "market-card" }, el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-pub", textContent: originLabel(s) }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.update ? pill("Update available") : null));
+      const card = el("button", { type: "button", className: "market-card" }, tile(SKILL_GLYPHS[s.name] ?? "spark", 40), el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-pub", textContent: originLabel(s) }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(originLabel(s)), pill(s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.update ? pill("Update available", "bad") : null, el("span", { className: "market-card-action" }, "Manage", icon("arrow", 14))));
       card.addEventListener("click", () => detail(s.name));
       return card;
     }));
