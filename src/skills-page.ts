@@ -36,7 +36,7 @@ export async function skillsPage(): Promise<HTMLElement[]> {
   let list: SkillView[] = [];
   let view: "installed" | "explore" = "installed";
 
-  const grid = el("div", { className: "market" });
+  const grid = el("div", { className: "market skills-market" });
   const search = el("input", { type: "search", className: "market-search", placeholder: "Search skills", value: query, "aria-label": "Search skills" });
   search.addEventListener("input", () => { query = search.value; paint(); });
   const filters = segmented([["all", "All"], ["on", "On"], ["updates", "Updates"], ["builtin", "Built in"], ["catalog", "From catalogs"], ["yours", "Yours"]] as const, filter, v => { filter = v; paint(); });
@@ -49,7 +49,7 @@ export async function skillsPage(): Promise<HTMLElement[]> {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     const shown = list.filter(s => (filter === "all" || (filter === "on" ? s.enabled : filter === "updates" ? Boolean(s.update) : origin(s) === filter)) && words.every(w => `${s.name} ${s.description}`.toLowerCase().includes(w)));
     grid.replaceChildren(...shown.map(s => {
-      const card = el("button", { type: "button", className: "market-card" }, tile(SKILL_GLYPHS[s.name] ?? "spark", 40), el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-pub", textContent: originLabel(s) }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(originLabel(s)), pill(s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.update ? pill("Update available", "bad") : null, el("span", { className: "market-card-action" }, "Manage", icon("arrow", 14))));
+      const card = el("button", { type: "button", className: "market-card" }, tile(SKILL_GLYPHS[s.name] ?? "spark", 40), el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-pub", textContent: originLabel(s) }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(originLabel(s)), pill(s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.update ? pill("Update", "bad") : null, el("span", { className: "market-card-action" }, "Manage", icon("arrow", 14))));
       card.addEventListener("click", () => detail(s.name));
       return card;
     }));
