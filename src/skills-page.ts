@@ -150,7 +150,7 @@ export async function skillsPage(): Promise<HTMLElement[]> {
   const form = el("form", { className: "catalog-search" }, repoInput, el("button", { type: "submit", className: "primary small", textContent: "Open" }));
   form.addEventListener("submit", e => { e.preventDefault(); if (repoInput.value.trim()) void browse(repoInput.value.trim()); });
   const sources = el("div", { className: "catalog-sources", role: "group", "aria-label": "Skill catalogs" }, ...SKILL_SOURCES.map(s => {
-    const b = el("button", { type: "button", className: "catalog-source", title: s.repo, "aria-pressed": "false" }, el("span", {}, el("strong", { textContent: s.name }), el("span", { textContent: s.description })));
+    const b = el("button", { type: "button", className: "catalog-source", title: s.repo, "aria-pressed": "false" }, skillPublisherIcon(s.repo, 32), el("span", {}, el("strong", { textContent: s.name }), el("span", { textContent: s.description })));
     b.addEventListener("click", () => { for (const x of sources.children) x.setAttribute("aria-pressed", String(x === b)); repoInput.value = s.repo; void browse(s.repo); }); return b;
   }));
   explore.append(el("div", { className: "catalog-intro" }, el("div", {}, el("h2", { textContent: "Explore skills" }), el("p", { className: "row-hint", textContent: "Pick a publisher, search its skills, read the instructions, then add." })), pill("Optional")), sources, form, catalog);
