@@ -1,6 +1,6 @@
 # RELEASING.md: Vakyartha
 
-Current local checkpoint (2026-10-27): app code `0d7ab3d` / Projection `6ca8487` is freshly built, installed and relaunched.161 app/383 framework checks, native/type/build and wide/narrow WebKit checks pass; exact provenance and installed smoke are recorded below. Historical manifests/outcomes apply only to their recorded revisions.
+Current local checkpoint (2026-10-27): app source `186b187` / Projection `1b06740` is freshly built from committed archives, installed and relaunched.163 app/393 framework checks, native/type/build and wide/narrow task/canvas WebKit pass. Exact provenance, manifest and recoverable backup are recorded below. Historical outcomes apply only to their recorded revisions.
 
 
 How Vakyartha is versioned, how it takes framework updates from Projection, and how a release is built, checked, installed and published. Rules for any change: [AGENTS.md](../AGENTS.md).
@@ -208,4 +208,19 @@ Launched explicitly from `/Applications/Vakyartha.app`. Native About verifies 0.
 
 ## Capability pipeline source checkpoint — 2026-10-27
 
-Pushed Projection `adf0604` is adopted for dispatch validation, explicit tool errors, permission revocation, cancellation/transport bounds and finite retries. App skill-selection/metadata and task result wrappers use the matching contract.163 app tests,393 framework tests/replay, typechecks, framework packages, UI build and wide/narrow canvas WebKit pass. See [pipeline review](PIPELINE-REVIEW.md) for scope and remaining limits. No paid/live model run, installed-app replacement, channel restart, new dependency, tag or public release. Existing local primary-provider and original source/value/interaction/receipt failures remain open; this checkpoint does not change the installed executable snapshot above.
+Pushed Projection `adf0604` is adopted for dispatch validation, explicit tool errors, permission revocation, cancellation/transport bounds and finite retries. App skill-selection/metadata and task result wrappers use the matching contract.163 app tests, 393 framework tests/replay, typechecks, framework packages, UI build and wide/narrow canvas WebKit pass. See [pipeline review](PIPELINE-REVIEW.md) for scope and remaining limits. No paid/live model run, installed-app replacement, channel restart, new dependency, tag or public release. Existing local primary-provider and original source/value/interaction/receipt failures remain open; this checkpoint does not change the installed executable snapshot above.
+
+
+## Governed pipeline — installed 2026-10-27
+
+Exact committed app source `186b187` with pushed Projection `1b06740` (dispatch code `adf0604`). Source archives were exported into a new directory; fresh `npm ci`, 163 app tests, 393 framework tests/replay, typecheck, native export test and wide/narrow task/canvas WebKit pass. Release compilation used an initially absent Rust target and completed in 1m 52s; the build hook regenerated frontend/sidecar/runtime resources. Node 24.22.1 passes Foundation-signature/current-LTS checks. Package and Cargo lockfiles remain byte-identical to committed source. App and DMG packaging succeeded without a retry.
+
+Replaced `/Applications/Vakyartha.app` as a complete bundle, retaining the previous app and standard artifacts in the build-owned backup. All 1,931 regular files/symlinks/modes match the fresh bundle before and after launch; the standard app/DMG artifacts are refreshed. Manifest SHA-256 `4cbdd8046801dfdd31284410b1c680811ddde71920072ff5d94a4a76c3dbacf9`. Ignored receipt `.vak/builds/2026-10-27-pipeline-install.json` records source/target/backup paths and full hashes. Existing user data, credentials and skill files were preserved. Native About confirms 0.2.0 / Node 24.22.1 / Keychain / existing data path; Skills, saved chats and canvas restoration work.
+
+The one local primary-model smoke (`qwen3.5:4b-mlx`, 69.3s) rendered a card and opened it in canvas, but **failed its requested content check**: the explicit Ready status was absent from raw generated arguments and the visible card. No rerun or weakening of the requirement. Raw transcript/outcome are retained under `.vak/evaluations/pipeline-install/2026-10-27/`. This verifies execution/rendering/installation mechanics, not complete model-output reliability. The previous model preference was restored without inference. No paid model call, new dependency, tag or public release. Subsequent installation-record commits are documentation-only and do not change the executable snapshot.
+
+Artifact SHA-256:
+
+- Native: `cd42df45edddb1f1dcb9e5169e745fea3e075b014fc2b9738bf496cc20e228c7`.
+- Sidecar: `ad0027e1844687dd95cc457adc84fb02e3d41652132acb91e5cea6d7035da2d1`.
+- DMG: `c3393500479431dea077866a2faac0cd1d0bacb01740c17da4270985e0e3244b`.

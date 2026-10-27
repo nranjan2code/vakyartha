@@ -35,4 +35,7 @@ Scope: app chat/tasks, skill import/selection/loading, integration discovery/ins
 
 ## Verification
 
-Before changes:161 app tests,383 framework tests/replay and app typecheck passed despite the reproduced gaps. New regressions cover dispatch revocation, invalid arguments, explicit failure status, incomplete generations, duplicate names, HTTP cancellation/timeouts/close, oversized replies, finite retries and stale skill selection. After adoption of pushed Projection `adf0604`,163 app tests,393 framework tests/replay, both typechecks, framework package generation, UI build and wide/narrow canvas WebKit pass. These checks establish execution mechanisms, not a new model-reliability claim.
+Before changes:161 app tests,383 framework tests/replay and app typecheck passed despite the reproduced gaps. New regressions cover dispatch revocation, invalid arguments, explicit failure status, incomplete generations, duplicate names, HTTP cancellation/timeouts/close, oversized replies, finite retries and stale skill selection. After adoption of pushed Projection `adf0604`,163 app tests, 393 framework tests/replay, both typechecks, framework package generation, UI build and wide/narrow canvas WebKit pass. These checks establish execution mechanisms, not a new model-reliability claim.
+
+
+Installation follow-through: app `186b187` / Projection `1b06740` was freshly built and installed with matching file manifests and native About/Skills/saved-chat/canvas checks. The one local-model smoke rendered/opened a card but omitted its explicitly requested Ready status before rendering; content correctness remains failed. Evidence and provenance: [evaluation](EVALUATION.md) and [installation record](RELEASING.md).

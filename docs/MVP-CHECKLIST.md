@@ -257,3 +257,6 @@ External discovery UI correction (2026-10-26): screenshot-reported axes and card
 
 
 Pipeline audit checkpoint (2026-10-27): dispatch revalidation, supported native argument checks, explicit MCP failure status, bounded/cancellable transport and finite retries are covered by offline regressions. Stale skill selection fails explicitly and root skill review discloses omitted supporting files.163 app/393 framework tests/replay, typechecks, packages/UI and wide/narrow canvas WebKit pass. This does not close any unchecked live outcome, source/value/interaction, accessibility, channel-parity or sustained-operation gate. See [review](PIPELINE-REVIEW.md).
+
+
+Fresh pipeline install (2026-10-27): exact committed source, fresh dependencies/empty Rust target and matching installed/standard file manifests; About, Skills and saved/new canvas rendering checked. The single local smoke omitted the explicitly requested Ready status in raw authoring, so content correctness fails and no model-outcome checkbox closes. Raw failure retained; no repeat attempt. [Evaluation](EVALUATION.md), [installation provenance](RELEASING.md).

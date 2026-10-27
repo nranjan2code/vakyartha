@@ -1,8 +1,16 @@
 # Agent outcome evaluation
 
-## Current cleanup, skill audit and fresh provider outcome — 2026-10-27
+## Pipeline installation smoke — 2026-10-27
 
-Current source adopts pushed Projection `6ca8487`. The source-specific CSV bridge, table source/parameter/relation options, derive/prepare tools and automatic criteria/report compiler are deleted at explicit user direction. No compatibility wrapper or second source executor remains. Typed component descriptors, dynamic JSON records, shared field mappings, supported aggregates, canonical transactions, permissions, task recovery and export receipts retain their existing owners. Native tool schemas are guidance unless the adapter actually decodes them; caller dataSchema remains optional and is not generated per user request.
+Current installed source is app `186b187` / pushed Projection `1b06740`, including dispatch hardening from `adf0604`. Fresh archives/dependencies/empty Rust target, 163 app/393 framework tests, native/type/build and task/canvas WebKit verify mechanisms; the installed manifest matches 1,931 files/links/modes. See RELEASING.md for exact build provenance.
+
+One free local `qwen3.5:4b-mlx` request asked for a small card titled Pipeline installation check with status Ready and no external tools. In69.3s it selected interactive-ui, rendered the requested title and a success-toned card titled Status, and opened in canvas. **Content outcome fails:** Ready was never authored in the raw vak_render arguments and is absent on screen. The native response also encoded nodes as a string; existing ingestion produced a visible card, which does not repair missing content. This locates the content omission before rendering; no inference rerun, fixture alteration or app-side patch was made.
+
+The request/checks, raw transcript and failed outcome remain under `.vak/evaluations/pipeline-install/2026-10-27/`; the build receipt is `.vak/builds/2026-10-27-pipeline-install.json`. This is an additional retained local output failure, not evidence that previous local/source/interaction outcome gates are closed. About, Skills, existing-chat restore, canvas placement and file integrity pass independently. Previous model preference restored; no paid model call or external tool dispatch.
+
+## Earlier cleanup, skill audit and fresh provider outcome — 2026-10-27
+
+That cleanup checkpoint adopted pushed Projection `6ca8487`. The source-specific CSV bridge, table source/parameter/relation options, derive/prepare tools and automatic criteria/report compiler are deleted at explicit user direction. No compatibility wrapper or second source executor remains. Typed component descriptors, dynamic JSON records, shared field mappings, supported aggregates, canonical transactions, permissions, task recovery and export receipts retain their existing owners. Native tool schemas are guidance unless the adapter actually decodes them; caller dataSchema remains optional and is not generated per user request.
 
 Prompt/skill audit removes runtime compact/strict controls and the duplicate transactional prompt helper. Root/descendant schemas share one definition (about66k→34k characters). Related views may share a surface; independent outputs remain separate. Context-erasing latest-message-only guidance is removed. Research instructions and checks now accept canonical record mappings/positional cells instead of requiring an incompatible object-row wire format. Trusted skill loading uses bounded answer steps, not external-operation allowance; zero-external-budget regressions pass while model request/usage accounting remains intact.
 
