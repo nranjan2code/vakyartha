@@ -245,3 +245,12 @@ Artifact SHA-256:
 - Native: `3c712e70176c925d72aa45a2463c1bee7b7d34611d1891849b9261dd4e65adaa`.
 - Sidecar: `ab9baaedafd3fdf19d36ac9362808eed320085e1af765edf5b775f8a5dfd01c9`.
 - DMG: `0b26ef6570cfb41d05fdb0d77d5ff752d1602c4c28b9e244c167f7e987ff88d5`.
+
+
+## Required surface-design enforcement install — 2026-10-27
+
+Pushed app `c4449d6ed2a05858ddd527b7604a395975a9d6f0` with Projection pin `c045a3c3b303a3fc2380a71701cbe4077db9fc8a` was cloned recursively to `/tmp/vakyartha-surface-release-c4449d6/source`, installed with fresh npm dependencies and built from an empty release target. `npm ci` reports zero vulnerabilities. 166 app/393 framework tests, Rust library test, typecheck, UI build, skill WebKit (1100/620), surface/chart WebKit (1440/1100/620), canvas WebKit (1100/620) and the optimized desktop build pass. App is 134.61 MiB; DMG is 43.77 MiB.
+
+Installed `/Applications/Vakyartha.app` as a whole bundle, keeping the previous app at `/tmp/vakyartha-surface-release-c4449d6/backup/Vakyartha.previous.app`. All 2,390 files, links, modes and directories match the clean build; manifest SHA-256 `77fe0d86b72fec0fc88c7d74f151101ec39c950821a63836ce9c82ed173440d9`. About confirms 0.2.0, Node 24.22.1 and the existing user data path. The user-data receipt is `.vak/builds/2026-10-27-surface-design-install.json` (gitignored).
+
+All 26 installed built-ins exactly matched their previous bundled defaults before update; 18 changed defaults were applied through the fingerprint-bound reviewed UI flow. Current built-in bodies now match the pushed bundle, all remain enabled, the removed `commit-message` remains removed, and no update is pending. The installed Skills UI shows `surface-design` Always on with no disable/remove action. Recent engine logs have zero error/exception markers in the last 300 lines. No model trial, paid call, tag or public GitHub release was made; the previously observed market-dashboard return-window omission remains open pending its original outcome check.
