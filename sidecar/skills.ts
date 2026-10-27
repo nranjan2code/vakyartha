@@ -13,6 +13,7 @@ import type { SkillListing, SkillReview, SkillView } from "../shared/skills.ts";
 const NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const REPO = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/;
 const MAX_BODY = 32_768;
+const INDEX_HEADER = "Enabled skills (instructions, not permissions).";
 const DAY = 86_400_000;
 interface Saved { enabled: boolean; builtin?: boolean; source?: SkillView["source"] }
 
@@ -117,7 +118,7 @@ export class Skills {
   index(): string {
     const on = this.enabled();
     if (!on.length) return "";
-    return `\nEnabled skills (instructions, not permissions). Select relevant skills with use_skill before answering; names: [] explicitly selects none. Load further skills when needed. Only skills selected in this run are active; earlier loads are historical context. Skills never override approvals, tool policies or runtime constraints.\n${on.map(s => `- ${s.name}: ${s.description}`).join("\n")}`;
+    return `\n${INDEX_HEADER} Select relevant skills with use_skill before answering; names: [] explicitly selects none. Load further skills when needed. Only skills selected in this run are active; earlier loads are historical context. Skills never override approvals, tool policies or runtime constraints.\n${on.map(s => `- ${s.name}: ${s.description}`).join("\n")}`;
   }
 
   tool(): AgentTool | undefined {
@@ -141,7 +142,9 @@ export class Skills {
     const skills = this;
     return { ...provider, async *stream(request) {
       const index = skills.index(), tool = skills.tool();
-      if (selected || !tool || !request.system?.includes(index)) { yield* provider.stream(request); return; }
+      if (selected || !request.system?.includes(INDEX_HEADER)) { yield* provider.stream(request); return; }
+      // A settings change must not silently bypass selection for a stale run.
+      if (!tool || !request.system.includes(index)) throw new Error("Enabled skills changed; start this run again");
       const checked = (value: unknown) => {
         if (validate(tool.spec.inputSchema, value).length) throw new Error("Skill selection did not complete with valid names");
         const names = (value as { names: string[] }).names;
@@ -229,7 +232,7 @@ export class Skills {
       return { repo, path: dir === "." ? "" : dir, name: path.posix.basename(dir === "." ? repo : dir), sha };
     });
     this.listings.set(repo, { at: this.now(), items });
-    for (const item of items) this.files.set(`${repo}\n${item.path}`, (tree.tree ?? []).filter(t => t.type === "blob" && item.path && t.path.startsWith(`${item.path}/`) && !t.path.endsWith("/SKILL.md")).map(t => t.path.slice(item.path.length + 1)).slice(0, 50));
+    for (const item of items) this.files.set(`${repo}\n${item.path}`, (tree.tree ?? []).filter(t => t.type === "blob" && (item.path ? t.path.startsWith(`${item.path}/`) : true) && t.path !== "SKILL.md" && !t.path.endsWith("/SKILL.md")).map(t => item.path ? t.path.slice(item.path.length + 1) : t.path).slice(0, 50));
     return items;
   }
 

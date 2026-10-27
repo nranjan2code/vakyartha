@@ -4,6 +4,9 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Adopt pushed Projection `adf0604`: validate supported native tool arguments before effects, preserve MCP errors/denials, invalidate stale integration handles/grants, recheck approval authority, abort/cap MCP transport work and bound Retry-After retries. Incomplete native calls and ambiguous tool names dispatch nothing. Task receipt wrapping preserves structured tool results. No new dependency or compatibility shim.
+- Stale enabled-skill context fails explicitly; root-level skill reviews correctly disclose omitted supporting files. [Pipeline review](docs/PIPELINE-REVIEW.md) records execution flow and remaining capability limits.163 app/393 framework tests, typechecks, framework package/UI builds and wide/narrow canvas WebKit pass. Source adoption only; installed build and prior live outcome failures remain as recorded.
+
 - Built-in skills have an Updates filter, Update available badges, current/proposed previews and explicit update actions. New skills seed once; edits/removals and on/off choices are preserved, and stale previews are rejected. Wide/narrow WebKit covers the update flow. Catalog pins are not silently advanced.
 
 - Skill-led authoring uses shared record mappings for forms, tables, charts and metrics. The old CSV bridge, source options, derive/prepare tools and automatic source-report compiler are deleted; no compatibility wrapper or new source executor remains.

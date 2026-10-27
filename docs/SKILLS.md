@@ -14,6 +14,7 @@ A skill is a `SKILL.md` file: a `---` block with `name` (lowercase letters, digi
 
 - The system instructions carry only the name and description of each **enabled** skill.
 - In app chat and tasks, the first counted model generation offers only skill selection. `use_skill` accepts `{names: [...]}` to select/load relevant enabled skills or `{names: []}` for no match. Answer and external tools are withheld during selection. Further calls can load additional skills. This uses the existing tool loop, not an extra hidden provider call.
+- Changing enabled skills after a run is prepared fails explicitly if its selection context is stale, instead of bypassing selection.
 - Schema-capable providers constrain the selection; other providers get one native selection tool with validation before dispatch. Invalid, interrupted or cancelled selection does not unlock answer tools. Task budgets, provider usage and conversation records include selection. This guarantees a selection step, not that the selected skills or resulting answer are semantically correct.
 - Trusted local context loading uses answer-step limits and stays available when external-operation allowance is zero. It records no external operation; the selection generation is still metered. Further skill loads use the same bounded loop, without a fixed extra stage per skill.
 - Skills never grant access: integration tools keep their policies and approvals. Scheduled tasks get `use_skill` alongside their selected capabilities.
@@ -31,7 +32,7 @@ Skill selection is verified separately from answer correctness. Historical local
 
 - Six publisher repositories are listed (`shared/skills.ts`, checked October 2026); any public `owner/repository` can be opened.
 - Listings are read at the repository's newest commit at least 14 days old, the same age rule integrations follow. The commit is recorded with the skill.
-- Review shows the exact instructions and any bundled files. Bundled files (scripts, resources) are never imported or run.
+- Review shows the exact instructions and any bundled files, including files beside a root-level SKILL.md. Bundled files (scripts, resources) are never imported or run.
 - Adding requires an acknowledgement and stores exactly the reviewed text (bound by fingerprint). Added skills start off.
 
 Data: `<data>/skills/<name>/SKILL.md` and `<data>/skills/skills.json` (on/off state and source).

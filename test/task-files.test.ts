@@ -111,7 +111,11 @@ test("duplicate operation identities are not dispatched again and uncertain effe
       const tool = options.tools![0]!;
       try { await tool.execute({}, { callId: "stable" }); } catch { /* A lost response must leave the execution aborted. */ }
       if (fail) assert.equal(options.signal!.aborted, true);
-      else assert.match(await tool.execute({}, { callId: "stable" }), /not dispatched again/);
+      else {
+        const duplicate = await tool.execute({}, { callId: "stable" });
+        assert.ok(typeof duplicate === "string");
+        assert.match(duplicate, /not dispatched again/);
+      }
       return { stop: "end" };
     } });
     try {

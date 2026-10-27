@@ -2,6 +2,12 @@
 
 Read [AGENTS.md](../AGENTS.md), [SPECS.md](SPECS.md), [RELEASING.md](RELEASING.md) and the newest [evaluation](EVALUATION.md). Planning: [MVP spec](MVP-SPECS.md), [checklist](MVP-CHECKLIST.md), [decisions](ADR.md).
 
+## Capability pipeline audit — 2026-10-27
+
+[Review and remaining boundaries](PIPELINE-REVIEW.md). Pushed Projection `adf0604` dispatch hardening adds supported argument validation before effects, explicit MCP failure/denial results, stale-handle/grant invalidation, post-approval rechecks, transport cancellation and 8 MiB parsing bounds, incomplete-call/name guards and finite Retry-After retries. App task receipt wrapping preserves structured results. Stale skill selection fails explicitly and root skill reviews disclose supporting files correctly. No compatibility shim, dependency, IPC, domain handler or parallel execution path is added.
+
+163 app/393 framework tests/replay, typechecks, package/UI builds and wide/narrow canvas WebKit pass. This is source/contract verification; it does not replace the installed app or close prior live model/source/interaction outcome failures. No paid run, integration adoption, release or channel restart is implied.
+
 ## Current architecture
 
 Task procedures and presentation guidance live in selected skills. Chat/tasks perform a counted skill-selection generation before answer/external tools become available. Selection does not grant permissions or prove correctness. The interactive-ui skill maps one collection into tables/charts/stat aggregates and binds form inputs to canonical data. Multiple independent surfaces remain supported.

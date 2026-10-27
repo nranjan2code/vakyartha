@@ -507,7 +507,10 @@ export class Tasks {
               await this.persist(t);
               if (tool.spec.name === "web__fetch_page") {
                 const read = e.sources.get(new URL(String(args.url)).href);
-                if (read && read !== previousRead) return result + "\nApplication retrieval receipt: " + JSON.stringify({ source: new URL(String(args.url)).href, retrieved_at: read.retrievedAt });
+                if (read && read !== previousRead) {
+                  const receipt = "\nApplication retrieval receipt: " + JSON.stringify({ source: new URL(String(args.url)).href, retrieved_at: read.retrievedAt });
+                  return typeof result === "string" ? result + receipt : { ...result, text: result.text + receipt };
+                }
               }
               return result;
             } catch (err) {

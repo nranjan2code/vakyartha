@@ -92,18 +92,19 @@ test("only successful scoped reads issue application retrieval receipts and pers
     tools: async (): Promise<AgentTool[]> => [{ spec: { name: "web__fetch_page", description: "Read", inputSchema: { type: "object" } }, execute: () => {
       const isError = ++reads > 1, text = isError ? "Read failed" : "The page contains source evidence for this question.";
       tasks.observeResult({ session, server: "web", tool: "fetch_page", args: { url } }, { text, isError });
-      return text;
+      return { text, isError };
     } }],
     view: async (id: string) => ({ id, title: "test", updated: "", timeline: [], surfaces: [] }),
     run: async (input: HostTurn, options: HostRunOptions) => {
       assert.equal(options.surfaceSubmission, true);
       session = input.session!;
       const first = await options.tools![0]!.execute({ url }, { callId: "read-1" });
-      assert.ok(first.includes("Application retrieval receipt:"));
-      const receipt = JSON.parse(first.split("Application retrieval receipt: ")[1]!);
+      assert.ok(typeof first === "object" && !first.isError);
+      assert.ok(first.text.includes("Application retrieval receipt:"));
+      const receipt = JSON.parse(first.text.split("Application retrieval receipt: ")[1]!);
       assert.equal(receipt.source, url);
       assert.equal(new Date(receipt.retrieved_at).toISOString(), receipt.retrieved_at);
-      assert.equal(await options.tools![0]!.execute({ url }, { callId: "read-2" }), "Read failed");
+      assert.deepEqual(await options.tools![0]!.execute({ url }, { callId: "read-2" }), { text: "Read failed", isError: true });
       return { stop: "end" as const };
     },
   };

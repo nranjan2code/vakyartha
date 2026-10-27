@@ -155,3 +155,20 @@ test("a failed selection cannot unlock answer tools on a retry", async () => {
   const events = []; for await (const e of wrapped.stream(request)) events.push(e);
   assert.equal(calls, 2); assert.equal(events[0]?.type, "tool_start");
 });
+
+
+test("changing enabled skills cannot bypass selection for an already prepared run", async () => {
+  const skills = new Skills(dir()); let requests = 0;
+  const provider: Provider = { id: "fake", async *stream() { requests++; yield { type: "done", stop: "end" }; } };
+  const request = { model: "fake", system: skills.index(), messages: [{ role: "user" as const, content: "Hello" }] };
+  skills.setEnabled("interactive-ui", false);
+  await assert.rejects(async () => { for await (const _ of skills.provider(provider).stream(request)) {} }, /Enabled skills changed/);
+  assert.equal(requests, 0);
+});
+
+test("root skills disclose supporting files that will not be installed", async () => {
+  const fetcher = (async (url: string) => new Response(url.includes("/commits?") ? JSON.stringify([{ sha: "a".repeat(40) }]) : url.includes("/git/trees/") ? JSON.stringify({ tree: [{ path: "SKILL.md", type: "blob" }, { path: "references/guide.md", type: "blob" }] }) : SKILL)) as typeof fetch;
+  const skills = new Skills(dir(), fetcher);
+  const review = await skills.review("owner/repo", "");
+  assert.deepEqual(review.extraFiles, ["references/guide.md"]);
+});

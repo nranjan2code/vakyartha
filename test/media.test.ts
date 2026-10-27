@@ -45,7 +45,9 @@ test("media plugins are independent, off by default, and use existing approval p
   configs.set("image", { enabled: true, config: { generate_image: pick } });
   const tools = await integrations.toolsFor("chat");
   const tool = tools.find((t) => t.spec.name.includes("generate_image"))!;
-  assert.match(String(await tool.execute({ selection: pick, prompt: "A bird" }, {})), /declined/);
+  const denied = await tool.execute({ selection: pick, prompt: "A bird" }, {});
+  assert.ok(typeof denied === "object" && denied.isError);
+  assert.match(denied.text, /declined/);
   assert.equal(decisions.length, 1); assert.equal(calls.length, 0);
   assert.equal(integrations.view().find((v) => v.entry.id === "media-audio")!.enabled, false);
   await media.close();
