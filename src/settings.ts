@@ -140,7 +140,11 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     provider,
     (v) => {
       provider = v;
-      void fillModels(prefs.get(`model:${v}`) ?? providers.find((p) => p.id === v)?.defaultModel ?? "");
+      void fillModels(prefs.get(`model:${v}`) ?? providers.find((p) => p.id === v)?.defaultModel ?? "").then(() => {
+        // A preselected local model is already displayed, so choosing it again
+        // does not fire change. Commit the visible choice when switching providers.
+        if (provider === v && modelSel.value && modelSel.value !== OTHER) use(modelSel.value);
+      });
     },
   );
   for (const o of providerSel.options) o.disabled = !usable.some((p) => p.id === o.value);

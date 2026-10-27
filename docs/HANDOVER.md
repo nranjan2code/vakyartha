@@ -57,7 +57,7 @@ The user authorized a bounded hosted Luna comparison using the installed Keychai
 ## Next
 
 1. Measure the installed one-card request and mixed surfaces after the Projection schema reduction. The core tool definition is 4,392 characters smaller; the local record-view gate failed, so latency and model-outcome claims remain open. Do not gate integration-tool access through the unreliable group-selection probe.
-2. The skill importer now preserves optional frontmatter and stores reviewed script source as inert references. Binary assets, full YAML and governed script execution remain unsupported. Keep the declared subset and the tool-permission boundary explicit.
+2. The skill importer now preserves optional frontmatter and stores reviewed script source as inert references. Binary assets, full YAML and governed script execution remain unsupported. Settings provider switching also commits the model it displays; verify the installed composer shows local before a model smoke. Keep the declared subset and the tool-permission boundary explicit.
 3. Keep older failed outcomes in EVALUATION.md as historical evidence; market-source work is deferred by user direction.
 
 ## Earlier records
