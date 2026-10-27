@@ -43,8 +43,8 @@ test("submitted criteria recompute checked claims without changing facts or expr
     if (requests <= 3) {
       const output = requests === 1 ? [
         { surface: "criteria", data: { criteria: { budget: 20, seats: 6 } }, nodes: [{ id: "root", type: "form", props: { submit: "apply" }, children: [{ id: "budget", type: "input", props: { label: "Budget", bind: "/criteria/budget" } }, { id: "seats", type: "input", props: { label: "Seats", bind: "/criteria/seats" } }] }] },
-        { surface: "comparison", nodes: [{ id: "root", type: "table", props: { columns: Object.keys(rows[0]!), rows } }] },
-      ] : [{ surface: "comparison", nodes: [{ id: "root", type: "table", props: { columns: Object.keys(rows[0]!), rows } }] }];
+        { surface: "comparison", nodes: [{ id: "root", type: "table", props: { columns: Object.keys(rows[0]!), rows: rows.map((row) => Object.values(row)) } }] },
+      ] : [{ surface: "comparison", nodes: [{ id: "root", type: "table", props: { columns: Object.keys(rows[0]!), rows: rows.map((row) => Object.values(row)) } }] }];
       if (requests === 2) assert.ok(req.messages.some((message) => typeof message.content === "string" && message.content.includes('"budget":10')));
       if (requests === 3) assert.ok(JSON.stringify(req.messages.at(-1)).includes("caller-supplied"));
       yield { type: "tool_start", id: "candidate", name: "vak_submit" };
@@ -474,7 +474,7 @@ test("checked task output repairs in the same run and withholds rejected complet
     } else if (requests === 2) {
       const outputs = [
         { surface: "criteria", data: { budget: 20 }, nodes: [{ id: "root", type: "form", props: { submit: "apply" }, children: [{ id: "budget", type: "input", props: { label: "Budget", bind: "/budget" } }] }] },
-        { surface: "comparison", data: { rows: [{ label: "Atlas" }, { label: "Birch" }] }, nodes: [{ id: "root", type: "table", props: { columns: ["label"], rows: "{/rows}" } }] },
+        { surface: "comparison", data: { rows: [["Atlas"], ["Birch"]] }, nodes: [{ id: "root", type: "table", props: { columns: ["label"], rows: "{/rows}" } }] },
       ];
       yield { type: "tool_start", id: "candidate", name: "vak_submit" };
       yield { type: "tool_args", id: "candidate", delta: JSON.stringify({ surfaces: outputs.map(({ nodes, ...surface }) => ({ op: "replace", ...surface, root: nodes[0] })) }) };
@@ -507,7 +507,7 @@ test("checked task submits two independent surfaces as one candidate without a c
     yield { type: "tool_start", id: "candidate", name: "vak_submit" };
     yield { type: "tool_args", id: "candidate", delta: JSON.stringify({ surfaces: [
       { op: "replace", surface: "criteria", data: { budget: 20 }, root: { type: "form", props: { submit: "apply" }, children: [{ type: "input", props: { label: "Budget", bind: "/budget" } }] } },
-      { op: "replace", surface: "report", root: { type: "table", props: { columns: ["name"], rows: [{ name: "One" }] } } },
+      { op: "replace", surface: "report", root: { type: "table", props: { columns: ["name"], rows: [["One"]] } } },
     ] }) };
     yield { type: "tool_end", id: "candidate" }; yield { type: "done", stop: "tool_use" };
   } };

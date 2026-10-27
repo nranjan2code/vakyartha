@@ -3,18 +3,20 @@ import { matchingExcerpt, parseResearchSummary, type ResearchRead } from "./rese
 import { getAt, setAt, projectText, walk } from "@vak/core";
 import type { CompletionCheck } from "@vak/providers";
 
-export type TaskResultPolicy = ({ kind: "comparison"; labels?: string[]; table?: ComparisonContract } | { kind: "research"; sources?: string[] }) & { notices?: string[]; initialValues?: Record<string, string | number | boolean> };
+export type TaskResultPolicy = ({ kind: "comparison"; labels?: string[]; table?: ComparisonContract } | { kind: "research"; sources?: string[] }) & { notices?: string[]; parameterRelations?: Record<string, "at_most" | "at_least">; initialValues?: Record<string, string | number | boolean> };
 export function parseTaskResultPolicy(value: unknown): TaskResultPolicy {
   if (!value || typeof value !== "object" || Array.isArray(value) || !("kind" in value) || (value.kind !== "comparison" && value.kind !== "research")) throw new Error("Choose a supported result layout");
   const key = value.kind === "comparison" ? "labels" : "sources";
-  if (Object.keys(value).some((field) => field !== "kind" && field !== key && field !== "notices" && field !== "initialValues" && !(value.kind === "comparison" && field === "table"))) throw new Error("Result layout contains unsupported fields");
+  if (Object.keys(value).some((field) => field !== "kind" && field !== key && field !== "notices" && field !== "initialValues" && field !== "parameterRelations" && !(value.kind === "comparison" && field === "table"))) throw new Error("Result layout contains unsupported fields");
   const notices = "notices" in value ? value.notices : undefined;
   if (notices !== undefined && (!Array.isArray(notices) || !notices.length || notices.length > 8 || notices.some((notice) => typeof notice !== "string" || !notice.trim() || notice.length > 120))) throw new Error("Provide up to 8 nonempty visible notices, each at most 120 characters");
   const table = value.kind === "comparison" && "table" in value ? parseComparisonContract(value.table) : undefined;
   const initial = "initialValues" in value ? value.initialValues : undefined;
   if (initial !== undefined && (!initial || typeof initial !== "object" || Array.isArray(initial) || !Object.keys(initial).length || Object.keys(initial).length > 16 || Object.entries(initial).some(([path, scalar]) => !/^\/[A-Za-z_][\w/-]{0,119}$/.test(path) || path.split("/").some((part) => ["__proto__", "constructor", "prototype"].includes(part)) || !(typeof scalar === "boolean" || typeof scalar === "number" && Number.isFinite(scalar) || typeof scalar === "string" && scalar.length <= 500)))) throw new Error("Initial inputs need 1–16 safe bind paths and bounded scalar values");
   if (initial) initialData(initial as Record<string, string | number | boolean>);
-  const common = { ...(notices === undefined ? {} : { notices: [...new Set((notices as string[]).map((notice) => notice.trim()))] }), ...(initial === undefined ? {} : { initialValues: { ...initial } as Record<string, string | number | boolean> }) };
+  const relations = "parameterRelations" in value ? value.parameterRelations : undefined;
+  if (relations !== undefined && (!relations || typeof relations !== "object" || Array.isArray(relations) || !Object.keys(relations).length || Object.keys(relations).length > 16 || Object.entries(relations).some(([path, relation]) => !initial || !Object.hasOwn(initial, path) || typeof (initial as Record<string, unknown>)[path] !== "number" || (relation !== "at_most" && relation !== "at_least")))) throw new Error("Parameter relations must reference declared numeric defaults");
+  const common = { ...(relations === undefined ? {} : { parameterRelations: { ...relations } as Record<string, "at_most" | "at_least"> }), ...(notices === undefined ? {} : { notices: [...new Set((notices as string[]).map((notice) => notice.trim()))] }), ...(initial === undefined ? {} : { initialValues: { ...initial } as Record<string, string | number | boolean> }) };
   const raw = key in value ? (value as Record<string, unknown>)[key] : undefined;
   if (raw === undefined) return value.kind === "comparison" ? { kind: "comparison", ...common, ...(table ? { table } : {}) } : { kind: "research", ...common };
   if (!Array.isArray(raw) || !raw.length || raw.length > (key === "sources" ? 8 : 16) || raw.some((item) => typeof item !== "string" || !item.trim() || item.length > (key === "sources" ? 2000 : 120))) throw new Error("Provide a bounded, nonempty list of source URLs or option names");

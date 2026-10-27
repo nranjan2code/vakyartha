@@ -141,3 +141,10 @@ test("ambiguous result roles report layout without falsely claiming existing con
   assert.equal(issues.length, 1);
   assert.match(issues[0]!, /two separate surfaces/);
 });
+
+test("aggregate parameter direction is a caller declaration, not inferred from its name", () => {
+  const policy = { kind: "comparison", initialValues: { "/criteria/limit": 100 }, parameterRelations: { "/criteria/limit": "at_most" } };
+  assert.deepEqual(parseTaskResultPolicy(policy), policy);
+  for (const parameterRelations of [{ "/criteria/missing": "at_most" }, { "/criteria/limit": "guess" }, { "/criteria/limit": ["at_most"] }, {}, []]) assert.throws(() => parseTaskResultPolicy({ ...policy, parameterRelations }));
+  assert.throws(() => parseTaskResultPolicy({ kind: "comparison", initialValues: { "/criteria/limit": "100" }, parameterRelations: { "/criteria/limit": "at_most" } }));
+});

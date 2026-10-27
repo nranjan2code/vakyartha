@@ -1,3 +1,4 @@
+import { selectedTableSources } from "./csv-source.ts";
 import { parseTaskResultPolicy, resultInstructions, reviewTaskResult } from "../shared/task-result.ts";
 import { reviseComparisonCriteria } from "../shared/comparison-contract.ts";
 import type { ResearchRead } from "../shared/research-contract.ts";
@@ -521,6 +522,9 @@ export class Tasks {
         // Initial-value assertions must not reset later user-submitted criteria.
         const resultPolicy = t.resultPolicy && run.sequence > 1 ? { ...t.resultPolicy, initialValues: undefined } : t.resultPolicy;
         const result = await this.deps.run({ session: t.session, provider: t.provider, model: t.model, message: input.message, action: input.action, history: 10 }, {
+          tableSources: t.resultPolicy?.kind === "comparison" && t.inputs?.length ? selectedTableSources(t.inputs, t.resultPolicy.notices, t.resultPolicy.kind === "comparison" ? t.resultPolicy.labels : undefined) : undefined,
+          tableParameters: t.resultPolicy?.initialValues,
+          tableRelations: t.resultPolicy?.parameterRelations,
           surfaceSubmission: Boolean(t.resultPolicy), completion: "response", validateCompletion: t.resultPolicy ? (result) => reviewTaskResult(resultPolicy!, result, e.sources) : undefined, signal: e.ctrl.signal, tools, maxSteps: TASK_LIMITS.rounds,
           // Gathering never takes the last model request: the engine keeps it for the closing answer.
           toolRounds: TASK_LIMITS.rounds - 1, maxTokens: TASK_LIMITS.outputTokens,

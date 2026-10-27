@@ -1,5 +1,16 @@
 # Agent outcome evaluation
 
+## Source-workspace checkpoint — 2026-10-27
+
+The original selected-file report and its changed-budget continuation now pass independent review. This is a bounded outcome, not broad authoring reliability. The model declares calculations and source references; the runtime preserves source records, computes values and compiles the criteria/report surfaces. This removes copying facts, arithmetic, control binding and graph construction from one model response. No fixture amounts or identities are hardcoded in the runtime.
+
+Original receipt: `.vak/evaluations/reference-workspace/results/2026-10-27T03-34-37.631Z-ce0eaa2d/selected-file-report.json`. Four local requests/14.972s produce separate editable criteria and report surfaces, source rows36/34, total70, budget100, remaining30, and the selected context/missing-freshness notices. Saved Markdown is620 bytes, SHA256 `e3741979eaf8848816b98455cf94c8461d9143d3f3808ba161fa527a8623adc4`. Changed-budget receipt: `.vak/evaluations/reference-workspace-continuation/results/changed-budget-50/continuation.json`. Three further requests/30.308s preserve source facts and update budget50, remaining−20 and within-budget=false. Its619-byte export has SHA256 `c5de8c46006a5f76b327550fc3604f9c99f3ada75d824d0d78344d1915cc37c3`. Both exports were read back; independent review records pass without user acceptance. Retained surfaces pass wide/narrow WebKit edit/filter checks without model calls. No external tool calls or paid runs.
+
+**Open:** the latest free-form provider probe passes2/3; the new source-only probe passes0/3 because unrequested totals are proposed. Rejections preserve canonical content, but safe rejection is not task completion. Projection receipts `primary-provider-2026-10-27T03-43-25.030Z.json` and `source-provider-2026-10-27T03-46-02.508Z.json` are retained under `.vak/contracts/`. Do not reuse the earlier3/3 provider result as the latest result. Next authoring work must address requested-operation intent at its owning boundary, retain these failing cases, and rerun the matching contract plus original outcome. Do not add fixture-specific prompt/parser repairs or expand trial limits.
+
+Validation:158 app tests,373 framework tests/replay, both typechecks and framework package build pass. A different Coffee/Tea fixture checks real Tasks/host parsing, source computations, changed controls and saved receipts. Latest source has not yet been installed at this checkpoint; the previous installed build is app0406e46/framework0138493. Astra's final follow-up was unavailable due to its usage limit; no final Astra review is claimed.
+
+
 ## Provider-contract foundation repair — 2026-10-27
 
 The native transactional tool described types without enforcing decoding, and shallow node schemas allowed malformed descendant authoring. Projection `9b7af0b` uses advertised provider schema decoding, recursive component definitions, required data/props, generated new-surface identities and state-aware existing targets. Protocol-specific instructions replace unrelated layout recipes. Final primary-provider contract gate passes three varied numeric input pairs in one request each; retained private receipt: Projection `.vak/contracts/primary-provider.json`. Earlier exploratory failures are not reliability passes. `f3b67e8` additionally bounds local references and rejects inherited schema names.
@@ -276,3 +287,15 @@ Final source checks: 99 app tests, 287 pinned framework tests/replay gate, typec
 Export follow-up before installation (2026-10-26): the final save regression now requires both latest assistant prose and canonical surfaces in the Markdown file, so flexible mixed results do not silently lose their narrative. 99 app tests/typecheck pass. The earlier live research artifact/hash is preserved unchanged; this addition is verified independently, without another model run. The preceding clean build is not installed; a new fresh-target build uses the corrected pushed commit.
 
 Installed-app smoke (2026-10-26): `qwen3.5:4b-mlx` rendered the requested “Local installation check / Ready” card in 33.4 seconds; Open in canvas moved the same surface successfully. The installed catalog and About were inspected. No paid generation was run.
+
+### Retained intermediate source-foundation failures
+
+These local outcomes precede the passing source-workspace report; they are not overwritten by it. Full receipts remain under `.vak/evaluations/<root>/results/<run>/`.
+
+| Root / run | Failure |
+| --- | --- |
+| schema-foundation / 2026-10-27T02-13-24.384Z-a867394a | Untyped row wrappers and rejected private-ID feedback;11 requests. |
+| typed-table-foundation / 2026-10-27T02-21-20.245Z-7cc9b78a | Cells hidden in a serialized data field;12 requests. |
+| positional-foundation / 2026-10-27T02-27-08.833Z-e611c39a | Shifted cells, missing unit cost/provenance and malformed total;5 requests. |
+| source-backed-report / 2026-10-27T02-57-29.042Z-6a7ee11e | Correct source rows but invented budget arithmetic and misbound criteria;8 requests. |
+| compiled-source-report / 2026-10-27T03-22-41.599Z-267fdd0b | Incorrect comparison direction/summary label and incomplete separate surfaces;8 requests. |

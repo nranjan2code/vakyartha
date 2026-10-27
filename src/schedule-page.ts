@@ -269,6 +269,7 @@ export class SchedulePage {
         const contract = task.resultPolicy.table;
         facts.append(el("dt", { textContent: "Exact comparison checks" }), el("dd", {}, el("details", {}, el("summary", { textContent: `${contract.rows.length} expected rows · ${contract.criteria ? "submitted criteria with checked calculations" : "fixed declared cells"}` }), el("pre", { textContent: JSON.stringify(contract, null, 2), className: "schedule-contract" }))));
       }
+      if (task.resultPolicy?.parameterRelations) facts.append(el("dt", { textContent: "Parameter relations" }), el("dd", {}, el("pre", { className: "schedule-contract", textContent: JSON.stringify(task.resultPolicy.parameterRelations, null, 2) })));
       if (task.resultPolicy?.initialValues) facts.append(el("dt", { textContent: "First-run input checks" }), el("dd", {}, el("pre", { className: "schedule-contract", textContent: JSON.stringify(task.resultPolicy.initialValues, null, 2) })));
       if (task.resultPolicy?.notices?.length) facts.append(el("dt", { textContent: "Required visible notices" }), el("dd", { textContent: task.resultPolicy.notices.join(" · ") }));
       if (task.inputs?.length) facts.append(el("dt", { textContent: "Input snapshots" }), el("dd", {}, ...task.inputs.map((input) => el("p", { textContent: `${input.name} · ${input.bytes} bytes · SHA-256 ${input.sha256} · captured input, current file freshness unverified` }))));

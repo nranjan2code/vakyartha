@@ -4,6 +4,11 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Checked CSV workspaces now preserve selected source records, hashes and context, compute declared values in Projection, and compile separate criteria/report surfaces from references. Caller parameter relations remain inspectable. Added strict bounded CSV parsing and an end-to-end changed-budget regression using different source facts.
+- Original selected-file report and changed-budget continuation pass independent value/export and WebKit checks. Broader source-only and free-form probes still fail; retained evidence and next owning-boundary repair are explicit in EVALUATION.md. No general reliability or user-acceptance claim.
+
+- Transactional table authoring uses positional cell arrays, so row keys cannot drift from column keys. Resolved bindings are checked before admission. Rejected-candidate feedback no longer treats private IDs as saved surfaces.
+
 - Projection `9b7af0b` enforces transactional arguments through advertised provider schema decoding, recursively types inline nodes, requires complete replacement data/required props and generates initial surface identities. Added outcome acceptance rules: mechanism tests/builds/installations cannot close a failed end-to-end repair.
 
 - Checked tasks submit inline multi-surface replacements, targeted patches and removals as one validated transaction. Rejected candidates leave accepted results intact; stale/incomplete/mixed batches cannot publish. Accepted submissions finish without an extra generation. Existing interactions and canonical surfaces remain. The unused constrained-call experiment is removed from Projection.
