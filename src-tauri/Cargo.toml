@@ -27,3 +27,8 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+vak-sandbox-core = { git = "https://github.com/nranjan2code/sandbox", branch = "main" }
+vak-sandbox-seatbelt = { git = "https://github.com/nranjan2code/sandbox", branch = "main" }
+vak-sandbox-runtime = { git = "https://github.com/nranjan2code/sandbox", branch = "main" }
+vak-sandbox-env = { git = "https://github.com/nranjan2code/sandbox", branch = "main" }
