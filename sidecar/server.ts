@@ -239,7 +239,7 @@ ${skills.index()}`;
 
   marketplaces = new Marketplaces(dataDir, [...CATALOG, ...media.entries()], opts.marketplaceFetch, opts.marketplaceImageFetch);
   const sandboxBin = opts.sandboxBin || "vaksb";
-  integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: true, binaryPath: sandboxBin } }, media, marketplaces.catalog);
+  integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: process.env.VAK_SANDBOX_ENABLED !== "false", binaryPath: sandboxBin } }, media, marketplaces.catalog);
   // Refresh app-owned tool schemas after an upgrade; the integration journal
   // may otherwise retain an older model's controls indefinitely.
   for (const entry of integrations.view().filter((i) => i.enabled && i.entry.id.startsWith("media-"))) {

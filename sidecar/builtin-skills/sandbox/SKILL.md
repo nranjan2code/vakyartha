@@ -22,7 +22,7 @@ Vakyartha can run commands under OS-level process isolation using vak-sandbox (m
 
 ## How it works
 
-When the Sandbox integration is enabled (Settings → Integrations → Sandbox), stdio MCP servers are launched through `vaksb run`, which wraps them in a macOS Seatbelt profile. The profile:
+OS-level sandboxing is configured in Settings → Sandbox. When the `vaksb` helper is available, stdio MCP servers are launched through `vaksb run`, which wraps them in a macOS Seatbelt profile. The profile:
 
 - Denies all access by default
 - Allows reading system paths (/usr, /bin, /System, /Library, /etc)
@@ -33,7 +33,7 @@ When the Sandbox integration is enabled (Settings → Integrations → Sandbox),
 
 ## What the LLM should do
 
-1. **Check availability**: The Sandbox integration must be enabled in Settings → Integrations. If disabled, commands run normally without isolation.
+1. **Check availability**: Open Settings → Sandbox for the configured behavior and helper lookup locations. If `vaksb` is unavailable, commands run without OS-level isolation.
 2. **Recommend for risky operations**: When the user wants to run code from untrusted sources, suggest enabling Sandbox.
 3. **Explain restrictions**: If a command fails due to sandbox restrictions (permission denied, network unreachable), explain that the sandbox blocks it and suggest either adjusting the policy or running outside the sandbox.
 4. **Do not bypass**: Never suggest disabling security features to make a command work. Instead, suggest adding the needed path or network access to the policy.

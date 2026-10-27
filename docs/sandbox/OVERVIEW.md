@@ -16,14 +16,14 @@ The sandbox provides defense-in-depth protection:
 The `@vak/mcp/client` supports optional vak-sandbox isolation via `McpClientOptions.vakSandbox`. When enabled, stdio MCP servers are launched through the `vaksb` binary for OS-level sandboxing (macOS Seatbelt). Availability is checked at runtime; if `vaksb` is not installed, servers run normally without OS isolation (graceful degradation).
 
 ### App (Vakyartha)
-- Added to integrations catalog as "Sandbox" (built-in, trust: built-in)
-- Enabled globally via `vakSandbox: { enabled: true, binaryPath: "vaksb" }` in createIntegrations
-- Settings → Integrations shows sandbox status
+- Shown as a top-level Settings → Sandbox page
+- Controlled in Settings → Sandbox; the switch is saved and applies after app restart
+- Enabled by default via `vakSandbox: { enabled: true, binaryPath: "vaksb" }` in createIntegrations
 - Requires `vaksb` binary on PATH (install from sandbox repo)
 
 ## Configuration
 
-Sandbox is enabled globally for all stdio MCP servers. Default policies follow the principle of least privilege:
+Sandbox is enabled globally for all stdio MCP servers by default. Its app-level switch enables or disables OS containment as a whole; individual filesystem and network policy controls are not exposed by the current framework API. Default policies follow the principle of least privilege:
 - Network: disabled by default
 - Filesystem: minimal read (system paths), write only to /tmp
 - Environment: only declared variables

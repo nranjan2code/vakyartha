@@ -2,7 +2,7 @@
 
 ## Default Policy (deny-all)
 
-When the Sandbox integration is enabled, every stdio MCP server runs with:
+When `vaksb` is available, every stdio MCP server runs with:
 
 - **Filesystem**: Read-only access to system paths (/usr, /bin, /System, /Library, /etc, /opt). Write access only to /tmp. Everything else denied.
 - **Network**: Completely disabled. No DNS, no outbound, no inbound.

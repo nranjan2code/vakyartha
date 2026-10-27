@@ -8,7 +8,7 @@
 // app's secret store (the Keychain on macOS).
 
 import path from "node:path";
-import { type CatalogEntry, Integrations, type IntegrationsOptions, sandboxServer, timeServer, webFetchServer } from "@vak/mcp/client";
+import { type CatalogEntry, Integrations, type IntegrationsOptions, timeServer, webFetchServer } from "@vak/mcp/client";
 import { ollamaOcrServer } from "./ocr.ts";
 import type { Media } from "./media/index.ts";
 
@@ -175,19 +175,6 @@ export const CATALOG: CatalogEntry[] = [
     access: ["Sends library names and questions to Context7"],
     source: { kind: "npm", package: "@upstash/context7-mcp", version: "4.3.0", bin: "dist/index.js" },
     config: [{ key: "apiKey", label: "Context7 API key (optional)", kind: "secret", env: "CONTEXT7_API_KEY", help: "Optional: higher rate limits." }],
-  },
-  {
-    id: "vak-sandbox",
-    name: "Sandbox",
-    publisher: "vak",
-    trust: "built-in",
-    summary: "OS-level process isolation for MCP servers.",
-    description: "Uses vak-sandbox for deny-by-default OS-level containment (macOS Seatbelt). Provides process jail with minimal environment, path confinement, and network controls for safer tool execution.",
-    homepage: "https://github.com/nranjan2code/sandbox",
-    icon: "shield",
-    access: ["Local process isolation only", "No network access by default", "Minimal environment variables"],
-    source: { kind: "builtin", server: () => sandboxServer() },
-    config: [],
   },
 ];
 

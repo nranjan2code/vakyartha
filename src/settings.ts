@@ -14,13 +14,14 @@ import { TASK_LIMITS, parseTaskSummaries } from "../shared/task-contract.ts";
 import { voicePage, voiceSection, voiceSettingsPage } from "./voice/index.ts";
 import { group, pill, plainField, row, secretField, segmented, select, type Setting, title, toggle } from "./ui.ts";
 import { disposeMediaPage } from "./media-page.ts";
+import { sandboxPage } from "./sandbox-page.ts";
 import type { MediaProvider } from "../shared/media.ts";
 
 interface ChannelInfo { id: string; label: string; enabled: boolean; provider?: string; model?: string; ready: boolean; secrets: string[]; needs: string[]; state: string; detail: string }
 interface PlanInfo { generation: string; tier: string; examples: boolean; authoring?: string; maxSteps: number; reasons: string[] }
 interface Info { version: string; node: string; platform: string; dataDir: string; logFile: string; keys: string }
 
-type Section = "models" | "providers" | "integrations" | "skills" | "integrations:add" | `integration:${string}` | "channel:telegram" | "channel:slack" | "channel:discord" | "voice" | `voice:${string}` | "appearance" | "chats" | "tasks" | "finops" | "general" | "about";
+type Section = "models" | "providers" | "integrations" | "skills" | "sandbox" | "integrations:add" | `integration:${string}` | "channel:telegram" | "channel:slack" | "channel:discord" | "voice" | `voice:${string}` | "appearance" | "chats" | "tasks" | "finops" | "general" | "about";
 
 /** Channels whose listeners are not built yet: shown so the place is known, marked as coming. */
 const COMING: Record<string, string> = {
@@ -34,6 +35,7 @@ const NAV: [Section, string, string, string?][] = [
   ["providers", "Providers", "key"],
   ["integrations", "MCP", "plug", "Integrations"],
   ["skills", "Skills", "spark", "Integrations"],
+  ["sandbox", "Sandbox", "shield"],
   ["channel:telegram", "Telegram", "send", "Channels"],
   ["channel:slack", "Slack", "bubble", "Channels"],
   ["channel:discord", "Discord", "bubble", "Channels"],
@@ -100,6 +102,7 @@ async function show(to: Section, arg?: string): Promise<void> {
   const render: Record<string, () => Promise<HTMLElement[]>> = {
     integrations: async () => marketplace((id) => void show(`integration:${id}`), () => void show("integrations:add"), await voiceSection((id) => void show(`voice:${id}`))),
     skills: () => skillsPage(),
+    sandbox: async () => sandboxPage(),
     voice: () => voiceSettingsPage((id) => void show(`voice:${id}`)),
     "integrations:add": async () => addOwnPage(() => void show("integrations"), (id) => void show(`integration:${id}`)),
     models: () => modelsPage(arg),

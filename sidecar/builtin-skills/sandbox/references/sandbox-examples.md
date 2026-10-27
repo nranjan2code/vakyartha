@@ -24,7 +24,7 @@ With sandbox enabled:
 
 ## Example 3: MCP server with sandbox
 
-When Sandbox integration is enabled, all stdio MCP servers are launched through `vaksb run`. This means:
+When `vaksb` is available, all stdio MCP servers are launched through `vaksb run`. This means:
 - The MCP server process is sandboxed
 - It can only access its declared folders
 - It cannot leak the app's environment variables

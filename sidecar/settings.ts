@@ -12,13 +12,14 @@ import { VOICE_KEYS } from "./voice/index.ts";
 import { MEDIA_KEYS } from "./media/catalog.ts";
 
 export interface Setting extends Omit<ProviderSetting, "group" | "provider"> {
-  group: ProviderSetting["group"] | "channel" | "voice" | "media";
+  group: ProviderSetting["group"] | "channel" | "voice" | "media" | "app";
   /** The provider or channel it configures. */
   owner: string;
 }
 
 /** The registry declares every provider variable, each channel and voice provider its secrets; the screen lists exactly those. */
 export const SETTINGS: Setting[] = [
+  { name: "VAK_SANDBOX_ENABLED", label: "OS-level process isolation", secret: false, group: "app", owner: "sandbox", placeholder: "true or false" },
   ...PROVIDER_SETTINGS.map(({ provider, ...s }) => ({ ...s, owner: provider })),
   ...CHANNELS.flatMap((c) => c.secrets.map((s) => ({ ...s, secret: true, group: "channel" as const, owner: c.id }))),
   ...VOICE_KEYS.map((k) => ({ ...k, secret: true, group: "voice" as const })),
