@@ -1,6 +1,6 @@
 # RELEASING.md: Vakyartha
 
-Current local checkpoint (2026-10-27): app source `186b187` / Projection `1b06740` is freshly built from committed archives, installed and relaunched.163 app/393 framework checks, native/type/build and wide/narrow task/canvas WebKit pass. Exact provenance, manifest and recoverable backup are recorded below. Historical outcomes apply only to their recorded revisions.
+Current local checkpoint (2026-10-27): app source `0714a9c` / pushed Projection `c045a3c` is freshly built from committed archives, installed and relaunched.164 app/393 framework checks, native/type/build and responsive layout/skills/canvas WebKit pass. Exact manifests, recoverable backups and the successful single installed local-model smoke are recorded below. Earlier failed model-outcome gates remain open.
 
 
 How Vakyartha is versioned, how it takes framework updates from Projection, and how a release is built, checked, installed and published. Rules for any change: [AGENTS.md](../AGENTS.md).
@@ -226,3 +226,22 @@ Artifact SHA-256:
 - Native: `cd42df45edddb1f1dcb9e5169e745fea3e075b014fc2b9738bf496cc20e228c7`.
 - Sidecar: `ad0027e1844687dd95cc457adc84fb02e3d41652132acb91e5cea6d7035da2d1`.
 - DMG: `c3393500479431dea077866a2faac0cd1d0bacb01740c17da4270985e0e3244b`.
+
+
+## Reusable skills and responsive surfaces — installed 2026-10-27
+
+Built exact pushed app source `0714a9cb8d6e933950234f571cf864c269be9a6a` with pushed Projection `c045a3c3b303a3fc2380a71701cbe4077db9fc8a` (`origin/codex/surface-design`) from git archives in `/tmp/vakyartha-skills-release-orx3iegx/source`. Fresh `npm ci`, 164 app tests, 393 framework tests and typecheck pass inside that source snapshot. The native export test passes. Real WebKit verifies mixed layouts/all eight chart kinds/dated heatmap at 1440/1100/620, reviewed skill updates at 1100/620 and existing canvas interactions at 1100/620. Package and Cargo lockfiles are byte-identical to committed source.
+
+Release compilation uses the initially absent target `/tmp/vakyartha-skills-release-orx3iegx/rust-release`; the build hook regenerates frontend, sidecar and bundled runtime. The native optimized build completes in 2m08s; app (134.60 MiB) and DMG (43.77 MiB) package successfully without a retry. Bundled Node 24.22.1 passes Node.js Foundation signature/latest Krypton LTS checks. No stale Rust release target, dependency change, tag or public release.
+
+Replaced `/Applications/Vakyartha.app` as a whole bundle. All 1,931 regular files/symlinks/modes match the fresh build and the refreshed standard artifacts under `src-tauri/target/release/bundle/`; the manifest remains exact after launch. Manifest SHA-256: `5dd90d357bdadae4a2e08e54af1e7a7427691f60c630233f255f8b5f6160ca0f`. Previous app, standard artifacts and skill files are recoverable under `/tmp/vakyartha-skills-release-orx3iegx/`. The ignored receipt `.vak/builds/2026-10-27-skills-install.json` records source, target, manifests, hashes, skill changes and native smoke evidence.
+
+The user authorized the skill update and installation. Five installed built-ins were refreshed only after exact byte comparison with their known previous shipped defaults, through `Skills.updateBuiltin` and both current/proposed fingerprints: assistant, interactive-ui, plan-my-day, compare-options and budget-helper. New defaults seed once. The removed commit-message skill stays removed; custom/catalog text and all existing on/off choices are preserved. Installed Skills shows 27 total (26 built-ins plus the existing catalog skill), with no pending built-in updates. A skill backup is retained. No direct replacement of custom instructions or new update mechanism.
+
+Native About confirms 0.2.0, Node 24.22.1, Keychain and the existing data folder. One free `qwen3.5:4b-mlx` installation smoke succeeds in 81.8s: exactly one Installation check card with body Ready, no extra assistant text, and the same surface opens in canvas. Raw canonical state and frozen checks are retained in the build directory. The previous gpt-6-luna preference is restored without a hosted model call. No new runtime/UI error is observed. This is a bounded installation smoke, not proof of broad daily-workflow reliability; the failed one-of-three mapped-table gate and original source/value/semantic/interaction/receipt failures remain open. Live audio/microphone checks remain separate. Unsigned/unnotarized; no public release or tag. This subsequent installation-record commit changes documentation only, not the executable snapshot.
+
+Artifact SHA-256:
+
+- Native: `3c712e70176c925d72aa45a2463c1bee7b7d34611d1891849b9261dd4e65adaa`.
+- Sidecar: `ab9baaedafd3fdf19d36ac9362808eed320085e1af765edf5b775f8a5dfd01c9`.
+- DMG: `0b26ef6570cfb41d05fdb0d77d5ff752d1602c4c28b9e244c167f7e987ff88d5`.
