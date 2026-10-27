@@ -15,11 +15,12 @@ type Filter = "all" | "on" | "updates" | "builtin" | "catalog" | "yours";
 let filter: Filter = "all", query = "";
 let detailTab = "overview";
 const size = (bytes: number) => `${Math.ceil(bytes / 1024)} KB`;
-const statusLabel = (status: string) => status === "script" ? "Script · not added" : status === "too-large" ? "Too large" : status === "over-limit" ? "Over limit" : status === "not-text" ? "Not text" : "Type not supported";
+const statusLabel = (status: string) => status === "script" ? "Script · omitted in earlier import" : status === "too-large" ? "Too large" : status === "over-limit" ? "Over limit" : status === "not-text" ? "Not text" : "Type not supported";
 
 const origin = (s: SkillView) => s.source ? "catalog" : s.builtin ? "builtin" : "yours";
 const originLabel = (s: SkillView) => s.source ? s.source.repo : s.builtin ? "Built in" : "Yours";
-const fileText = (s: SkillView) => `---\nname: ${s.name}\ndescription: ${s.description}\n---\n\n${s.body}\n`;
+const fileText = (s: SkillView) => s.text;
+const isScript = (file: string) => /\.(?:py|js|mjs|cjs|ts|tsx|jsx|sh|bash|zsh|ps1|rb|go|rs|swift|php|pl|lua|java|kt|c|cc|cpp|h)$/i.test(file);
 
 // Capability glyphs reuse the app's own integration tile system. Specific
 // names get a recognizable symbol; unfamiliar catalog skills stay cohesive.
@@ -120,7 +121,10 @@ export async function skillsPage(): Promise<HTMLElement[]> {
       if (detailTab === "overview") section.append(group(null,
         s.required ? row("Availability", "Required for canvas and surface authoring. Always on and applied by the runtime.", pill("Always on", "ok")) : row("Use this skill", "When on, the assistant sees its name and description, loads instructions when a request matches, and reads files on demand.", toggle(s.enabled, async on => { list = await api<SkillView[]>(`/api/skills/${s.name}`, { method: "PUT", body: JSON.stringify({ enabled: on }) }); paint(); detail(s.name); })),
         row("Package", `Instructions ${size(new TextEncoder().encode(s.body).length)} · ${s.files?.length ?? 0} files (${size((s.files ?? []).reduce((n, f) => n + f.bytes, 0))})`, pill(originLabel(s))),
-        s.compatibility ? row("Compatibility stated by author", s.compatibility, pill("Check requirements")) : null),
+        s.compatibility ? row("Compatibility stated by author", s.compatibility, pill("Check requirements")) : null,
+        s.license ? row("License stated by author", s.license, pill("Author stated")) : null,
+        s.metadata ? row("Author metadata", Object.entries(s.metadata).map(([key, value]) => `${key}: ${value}`).join(" · "), pill("Info")) : null,
+        s.allowedTools ? row("Requested tools", `${s.allowedTools} · does not grant access`, pill("No authority")) : null),
         ...(s.omitted?.length ? [el("p", { className: "row-hint", textContent: `${s.omitted.length} bundled ${s.omitted.length === 1 ? "file was" : "files were"} not added. Instructions that use them may not work; see Source for the list.` })] : []),
         ...(update ? [group("Update available", el("p", { className: "row-hint", textContent: "Review the current and proposed instructions and files. Updating keeps the on/off choice." }), el("pre", { className: "skill-body", textContent: s.body }), el("pre", { className: "skill-body", textContent: update.body }), el("p", { className: "row-hint", textContent: `Current files: ${(s.files ?? []).map(f => f.path).join(", ") || "none"}. Proposed files: ${(update.files ?? []).map(f => f.path).join(", ") || "none"}.` }), ...(update.files?.length ? [fileRows(update.files, async file => (await api<{ text: string }>(`/api/skills/${s.name}/proposed-file?fingerprint=${encodeURIComponent(update.fingerprint)}&path=${encodeURIComponent(file)}`)).text)] : []), el("div", { className: "row-actions" }, apply), note)] : []),
         el("div", { className: "row-actions" }, button("Edit", () => editor(s)), remove));
@@ -128,7 +132,7 @@ export async function skillsPage(): Promise<HTMLElement[]> {
         const body = el("div", { className: "skill-formatted" }, renderMarkdown(s.body));
         section.append(group("Current instructions", segmented([["formatted", "Formatted"], ["plain", "Plain text"]] as const, "formatted", mode => body.replaceChildren(mode === "plain" ? el("pre", { className: "skill-body", textContent: s.body }) : renderMarkdown(s.body))), body));
         body.addEventListener("click", event => { const link = (event.target as HTMLElement).closest("a"); const file = (s.files ?? []).find(f => link?.getAttribute("href")?.replace(/^\.\//, "") === f.path); if (file) { event.preventDefault(); detailTab = "files"; detail(name); const entry = [...root.querySelectorAll(".skill-file")].find(node => node.querySelector("code")?.textContent === file.path) as HTMLDetailsElement | undefined; if (entry) entry.open = true; } });
-      } else if (detailTab === "files") section.append(group("Supporting files", el("p", { className: "row-hint", textContent: "These files are read on demand and never run." }), fileRows(s.files ?? [], async file => (await api<{ text: string }>(`/api/skills/${s.name}/file?path=${encodeURIComponent(file)}`)).text)));
+      } else if (detailTab === "files") section.append(group("Supporting files", el("p", { className: "row-hint", textContent: "Text and source files are read on demand. Scripts are never run by the skill loader." }), fileRows(s.files ?? [], async file => (await api<{ text: string }>(`/api/skills/${s.name}/file?path=${encodeURIComponent(file)}`)).text)));
       else if (s.source) section.append(group("Source", row("Repository", s.source.repo, el("a", { href: `https://github.com/${s.source.repo}/tree/${s.source.sha}/${s.source.path}`, target: "_blank", rel: "noopener noreferrer", textContent: "View source ↗" })), row("Path and commit", `${s.source.path || "/"} · ${s.source.sha}`, pill(new Date(s.source.addedAt).toLocaleDateString())), s.omitted?.length ? el("details", { className: "skill-file" }, el("summary", { textContent: `${s.omitted.length} bundled files not added` }), el("ul", {}, ...s.omitted.map(f => el("li", {}, el("code", { textContent: f.path }), ` · ${statusLabel(f.status)}`)))) : null));
     };
     const navigation = segmented(tabs, detailTab, tab => { detailTab = tab; render(); });
@@ -199,6 +203,10 @@ export async function skillsPage(): Promise<HTMLElement[]> {
       root.replaceChildren(back, el("div", { className: "catalog-eyebrow", textContent: "REVIEW SKILL" }), ...title(r.name), ...description(r.description), el("div", { className: "badges" }, pill("Unverified"), pill("Starts off"), pill(added.length ? `Instructions + ${added.length} files` : "Instructions only")),
         el("p", { className: "row-hint", textContent: `${r.repo} · ${r.path || "/"} · commit ${r.sha.slice(0, 12)}. A skill cannot grant tools; MCP tools keep their own access and approvals.` }),
         ...(r.compatibility ? [el("p", { className: "row-hint", textContent: `Author's compatibility requirements: ${r.compatibility}` })] : []),
+        ...(r.license ? [el("p", { className: "row-hint", textContent: `Author's license: ${r.license}` })] : []),
+        ...(r.metadata ? [el("p", { className: "row-hint", textContent: `Author metadata: ${Object.entries(r.metadata).map(([key, value]) => `${key}: ${value}`).join(" · ")}` })] : []),
+        ...(r.allowedTools ? [el("p", { className: "row-hint", textContent: `Requested tools: ${r.allowedTools}. This does not grant access.` })] : []),
+        ...(added.some(f => isScript(f.path)) ? [el("p", { className: "row-hint", textContent: "Bundled scripts are stored as reviewable source text only; the skill loader never runs them." })] : []),
         ...(skipped.length ? [el("p", { className: "row-hint", textContent: `${skipped.length} bundled ${skipped.length === 1 ? "file" : "files"} will be omitted. Instructions that use them may not work.` })] : []), tabs, section,
         el("p", { className: "row-hint", textContent: `${added.length} files will be added (${size(added.reduce((n, f) => n + f.bytes, 0))}) · ${skipped.length} not added` }),
         blocked ? el("div", { className: "catalog-notice" }, el("strong", { textContent: "This skill can't be added" }), el("p", { textContent: blocked })) :

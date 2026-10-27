@@ -10,9 +10,9 @@ Twenty-seven skills ship on: assistant, interactive-ui, plan-my-day, write-email
 
 ## Format
 
-A skill is a `SKILL.md` file: a `---` block with `name` (lowercase letters, digits and single hyphens; up to 64) and `description` (when to use it; up to 1024 characters), then the instructions (up to 32 KB). Optional compatibility text is shown; optional metadata and allowed-tools do not change runtime permissions. Catalog skills may carry reviewed supporting text: `.md`, `.markdown`, `.txt`, `.json`, `.yaml`, `.yml`, `.csv`, `.tsv`, `.xml`, `.html`, `.htm`, `LICENSE` and `NOTICE`. Files must decode as UTF-8 without NUL, have safe relative paths (at most eight segments and 200 characters), and fit 256 KiB each, 2 MiB and 50 files per skill. Scripts and binary assets are listed at review but not stored.
+A skill is a `SKILL.md` file: a `---` block with `name` (lowercase letters, digits and single hyphens; up to 64) and `description` (when to use it; up to 1024 characters), then the instructions (up to 32 KB). Optional `license`, `compatibility`, string-valued `metadata` and `allowed-tools` are shown in Settings. Catalog skills may carry reviewed supporting UTF-8 text, including references, templates and script source. Files must have no NUL, use safe relative paths (at most eight segments and 200 characters), and fit 256 KiB each, 2 MiB and 50 files per skill. Binary assets are listed at review but omitted. Source files can be inspected and read as inert references; the skill loader never runs them.
 
-The [Agent Skills format](https://agentskills.io/specification) is the package baseline; [ADR-040](ADR.md#adr-040-standard-skill-packages-app-owned-capabilities-2026-10-27) records the extensions and present limits. The importer supports simple scalar YAML frontmatter and folded/literal descriptions without a new parser dependency. It enforces standard skill names and parent-directory matching for catalog subdirectories; root-level `SKILL.md` is an explicit extension. It shows an author's compatibility text and never treats the experimental `allowed-tools` field as permission. Full YAML syntax, scripts and binary assets are not claimed as supported.
+The [Agent Skills format](https://agentskills.io/specification) is the package baseline; [ADR-040](ADR.md#adr-040-standard-skill-packages-app-owned-capabilities-2026-10-27) records the extensions and present limits. The importer supports plain and quoted scalar fields, folded/literal description, compatibility and license, and a simple two-space-indented string metadata map without a YAML dependency. Unsupported YAML constructs are rejected. It enforces standard skill names and parent-directory matching for catalog subdirectories; root-level `SKILL.md` is an explicit extension. The experimental `allowed-tools` field never grants access. Full YAML syntax, binary assets and script execution are outside the supported subset.
 
 ## How skills chain
 
@@ -37,11 +37,11 @@ Skill selection is verified separately from answer correctness. Historical local
 
 - Six publisher repositories are listed (`shared/skills.ts`, checked October 2026); any public `owner/repository` can be opened.
 - Listings are read at the repository's newest commit at least 14 days old, the same age rule integrations follow. The commit is recorded with the skill.
-- Review lists each bundled file with its classification and size, including files beside a root-level SKILL.md. Expand an eligible text file to see its exact content. Scripts, unsupported types, invalid text and over-limit files remain listed with the reason and are not stored or run.
+- Review lists each bundled file with its classification and size, including files beside a root-level SKILL.md. Expand an eligible text or script source file to see its exact content. Binary assets, unsupported types, invalid text and over-limit files remain listed with the reason and are not stored. Scripts are stored as text and never run by skill loading.
 - Adding requires an acknowledgement covering the instructions and eligible text files. The fingerprint binds the repository, path, pinned commit, instructions and every added file hash. Added skills start off. Editing instructions keeps files; renaming moves them; removal deletes them. Every supporting-file read verifies its stored hash.
 - The installed detail retains a list of files omitted at review. When a package needs those files, its instructions may be incomplete in this app; the review and detail pages say so.
 
-Data: `<data>/skills/<name>/SKILL.md`, supporting text under `<data>/skills/<name>/files/`, and `<data>/skills/skills.json` (on/off state, source and file manifest).
+Data: `<data>/skills/<name>/SKILL.md`, supporting text and inert source files under `<data>/skills/<name>/files/`, and `<data>/skills/skills.json` (on/off state, source and file manifest). Editing a skill starts from its exact stored `SKILL.md` text so optional frontmatter survives.
 
 ## Supporting-file verification (2026-10-27)
 

@@ -27,7 +27,7 @@ The maintained creation/extension method is [SKILL-AUTHORING.md](SKILL-AUTHORING
 
 ## Boundaries and remaining work
 
-- **Instruction-only skill compatibility:** imports retain SKILL.md, not referenced guides/scripts/assets. Review discloses this; installation is not proof that a complete upstream procedure is executable. No general dependency resolver or script runner is introduced.
+- **Skill package compatibility:** imports retain SKILL.md plus reviewed UTF-8 guides and inert script source; binary assets remain omitted. Review discloses missing files; installation is not proof that a complete upstream procedure is executable. No general dependency resolver or script runner is introduced.
 - **Selection quality and context:** first selection sees recent user messages, not the full assistant/tool/workspace context. Follow-up intent and skill relevance still require live outcome evidence. All enabled integration schemas are offered after selection, so a large catalog can still inflate context. No tool-discovery router is added without measured need.
 - **MCP subset:** the client supports tool listing/calling over stdio and HTTP, not a complete resources/prompts/subscriptions/authentication implementation. Tool results are reduced to text; accompanying structured or multimodal content is not preserved as a general typed artifact. These are capability gaps, not guarantees implied by an MCP connection.
 - **Schema coverage:** native input validation uses the existing framework schema subset. It is not a complete external JSON Schema implementation or a substitute for server-side validation. Unsupported schema references fail rather than authorizing an unchecked call.

@@ -19,6 +19,19 @@ test("parses frontmatter and rejects invalid skills", () => {
   assert.throws(() => parseSkill(SKILL.replace("weekly-report", "weekly-report-")));
   assert.equal(parseSkill("---\nname: weekly-report\ndescription: >\n  Use when making\n  a weekly report.\ncompatibility: Requires a local document tool\n---\nSteps.\n").description, "Use when making a weekly report.");
   assert.equal(parseSkill("---\nname: weekly-report\ndescription: Use on request.\ncompatibility: Requires a local document tool\n---\nSteps.\n").compatibility, "Requires a local document tool");
+  const optional = "---\nname: weekly-report\ndescription: 'Use when author''s report is requested.'\nlicense: MIT\ncompatibility: Local tools required\nmetadata:\n  author: 'A. Example'\n  version: \"1.2\"\nallowed-tools: Bash(python:*)\n---\nSteps.\n";
+  assert.deepEqual(parseSkill(optional).metadata, { author: "A. Example", version: "1.2" });
+  assert.equal(parseSkill(optional).description, "Use when author's report is requested.");
+  assert.equal(parseSkill(optional).license, "MIT");
+  assert.equal(parseSkill(optional).allowedTools, "Bash(python:*)");
+  assert.throws(() => parseSkill(optional.replace("  version: \"1.2\"", "  version: 1\n    nested: invalid")), /Unsupported/);
+  assert.throws(() => parseSkill(optional.replace("metadata:", "metadata: {}")), /Metadata/);
+  assert.throws(() => parseSkill(optional.replace("license: MIT", "license: [MIT]")), /Unsupported/);
+  const manager = new Skills(dir());
+  manager.save(optional);
+  assert.equal(manager.view().find(s => s.name === "weekly-report")?.text, optional);
+  manager.save(manager.view().find(s => s.name === "weekly-report")!.text, "weekly-report");
+  assert.equal(manager.view().find(s => s.name === "weekly-report")?.metadata?.version, "1.2");
 });
 
 test("built-ins are planted on, once; a removed one stays removed", () => {
@@ -128,11 +141,12 @@ test("catalog adds exactly the reviewed text, pinned and off", async () => {
   for (const b of s.view()) if (!b.required) s.remove(b.name);
   const [item] = await s.search("owner/repo");
   const r = await s.review("owner/repo", item!.path);
-  assert.deepEqual(r.files.map(f => [f.path, f.status]), [["run.sh", "script"]]);
+  assert.deepEqual(r.files.map(f => [f.path, f.status]), [["run.sh", "added"]]);
   assert.throws(() => s.add(r.fingerprint, false));
   assert.equal(s.add(r.fingerprint, true), "weekly-report");
   const saved = s.view().find(skill => skill.name === "weekly-report")!;
   assert.equal(saved.enabled, false); assert.equal(saved.source!.sha, sha);
+  assert.match(s.fileText("weekly-report", "run.sh").text, /weekly-report/);
   assert.throws(() => s.add(r.fingerprint, true));
 });
 
@@ -264,19 +278,21 @@ test("review classifies files, binds bytes, stores exactly reviewed text and che
     if (url.endsWith("/SKILL.md")) return new Response(SKILL);
     if (url.endsWith("/palette.md")) return new Response(palette);
     if (url.endsWith("/bad.txt")) return new Response(new Uint8Array([0xff, 0xfe]));
+    if (url.endsWith("/run.py")) return new Response("print('review only')\n");
     throw new Error(`Unexpected fetch: ${url}`);
   }) as typeof fetch;
   const skills = new Skills(data, fetcher);
   const first = await skills.review("owner/repo", "");
-  assert.deepEqual(Object.fromEntries(first.files.map(f => [f.path, f.status])), { "../escape.md": "unsupported", "a//b.md": "unsupported", "bad.txt": "not-text", "huge.md": "too-large", "palette.md": "added", "photo.png": "unsupported", "run.py": "script" });
+  assert.deepEqual(Object.fromEntries(first.files.map(f => [f.path, f.status])), { "../escape.md": "unsupported", "a//b.md": "unsupported", "bad.txt": "not-text", "huge.md": "too-large", "palette.md": "added", "photo.png": "unsupported", "run.py": "added" });
   assert.equal(skills.reviewFile(first.fingerprint, "palette.md"), palette);
-  assert.throws(() => skills.reviewFile(first.fingerprint, "run.py"), /Unknown/);
+  assert.match(skills.reviewFile(first.fingerprint, "run.py"), /review only/);
   palette = "blue: #00f\n";
   const second = await skills.review("owner/repo", "");
   assert.notEqual(first.fingerprint, second.fingerprint);
   skills.add(first.fingerprint, true);
-  assert.equal(skills.view().find(s => s.name === "weekly-report")?.omitted?.length, 6);
+  assert.equal(skills.view().find(s => s.name === "weekly-report")?.omitted?.length, 5);
   assert.equal(skills.fileText("weekly-report", "palette.md").text, "red: #f00\n");
+  assert.match(skills.fileText("weekly-report", "run.py").text, /review only/);
   assert.throws(() => skills.fileText("weekly-report", "../skills.json"), /Unknown file/);
   const file = path.join(data, "skills", "weekly-report", "files", "palette.md");
   writeFileSync(file, "tampered");

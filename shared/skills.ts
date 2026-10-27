@@ -1,12 +1,12 @@
 export interface SkillView {
-  name: string; description: string; enabled: boolean; body: string; builtin?: boolean; required?: boolean;
+  name: string; description: string; enabled: boolean; body: string; text: string; builtin?: boolean; required?: boolean;
   update?: { description: string; body: string; files?: SkillFile[]; fingerprint: string; currentFingerprint: string };
   source?: { repo: string; path: string; sha: string; addedAt: string };
   /** Reviewed supporting text files stored with the skill; read on demand, never run. */
   files?: SkillFile[];
   /** Files present upstream but outside the current text-only import tier. */
   omitted?: SkillFile[];
-  compatibility?: string;
+  compatibility?: string; license?: string; metadata?: Record<string, string>; allowedTools?: string;
 }
 export type SkillFileStatus = "added" | "script" | "unsupported" | "too-large" | "over-limit" | "not-text";
 export interface SkillFile { path: string; bytes: number; status: SkillFileStatus; sha256?: string }
@@ -21,5 +21,5 @@ export const SKILL_SOURCES = [
 ];
 export interface SkillListing { repo: string; path: string; name: string; sha: string }
 export interface SkillReview extends SkillListing {
-  description: string; body: string; compatibility?: string; files: SkillFile[]; fingerprint: string; existing: boolean; blocked?: string;
+  description: string; body: string; compatibility?: string; license?: string; metadata?: Record<string, string>; allowedTools?: string; files: SkillFile[]; fingerprint: string; existing: boolean; blocked?: string;
 }

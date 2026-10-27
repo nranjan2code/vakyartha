@@ -2,7 +2,7 @@
 
 This is the maintained implementation guide for people and coding agents creating Vakyartha skills, dashboards, forms and reports. Start here before adding workflow code. [SKILLS.md](SKILLS.md) owns the loader/import/update contract; [SPECS.md](SPECS.md) owns the app architecture; [SKILL-AUDIT.md](SKILL-AUDIT.md) records the audit and evidence, rather than defining a second runtime.
 
-Catalog skills may include reviewed supporting text files for reusable examples, layout guidance, form schemas and reference material. Keep the procedure in `SKILL.md`; point to a specific relative file when its contents are needed so the assistant can load it with `read_skill_file`. Supporting text is reference data, never an execution path or permission grant. Scripts and binary templates remain outside the current import tier. See [SKILLS.md](SKILLS.md) for supported types and limits.
+Catalog skills may include reviewed supporting text files for reusable examples, layout guidance, form schemas, source code and reference material. Keep the procedure in `SKILL.md`; point to a specific relative file when its contents are needed so the assistant can load it with `read_skill_file`. Supporting text, including script source, is reference data and never an execution path or permission grant. Binary templates remain outside the current import tier. See [SKILLS.md](SKILLS.md) for supported types and limits.
 
 ## Choose the existing path first
 
@@ -57,7 +57,7 @@ Daily, weekly and monthly describe a reporting window unless the person requests
 
 ## Author and activate a skill
 
-Use a flat frontmatter block with `name` and `description`, followed by a self-contained body. Names use lowercase letters, digits and hyphens, up to 64 characters. Description is up to 1024 characters; body is up to 32768 characters. Rich YAML metadata is not a feature contract. Vakyartha stores reviewed UTF-8 text references with SKILL.md; scripts and binary assets remain listed but unavailable.
+Use a frontmatter block with `name` and `description`, followed by a self-contained body. Names use lowercase letters, digits and hyphens, up to 64 characters. Description is up to 1024 characters; body is up to 32768 characters. Optional scalar `license`/`compatibility` and a simple string `metadata` map are supported; full YAML is not a feature contract. Vakyartha stores reviewed UTF-8 references and inert script source with SKILL.md. Binary assets remain visible but unavailable; source text does not grant execution authority.
 
 Example instruction file:
 

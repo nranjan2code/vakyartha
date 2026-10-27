@@ -1,6 +1,6 @@
 // Maintained authoring method: docs/SKILL-AUTHORING.md; lifecycle: docs/SKILLS.md.
-// Skills are reviewed instructions and supporting text. Bundled scripts are
-// listed but never stored or run. The system prompt carries only each
+// Skills are reviewed instructions and supporting text, including inert source
+// files. The system prompt carries only each
 // enabled skill's name and description; `use_skill` loads the instructions when
 // a request matches, so skills chain without filling every turn's context.
 import { createHash, randomUUID } from "node:crypto";
@@ -28,8 +28,7 @@ function safeRelative(value: string): boolean {
 }
 function classify(file: string, bytes: number): SkillFile["status"] {
   if (!safeRelative(file)) return "unsupported";
-  if (SCRIPT_EXT.test(file)) return "script";
-  if (!(TEXT_EXT.test(file) || /^(?:LICENSE(?:\.txt)?|NOTICE)$/i.test(path.posix.basename(file)))) return "unsupported";
+  if (!(TEXT_EXT.test(file) || SCRIPT_EXT.test(file) || /^(?:LICENSE(?:\.txt)?|NOTICE)$/i.test(path.posix.basename(file)))) return "unsupported";
   return bytes > MAX_FILE ? "too-large" : "added";
 }
 const hash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
@@ -39,29 +38,50 @@ function packageFingerprint(text: string, files: { path: string; sha256: string 
   return digest.digest("hex");
 }
 
-/** Parse the supported scalar frontmatter subset; nested optional metadata is ignored. */
-export function parseSkill(text: string): { name: string; description: string; body: string; compatibility?: string } {
+/** Parse the specification's scalar fields and string metadata without granting authority. */
+export function parseSkill(text: string): { name: string; description: string; body: string; compatibility?: string; license?: string; metadata?: Record<string, string>; allowedTools?: string } {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text.replace(/^﻿/, ""));
   if (!m) throw new Error("A skill starts with a --- block that sets name and description");
   const meta: Record<string, string> = {};
+  const metadata: Record<string, string> = {};
+  let seenMetadata = false;
+  const scalar = (raw: string): string => {
+    const value = raw.trim();
+    if (/^[\[{&*!]/.test(value)) throw new Error("Unsupported skill frontmatter value");
+    if (value.startsWith('"')) { try { const parsed = JSON.parse(value); if (typeof parsed === "string") return parsed; } catch { /* invalid quoted scalar */ } throw new Error("Invalid quoted skill metadata"); }
+    if (value.startsWith("'")) { if (!value.endsWith("'")) throw new Error("Invalid quoted skill metadata"); return value.slice(1, -1).replaceAll("''", "'"); }
+    return value.replace(/\s+#.*$/, "").trimEnd();
+  };
   const lines = m[1]!.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
-    const kv = /^([\w-]+):\s*(.*)$/.exec(lines[i]!);
-    if (!kv) continue;
+    const line = lines[i]!;
+    if (!line.trim() || /^\s*#/.test(line)) continue;
+    const kv = /^([\w-]+):\s*(.*)$/.exec(line);
+    if (!kv) throw new Error("Unsupported skill frontmatter syntax");
     const key = kv[1]!, raw = kv[2]!.trim();
-    if ((key === "name" || key === "description") && key in meta) throw new Error(`Duplicate ${key} in skill frontmatter`);
-    if ((raw === ">" || raw === "|" || raw === ">-" || raw === "|-") && (key === "description" || key === "compatibility")) {
+    if (key === "metadata") {
+      if (seenMetadata || raw) throw new Error("Metadata must be a map of string values");
+      seenMetadata = true;
+      while (i + 1 < lines.length && /^  \S/.test(lines[i + 1]!)) {
+        const entry = /^  ([\w.-]+):\s*(.*)$/.exec(lines[++i]!);
+        if (!entry || entry[1]! in metadata) throw new Error("Invalid or duplicate skill metadata key");
+        metadata[entry[1]!] = scalar(entry[2]!);
+      }
+      continue;
+    }
+    if (key in meta) throw new Error(`Duplicate ${key} in skill frontmatter`);
+    if ([">", "|", ">-", "|-", ">+", "|+"].includes(raw) && ["description", "compatibility", "license"].includes(key)) {
       const block: string[] = [];
       while (i + 1 < lines.length && (/^\s/.test(lines[i + 1]!) || lines[i + 1] === "")) block.push(lines[++i]!.replace(/^ {2}/, ""));
       meta[key] = raw.startsWith(">") ? block.join(" ").replace(/\s+/g, " ").trim() : block.join("\n").trim();
-    } else meta[key] = raw.replace(/^(["'])(.*)\1$/, "$2");
+    } else meta[key] = scalar(raw);
   }
   const name = meta.name ?? "", description = meta.description ?? "", body = m[2]!.trim();
   if (name.length > 64 || !NAME.test(name)) throw new Error("A skill name uses lowercase letters, digits and single hyphens (up to 64)");
   if (!description || description.length > 1024) throw new Error("A skill needs a description of up to 1024 characters");
   if (meta.compatibility && meta.compatibility.length > 500) throw new Error("Skill compatibility must be at most 500 characters");
   if (!body || body.length > MAX_BODY) throw new Error(`A skill needs instructions of up to ${MAX_BODY} characters`);
-  return { name, description, body, compatibility: meta.compatibility };
+  return { name, description, body, ...(meta.compatibility ? { compatibility: meta.compatibility } : {}), ...(meta.license ? { license: meta.license } : {}), ...(Object.keys(metadata).length ? { metadata } : {}), ...(meta["allowed-tools"] ? { allowedTools: meta["allowed-tools"] } : {}) };
 }
 
 export class Skills {
@@ -126,7 +146,7 @@ export class Skills {
       const proposedFiles = pkg ? this.builtinManifest(pkg) : [];
       const currentFingerprint = packageFingerprint(skill.text, s.files ?? []);
       const update = pkg && next && packageFingerprint(pkg.text, proposedFiles) !== currentFingerprint ? { description: next.description, body: next.body, files: proposedFiles.map(f => ({ ...f, status: "added" as const })), fingerprint: packageFingerprint(pkg.text, proposedFiles), currentFingerprint } : undefined;
-      return [{ name, description: skill.description, body: skill.body, compatibility: skill.compatibility, enabled: s.enabled, builtin: s.builtin, required: name === REQUIRED_SKILL, source: s.source, files: s.files?.map(f => ({ ...f, status: "added" as const })), omitted: s.omitted, ...(update ? { update } : {}) }];
+      return [{ name, description: skill.description, body: skill.body, text: skill.text, compatibility: skill.compatibility, license: skill.license, metadata: skill.metadata, allowedTools: skill.allowedTools, enabled: s.enabled, builtin: s.builtin, required: name === REQUIRED_SKILL, source: s.source, files: s.files?.map(f => ({ ...f, status: "added" as const })), omitted: s.omitted, ...(update ? { update } : {}) }];
     }).sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -513,7 +533,7 @@ export class Skills {
     let review: SkillReview;
     try {
       const s = parseSkill(text);
-      review = { ...listing, name: s.name, description: s.description, compatibility: s.compatibility, body: s.body, files, fingerprint, existing: Boolean(this.saved[s.name]), ...(listing.path && path.posix.basename(listing.path) !== s.name ? { blocked: "Skill name must match its parent directory, as required by the Agent Skills format" } : {}) };
+      review = { ...listing, name: s.name, description: s.description, compatibility: s.compatibility, license: s.license, metadata: s.metadata, allowedTools: s.allowedTools, body: s.body, files, fingerprint, existing: Boolean(this.saved[s.name]), ...(listing.path && path.posix.basename(listing.path) !== s.name ? { blocked: "Skill name must match its parent directory, as required by the Agent Skills format" } : {}) };
     } catch (err) {
       review = { ...listing, description: "", body: text, files, fingerprint, existing: false, blocked: (err as Error).message };
     }

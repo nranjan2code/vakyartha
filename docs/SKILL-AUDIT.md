@@ -2,16 +2,17 @@
 
 ## Current package and runtime review — 2026-10-27
 
-The [current external package specification](https://agentskills.io/specification) retains a folder with `SKILL.md`, required `name`/`description`, optional `scripts/`, `references/` and `assets/`, and staged loading of metadata, instructions and resources. Vakyartha has this folder and staged-loading shape for supported text references. Its parser accepts a documented YAML subset; it does not claim full YAML syntax, executable scripts or binary assets. The root-level import is a stated extension. The experimental `allowed-tools` field never grants authority. An unsupported resource must remain visible as omitted, because its absence can make a third-party skill incomplete. This is useful interoperability with a declared subset, not full package/runtime parity.
+The [current external package specification](https://agentskills.io/specification) retains a folder with `SKILL.md`, required `name`/`description`, optional `scripts/`, `references/` and `assets/`, and staged loading of metadata, instructions and resources. Vakyartha has this folder and staged-loading shape for supported UTF-8 references and inert script source. Its parser accepts a documented YAML subset with optional `license`, `compatibility`, string `metadata` and `allowed-tools`; it does not claim full YAML syntax, executable scripts or binary assets. The root-level import is a stated extension. The experimental `allowed-tools` field never grants authority. Unsupported resources remain visible as omitted, because their absence can make a third-party skill incomplete.
 
 Actual execution evidence matters more than folder shape. The installed one-card smoke selected only `surface-design`, then rendered the requested card; it did not load `market-dashboard`. Recorded usage was 899 input tokens for selection (3.7s) and 15,732 for the authoring step (63.9s). The second request carried 37,190 characters of authoring schema, 17,518 characters of system instructions and 3,556 characters of returned skill context. These are character counts, not a token attribution. The frozen fictional market request selected its domain skill, read both references and produced one canonical five-row history with mapped chart/table and checked 5% price return after a general complete-data instruction correction. Its first run's empty-data failure remains retained. See [evaluation](EVALUATION.md#bundled-packages-and-market-dashboard--2026-10-27). One supplied-data success does not establish real-source freshness, calendar/adjustment handling, continuation or output receipts.
 
-Next evidence gates, in order:
+Current work, in order:
 
-1. Run a frozen, real source-backed market request on the primary local provider. Independently check source identity/time, observation window, values, return basis, chart/table and spoken interpretation, interactions and any requested receipt. Retain failures. This is the missing product outcome.
-2. Measure a general reduction of the authoring contract's schema/system cost in Projection, with the same outcome cases and all supported surface kinds. The simple card's 15,732-token authoring input shows that shortening skill prose alone cannot address most latency. Keep multiple surfaces and canonical validation; avoid app-side output repair.
-3. Add a small interoperability corpus of representative external folders and standard optional frontmatter/reference forms. Report accepted, omitted and blocked content explicitly. Decide on any broader YAML or asset support separately; executable resources require the existing governed tool/approval boundary, not a skill-file authority shortcut.
-4. Expand built-in reusable examples only where a measured domain outcome benefits. Keep examples as replaceable structure, with source facts and derived results checked at runtime.
+1. Reduce the measured authoring request cost while retaining available tool access and all surface types. Projection now removes 4,392 repeated characters from the core strict tool schema. The local record-view gate still failed at initial values; this is a measured mechanism reduction, not a latency or outcome pass. A local attempt to select integration-tool groups alongside skills was unreliable and was discarded. Further tool discovery needs a separately proved design.
+2. Expand package compatibility with standard frontmatter and reference forms. The importer now preserves optional fields through Settings editing and stores reviewed script source as inert UTF-8 text; binary assets remain explicit omissions. A script never gains authority from the package; execution requires a governed runtime boundary.
+3. Add reusable examples only where a measured task benefits. Keep source facts and derived results checked at runtime.
+
+The earlier market-source gap remains in retained evaluation evidence and is deferred at the user's request. Pinned external smoke: `openai/skills` `skills/.curated/pdf` reviewed with two accepted text files and one omitted asset; `anthropics/skills` `skills/pdf` reviewed with 11 accepted text files, eight of them inert script sources. Neither package was installed into user data.
 
 ## Scope and evidence
 
@@ -33,7 +34,7 @@ This is an audit and implementation of instruction coverage and layout mechanism
 | Context and memory | Selected user-configured external tools; local canonical chat/task state | No parallel retrieval store or implicit cross-chat memory |
 | Background work | Bounded app-owned tasks and one-time schedules while running/awake | A displayed agenda or tracker is not recurrence, notifications or continuous monitoring |
 | Skill loading | Enabled names/descriptions, counted selection, then selected bodies | Keep descriptions distinct and collaborators conditional; no hard-coded keyword router |
-| Skill imports | Reviewed SKILL.md and supported text references; scripts/assets are disclosed but omitted | The creator should make references self-contained and avoid required executable assets |
+| Skill imports | Reviewed SKILL.md, supported text references and inert script source; binary assets are disclosed but omitted | The creator should make references self-contained and avoid required binary assets or executable behavior |
 | Other channels | Separate execution wiring | Do not claim chat/task skill or interaction parity everywhere |
 
 ## Existing fourteen skills

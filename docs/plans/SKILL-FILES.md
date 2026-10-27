@@ -2,7 +2,7 @@
 
 2026-10-27. Implemented and verified; S1 evidence is in [EVALUATION.md](../EVALUATION.md). Lifecycle contract: [SKILLS.md](../SKILLS.md). Authoring method: [SKILL-AUTHORING.md](../SKILL-AUTHORING.md).
 
-This is the retained design and acceptance record. Each phase lists the files changed, behavior, tests and checks. No files under `framework/` were changed; Projection's public `AgentTool` with `kind: "context"` supports this design.
+This is the retained tier-1 design and acceptance record. Its script classification and tier labels below describe the original implementation, not the current importer. The current contract is [SKILLS.md](../SKILLS.md): reviewed UTF-8 script source is now stored as inert reference text; binary assets remain omitted; optional standard frontmatter is preserved when edited. No skill file grants tool access or execution authority. No files under `framework/` were changed for the tier-1 design; Projection's public `AgentTool` with `kind: "context"` supports it.
 
 ## Problem
 
@@ -37,7 +37,7 @@ Before this change, a catalog skill was reviewed as a folder but `Skills.add` st
 | Edit | Editing `SKILL.md` keeps the files and their manifest; renaming moves the folder | Users fix instructions without losing references |
 | Integrity | Each stored file's SHA-256 is recorded and re-checked on every read; mismatch is an error, not a fallback | Local tampering is visible |
 
-If the user wants scripts stored as readable text (still never run), it means one change to the classification table. Ask before making it.
+The later interoperability update superseded this decision after the user requested support for reusable source files. See the current contract linked above.
 
 ## Data model
 
