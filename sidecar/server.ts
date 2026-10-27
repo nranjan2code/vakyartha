@@ -306,15 +306,14 @@ ${skills.index()}`;
   }
 
   function withSkill<T>(tools: T[]): T[] {
-    const tool = skills.tool();
-    return tool ? [...tools, tool as T] : tools;
+    return [...tools, ...skills.tools() as T[]];
   }
 
   async function skillsRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     const p = url.pathname;
     if (!p.startsWith("/api/skills")) return false;
     try {
-      const m = /^\/api\/skills(?:\/(catalog|review|add|icon)|\/([a-z0-9-]+))?$/.exec(p);
+      const m = /^\/api\/skills(?:\/(catalog|review|review-file|describe|add|icon)|\/([a-z0-9-]+)(?:\/(file))?)?$/.exec(p);
       if (!m) json(res, 404, { error: "Unknown skill route" });
       else if (m[1] === "catalog" && req.method === "GET") json(res, 200, await skills.search(url.searchParams.get("repo") ?? ""));
       else if (m[1] === "icon" && req.method === "GET") {
@@ -323,7 +322,10 @@ ${skills.index()}`;
         res.end(image.bytes);
       }
       else if (m[1] === "review" && req.method === "POST") { const b = await readJson(req); json(res, 200, await skills.review(String(b.repo ?? ""), String(b.path ?? ""))); }
+      else if (m[1] === "review-file" && req.method === "POST") { const b = await readJson(req); json(res, 200, { text: skills.reviewFile(String(b.fingerprint ?? ""), String(b.path ?? "")) }); }
+      else if (m[1] === "describe" && req.method === "POST") { const b = await readJson(req); json(res, 200, await skills.describe(String(b.repo ?? ""), b.paths)); }
       else if (m[1] === "add" && req.method === "POST") { const b = await readJson(req); json(res, 200, { name: skills.add(String(b.fingerprint ?? ""), b.acknowledged === true) }); }
+      else if (m[2] && m[3] === "file" && req.method === "GET") json(res, 200, skills.fileText(m[2], url.searchParams.get("path") ?? ""));
       else if (!m[1] && !m[2] && req.method === "GET") json(res, 200, skills.view());
       else if (!m[1] && !m[2] && req.method === "POST") { const b = await readJson(req); json(res, 200, skills.save(String(b.text ?? ""))); }
       else if (m[2] && req.method === "PUT") { const b = await readJson(req); if (typeof b.enabled === "boolean") skills.setEnabled(m[2], b.enabled); else if (typeof b.updateFingerprint === "string") skills.updateBuiltin(m[2], b.updateFingerprint, String(b.currentFingerprint ?? "")); else skills.save(String(b.text ?? ""), m[2]); json(res, 200, skills.view()); }

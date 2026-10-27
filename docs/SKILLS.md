@@ -10,7 +10,9 @@ Twenty-seven skills ship on: assistant, interactive-ui, plan-my-day, write-email
 
 ## Format
 
-A skill is a `SKILL.md` file: a `---` block with `name` (lowercase letters, digits, hyphens; up to 64) and `description` (when to use it; up to 1024 characters), then the instructions (up to 32 KB). Other frontmatter keys are ignored.
+A skill is a `SKILL.md` file: a `---` block with `name` (lowercase letters, digits and single hyphens; up to 64) and `description` (when to use it; up to 1024 characters), then the instructions (up to 32 KB). Optional compatibility text is shown; optional metadata and allowed-tools do not change runtime permissions. Catalog skills may carry reviewed supporting text: `.md`, `.markdown`, `.txt`, `.json`, `.yaml`, `.yml`, `.csv`, `.tsv`, `.xml`, `.html`, `.htm`, `LICENSE` and `NOTICE`. Files must decode as UTF-8 without NUL, have safe relative paths (at most eight segments and 200 characters), and fit 256 KiB each, 2 MiB and 50 files per skill. Scripts and binary assets are listed at review but not stored.
+
+The [Agent Skills format](https://agentskills.io/specification) is the package baseline; [ADR-040](ADR.md#adr-040-standard-skill-packages-app-owned-capabilities-2026-10-27) records the extensions and present limits. The importer supports simple scalar YAML frontmatter and folded/literal descriptions without a new parser dependency. It enforces standard skill names and parent-directory matching for catalog subdirectories; root-level `SKILL.md` is an explicit extension. It shows an author's compatibility text and never treats the experimental `allowed-tools` field as permission. Full YAML syntax, scripts and binary assets are not claimed as supported.
 
 ## How skills chain
 
@@ -19,6 +21,7 @@ A skill is a `SKILL.md` file: a `---` block with `name` (lowercase letters, digi
 - Changing enabled skills after a run is prepared fails explicitly if its selection context is stale, instead of bypassing selection.
 - Schema-capable providers constrain the selection; other providers get one native selection tool with validation before dispatch. Invalid, interrupted or cancelled selection does not unlock answer tools. Task budgets, provider usage and conversation records include selection. This guarantees a selection step, not that the selected skills or resulting answer are semantically correct.
 - Trusted local context loading uses answer-step limits and stays available when external-operation allowance is zero. It records no external operation; the selection generation is still metered. Further skill loads use the same bounded loop, without a fixed extra stage per skill.
+- When a loaded skill has supporting files, `use_skill` lists their names and sizes. `read_skill_file` reads one file from a skill loaded in that run, at most 16,000 characters per page with an offset for more. It cannot read a merely enabled, disabled or unrelated skill. File text is reference data and never grants permissions.
 - Skills never grant access: integration tools keep their policies and approvals. Scheduled tasks get `use_skill` alongside their selected capabilities.
 - Voice and channel provider requests receive required surface-design guidance whenever the surface authoring contract is present. Optional skill selection remains separate; channel-specific tool and approval behavior is otherwise unchanged.
 
@@ -34,10 +37,15 @@ Skill selection is verified separately from answer correctness. Historical local
 
 - Six publisher repositories are listed (`shared/skills.ts`, checked October 2026); any public `owner/repository` can be opened.
 - Listings are read at the repository's newest commit at least 14 days old, the same age rule integrations follow. The commit is recorded with the skill.
-- Review shows the exact instructions and any bundled files, including files beside a root-level SKILL.md. Bundled files (scripts, resources) are never imported or run.
-- Adding requires an acknowledgement and stores exactly the reviewed text (bound by fingerprint). Added skills start off.
+- Review lists each bundled file with its classification and size, including files beside a root-level SKILL.md. Expand an eligible text file to see its exact content. Scripts, unsupported types, invalid text and over-limit files remain listed with the reason and are not stored or run.
+- Adding requires an acknowledgement covering the instructions and eligible text files. The fingerprint binds the repository, path, pinned commit, instructions and every added file hash. Added skills start off. Editing instructions keeps files; renaming moves them; removal deletes them. Every supporting-file read verifies its stored hash.
+- The installed detail retains a list of files omitted at review. When a package needs those files, its instructions may be incomplete in this app; the review and detail pages say so.
 
-Data: `<data>/skills/<name>/SKILL.md` and `<data>/skills/skills.json` (on/off state and source).
+Data: `<data>/skills/<name>/SKILL.md`, supporting text under `<data>/skills/<name>/files/`, and `<data>/skills/skills.json` (on/off state, source and file manifest).
+
+## Supporting-file verification (2026-10-27)
+
+Unit tests cover classification, pinned-byte fingerprints, on-disk integrity, load scope, paging, rename and removal. The WebKit skills check exercises a local catalog at 1100/620 px and a narrow 375 px review. Real catalog and local-model outcome evidence is recorded in [EVALUATION.md](EVALUATION.md); these checks do not imply a successful model outcome until the three fresh runs pass.
 
 ## Verification (2026-10-26)
 
@@ -65,7 +73,7 @@ Thirteen focused built-ins add surface design, operational dashboards, data revi
 
 `surface-design` applies to forms, tables, cards, metrics, charts and mixed canvases. Projection's common `maxWidth: sm|md|lg|full` constrains any component independently of grid span. Explicit numeric grids preserve unused tracks; automatic grids remain fluid. Skill text cannot inject arbitrary styling. App theme tokens supply heading/value weight, spacing and corners.
 
-`create-skill` produces a self-contained instruction draft in the supported flat-frontmatter format. No model-facing skill-install tool is currently offered: adding/enabling/updating remains a reviewed Settings action, or a separately authorized file operation through an offered tool. It does not assume scripts or supporting assets will be imported.
+`create-skill` produces a self-contained instruction draft in the supported frontmatter subset. No model-facing skill-install tool is currently offered: adding/enabling/updating remains a reviewed Settings action, or a separately authorized file operation through an offered tool. It does not assume scripts or binary assets will be imported.
 
 New entries seed once; changed defaults use the existing reviewed update flow. Updates to required surface-design preserve its always-on state; startup restores a missing or previously disabled required default. Source changes do not update the installed application or replace its local skill files. The fresh primary-local mapped-table gate passed one of three cases; two stopped at the fixed 60-second deadline with no canonical output. Retained evidence and verification scope: [audit](SKILL-AUDIT.md). No end-to-end daily-workflow reliability gate is closed by these instruction changes.
 

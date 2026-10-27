@@ -8,10 +8,14 @@ import { skillPublisherIcon } from "./catalog-icons.ts";
 import { icon, tile } from "./icons.ts";
 import { group, pill, row, segmented, title, toggle } from "./ui.ts";
 import { SKILL_SOURCES, type SkillListing, type SkillReview, type SkillView } from "../shared/skills.ts";
+import { renderMarkdown } from "@vak/web";
 
 const TEMPLATE = "---\nname: my-skill\ndescription: When to use this skill, in one sentence.\n---\n\nSteps the assistant follows when this skill applies.\n";
 type Filter = "all" | "on" | "updates" | "builtin" | "catalog" | "yours";
 let filter: Filter = "all", query = "";
+let detailTab = "overview";
+const size = (bytes: number) => `${Math.ceil(bytes / 1024)} KB`;
+const statusLabel = (status: string) => status === "script" ? "Script · not added" : status === "too-large" ? "Too large" : status === "over-limit" ? "Over limit" : status === "not-text" ? "Not text" : "Type not supported";
 
 const origin = (s: SkillView) => s.source ? "catalog" : s.builtin ? "builtin" : "yours";
 const originLabel = (s: SkillView) => s.source ? s.source.repo : s.builtin ? "Built in" : "Yours";
@@ -48,10 +52,10 @@ export async function skillsPage(): Promise<HTMLElement[]> {
 
   function paint(): void {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    const shown = list.filter(s => (filter === "all" || (filter === "on" ? s.enabled : filter === "updates" ? Boolean(s.update) : origin(s) === filter)) && words.every(w => `${s.name} ${s.description}`.toLowerCase().includes(w)));
+    const shown = list.filter(s => (filter === "all" || (filter === "on" ? s.enabled : filter === "updates" ? Boolean(s.update) : origin(s) === filter)) && words.every(w => `${s.name} ${s.description} ${s.files?.length ? "files" : ""} ${(s.files ?? []).map(f => f.path).join(" ")}`.toLowerCase().includes(w)));
     grid.replaceChildren(...shown.map(s => {
       const mark = s.source ? skillPublisherIcon(s.source.repo, 40) : tile(SKILL_GLYPHS[s.name] ?? "spark", 40);
-      const card = el("button", { type: "button", className: "market-card" }, mark, el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-pub", textContent: originLabel(s) }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(originLabel(s)), pill(s.required ? "Always on" : s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.update ? pill("Update", "bad") : null, el("span", { className: "market-card-action" }, "Manage", icon("arrow", 14))));
+      const card = el("button", { type: "button", className: "market-card" }, mark, el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(originLabel(s)), pill(s.required ? "Always on" : s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.files?.length ? pill(`${s.files.length} files`) : null, s.update ? pill("Update") : null, el("span", { className: "market-card-action" }, "Manage", icon("arrow", 14))));
       card.addEventListener("click", () => detail(s.name));
       return card;
     }));
@@ -68,10 +72,38 @@ export async function skillsPage(): Promise<HTMLElement[]> {
   }
   const backHome = () => button("‹ Skills", () => { void reload().then(home); });
 
+  function description(text: string): HTMLElement[] {
+    const body = el("p", { className: "lead skill-description", textContent: text });
+    if (text.length <= 180) return [body];
+    const more = button("Read full description", () => {
+      const expanded = body.classList.toggle("expanded");
+      more.textContent = expanded ? "Show less" : "Read full description";
+      more.setAttribute("aria-expanded", String(expanded));
+    });
+    more.setAttribute("aria-expanded", "false");
+    return [body, more];
+  }
+
+  function fileRows(files: NonNullable<SkillView["files"]>, load: (path: string) => Promise<string>): HTMLElement {
+    const box = el("div", { className: "skill-files" });
+    for (const file of files.toSorted((a, b) => a.path.localeCompare(b.path))) {
+      const content = el("div", { className: "skill-file-content" });
+      const details = el("details", { className: "skill-file" }, el("summary", {}, el("code", { textContent: file.path }), el("span", { textContent: size(file.bytes) })), content);
+      details.addEventListener("toggle", async () => {
+        if (!details.open || content.dataset.loaded) return;
+        content.dataset.loaded = "true"; content.textContent = "Loading…";
+        try { const value = await load(file.path); content.replaceChildren(/\.md$/i.test(file.path) ? renderMarkdown(value) : el("pre", { className: "skill-body", textContent: value })); }
+        catch (err) { content.replaceChildren(el("p", { role: "alert", textContent: (err as Error).message })); }
+      });
+      box.append(details);
+    }
+    return box;
+  }
+
   function detail(name: string): void {
     const s = list.find(x => x.name === name);
     if (!s) { home(); return; }
-    const remove = s.required ? null : button("Remove", async () => { if (await ask(`Remove the skill ${s.name}?`, "Remove")) { await api(`/api/skills/${s.name}`, { method: "DELETE" }); await reload(); home(); } });
+    const remove = s.required ? null : button("Remove", async () => { if (await ask(`Remove the skill ${s.name}${s.files?.length ? ` and its ${s.files.length} files` : ""}?`, "Remove")) { await api(`/api/skills/${s.name}`, { method: "DELETE" }); await reload(); home(); } });
     const note = el("p", { className: "row-hint", role: "status" });
     const update = s.update;
     const apply = button("Update skill", async () => {
@@ -80,14 +112,28 @@ export async function skillsPage(): Promise<HTMLElement[]> {
       try { await api(`/api/skills/${s.name}`, { method: "PUT", body: JSON.stringify({ updateFingerprint: update.fingerprint, currentFingerprint: update.currentFingerprint }) }); await reload(); detail(s.name); }
       catch (err) { note.textContent = (err as Error).message; apply.disabled = false; }
     }, "primary small");
-    root.replaceChildren(backHome(), ...title(s.name, s.description),
-      el("div", { className: "badges" }, pill(originLabel(s)), pill(s.required ? "Always on" : s.enabled ? "On" : "Off", s.enabled ? "ok" : "")),
-      group(null,
-        s.required ? row("Availability", "Required for canvas and surface authoring. Always on and applied by the runtime.", pill("Always on", "ok")) : row("Use this skill", "When on, the assistant sees its name and description and loads the instructions when a request matches.", toggle(s.enabled, async on => { list = await api<SkillView[]>(`/api/skills/${s.name}`, { method: "PUT", body: JSON.stringify({ enabled: on }) }); paint(); detail(s.name); })),
-        s.source ? row("Source", `${s.source.repo} · ${s.source.path || "/"} · commit ${s.source.sha.slice(0, 12)} · added ${new Date(s.source.addedAt).toLocaleDateString()}`, el("a", { href: `https://github.com/${s.source.repo}/tree/${s.source.sha}/${s.source.path}`, target: "_blank", rel: "noopener noreferrer", textContent: "View source ↗" })) : null),
-      group("Current instructions", el("pre", { className: "skill-body", textContent: s.body })),
-      ...(update ? [group("Update available", el("p", { className: "row-hint", textContent: s.required ? "Review the built-in update below. Updating replaces these instructions and preserves the required always-on status." : "Review the built-in update below. Updating replaces your current instructions and keeps your on/off choice." }), el("p", { textContent: update.description }), el("pre", { className: "skill-body", textContent: update.body }), el("div", { className: "row-actions" }, apply), note)] : []),
-      el("div", { className: "row-actions" }, button("Edit", () => editor(s)), remove));
+    const tabs = [["overview", "Overview"], ["instructions", "Instructions"], ...(s.files?.length ? [["files", `Files (${s.files.length})`]] : []), ...(s.source ? [["source", "Source"]] : [])] as [string, string][];
+    if (!tabs.some(([id]) => id === detailTab)) detailTab = "overview";
+    const section = el("div");
+    const render = () => {
+      section.replaceChildren();
+      if (detailTab === "overview") section.append(group(null,
+        s.required ? row("Availability", "Required for canvas and surface authoring. Always on and applied by the runtime.", pill("Always on", "ok")) : row("Use this skill", "When on, the assistant sees its name and description, loads instructions when a request matches, and reads files on demand.", toggle(s.enabled, async on => { list = await api<SkillView[]>(`/api/skills/${s.name}`, { method: "PUT", body: JSON.stringify({ enabled: on }) }); paint(); detail(s.name); })),
+        row("Package", `Instructions ${size(new TextEncoder().encode(s.body).length)} · ${s.files?.length ?? 0} files (${size((s.files ?? []).reduce((n, f) => n + f.bytes, 0))})`, pill(originLabel(s))),
+        s.compatibility ? row("Compatibility stated by author", s.compatibility, pill("Check requirements")) : null),
+        ...(s.omitted?.length ? [el("p", { className: "row-hint", textContent: `${s.omitted.length} bundled ${s.omitted.length === 1 ? "file was" : "files were"} not added. Instructions that use them may not work; see Source for the list.` })] : []),
+        ...(update ? [group("Update available", el("p", { className: "row-hint", textContent: "Review the current and proposed instructions. Updating keeps the on/off choice." }), el("pre", { className: "skill-body", textContent: s.body }), el("pre", { className: "skill-body", textContent: update.body }), el("div", { className: "row-actions" }, apply), note)] : []),
+        el("div", { className: "row-actions" }, button("Edit", () => editor(s)), remove));
+      else if (detailTab === "instructions") {
+        const body = el("div", { className: "skill-formatted" }, renderMarkdown(s.body));
+        section.append(group("Current instructions", segmented([["formatted", "Formatted"], ["plain", "Plain text"]] as const, "formatted", mode => body.replaceChildren(mode === "plain" ? el("pre", { className: "skill-body", textContent: s.body }) : renderMarkdown(s.body))), body));
+        body.addEventListener("click", event => { const link = (event.target as HTMLElement).closest("a"); const file = (s.files ?? []).find(f => link?.getAttribute("href")?.replace(/^\.\//, "") === f.path); if (file) { event.preventDefault(); detailTab = "files"; detail(name); const entry = [...root.querySelectorAll(".skill-file")].find(node => node.querySelector("code")?.textContent === file.path) as HTMLDetailsElement | undefined; if (entry) entry.open = true; } });
+      } else if (detailTab === "files") section.append(group("Supporting files", el("p", { className: "row-hint", textContent: "These files are read on demand and never run." }), fileRows(s.files ?? [], async file => (await api<{ text: string }>(`/api/skills/${s.name}/file?path=${encodeURIComponent(file)}`)).text)));
+      else if (s.source) section.append(group("Source", row("Repository", s.source.repo, el("a", { href: `https://github.com/${s.source.repo}/tree/${s.source.sha}/${s.source.path}`, target: "_blank", rel: "noopener noreferrer", textContent: "View source ↗" })), row("Path and commit", `${s.source.path || "/"} · ${s.source.sha}`, pill(new Date(s.source.addedAt).toLocaleDateString())), s.omitted?.length ? el("details", { className: "skill-file" }, el("summary", { textContent: `${s.omitted.length} bundled files not added` }), el("ul", {}, ...s.omitted.map(f => el("li", {}, el("code", { textContent: f.path }), ` · ${statusLabel(f.status)}`)))) : null));
+    };
+    const navigation = segmented(tabs, detailTab, tab => { detailTab = tab; render(); });
+    root.replaceChildren(backHome(), ...title(s.name), ...description(s.description), el("div", { className: "badges" }, pill(originLabel(s)), pill(s.required ? "Always on" : s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.files?.length ? pill(`${s.files.length} files`) : null, update ? pill("Update available") : null), navigation, section);
+    render();
   }
 
   function editor(skill?: SkillView): void {
@@ -100,7 +146,7 @@ export async function skillsPage(): Promise<HTMLElement[]> {
         detail(/^name:\s*(\S+)/m.exec(text.value)?.[1] ?? skill?.name ?? "");
       } catch (err) { note.textContent = (err as Error).message; }
     }, "primary small");
-    root.replaceChildren(skill ? button("‹ Back", () => detail(skill.name)) : backHome(), ...title(skill ? `Edit ${skill.name}` : "New skill", "A name, a description of when it applies, then the instructions. Only skills that are on reach the assistant."), text, el("div", { className: "row-actions" }, save), note);
+    root.replaceChildren(skill ? button("‹ Back", () => detail(skill.name)) : backHome(), ...title(skill ? `Edit ${skill.name}` : "New skill", "A name, a description of when it applies, then the instructions. Only skills that are on reach the assistant."), ...(skill?.files?.length ? [el("p", { className: "row-hint", textContent: `${skill.files.length} supporting files are kept. Renaming the skill keeps them.` })] : []), text, el("div", { className: "row-actions" }, save), note);
     text.focus();
   }
 
@@ -108,16 +154,20 @@ export async function skillsPage(): Promise<HTMLElement[]> {
     catalog.replaceChildren(el("div", { className: "catalog-skeleton", "aria-hidden": "true" }), el("p", { className: "row-hint", role: "status", textContent: `Reading ${repo}…` }));
     try {
       const items = await api<SkillListing[]>(`/api/skills/catalog?repo=${encodeURIComponent(repo)}`);
+      const descriptions = new Map<string, string | null>();
       const results = el("div", { className: "market skills-catalog-market" });
       const find = el("input", { type: "search", className: "market-search", placeholder: `Search ${items.length} skills`, "aria-label": "Search catalog skills" });
       const paintResults = () => {
         const words = find.value.toLowerCase().split(/\s+/).filter(Boolean);
-        results.replaceChildren(...items.filter(i => words.every(w => i.path.toLowerCase().includes(w))).map(i => {
+        const visible = items.filter(i => words.every(w => `${i.name} ${i.path} ${descriptions.get(i.path) ?? ""}`.toLowerCase().includes(w))).slice(0, 24);
+        results.replaceChildren(...visible.map(i => {
           const action = el("span", { className: "catalog-action" }, list.some(s => s.name === i.name) ? "Installed" : "Review", icon("arrow", 14));
-          const b = el("button", { type: "button", className: "market-card external-card" }, skillPublisherIcon(repo, 40), el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: i.name }), el("div", { className: "market-pub", textContent: i.path || "/" })), el("div", { className: "market-foot" }, el("span", { className: "catalog-origin", textContent: repo }), action));
+          const b = el("button", { type: "button", className: "market-card external-card" }, skillPublisherIcon(repo, 40), el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: i.name }), el("div", { className: "market-pub", textContent: i.path || "/" }), el("div", { className: "market-sum", textContent: descriptions.has(i.path) ? descriptions.get(i.path) ?? i.path : "Loading description…" })), el("div", { className: "market-foot" }, el("span", { className: "catalog-origin", textContent: repo }), action));
           b.addEventListener("click", () => void review(i)); return b;
         }));
         if (!results.children.length) results.append(el("p", { className: "row-hint", textContent: "Nothing matches." }));
+        const missing = visible.filter(i => !descriptions.has(i.path)).map(i => i.path);
+        if (missing.length) void api<Record<string, string | null>>("/api/skills/describe", { method: "POST", body: JSON.stringify({ repo, paths: missing }) }).then(found => { for (const [key, value] of Object.entries(found)) descriptions.set(key, value); paintResults(); }).catch(() => { for (const key of missing) descriptions.set(key, null); paintResults(); });
       };
       find.addEventListener("input", paintResults); paintResults();
       catalog.replaceChildren(el("p", { className: "row-hint catalog-status", textContent: `${repo} at ${items[0]?.sha.slice(0, 7) ?? "—"}, the newest commit at least 14 days old · ${items.length} skills` }), find, results);
@@ -138,11 +188,21 @@ export async function skillsPage(): Promise<HTMLElement[]> {
       }, "primary");
       add.disabled = true; ack.addEventListener("change", () => { add.disabled = !ack.checked; });
       const blocked = r.blocked ?? (r.existing ? `A skill named ${r.name} is already installed.` : undefined);
-      root.replaceChildren(back, el("div", { className: "catalog-eyebrow", textContent: "REVIEW SKILL" }), ...title(r.name, r.description), el("div", { className: "badges" }, pill("Unverified"), pill("Starts off"), pill("Instructions only")),
-        el("p", { className: "row-hint", textContent: `${r.repo} · ${r.path || "/"} · commit ${r.sha.slice(0, 12)}. ${r.extraFiles.length ? `Bundled files are not imported or run: ${r.extraFiles.join(", ")}.` : "No bundled files."} A skill cannot grant tools; MCP tools keep their own access and approvals.` }),
-        group("Instructions", el("pre", { className: "skill-body", textContent: r.body })),
+      const added = r.files.filter(f => f.status === "added"), skipped = r.files.filter(f => f.status !== "added");
+      const section = el("div");
+      const tabs = segmented([["instructions", "Instructions"], ["files", `Files (${added.length})`], ["skipped", `Not added (${skipped.length})`]] as const, "instructions", tab => {
+        if (tab === "instructions") section.replaceChildren(group("Instructions", el("pre", { className: "skill-body", textContent: r.body })));
+        else if (tab === "files") section.replaceChildren(group("Files to add", fileRows(added, async file => (await api<{ text: string }>("/api/skills/review-file", { method: "POST", body: JSON.stringify({ fingerprint: r.fingerprint, path: file }) })).text)));
+        else section.replaceChildren(group("Not added", ...skipped.map(f => row(f.path, size(f.bytes), pill(statusLabel(f.status))))));
+      });
+      section.append(group("Instructions", el("pre", { className: "skill-body", textContent: r.body })));
+      root.replaceChildren(back, el("div", { className: "catalog-eyebrow", textContent: "REVIEW SKILL" }), ...title(r.name), ...description(r.description), el("div", { className: "badges" }, pill("Unverified"), pill("Starts off"), pill(added.length ? `Instructions + ${added.length} files` : "Instructions only")),
+        el("p", { className: "row-hint", textContent: `${r.repo} · ${r.path || "/"} · commit ${r.sha.slice(0, 12)}. A skill cannot grant tools; MCP tools keep their own access and approvals.` }),
+        ...(r.compatibility ? [el("p", { className: "row-hint", textContent: `Author's compatibility requirements: ${r.compatibility}` })] : []),
+        ...(skipped.length ? [el("p", { className: "row-hint", textContent: `${skipped.length} bundled ${skipped.length === 1 ? "file" : "files"} will be omitted. Instructions that use them may not work.` })] : []), tabs, section,
+        el("p", { className: "row-hint", textContent: `${added.length} files will be added (${size(added.reduce((n, f) => n + f.bytes, 0))}) · ${skipped.length} not added` }),
         blocked ? el("div", { className: "catalog-notice" }, el("strong", { textContent: "This skill can't be added" }), el("p", { textContent: blocked })) :
-          el("div", { className: "catalog-next" }, el("label", { className: "catalog-ack" }, ack, el("span", { textContent: "I have read these instructions and want the assistant to be able to follow them." })), add), note);
+          el("div", { className: "catalog-next" }, el("label", { className: "catalog-ack" }, ack, el("span", { textContent: `I have reviewed the instructions${added.length ? ` and these ${added.length} supporting files: ${added.map(f => f.path).join(", ")}` : ""}. I want to add them.` })), add), note);
     } catch (err) { root.replaceChildren(back, el("p", { role: "alert", className: "row-hint bad", textContent: (err as Error).message })); }
   }
 

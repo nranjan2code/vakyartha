@@ -1030,6 +1030,8 @@ function splitTool(name: string): { server: string; tool: string } {
 }
 
 function toolLabel(name: string): string {
+  if (name === "use_skill") return "Loaded skills";
+  if (name === "read_skill_file") return "Read skill file";
   const { server, tool } = splitTool(name);
   const l = labels[server];
   if (!l) return name;
@@ -1100,7 +1102,7 @@ function surfaceUpdated(turn: Turn, snap: SurfaceSnapshot): void {
 
 function usedChip(turn: Turn, name: string, ok: boolean): void {
   // Marked so speech can say a reply drew on what tools returned.
-  addStep(turn, labels[splitTool(name).server]?.icon ?? "tool", toolLabel(name), !ok).dataset.tool = name;
+  addStep(turn, name === "use_skill" || name === "read_skill_file" ? "book" : labels[splitTool(name).server]?.icon ?? "tool", toolLabel(name), !ok).dataset.tool = name;
 }
 
 /**

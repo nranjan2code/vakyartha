@@ -4,6 +4,8 @@ Authoring implementation method: [SKILL-AUTHORING.md](SKILL-AUTHORING.md) define
 
 Current authoring boundary (2026-10-27): skills guide procedures and composition; shared record mappings, canonical transactions and governed capabilities execute them. Source-specific derive/prepare/workspace compilation is deleted. Original source/calculation/interaction/output requirements below remain acceptance requirements; historical compiler-path results do not close them for the current implementation.
 
+Reviewed skill packages now retain bounded supporting text and expose it on demand only for skills loaded in the run. Scripts and binary assets remain outside the current import tier. The package format and app-owned capability boundary are recorded in [ADR-040](ADR.md#adr-040-standard-skill-packages-app-owned-capabilities-2026-10-27); outcome evidence is in [EVALUATION.md](EVALUATION.md#skill-supporting-files--2026-10-27).
+
 
 Planning baseline: 2026-10-25. Status: implementation in progress; the checklist distinguishes working behavior from planned requirements. Progress and release evidence: [MVP-CHECKLIST.md](MVP-CHECKLIST.md). Current implementation: [SPECS.md](SPECS.md). Working rules: [AGENTS.md](../AGENTS.md).
 

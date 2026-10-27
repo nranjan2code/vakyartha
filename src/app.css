@@ -852,6 +852,14 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 
 .skill-editor { width: 100%; box-sizing: border-box; font: 13px/1.5 ui-monospace, monospace; padding: 10px; border-radius: 8px; border: 1px solid var(--border, #8884); background: transparent; color: inherit; resize: vertical; }
 .skill-body { max-height: 320px; overflow: auto; white-space: pre-wrap; font-size: 12px; padding: 10px; border-radius: 8px; border: 1px solid var(--border, #8884); }
+.skill-files { display: grid; gap: 8px; min-width: 0; }
+.skill-file { border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.skill-file summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 10px; cursor: pointer; overflow-wrap: anywhere; }
+.skill-file summary code, .skill-file-content { min-width: 0; overflow-wrap: anywhere; }
+.skill-file-content { padding: 0 10px 10px; }
+.skill-formatted { min-width: 0; overflow-wrap: anywhere; }
+.skill-description:not(.expanded) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.skill-file li { overflow-wrap: anywhere; margin: 5px 0; }
 .nav-label { display: inline-flex; align-items: center; gap: 9px; }
 .nav-label svg { flex: none; opacity: 0.75; }
 .nav-item[aria-current="true"] .nav-label svg { opacity: 1; }

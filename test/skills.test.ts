@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { BUILTIN_SKILLS } from "../sidecar/skills-builtin.ts";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -15,6 +15,10 @@ test("parses frontmatter and rejects invalid skills", () => {
   assert.equal(parseSkill(SKILL).name, "weekly-report");
   assert.throws(() => parseSkill("no frontmatter"));
   assert.throws(() => parseSkill(SKILL.replace("weekly-report", "Bad Name")));
+  assert.throws(() => parseSkill(SKILL.replace("weekly-report", "weekly--report")));
+  assert.throws(() => parseSkill(SKILL.replace("weekly-report", "weekly-report-")));
+  assert.equal(parseSkill("---\nname: weekly-report\ndescription: >\n  Use when making\n  a weekly report.\ncompatibility: Requires a local document tool\n---\nSteps.\n").description, "Use when making a weekly report.");
+  assert.equal(parseSkill("---\nname: weekly-report\ndescription: Use on request.\ncompatibility: Requires a local document tool\n---\nSteps.\n").compatibility, "Requires a local document tool");
 });
 
 test("built-ins are planted on, once; a removed one stays removed", () => {
@@ -94,7 +98,7 @@ test("catalog adds exactly the reviewed text, pinned and off", async () => {
   for (const b of s.view()) if (!b.required) s.remove(b.name);
   const [item] = await s.search("owner/repo");
   const r = await s.review("owner/repo", item!.path);
-  assert.deepEqual(r.extraFiles, ["run.sh"]);
+  assert.deepEqual(r.files.map(f => [f.path, f.status]), [["run.sh", "script"]]);
   assert.throws(() => s.add(r.fingerprint, false));
   assert.equal(s.add(r.fingerprint, true), "weekly-report");
   const saved = s.view().find(skill => skill.name === "weekly-report")!;
@@ -207,5 +211,120 @@ test("root skills disclose supporting files that will not be installed", async (
   const fetcher = (async (url: string) => new Response(url.includes("/commits?") ? JSON.stringify([{ sha: "a".repeat(40) }]) : url.includes("/git/trees/") ? JSON.stringify({ tree: [{ path: "SKILL.md", type: "blob" }, { path: "references/guide.md", type: "blob" }] }) : SKILL)) as typeof fetch;
   const skills = new Skills(dir(), fetcher);
   const review = await skills.review("owner/repo", "");
-  assert.deepEqual(review.extraFiles, ["references/guide.md"]);
+  assert.deepEqual(review.files.map(f => f.path), ["references/guide.md"]);
+});
+
+test("review classifies files, binds bytes, stores exactly reviewed text and checks integrity", async () => {
+  const sha = "b".repeat(40), data = dir();
+  const items = [
+    { path: "SKILL.md", type: "blob", size: SKILL.length },
+    { path: "palette.md", type: "blob", size: 18 },
+    { path: "run.py", type: "blob", size: 10 },
+    { path: "photo.png", type: "blob", size: 10 },
+    { path: "huge.md", type: "blob", size: 300 * 1024 },
+    { path: "bad.txt", type: "blob", size: 2 },
+    { path: "../escape.md", type: "blob", size: 4 },
+    { path: "a//b.md", type: "blob", size: 4 },
+  ];
+  let palette = "red: #f00\n";
+  const fetcher = (async (url: string) => {
+    if (url.includes("/commits?")) return new Response(JSON.stringify([{ sha }]));
+    if (url.includes("/git/trees/")) return new Response(JSON.stringify({ tree: items }));
+    assert.ok(url.includes(sha));
+    if (url.endsWith("/SKILL.md")) return new Response(SKILL);
+    if (url.endsWith("/palette.md")) return new Response(palette);
+    if (url.endsWith("/bad.txt")) return new Response(new Uint8Array([0xff, 0xfe]));
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as typeof fetch;
+  const skills = new Skills(data, fetcher);
+  const first = await skills.review("owner/repo", "");
+  assert.deepEqual(Object.fromEntries(first.files.map(f => [f.path, f.status])), { "../escape.md": "unsupported", "a//b.md": "unsupported", "bad.txt": "not-text", "huge.md": "too-large", "palette.md": "added", "photo.png": "unsupported", "run.py": "script" });
+  assert.equal(skills.reviewFile(first.fingerprint, "palette.md"), palette);
+  assert.throws(() => skills.reviewFile(first.fingerprint, "run.py"), /Unknown/);
+  palette = "blue: #00f\n";
+  const second = await skills.review("owner/repo", "");
+  assert.notEqual(first.fingerprint, second.fingerprint);
+  skills.add(first.fingerprint, true);
+  assert.equal(skills.view().find(s => s.name === "weekly-report")?.omitted?.length, 6);
+  assert.equal(skills.fileText("weekly-report", "palette.md").text, "red: #f00\n");
+  assert.throws(() => skills.fileText("weekly-report", "../skills.json"), /Unknown file/);
+  const file = path.join(data, "skills", "weekly-report", "files", "palette.md");
+  writeFileSync(file, "tampered");
+  assert.throws(() => skills.fileText("weekly-report", "palette.md"), /changed on disk/);
+  skills.remove("weekly-report");
+  assert.equal(existsSync(file), false);
+});
+
+test("catalog subdirectory name follows the skill directory", async () => {
+  const sha = "e".repeat(40);
+  const fetcher = (async (url: string) => new Response(url.includes("/commits?") ? JSON.stringify([{ sha }]) : url.includes("/git/trees/") ? JSON.stringify({ tree: [{ path: "skills/other/SKILL.md", type: "blob", size: SKILL.length }] }) : SKILL)) as typeof fetch;
+  const skills = new Skills(dir(), fetcher);
+  const review = await skills.review("owner/repo", "skills/other");
+  assert.match(review.blocked ?? "", /parent directory/);
+  assert.throws(() => skills.add(review.fingerprint, true), /parent directory/);
+});
+
+test("loaded skill files are scoped to one tool list and can be paged", async () => {
+  const sha = "c".repeat(40), data = dir(), long = `${"x".repeat(100)}\n`.repeat(400);
+  const fetcher = (async (url: string) => new Response(url.includes("/commits?") ? JSON.stringify([{ sha }]) : url.includes("/git/trees/") ? JSON.stringify({ tree: [{ path: "SKILL.md", type: "blob", size: SKILL.length }, { path: "PALETTE.md", type: "blob", size: long.length }] }) : url.endsWith("/SKILL.md") ? SKILL : long)) as typeof fetch;
+  const skills = new Skills(data, fetcher), review = await skills.review("owner/repo", ""); skills.add(review.fingerprint, true); skills.setEnabled("weekly-report", true);
+  const [use, read] = skills.tools(); assert.ok(use && read);
+  const before = await read.execute({ skill: "weekly-report", path: "palette.md" }, {});
+  assert.match(JSON.stringify(before), /Load weekly-report/);
+  await use.execute({ names: ["weekly-report"] }, {});
+  let offset = 0, combined = "";
+  for (;;) {
+    const result = String(await read.execute({ skill: "weekly-report", path: "./palette.md", offset }, {}));
+    const next = /\(characters \d+–(\d+) of \d+\)\n/.exec(result); assert.ok(next);
+    const end = Number(next[1]);
+    const payload = result.slice(result.indexOf("\n") + 1).replace(/\nMore: call again with offset \d+$/, "");
+    combined += payload; if (end === long.length) break; offset = end;
+  }
+  assert.equal(combined, long);
+  const other = skills.tools()[1]!;
+  assert.match(JSON.stringify(await other.execute({ skill: "weekly-report", path: "PALETTE.md" }, {})), /Load weekly-report/);
+  skills.save(SKILL.replace("Summarise the week", "New instructions"), "weekly-report");
+  assert.equal(skills.view().find(s => s.name === "weekly-report")?.files?.length, 1);
+  skills.save(SKILL.replaceAll("weekly-report", "renamed-report"), "weekly-report");
+  assert.equal(skills.fileText("renamed-report", "PALETTE.md").text, long);
+});
+
+test("review enforces the count and total byte limits", async () => {
+  const sha = "d".repeat(40), payload = "x".repeat(50_000);
+  const tree = [{ path: "SKILL.md", type: "blob", size: SKILL.length }, ...Array.from({ length: 55 }, (_, n) => ({ path: `f${String(n).padStart(2, "0")}.md`, type: "blob", size: payload.length }))];
+  const fetcher = (async (url: string) => new Response(url.includes("/commits?") ? JSON.stringify([{ sha }]) : url.includes("/git/trees/") ? JSON.stringify({ tree }) : url.endsWith("/SKILL.md") ? SKILL : payload)) as typeof fetch;
+  const review = await new Skills(dir(), fetcher).review("owner/repo", "");
+  assert.equal(review.files.filter(f => f.status === "added").length, 41);
+  assert.equal(review.files.filter(f => f.status === "over-limit").length, 14);
+});
+
+test("invalid text does not consume a stored-file slot", async () => {
+  const sha = "a".repeat(40);
+  const tree = [{ path: "SKILL.md", type: "blob", size: SKILL.length }, ...Array.from({ length: 55 }, (_, n) => ({ path: `f${String(n).padStart(2, "0")}.md`, type: "blob", size: 4 }))];
+  const fetcher = (async (url: string) => new Response(url.includes("/commits?") ? JSON.stringify([{ sha }]) : url.includes("/git/trees/") ? JSON.stringify({ tree }) : url.endsWith("/SKILL.md") ? SKILL : url.endsWith("/f00.md") ? new Uint8Array([0xff]) : "text")) as typeof fetch;
+  const review = await new Skills(dir(), fetcher).review("owner/repo", "");
+  assert.equal(review.files.find(f => f.path === "f00.md")?.status, "not-text");
+  assert.equal(review.files.filter(f => f.status === "added").length, 50);
+  assert.equal(review.files.filter(f => f.status === "over-limit").length, 4);
+});
+
+test("a write failure during add leaves no skill or manifest entry", async () => {
+  const sha = "f".repeat(40), data = dir();
+  const fetcher = (async (url: string) => new Response(url.includes("/commits?") ? JSON.stringify([{ sha }]) : url.includes("/git/trees/") ? JSON.stringify({ tree: [{ path: "SKILL.md", type: "blob", size: SKILL.length }, { path: "a.md", type: "blob", size: 4 }, { path: "a.md/child.md", type: "blob", size: 4 }] }) : url.endsWith("/SKILL.md") ? SKILL : "text")) as typeof fetch;
+  const skills = new Skills(data, fetcher), review = await skills.review("owner/repo", "");
+  assert.throws(() => skills.add(review.fingerprint, true));
+  assert.equal(skills.view().some(s => s.name === "weekly-report"), false);
+  assert.equal(existsSync(path.join(data, "skills", "weekly-report")), false);
+  assert.equal(existsSync(path.join(data, "skills", "weekly-report.partial")), false);
+  assert.equal(JSON.parse(readFileSync(path.join(data, "skills", "skills.json"), "utf8"))["weekly-report"], undefined);
+});
+
+test("adding a catalog skill never removes an untracked folder with the same name", async () => {
+  const sha = "a".repeat(40), data = dir();
+  const fetcher = (async (url: string) => new Response(url.includes("/commits?") ? JSON.stringify([{ sha }]) : url.includes("/git/trees/") ? JSON.stringify({ tree: [{ path: "SKILL.md", type: "blob", size: SKILL.length }] }) : SKILL)) as typeof fetch;
+  const skills = new Skills(data, fetcher), review = await skills.review("owner/repo", "");
+  const folder = path.join(data, "skills", "weekly-report"); mkdirSync(folder);
+  writeFileSync(path.join(folder, "note.txt"), "keep");
+  assert.throws(() => skills.add(review.fingerprint, true), /folder named/);
+  assert.equal(readFileSync(path.join(folder, "note.txt"), "utf8"), "keep");
 });

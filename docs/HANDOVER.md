@@ -1,5 +1,7 @@
 # Vakyartha handover — 2026-10-27
 
+**Skill packages tier 1 complete in source (2026-10-27).** Catalog review now classifies every bundled file, fetches eligible text at the pinned commit, binds added hashes to the review fingerprint, and stores it under the skill's `files/` directory. `use_skill` exposes file names; `read_skill_file` pages integrity-checked content only for skills loaded in that run. Settings has sectioned review/detail pages, lazy file previews, catalog descriptions and a compact long-description control for narrow screens. Unit/type/build/framework/Rust and local catalog WebKit checks pass. A real nested package was inspected in Settings at 1100/375 px. Three fresh web-mode local Ollama sessions each loaded the skill, read `palette.md` and returned all three frozen exact values. [Evidence and limits](EVALUATION.md#skill-supporting-files--2026-10-27). [ADR-040](ADR.md#adr-040-standard-skill-packages-app-owned-capabilities-2026-10-27) records the package standard and app-owned extensions. MVP S1 is checked; scripts/assets remain later tiers. No installed replacement or public release was made.
+
 Read [AGENTS.md](../AGENTS.md), [SPECS.md](SPECS.md), [RELEASING.md](RELEASING.md) and the newest [evaluation](EVALUATION.md). Planning: [MVP spec](MVP-SPECS.md), [checklist](MVP-CHECKLIST.md), [decisions](ADR.md).
 
 ## Current local installation — 2026-10-27
