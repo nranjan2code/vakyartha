@@ -115,3 +115,4 @@ test("app registry installs, lists, executes actions, runs triggers and uninstal
   assert.equal(registry.listApps().length, 0);
   assert.ok(!existsSync(path.join(tmp, "apps", "risk-dashboard")));
 });
+

@@ -394,3 +394,4 @@ window.addEventListener("DOMContentLoaded", async () => {
   await refreshFleet();
   setupStreams();
 });
+
