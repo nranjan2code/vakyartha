@@ -79,6 +79,7 @@ export class SchedulePage {
   async openPage(): Promise<void> {
     this.beforeOpen(); this.page.hidden = false; $("workspace").hidden = true;
     document.body.classList.add("in-schedule"); $("open-schedule").setAttribute("aria-current", "page");
+    window.dispatchEvent(new Event("vak:schedule-opened"));
     this.list(); await this.refresh();
   }
   close(focus = false): void {
@@ -86,6 +87,7 @@ export class SchedulePage {
     this.request++; this.page.hidden = true; $("workspace").hidden = false;
     document.body.classList.remove("in-schedule", "schedule-show-sidebar");
     $("open-schedule").setAttribute("aria-current", "false");
+    window.dispatchEvent(new Event("vak:schedule-closed"));
     if (focus) {
       // A narrow/full canvas can hide both the sidebar and composer.
       const target = ["open-schedule", "input", "canvas-close", "expand"].map((id) => $(id)).find((node) => node.getClientRects().length && getComputedStyle(node).visibility === "visible");
@@ -166,6 +168,7 @@ export class SchedulePage {
   async reviewResult(id: string): Promise<void> {
     this.beforeOpen(); this.page.hidden = false; $("workspace").hidden = true;
     document.body.classList.add("in-schedule"); $("open-schedule").setAttribute("aria-current", "page");
+    window.dispatchEvent(new Event("vak:schedule-opened"));
     const request = ++this.request; this.view = { kind: "review", id };
     try {
       const task = parseTaskView(await api<unknown>(`/api/tasks/${encodeURIComponent(id)}`));

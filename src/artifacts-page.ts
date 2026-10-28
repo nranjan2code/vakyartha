@@ -50,6 +50,7 @@ export class ArtifactsPage {
     $("workspace").hidden = true;
     document.body.classList.add("in-artifacts");
     $("open-artifacts").setAttribute("aria-current", "page");
+    window.dispatchEvent(new Event("vak:artifacts-opened"));
     this.#shell();
     const request = ++this.#request;
     $("artifacts-grid").replaceChildren(...Array.from({ length: 6 }, () => el("div", { className: "artifact-skeleton", "aria-hidden": "true" })));
@@ -76,6 +77,7 @@ export class ArtifactsPage {
     $("workspace").hidden = false;
     document.body.classList.remove("in-artifacts", "artifacts-show-sidebar");
     $("open-artifacts").setAttribute("aria-current", "false");
+    window.dispatchEvent(new Event("vak:artifacts-closed"));
     if (focus) $("open-artifacts").focus();
   }
 

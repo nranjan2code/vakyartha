@@ -19,6 +19,18 @@ import type {
   SkillView,
 } from "../shared/skills.ts";
 
+let activeStudioBackAction: (() => Promise<void>) | null = null;
+
+export function isSkillStudioOpen(): boolean {
+  return document.body.classList.contains("in-skill-studio");
+}
+
+export async function closeSkillStudio(): Promise<void> {
+  if (activeStudioBackAction) {
+    await activeStudioBackAction();
+  }
+}
+
 export async function openSkillStudio(
   skillName: string | undefined,
   onBack: () => void | Promise<void>,
@@ -29,6 +41,7 @@ export async function openSkillStudio(
   root.replaceChildren();
   root.hidden = false;
   document.body.classList.add("in-skill-studio");
+  window.dispatchEvent(new Event("vak:studio-opened"));
 
   const settingsEl = document.getElementById("settings");
   const wasSettingsOpen = settingsEl ? !settingsEl.hidden : false;
@@ -316,15 +329,19 @@ Analyze domain records from supplied inputs and project structured findings acro
         await saveDraftAction();
       }
     }
+    activeStudioBackAction = null;
     window.removeEventListener("keydown", onKeyDown, true);
     root.hidden = true;
     root.replaceChildren();
     document.body.classList.remove("in-skill-studio");
+    window.dispatchEvent(new Event("vak:studio-closed"));
     if (wasSettingsOpen && settingsEl) {
       settingsEl.hidden = false;
     }
     await onBack();
   }
+
+  activeStudioBackAction = backAction;
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {

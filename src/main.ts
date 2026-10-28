@@ -13,10 +13,12 @@ import { ArtifactsPage } from "./artifacts-page.ts";
 import { Canvas } from "./canvas.ts";
 import { connect, openExternal, setKeepRunning } from "./backend.ts";
 import { $, api, ask, engine, prefs, setBackend } from "./core.ts";
-import { choose, current, fillPicker, loadProviders, modelErrors, parseChoice, providers } from "./models.ts";
+import { choose, current, fillPicker, labelOf, loadProviders, modelErrors, parseChoice, providers } from "./models.ts";
 import { icon, tile } from "./icons.ts";
 import { closest, onContextMenu } from "./menu.ts";
 import { closeSettings, openSettings, settingsOpen } from "./settings.ts";
+import { closeSkillStudio, isSkillStudioOpen, openSkillStudio } from "./skills-studio.ts";
+import type { SkillView } from "../shared/skills.ts";
 import { resolveMedia } from "./media.ts";
 
 window.addEventListener("vak:media-chat", (event) => { const id = (event as CustomEvent<unknown>).detail; if (typeof id === "string") { closeSettings(); void openChat(id); } });
@@ -774,6 +776,159 @@ $<HTMLButtonElement>("collapse").append(icon("sidebar", 18));
 $<HTMLButtonElement>("expand").append(icon("sidebar", 18));
 $<HTMLButtonElement>("collapse").addEventListener("click", toggleSidebar);
 $<HTMLButtonElement>("expand").addEventListener("click", toggleSidebar);
+
+// --- Persistent App Top Navigation Bar ---
+type NavTab = "chats" | "artifacts" | "schedule" | "studio" | "settings";
+
+function setTopNavActive(active: NavTab): void {
+  const tabs: NavTab[] = ["chats", "artifacts", "schedule", "studio", "settings"];
+  for (const t of tabs) {
+    const btn = document.getElementById(`topbar-tab-${t}`);
+    if (btn) {
+      btn.setAttribute("aria-current", t === active ? "page" : "false");
+    }
+  }
+}
+
+function updateTopbarModel(): void {
+  const dot = document.getElementById("topbar-model-dot");
+  const name = document.getElementById("topbar-model-name");
+  if (!name || !dot) return;
+  if (current.model) {
+    dot.classList.remove("none");
+    const providerLabel = current.provider ? labelOf(current.provider) : "";
+    name.textContent = providerLabel ? `${current.model} · ${providerLabel}` : current.model;
+  } else {
+    dot.classList.add("none");
+    name.textContent = "Select model";
+  }
+}
+
+const topbarSidebarToggle = document.getElementById("topbar-sidebar-toggle");
+if (topbarSidebarToggle) {
+  topbarSidebarToggle.append(icon("sidebar", 18));
+  topbarSidebarToggle.addEventListener("click", toggleSidebar);
+}
+
+document.getElementById("topbar-icon-chats")?.append(icon("bubble", 15));
+document.getElementById("topbar-icon-artifacts")?.append(icon("canvas", 15));
+document.getElementById("topbar-icon-schedule")?.append(icon("calendar", 15));
+document.getElementById("topbar-icon-studio")?.append(icon("spark", 15));
+document.getElementById("topbar-icon-settings")?.append(icon("sliders", 15));
+
+document.getElementById("topbar-model-badge")?.addEventListener("click", () => {
+  void (async () => {
+    if (isSkillStudioOpen()) await closeSkillStudio();
+    artifacts.close();
+    tasksPanel.page.close();
+    setTopNavActive("settings");
+    await openSettings("models");
+  })();
+});
+
+window.addEventListener("vak:model", updateTopbarModel);
+updateTopbarModel();
+
+async function switchNavTab(target: NavTab): Promise<void> {
+  if (target === "chats") {
+    if (isSkillStudioOpen()) await closeSkillStudio();
+    if (settingsOpen()) closeSettings();
+    if (tasksPanel.page.visible()) tasksPanel.page.close();
+    if (document.body.classList.contains("in-artifacts")) artifacts.close();
+    $("workspace").hidden = false;
+    setTopNavActive("chats");
+    input.focus();
+    return;
+  }
+
+  if (target === "artifacts") {
+    if (isSkillStudioOpen()) await closeSkillStudio();
+    if (settingsOpen()) closeSettings();
+    if (tasksPanel.page.visible()) tasksPanel.page.close();
+    setTopNavActive("artifacts");
+    await artifacts.open();
+    return;
+  }
+
+  if (target === "schedule") {
+    if (isSkillStudioOpen()) await closeSkillStudio();
+    if (settingsOpen()) closeSettings();
+    if (document.body.classList.contains("in-artifacts")) artifacts.close();
+    setTopNavActive("schedule");
+    await tasksPanel.page.openPage();
+    return;
+  }
+
+  if (target === "studio") {
+    if (isSkillStudioOpen()) return;
+    if (settingsOpen()) closeSettings();
+    if (tasksPanel.page.visible()) tasksPanel.page.close();
+    if (document.body.classList.contains("in-artifacts")) artifacts.close();
+    setTopNavActive("studio");
+
+    let skillToOpen: string | undefined = undefined;
+    try {
+      const skills = await api<SkillView[]>("/api/skills");
+      if (skills && skills.length > 0) {
+        const assistant = skills.find((s) => s.name === "assistant");
+        skillToOpen = assistant ? assistant.name : skills[0]?.name;
+      }
+    } catch {}
+
+    await openSkillStudio(
+      skillToOpen,
+      async () => {
+        setTopNavActive("chats");
+      },
+      async () => {}
+    );
+    return;
+  }
+
+  if (target === "settings") {
+    if (isSkillStudioOpen()) await closeSkillStudio();
+    if (tasksPanel.page.visible()) tasksPanel.page.close();
+    if (document.body.classList.contains("in-artifacts")) artifacts.close();
+    setTopNavActive("settings");
+    await openSettings();
+    return;
+  }
+}
+
+document.getElementById("topbar-tab-chats")?.addEventListener("click", () => void switchNavTab("chats"));
+document.getElementById("topbar-tab-artifacts")?.addEventListener("click", () => void switchNavTab("artifacts"));
+document.getElementById("topbar-tab-schedule")?.addEventListener("click", () => void switchNavTab("schedule"));
+document.getElementById("topbar-tab-studio")?.addEventListener("click", () => void switchNavTab("studio"));
+document.getElementById("topbar-tab-settings")?.addEventListener("click", () => void switchNavTab("settings"));
+
+window.addEventListener("vak:settings-opened", () => setTopNavActive("settings"));
+window.addEventListener("vak:settings-closed", () => {
+  if (!isSkillStudioOpen() && !tasksPanel.page.visible() && !document.body.classList.contains("in-artifacts")) {
+    setTopNavActive("chats");
+  }
+});
+
+window.addEventListener("vak:artifacts-opened", () => setTopNavActive("artifacts"));
+window.addEventListener("vak:artifacts-closed", () => {
+  if (!isSkillStudioOpen() && !settingsOpen() && !tasksPanel.page.visible()) {
+    setTopNavActive("chats");
+  }
+});
+
+window.addEventListener("vak:schedule-opened", () => setTopNavActive("schedule"));
+window.addEventListener("vak:schedule-closed", () => {
+  if (!isSkillStudioOpen() && !settingsOpen() && !document.body.classList.contains("in-artifacts")) {
+    setTopNavActive("chats");
+  }
+});
+
+window.addEventListener("vak:studio-opened", () => setTopNavActive("studio"));
+window.addEventListener("vak:studio-closed", () => {
+  if (settingsOpen()) setTopNavActive("settings");
+  else if (document.body.classList.contains("in-artifacts")) setTopNavActive("artifacts");
+  else if (tasksPanel.page.visible()) setTopNavActive("schedule");
+  else setTopNavActive("chats");
+});
 
 function toggleSidebar(): void {
   if (tasksPanel.page.visible() && innerWidth <= 720) {

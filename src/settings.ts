@@ -63,6 +63,7 @@ export function settingsOpen(): boolean {
 export async function openSettings(to?: Section, arg?: string): Promise<void> {
   page().hidden = false;
   document.body.classList.add("in-settings");
+  window.dispatchEvent(new Event("vak:settings-opened"));
   await show(to ?? section, arg);
 }
 
