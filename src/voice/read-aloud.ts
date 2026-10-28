@@ -28,7 +28,7 @@ export const voicePrefs = {
   /** The person's own setting; `enabled` is also off under the master switch. */
   get own(): boolean { return prefs.get("voice:enabled") !== "false"; },
   get enabled(): boolean { return voiceMaster.on && this.own; },
-  set enabled(v: boolean) { prefs.set("voice:enabled", String(v)); window.dispatchEvent(new Event("vak:voice")); },
+  set enabled(v: boolean) { prefs.set("voice:enabled", String(v)); if (!v) stopReading(); window.dispatchEvent(new Event("vak:voice")); },
   get auto(): boolean { return prefs.get("voice:auto") === "true"; },
   set auto(v: boolean) { prefs.set("voice:auto", String(v)); },
   get speed(): string { return prefs.get("voice:speed") ?? "1"; },
@@ -81,7 +81,7 @@ export function voiceFor(list: VoiceProvider[], c: VoiceChoice, lang?: string): 
     if (n) return { choice: { provider: q.id, model: n.id, voice: n.voices.find((v) => v.id === c.voice)?.id ?? n.voices[0]!.id, options: q.id === c.provider ? c.options : undefined } };
   }
   const pack = list.filter((x) => x.local).flatMap((x) => x.packs ?? []).filter((k) => !k.installed && k.languages?.includes(lang)).sort((a, b) => a.languages!.length - b.languages!.length)[0];
-  return { choice: c, missing: pack ? `No ${languageWord(lang)} voice is installed, so the reply was read in ${m.label}. Install ${pack.label} in Integrations → Voice.` : `No ${languageWord(lang)} voice is set up, so the reply was read in ${m.label}.` };
+  return { choice: c, missing: pack ? `No ${languageWord(lang)} voice is installed, so the reply was read in ${m.label}. Install ${pack.label} in Providers.` : `No ${languageWord(lang)} voice is set up, so the reply was read in ${m.label}.` };
 }
 
 export type VoiceState = "idle" | "loading" | "playing";
@@ -175,6 +175,7 @@ export function stopReading(): void {
 /** Read text aloud with the chosen voice; `owner` names what is reading (a reply), so its button can show it. */
 export async function readAloud(text: string, owner: unknown, choice?: VoiceChoice): Promise<void> {
   stopReading();
+  if (!voiceMaster.on) return;
   const mine = run;
   const lang = textLanguage(text);
   const language = speechLocale(lang);
@@ -190,8 +191,9 @@ export async function readAloud(text: string, owner: unknown, choice?: VoiceChoi
   abort = ctrl;
   try {
     const list = await loadVoices();
+    if (ctrl.signal.aborted || !voiceMaster.on) return;
     const chosen = choice ?? resolveChoice(list);
-    if (!chosen) throw new Error("No voice is ready. Set one up in Integrations → Voice.");
+    if (!chosen) throw new Error("No voice is ready. Set one up in Providers.");
     // A preview names its voice on purpose; a reply is read by a voice that speaks its language.
     const { choice: c, missing } = choice ? { choice } : voiceFor(list, chosen, lang);
     note = missing ?? "";

@@ -12,7 +12,7 @@ import { skillsPage } from "./skills-page.ts";
 import { addOwnPage, integrationPage, marketplace } from "./integrations-page.ts";
 import { disposeFinops, finopsPage } from "./finops-page.ts";
 import { TASK_LIMITS, parseTaskSummaries } from "../shared/task-contract.ts";
-import { voicePage, voiceSection, voiceSettingsPage } from "./voice/index.ts";
+import { loadVoices, voicePage, voiceSection, voiceSettingsPage } from "./voice/index.ts";
 import { group, pill, plainField, row, secretField, segmented, select, type Setting, title, toggle } from "./ui.ts";
 import { disposeMediaPage } from "./media-page.ts";
 import { sandboxPage } from "./sandbox-page.ts";
@@ -84,7 +84,7 @@ function nav(): void {
     if (sub && sub !== heading) list.append(el("div", { className: "nav-group", textContent: sub }));
     heading = sub;
     const soon = id.startsWith("channel:") && COMING[id.slice(8)];
-    const current = id === section || (id === "integrations" && (section.startsWith("integration") || section.startsWith("voice:")));
+    const current = id === section || (id === "integrations" && section.startsWith("integration")) || (id === "providers" && section.startsWith("voice:"));
     const b = el("button", { type: "button", className: `nav-item${sub ? " sub" : ""}`, "aria-current": String(current) }, el("span", { className: "nav-label" }, icon(glyph, 16), label), soon ? el("span", { className: "soon", textContent: "soon" }) : null);
     b.addEventListener("click", () => void show(id));
     list.append(b);
@@ -103,7 +103,7 @@ async function show(to: Section, arg?: string): Promise<void> {
     settings = await api<Setting[]>("/api/settings");
     const integration = to.startsWith("integration:") ? to.slice("integration:".length) : undefined;
     const render: Record<string, () => Promise<HTMLElement[]>> = {
-      integrations: async () => marketplace((id) => void show(`integration:${id}`), () => void show("integrations:add"), await voiceSection((id) => void show(`voice:${id}`))),
+      integrations: async () => marketplace((id) => void show(`integration:${id}`), () => void show("integrations:add")),
       skills: () => skillsPage(arg, () => void show("sandbox")),
       sandbox: async () => sandboxPage(() => void show("integration:sandbox-execution"), () => void show("skills", "sandbox")),
       voice: () => voiceSettingsPage((id) => void show(`voice:${id}`)),
@@ -127,7 +127,7 @@ async function show(to: Section, arg?: string): Promise<void> {
       about: aboutPage,
     };
     const voiceId = to.startsWith("voice:") ? to.slice("voice:".length) : undefined;
-    const parts = voiceId ? await voicePage(voiceId, settings, () => void show("integrations"), () => void show(to)) : integration ? await integrationPage(integration, () => void show("integrations"), () => void show(to)) : await (render[to] ?? render.models!)();
+    const parts = voiceId ? await voicePage(voiceId, settings, () => void show("providers"), () => void show(to), () => void show("voice")) : integration ? await integrationPage(integration, () => void show("integrations"), () => void show(to)) : await (render[to] ?? render.models!)();
     if (section !== to) return;
     content().replaceChildren(...parts);
     content().scrollTop = 0;
@@ -265,6 +265,8 @@ function problemText(p: ProviderInfo, error: string): string {
 }
 
 async function providersPage(): Promise<HTMLElement[]> {
+  const voiceProviders = await loadVoices(true).catch(() => []);
+  const voiceSetup = (id: string) => el("button", { type: "button", className: "link", textContent: "Voice setup", onclick: () => void show(`voice:${id}`) });
   const refresh = async () => {
     await loadProviders();
     window.dispatchEvent(new Event("vak:providers"));
@@ -289,7 +291,11 @@ async function providersPage(): Promise<HTMLElement[]> {
         if (r.error) body.append(el("p", { className: "row-hint bad", textContent: problemText(p, r.error) }));
       });
     }
-    return el("div", { className: "card" }, el("div", { className: "card-head" }, el("b", { textContent: p.label }), state, choose), body);
+    return el("details", { className: "provider-row" },
+      el("summary", {}, el("span", { className: "provider-name", textContent: p.label }), state),
+      body,
+      el("div", { className: "provider-actions" }, choose, voiceProviders.some((v) => v.id === p.id) ? voiceSetup(p.id) : null),
+    );
   };
   const local = providers.filter((p) => p.local);
   const custom = providers.filter((p) => p.id === "compatible");
@@ -298,10 +304,15 @@ async function providersPage(): Promise<HTMLElement[]> {
   labs.sort((a, b) => Number(b.available) - Number(a.available));
   const media = (await api<MediaProvider[]>("/api/media/providers")).filter((p) => !providers.some((chat) => chat.id === p.id));
   return [
-    ...title("Providers", "Keys are kept in the macOS Keychain (elsewhere, a file only you can read) and are never shown again once saved."),
+    ...title("Providers", "Manage connections and keys. Choose models in Models and speech settings in Voice."),
     el("section", { className: "group" }, el("h2", { textContent: "On this computer" }), ...local.map(card)),
-    el("section", { className: "group" }, el("h2", { textContent: "Labs and hosts" }), ...labs.map(card)),
-    el("section", { className: "group" }, el("h2", { textContent: "Media and voice" }), ...media.map((p) => el("div", { className: "card" }, el("div", { className: "card-head" }, el("b", { textContent: p.label }), pill(p.available ? "Key saved" : "Needs key", p.available ? "ok" : "")), el("p", { className: "row-hint", textContent: "Shared by the media plugins and Voice. Choose models in Integrations." }), el("div", { className: "card-fields" }, ...settings.filter((s) => s.name === p.keyVar).map((s) => secretField(s, refresh)))))),
+    el("section", { className: "group" }, el("h2", { textContent: "Labs and hosts" }), ...labs.filter((p) => p.available).map(card),
+      el("details", { className: "provider-more" }, el("summary", { textContent: "More providers" }), ...labs.filter((p) => !p.available).map(card))),
+    el("section", { className: "group" }, el("h2", { textContent: "Media and voice" }), ...media.map((p) => el("details", { className: "provider-row" },
+      el("summary", {}, el("span", { className: "provider-name", textContent: p.label }), pill(p.available ? "Key saved" : "Needs key", p.available ? "ok" : "")),
+      el("div", { className: "card-fields" }, ...settings.filter((s) => s.name === p.keyVar).map((s) => secretField(s, refresh))),
+      voiceProviders.some((v) => v.id === p.id) ? el("div", { className: "provider-actions" }, voiceSetup(p.id)) : null))),
+    ...await voiceSection((id) => void show(`voice:${id}`), [...providers.map((p) => p.id), ...media.map((p) => p.id)]),
     el("section", { className: "group" }, el("h2", { textContent: "Any OpenAI-compatible server" }), ...custom.map(card)),
   ];
 }

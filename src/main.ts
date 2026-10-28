@@ -568,6 +568,7 @@ function speakButton(turn: Turn): HTMLButtonElement {
 }
 
 function toggleReading(root: HTMLElement, text: () => string): void {
+  if (!voicePrefs.enabled) return;
   if (voiceState().target === root) return stopReading();
   void readAloud(text(), root).then(() => {
     if (lastError) eventChip(`Read aloud: ${lastError}`);
@@ -580,6 +581,7 @@ function paintSpeak(): void {
   for (const b of thread.querySelectorAll<HTMLButtonElement>(".status .speak")) {
     const mine = b.closest(".msg") === target;
     b.hidden = !voicePrefs.enabled;
+    b.disabled = !voicePrefs.enabled;
     b.replaceChildren(icon(mine ? "stop" : "voice", 15));
     b.classList.toggle("loading", mine && state === "loading");
     b.closest(".status")?.classList.toggle("speaking", mine);
@@ -1180,7 +1182,7 @@ function paintMic(): void {
   mic.hidden = !dictationPrefs.enabled;
   mic.classList.toggle("listening", state === "listening");
   mic.classList.toggle("transcribing", state === "transcribing");
-  mic.disabled = state === "transcribing";
+  mic.disabled = !dictationPrefs.enabled || state === "transcribing";
   const label = state === "listening" ? "Stop dictation (Enter); Esc discards" : state === "transcribing" ? "Transcribing…" : "Dictate (⌘D)";
   mic.title = label;
   mic.setAttribute("aria-label", label);
@@ -1275,6 +1277,7 @@ const TALK_LABEL: Record<ConversationState, string> = {
 function paintTalk(): void {
   const s = conversationState();
   talk.hidden = !conversationPrefs.enabled;
+  talk.disabled = !conversationPrefs.enabled;
   talk.classList.toggle("on", s !== "off");
   talk.classList.toggle("hearing", s === "hearing");
   talk.classList.toggle("understanding", s === "understanding");

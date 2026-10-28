@@ -45,7 +45,7 @@ export const dictationPrefs = {
   /** The person's own setting; `enabled` is also off under the master switch. */
   get own(): boolean { return prefs.get("dictation:enabled") !== "false"; },
   get enabled(): boolean { return voiceMaster.on && this.own; },
-  set enabled(v: boolean) { prefs.set("dictation:enabled", String(v)); window.dispatchEvent(new Event("vak:dictation")); },
+  set enabled(v: boolean) { prefs.set("dictation:enabled", String(v)); if (!v) cancelDictation(); window.dispatchEvent(new Event("vak:dictation")); },
   get send(): boolean { return prefs.get("dictation:send") === "true"; },
   set send(v: boolean) { prefs.set("dictation:send", String(v)); },
   /** "" follows the system language. */
@@ -65,6 +65,7 @@ export const dictationPrefs = {
 };
 
 let state: DictationState = "idle";
+let captureGeneration = 0;
 let startedAt = 0;
 let level = 0;
 let finish: (() => void) | undefined;
@@ -82,7 +83,7 @@ export interface DictationHandlers {
 /** Stop listening and use what was said. */
 export function stopDictation(): void { finish?.(); }
 /** Stop listening and drop it. */
-export function cancelDictation(): void { cancelNow?.(); }
+export function cancelDictation(): void { captureGeneration++; cancelNow?.(); }
 
 const RECOGNITION_ERRORS: Record<string, string> = {
   "not-allowed": "Microphone or speech recognition access is off. Allow Vakyartha in System Settings → Privacy & Security.",
@@ -93,11 +94,13 @@ const RECOGNITION_ERRORS: Record<string, string> = {
 };
 
 export async function startDictation(h: DictationHandlers): Promise<void> {
-  if (state !== "idle") return;
+  if (!dictationPrefs.enabled || state !== "idle") return;
+  const generation = captureGeneration;
   const c = dictationPrefs.choice ?? (await firstReady());
-  if (!c) return h.onError("Dictation needs a transcription model here: install Whistle (free, on this Mac) or add an OpenAI or Gemini key in Integrations → Voice.");
+  if (!dictationPrefs.enabled || generation !== captureGeneration) return;
+  if (!c) return h.onError("Dictation needs a transcription model here: install Whistle (free, on this Mac) or add an OpenAI or Gemini key in Providers.");
   if (c.provider === "system") return listenSystem(h);
-  return record(c, h);
+  return record(c, h, generation);
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
@@ -225,13 +228,18 @@ export async function recordingChoice(): Promise<DictationChoice | undefined> {
   return c && c.provider !== "system" ? c : firstReady();
 }
 
-async function record(c: DictationChoice, h: DictationHandlers): Promise<void> {
+async function record(c: DictationChoice, h: DictationHandlers, generation: number): Promise<void> {
   if (!navigator.mediaDevices?.getUserMedia) return h.onError("This window cannot use the microphone.");
   let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
   } catch {
+    if (generation !== captureGeneration) return;
     return h.onError(RECOGNITION_ERRORS["not-allowed"]!);
+  }
+  if (!dictationPrefs.enabled || generation !== captureGeneration) {
+    for (const track of stream.getTracks()) track.stop();
+    return;
   }
   const ctx = new AudioContext();
   const source = ctx.createMediaStreamSource(stream);
@@ -261,14 +269,19 @@ async function record(c: DictationChoice, h: DictationHandlers): Promise<void> {
   finish = async () => {
     const rate = ctx.sampleRate;
     release();
+    const abort = new AbortController();
+    cancelNow = () => { abort.abort(); cancelNow = undefined; announce("idle"); };
     announce("transcribing");
     try {
-      const text = await transcribeWav(c, wav16k(downsample(chunks, rate)));
+      const text = await transcribeWav(c, wav16k(downsample(chunks, rate)), abort.signal);
+      if (abort.signal.aborted || generation !== captureGeneration) return;
       if (text) h.onText(text, true);
       else h.onError("Nothing was heard.");
     } catch (err) {
+      if (abort.signal.aborted || generation !== captureGeneration) return;
       h.onError((err as Error).message);
     }
+    cancelNow = undefined;
     announce("idle");
   };
   const timer = setTimeout(() => void finish?.(), MAX_MS);

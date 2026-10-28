@@ -544,6 +544,7 @@ body.collapsed .artifacts-sidebar { display: grid; margin-left: 58px; }
 .voice-style input { width: min(280px, 60vw); }
 .voice-value { min-width: 2.6em; text-align: right; font-size: 0.82rem; color: var(--muted); }
 .voice-use { justify-content: flex-end; margin: 12px 0; }
+.mic[hidden], .act.speak[hidden] { display: none !important; }
 .voice-discovery { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
 .voice-discovery p { margin: 0; }
 .voice-model-control { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; width: 300px; max-width: 100%; min-width: 0; }
@@ -556,6 +557,16 @@ body.collapsed .artifacts-sidebar { display: grid; margin-left: 58px; }
 .voice-downloads { margin: 28px 0; }
 .voice-downloads > summary { cursor: pointer; padding: 12px 0; }
 .voice-downloads > summary .row-hint { display: block; margin: 5px 0 0 18px; }
+.provider-row { border-bottom: 1px solid var(--border); }
+.provider-row > summary { display: flex; align-items: center; gap: 12px; padding: 16px 4px; cursor: pointer; list-style: none; }
+.provider-row > summary::-webkit-details-marker { display: none; }
+.provider-row > summary::after { content: "›"; color: var(--muted); margin-left: auto; }
+.provider-row[open] > summary::after { transform: rotate(90deg); }
+.provider-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.provider-row .card-fields { padding: 0 4px 14px; }
+.provider-actions { display: flex; flex-wrap: wrap; gap: 16px; padding: 0 4px 16px; }
+.provider-more { margin: 16px 0; }
+.provider-more > summary { cursor: pointer; color: var(--muted); padding: 8px 4px; }
 .status .continue { margin-left: 4px; padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg); font: inherit; cursor: pointer; }
 .status .continue:hover { background: var(--hover); }
 .status.error .dot { background: var(--danger); animation: none; }

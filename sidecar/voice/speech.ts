@@ -148,7 +148,7 @@ async function upload(provider: string, ctx: Ctx, url: string, headers: Record<s
 
 function key(a: VoiceAdapter, env: Env): string {
   const k = a.keyVar ? env[a.keyVar] : undefined;
-  if (!k) throw new SpeechError(`Add your ${a.keyLabel ?? a.label} API key on its Voice page in Integrations.`);
+  if (!k) throw new SpeechError(`Add your ${a.keyLabel ?? a.label} API key in Providers.`);
   return k;
 }
 
@@ -301,7 +301,7 @@ const whistle: VoiceAdapter = {
     async run(audio, _model, language, { dir, signal }) {
       language = language?.split("-")[0];
       if (language && !WHISTLE_LANGUAGES[language]) throw new SpeechError(`Whistle does not transcribe this language. Choose ${Object.values(WHISTLE_LANGUAGES).join(", ")} or "Same as this Mac" in Settings → Voice, or a hosted model.`);
-      if (!(await whistleInstalled(dir))) throw new SpeechError("Install the Whistle pack in Integrations → Voice → Whistle.");
+      if (!(await whistleInstalled(dir))) throw new SpeechError("Install the Whistle pack in Providers → Whistle.");
       return runWhistle(dir, audio, language, signal);
     },
   },

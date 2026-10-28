@@ -70,21 +70,15 @@ function risk(t: Tool): HTMLElement[] {
   return out;
 }
 
-let filter: "all" | "installed" | "voice" | Trust = "all";
+let filter: "all" | "installed" | Trust = "all";
 let query = "";
 
 /** The marketplace grid. `open(id)` shows one integration's page. */
-/** `voice`: the Voice category, shown under All and alone under its own filter. */
-export async function marketplace(open: (id: string) => void, addOwn: () => void, voice: HTMLElement[] = []): Promise<HTMLElement[]> {
+export async function marketplace(open: (id: string) => void, addOwn: () => void): Promise<HTMLElement[]> {
   const list = await api<Integration[]>("/api/integrations");
   filter = "all";
   const grid = el("div", { className: "market" });
-  const voiceBox = el("div", {}, ...voice);
   const paint = () => {
-    // .market sets display, which the hidden attribute does not override.
-    grid.style.display = filter === "voice" ? "none" : "";
-    voiceBox.style.display = filter === "all" || filter === "voice" ? "" : "none";
-    if (filter === "voice") return;
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     const shown = list.filter((i) => (filter === "all" ? true : filter === "installed" ? i.enabled || i.entry.sourceKind === "npm" && i.installed || Boolean(i.provenance) || i.entry.trust === "custom" : i.entry.trust === filter)).filter((i) => words.every((w) => `${i.entry.name} ${i.entry.publisher} ${i.entry.summary}`.toLowerCase().includes(w)));
     grid.replaceChildren(
@@ -109,7 +103,6 @@ export async function marketplace(open: (id: string) => void, addOwn: () => void
       ["official", "Official"],
       ["vendor", "Vendors"],
       ["custom", "Yours"],
-      ...(voice.length ? [["voice", "Voice"] as const] : []),
     ] as const,
     filter,
     (v) => {
@@ -122,7 +115,7 @@ export async function marketplace(open: (id: string) => void, addOwn: () => void
   add.addEventListener("click", addOwn);
   paint();
   const external = externalCatalogs(open);
-  const own = el("div", {}, el("div", { className: "market-bar" }, search, add, filters), grid, voiceBox);
+  const own = el("div", {}, el("div", { className: "market-bar" }, search, add, filters), grid);
   external.node.hidden = true;
   const tabs = segmented([["ours", "Our catalog"], ["external", "External catalogs"], ["installed", "In use"]] as const, "ours", v => {
     external.node.hidden = v !== "external"; own.hidden = v === "external";

@@ -36,6 +36,7 @@ const MAX_UTTERANCE_MS = 60_000;
 const PREROLL_MS = 350;
 
 let state: ConversationState = "off";
+let generation = 0;
 let release: (() => void) | undefined;
 export const conversationState = () => state;
 /** Read fresh each time: the mode can end while a transcription is awaited. */
@@ -57,6 +58,7 @@ function onVoice(): void {
 window.addEventListener("vak:voice", onVoice);
 
 export function stopConversation(): void {
+  generation++;
   release?.();
   release = undefined;
   announce("off");
@@ -64,15 +66,22 @@ export function stopConversation(): void {
 
 export async function startConversation(h: ConversationHandlers): Promise<void> {
   if (state !== "off" || !conversationPrefs.enabled) return;
+  const mine = ++generation;
   const choice = await recordingChoice();
-  if (!choice) return h.onError("Conversation mode needs a transcription model: install Whistle (free, on this Mac) or add an OpenAI or Gemini key in Integrations → Voice.");
+  if (mine !== generation || !conversationPrefs.enabled) return;
+  if (!choice) return h.onError("Conversation mode needs a transcription model: install Whistle (free, on this Mac) or add an OpenAI or Gemini key in Providers.");
   if (!navigator.mediaDevices?.getUserMedia) return h.onError("This window cannot use the microphone.");
   let stream: MediaStream;
   try {
     // Echo cancellation keeps the reply we play out of what we hear.
     stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   } catch {
+    if (mine !== generation) return;
     return h.onError("Microphone access is off. Allow Vakyartha in System Settings → Privacy & Security → Microphone.");
+  }
+  if (mine !== generation || !conversationPrefs.enabled) {
+    for (const track of stream.getTracks()) track.stop();
+    return;
   }
   const ctx = new AudioContext();
   const source = ctx.createMediaStreamSource(stream);
