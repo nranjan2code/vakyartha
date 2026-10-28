@@ -120,14 +120,15 @@ fn show_main(app: &AppHandle) {
     }
 }
 
-fn show_admin(app: &AppHandle) {
+#[tauri::command]
+fn show_admin(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("admin") {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
     } else {
         let _ = tauri::WebviewWindowBuilder::new(
-            app,
+            &app,
             "admin",
             tauri::WebviewUrl::App("admin.html".into()),
         )
@@ -136,6 +137,7 @@ fn show_admin(app: &AppHandle) {
         .min_inner_size(800.0, 500.0)
         .build();
     }
+    Ok(())
 }
 
 fn tray(app: &tauri::App) -> tauri::Result<()> {
@@ -158,7 +160,7 @@ fn tray(app: &tauri::App) -> tauri::Result<()> {
                     let _ = window.eval("window.dispatchEvent(new Event('vak:new-chat'))");
                 }
             }
-            "admin" => show_admin(app),
+            "admin" => { let _ = show_admin(app.clone()); }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -261,7 +263,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![backend, engine_request, engine_ack, engine_cancel, set_keep_running, autostart, save_canvas])
+        .invoke_handler(tauri::generate_handler![backend, engine_request, engine_ack, engine_cancel, set_keep_running, autostart, save_canvas, show_admin])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if KEEP_RUNNING.load(Ordering::Relaxed) {

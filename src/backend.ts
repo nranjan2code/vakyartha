@@ -51,6 +51,17 @@ export async function revealPath(path: string): Promise<void> {
   if (inTauri) await revealItemInDir(path);
 }
 
+/** Opens the Admin & Observability Console (native webview in Tauri or tab in browser). */
+export async function openAdminConsole(): Promise<void> {
+  if (inTauri) {
+    try {
+      await invoke("show_admin");
+      return;
+    } catch {}
+  }
+  window.open("/admin.html", "_blank", "noopener");
+}
+
 /** WebKit downloads need a native handler; keep export consistent in the app. */
 export async function downloadMarkdown(filename: string, content: string): Promise<void> {
   if (inTauri) {

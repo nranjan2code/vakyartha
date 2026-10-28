@@ -65,3 +65,4 @@ test("handleAction yields valid Canvas reactive surface patches in sub-milliseco
   assert.ok(patches.some((p) => p.id === "card-var-95"));
   assert.ok(patches.some((p) => p.id === "chart-section"));
 });
+

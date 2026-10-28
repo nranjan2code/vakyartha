@@ -3,7 +3,7 @@ import { engineFetch } from "./backend.ts";
 // made (keys when you press Save next to them), so there is no page-wide Save.
 
 import { readSse } from "@vak/core";
-import { autostart, inTauri, revealPath, setKeepRunning } from "./backend.ts";
+import { autostart, inTauri, openAdminConsole, revealPath, setKeepRunning } from "./backend.ts";
 import { $, api, ask, el, engine, prefs } from "./core.ts";
 import { choose, current, labelOf, listModels, loadProviders, modelOptions, parseChoice, type ProviderInfo, providers } from "./models.ts";
 import { applyAppearance, appearance, MODES, SIZES, THEMES } from "./theme.ts";
@@ -426,6 +426,19 @@ async function generalPage(): Promise<HTMLElement[]> {
   return [
     ...title("General"),
     app,
+    group(
+      "Mini-Cloud Platform",
+      row(
+        "Admin & Observability Console",
+        "Inspect sandboxed worker pool slots, real-time memory RSS gauges, streaming logs, and hosted dynamic applications.",
+        el("button", {
+          type: "button",
+          className: "primary small",
+          textContent: "Open Console",
+          onclick: () => void openAdminConsole(),
+        })
+      )
+    ),
     group(
       "Model behaviour",
       row("Thinking", "Let local models think before answering (Ollama). Slower, sometimes better.", toggle(opt("think", "false") === "true", (on) => prefs.set("opt:think", String(on)))),
