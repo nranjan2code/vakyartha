@@ -2096,3 +2096,24 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
   .app-runner-actions { width: 100%; }
   #app-run-status { padding: 0 12px; }
 }
+
+/* App views are first-class navigation; execution management stays on demand. */
+.app-runner-top { flex-wrap: nowrap; gap: 12px; padding: 10px 18px; }
+.app-runner-top .back { flex: none; width: auto; margin: 0; white-space: nowrap; }
+.app-runner-head-info .app-status { position: static; flex: none; }
+.app-runner-operations { position: relative; }
+.app-runner-operations summary { cursor: pointer; color: var(--muted); padding: 6px 8px; font-size: .85rem; }
+.app-runner-menu { position: absolute; z-index: 4; right: 0; top: 100%; display: grid; gap: 6px; padding: 10px; min-width: 180px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); box-shadow: 0 8px 24px #0002; }
+.app-surface-nav { flex: none; display: flex; gap: 4px; align-items: center; overflow-x: auto; padding: 0 18px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.app-surface-nav:empty { display: none; }
+.app-surface-nav > button { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 11px 16px; font: inherit; font-size: .88rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.app-surface-nav > button[aria-pressed="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.app-surface-nav > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.app-runner-content { padding: 16px clamp(12px, 2vw, 28px); }
+@media (max-width: 620px) {
+  .app-runner-top { padding: 8px 12px; flex-wrap: wrap; }
+  .app-runner-actions { width: auto; margin-left: auto; flex-wrap: nowrap; }
+  .app-runner-head-info { flex-basis: calc(100% - 85px); }
+  .app-surface-nav { padding: 0 8px; }
+  .app-surface-nav > button { padding: 10px 12px; }
+}

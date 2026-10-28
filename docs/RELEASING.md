@@ -297,3 +297,7 @@ Artifact SHA-256:
 - Native: `688d8ff7e7ab3eedf2c3ec6928961f8225c322ffd82cfba4e9486b653157821d`.
 - Sidecar: `46aa2f4f5c7550cddd9619bbfa125160354d1deb978dd832cc2e147e7bfb5c98`.
 - DMG: `569cdcee0e4adbcb4c6246403ebf5dfc0a16fa7c3d88a832d7dd86bc16c2faba`.
+
+## Analytics runtime packaging — 2026-10-29
+
+`buildSidecar` copies the reviewed `@duckdb/node-api@1.5.6-r.1`, matching bindings and current platform native package (including licenses) into `duckdb-runtime/node_modules`. The release resource list includes that directory. The runtime manifest now records both builtin apps and the complete DuckDB runtime tree; compare those receipts during installation provenance checks. Missing platform binaries fail packaging/execution rather than falling back to host SQL. The Darwin binding was inspected with `otool -L`: retain required relative native libraries together. The native package adds approximately 118 MB unpacked on arm64; measure final bundle size/signing when producing an installed build. A source bundle check alone does not certify signed/notarized packaging or installation.

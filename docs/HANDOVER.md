@@ -1,5 +1,32 @@
 # Vakyartha handover — 2026-10-28
 
+## Executable app documentation method — 2026-10-29
+
+The bundled app-authoring skill now explicitly requires README.md, AGENTS.md, SKILLS.md and ARCHITECTURE.md and loads its file-specific package template. Maintenance loads a change checklist; authoring, maintenance, operation, administration and the new app-debugger all reference these documents. Studio uses one shared scaffold to generate the documents with an honest executable local counter. This is procedural guidance and starter generation, not a new publication rejection rule or proof of general model compliance. Existing reviewed skill-update preferences remain preserved; no installed application replacement is claimed.
+
+229 app tests pass, including real enabled-skill template loading, all reference packages' document/surface checks and actual scaffold sandbox persistence (0 → 1 → 2 → reopen). The three additional reference apps are still under acceptance review: the first live suite retained a failure in its independent repository comparison because the integration-test presentation endpoint truncated JSON. Live news, bookmark persistence and scheduler due-minute/deduplication checks passed before that failure; full suite/UI acceptance remains open. Keep that failure as evidence when repairing the checker, without weakening original source/value requirements.
+
+## Market Terminal reference and general chart/layout fixes — 2026-10-29
+
+Built `sidecar/builtin-apps/market-terminal/` with `README.md`, `AGENTS.md`, `SKILLS.md` and `ARCHITECTURE.md`. Independent Market/Instrument/Analytics views use real delayed NSE reads, validated dated OHLCV, persistent sandbox DuckDB, parameterized SQL analytics and source receipts. Apps → Add Reference App installs this package; new source data directories seed it once. Existing published/user packages and installed app data were not overwritten.
+
+Projection `fae8a41` adds real validated OHLC candlesticks, fitted/disclosed trend scales, horizontal signed bars, exact values, semantic heights/axis context and inherited compact density. The adopted pushed pin is `b28c317`, which preserves missing OHLC shorthand for rejection and includes the exact-value pointer/touch/keyboard inspector and the separately documented concurrent provider maintenance. No framework submodule files were edited. App navigation now exposes independent views and retains local filters/scroll; explicit focus actions validate their surface target before committing. General capabilities and remaining gaps are in [the design audit](MARKET-TERMINAL.md).
+
+ADR-049 enables bounded 2 MiB DuckDB snapshots committing atomically with state/surfaces through the existing single owner. Raw machine source receipts avoid model-facing clipping after unchanged integration schema/policy/log checks. The dependency adoption was user-authorized; exact reviewed DuckDB version, script-free installation, verified registry signatures, copied native runtime/licenses and release receipts are documented. No raw web tunnel, credential forwarding, new native relay or parallel connector was added.
+
+224 app / 405 pinned framework tests, typecheck, UI/self-contained runtime bundling, real packaged private-sidecar sandbox SQL and wide/narrow Canvas checks pass. Final live `vak-market-check-qk21Ns` independently checks sources/calculations/persistence and actual UI navigation/inspection/SQL at 1440/1100/620/375. Earlier apparent visual passes were overturned by screenshots, then corrected with stronger geometry assertions; all failures are retained in [Evaluation](EVALUATION.md#market-reference-duckdb-and-analytical-geometry--2026-10-29). No installed replacement, public release or broader model-outcome closure. Next installed delivery requires the usual clean build/provenance procedure; pan/zoom/linked axes and general model app-authoring remain open.
+
+## Edge model reasoning isolation and step policy (Projection f25a481) — 2026-10-28
+
+Investigation into edge model execution (`lfm3:latest`, 1.7B) revealed that `think: false` forced models with native reasoning traces to emit their internal monologue into the user-facing text stream. Furthermore, the capability policy clamped models under 2B parameters to 2 steps, causing premature step-limit exits.
+
+Changes pushed to Projection (`f25a481`):
+1. **Step budget policy**: Removed the artificial 2-step limit on models $< 2\text{B}$ parameters in `policy.ts`. Edge models now receive the standard 4-step budget with core-tier worked examples.
+2. **Ollama thinking activation**: `ollama.ts` automatically enables `think: true` for models reporting thinking support in `describeModel`, trapping internal chain-of-thought in `native: { thinking }` rather than leaking into the chat stream.
+3. **Graceful fallback**: If an unflagged model returns HTTP 400 (`does not support thinking`), Ollama automatically retries without `think` and remembers the failure.
+4. **Stream sanitation**: Added `ThinkFilter` stream parser in `ollama.ts` to sanitize raw inline `<think>...</think>` traces from text deltas.
+5. 404 Projection tests pass with zero type errors. Framework pushed to GitHub (`f25a481`). No app build or submodule pin bump was made here to avoid disturbing the reference app work in progress.
+
 ## Executable app runtime repairs — 2026-10-28
 
 This checkpoint supersedes the earlier “complete/enterprise-grade” app-pool claims below. The app now executes declared async Node handlers and named refresh functions through the existing supervised `vaksb run`, using bounded disposable package copies and a minimal environment. No ordinary Node fallback or prewarmed uncontained process remains. Direct app actions/refreshes do not call a model. Declared real-data tools use existing integration schemas, policy rechecks and logs; credentials stay in the host, and Ask/off tools cannot run unattended.
@@ -216,3 +243,9 @@ ADR-039 makes the app-owned `surface-design` built-in mandatory. The Skills serv
 Mechanism checks: 166 app tests, 393 pinned framework tests, typecheck, UI build, native Rust test, canvas WebKit at 1100/620, mixed-surface/chart WebKit at 1440/1100/620, and Skills WebKit at 1100/620 pass. A fresh npm install reports zero vulnerabilities; no dependencies or lockfiles changed. The Skills check covers reviewed updates, disabled-choice preservation, the Always on UI state, absent off/remove controls, API rejection of off/removal and successful ordinary/built-in skill lifecycle. Auto-injection and migration restoration have unit coverage. The app review found `surface-design` is the only global requirement: `interactive-ui` is necessary only for selected interactive/data workflows; assistant and domain procedures are request-specific.
 
 No build/install work remains for this checkpoint. The original provider/source/value/interpretation/interaction/receipt gates remain open. Existing provider/source/value/interpretation/interaction/receipt acceptance failures remain open; this instruction/enforcement change does not close them.
+
+## Single reference app cleanup — 2026-10-29
+
+At the user's request, removed the obsolete portfolio-risk example package, its generated resource copy and sample-only calculation tests. Both Apps and the admin console now install the NSE Market Terminal. The user explicitly requested no retention of the old example's data; removed its saved draft and legacy app directory from installed local application data. No running Vakyartha/sidecar process was present during cleanup. The NSE package is the sole bundled executable reference; other app/chat/settings data is unchanged.
+
+Cleanup verification: typecheck/UI build and all 220 remaining app tests pass. The count drops by four because the deleted example's formula/manifest/patch tests were removed with its implementation. No active source/UI route points to the removed package. An installed executable rebuild was not performed.

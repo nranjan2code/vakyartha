@@ -1,0 +1,384 @@
+[
+  {
+    "id": "triage",
+    "title": "Triage",
+    "version": 1,
+    "data": {
+      "repository": "nranjan2code/vakyartha",
+      "issues": [],
+      "pulls": [],
+      "commits": [],
+      "cards": [],
+      "timeline": [],
+      "receipts": [],
+      "openCount": "0",
+      "closedCount": "0",
+      "pullCount": "0",
+      "commitCount": "0",
+      "message": "Refresh a configured public repository. No sample activity is supplied.",
+      "coverage": "Bounded samples only; board moves are local triage, not repository edits."
+    },
+    "nodes": [
+      {
+        "id": "root",
+        "type": "stack",
+        "props": {
+          "density": "compact",
+          "gap": "md"
+        },
+        "children": [
+          "coverage",
+          "source-form",
+          "message",
+          "metrics",
+          "board-section",
+          "issues"
+        ]
+      },
+      {
+        "id": "coverage",
+        "type": "text",
+        "props": {
+          "content": "{/coverage}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "source-form",
+        "type": "form",
+        "props": {
+          "submit": "refresh",
+          "submitLabel": "Refresh repository activity",
+          "maxWidth": "md"
+        },
+        "children": [
+          "repository"
+        ]
+      },
+      {
+        "id": "repository",
+        "type": "input",
+        "props": {
+          "label": "Public owner/repository",
+          "bind": "/repository",
+          "kind": "text"
+        }
+      },
+      {
+        "id": "message",
+        "type": "text",
+        "props": {
+          "content": "{/message}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "metrics",
+        "type": "grid",
+        "props": {
+          "columns": 4,
+          "minItemWidth": "sm",
+          "gap": "md"
+        },
+        "children": [
+          "open",
+          "closed",
+          "pull-count",
+          "commit-count"
+        ]
+      },
+      {
+        "id": "open",
+        "type": "stat",
+        "props": {
+          "label": "Open issues in sample",
+          "value": "{/openCount}"
+        }
+      },
+      {
+        "id": "closed",
+        "type": "stat",
+        "props": {
+          "label": "Closed issues in sample",
+          "value": "{/closedCount}"
+        }
+      },
+      {
+        "id": "pull-count",
+        "type": "stat",
+        "props": {
+          "label": "Open pull requests sampled",
+          "value": "{/pullCount}"
+        }
+      },
+      {
+        "id": "commit-count",
+        "type": "stat",
+        "props": {
+          "label": "Commits sampled",
+          "value": "{/commitCount}"
+        }
+      },
+      {
+        "id": "board-section",
+        "type": "section",
+        "props": {
+          "title": "Local review lanes",
+          "description": "Move cards locally to organize attention. This never updates the remote issue."
+        },
+        "children": [
+          "board"
+        ]
+      },
+      {
+        "id": "board",
+        "type": "board",
+        "props": {
+          "columns": [
+            "Review",
+            "Next",
+            "Watch"
+          ],
+          "cards": "{/cards}",
+          "bind": "/cards"
+        }
+      },
+      {
+        "id": "issues",
+        "type": "table",
+        "props": {
+          "columns": [
+            {
+              "key": "number",
+              "label": "Issue"
+            },
+            {
+              "key": "title",
+              "label": "Title"
+            },
+            {
+              "key": "state",
+              "label": "Source state"
+            },
+            {
+              "key": "author",
+              "label": "Author"
+            },
+            {
+              "key": "updatedAt",
+              "label": "Updated · UTC"
+            },
+            {
+              "key": "url",
+              "label": "Original"
+            }
+          ],
+          "rows": "{/issues}",
+          "sortable": true,
+          "searchable": true,
+          "pageSize": 10,
+          "maxWidth": "full"
+        }
+      }
+    ]
+  },
+  {
+    "id": "activity",
+    "title": "Activity",
+    "version": 1,
+    "data": {
+      "repository": "nranjan2code/vakyartha",
+      "issues": [],
+      "pulls": [],
+      "commits": [],
+      "cards": [],
+      "timeline": [],
+      "receipts": [],
+      "openCount": "0",
+      "closedCount": "0",
+      "pullCount": "0",
+      "commitCount": "0",
+      "message": "Refresh a configured public repository. No sample activity is supplied.",
+      "coverage": "Bounded samples only; board moves are local triage, not repository edits."
+    },
+    "nodes": [
+      {
+        "id": "root",
+        "type": "stack",
+        "props": {
+          "density": "compact",
+          "gap": "md"
+        },
+        "children": [
+          "coverage",
+          "commits-section",
+          "pulls"
+        ]
+      },
+      {
+        "id": "coverage",
+        "type": "text",
+        "props": {
+          "content": "{/coverage}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "commits-section",
+        "type": "section",
+        "props": {
+          "title": "Recent source commits"
+        },
+        "children": [
+          "timeline"
+        ]
+      },
+      {
+        "id": "timeline",
+        "type": "timeline",
+        "props": {
+          "items": "{/timeline}"
+        }
+      },
+      {
+        "id": "pulls",
+        "type": "table",
+        "props": {
+          "columns": [
+            {
+              "key": "number",
+              "label": "PR"
+            },
+            {
+              "key": "title",
+              "label": "Title"
+            },
+            {
+              "key": "author",
+              "label": "Author"
+            },
+            {
+              "key": "updatedAt",
+              "label": "Updated · UTC"
+            },
+            {
+              "key": "url",
+              "label": "Original"
+            }
+          ],
+          "rows": "{/pulls}",
+          "sortable": true,
+          "searchable": true,
+          "pageSize": 10,
+          "maxWidth": "full"
+        }
+      }
+    ]
+  },
+  {
+    "id": "sources",
+    "title": "Source ledger",
+    "version": 1,
+    "data": {
+      "repository": "nranjan2code/vakyartha",
+      "issues": [],
+      "pulls": [],
+      "commits": [],
+      "cards": [],
+      "timeline": [],
+      "receipts": [],
+      "openCount": "0",
+      "closedCount": "0",
+      "pullCount": "0",
+      "commitCount": "0",
+      "message": "Refresh a configured public repository. No sample activity is supplied.",
+      "coverage": "Bounded samples only; board moves are local triage, not repository edits."
+    },
+    "nodes": [
+      {
+        "id": "root",
+        "type": "stack",
+        "props": {
+          "density": "compact",
+          "gap": "md"
+        },
+        "children": [
+          "coverage",
+          "source-form",
+          "message",
+          "receipts"
+        ]
+      },
+      {
+        "id": "coverage",
+        "type": "text",
+        "props": {
+          "content": "{/coverage}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "source-form",
+        "type": "form",
+        "props": {
+          "submit": "refresh",
+          "submitLabel": "Refresh repository activity",
+          "maxWidth": "md"
+        },
+        "children": [
+          "repository"
+        ]
+      },
+      {
+        "id": "repository",
+        "type": "input",
+        "props": {
+          "label": "Public owner/repository",
+          "bind": "/repository",
+          "kind": "text"
+        }
+      },
+      {
+        "id": "message",
+        "type": "text",
+        "props": {
+          "content": "{/message}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "receipts",
+        "type": "table",
+        "props": {
+          "columns": [
+            {
+              "key": "dataset",
+              "label": "Dataset"
+            },
+            {
+              "key": "url",
+              "label": "Source URL"
+            },
+            {
+              "key": "at",
+              "label": "Retrieval · UTC"
+            },
+            {
+              "key": "rows",
+              "label": "Returned records"
+            },
+            {
+              "key": "status",
+              "label": "Result"
+            }
+          ],
+          "rows": "{/receipts}",
+          "sortable": true,
+          "searchable": true,
+          "pageSize": 10,
+          "maxWidth": "full"
+        }
+      }
+    ]
+  }
+]

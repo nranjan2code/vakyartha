@@ -8,9 +8,11 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import type { FleetSnapshot, PoolConfig, WorkerSlotSummary, WorkloadClass } from "../../shared/sandbox-pool.ts";
 import { runSandboxCommand } from "../sandbox-execution.ts";
+import { stageDuckDB, databaseSnapshot } from "./database.ts";
 import { readBounded, packageFiles, appId } from "./package.ts";
 
 export interface AppInvocation {
+  duckdb?: boolean; database?: string;
   backend: string; files: Record<string, string>; state: Record<string, unknown>;
   surfaces: Record<string, unknown>; controlId: string; value: unknown;
   action?: string; trigger?: boolean; surface?: string; timeoutMs?: number;
@@ -41,7 +43,7 @@ export class SandboxPoolManager extends EventEmitter {
     }
     return { ...slot };
   }
-  async execute(tenantId: string, request: AppInvocation): Promise<{ result: Record<string, unknown>; state: Record<string, unknown> }> {
+  async execute(tenantId: string, request: AppInvocation): Promise<{ result: Record<string, unknown>; state: Record<string, unknown>; database?: string }> {
     const lease = await this.lease(tenantId);
     const slot = this.slots.get(lease.slotId)!;
     if (this.queued >= 32) throw new Error("App execution queue is full");
@@ -62,6 +64,11 @@ export class SandboxPoolManager extends EventEmitter {
       for (const [name, content] of Object.entries(packageFiles(request.files))) {
         const target = path.join(workspace, name); mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
         writeFileSync(target, content, { flag: "wx", mode: 0o600 });
+      }
+      if (request.duckdb) {
+        stageDuckDB(workspace);
+        const snapshot = databaseSnapshot(request.database);
+        if (snapshot) writeFileSync(path.join(workspace, ".vak-database.duckdb"), Buffer.from(snapshot, "base64"), { flag: "wx", mode: 0o600 });
       }
       const here = path.dirname(fileURLToPath(import.meta.url));
       const worker = this.config.workerScript ?? [path.join(here, "worker.mjs"), path.join(here, "worker.ts")].find(existsSync);
@@ -105,6 +112,8 @@ export class SandboxPoolManager extends EventEmitter {
       if (result.code !== 0) throw new Error(`App execution failed (${result.code}): ${result.stderr.slice(0, 1000)}`);
       const response = JSON.parse(readBounded(path.join(workspace, ".vak-result.json"), 4 * 1024 * 1024));
       if (!response || !response.result || typeof response.result !== "object" || Array.isArray(response.result) || !response.state || typeof response.state !== "object" || Array.isArray(response.state)) throw new Error("Invalid app response");
+      if (request.duckdb) response.database = databaseSnapshot(response.database);
+      else if (response.database !== undefined) throw new Error("Undeclared database snapshot");
       return response;
     } finally {
       this.controllers.delete(controller); this.active--; slot.state = "hibernated";

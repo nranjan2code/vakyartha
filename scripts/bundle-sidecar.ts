@@ -79,6 +79,8 @@ const receipt = {
   npm: { version: npmVersion, ...treeReceipt(path.join(resources, "npm")) },
   sidecar: treeReceipt(path.join(resources, "sidecar.mjs")),
   skills: treeReceipt(path.join(resources, "builtin-skills")),
+  apps: treeReceipt(path.join(resources, "builtin-apps")),
+  duckdb: { version: "1.5.6-r.1", ...treeReceipt(path.join(resources, "duckdb-runtime")) },
   sandbox: { commit: git(sandboxRepo, "rev-parse", "HEAD"), dirty: Boolean(git(sandboxRepo, "status", "--porcelain")), ...treeReceipt(vaksbBin) },
 };
 writeFileSync(path.join(resources, "runtime-manifest.json"), JSON.stringify(receipt, null, 2) + "\n");

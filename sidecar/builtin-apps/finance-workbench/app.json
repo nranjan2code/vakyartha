@@ -1,0 +1,31 @@
+{
+  "id": "finance-workbench",
+  "version": "1.0.0",
+  "name": "Personal Finance Workbench",
+  "description": "A private imported INR ledger with exact paise arithmetic, monthly cash-flow analysis, spending categories and atomic duplicate-safe imports.",
+  "author": "Vakyartha",
+  "icon": "chart",
+  "category": "finance",
+  "entrypoints": {
+    "backend": "server.ts",
+    "surface": "surface.json"
+  },
+  "runtime": {
+    "engine": "node24",
+    "memoryLimitMb": 256,
+    "cpuTimeLimitSec": 30,
+    "maxStorageMb": 16
+  },
+  "entitlements": {
+    "network": {
+      "mode": "airgap",
+      "allowedDomains": []
+    },
+    "mcpTools": [],
+    "storage": {
+      "sqlite": false,
+      "duckdb": true
+    }
+  },
+  "triggers": []
+}

@@ -68,6 +68,12 @@ export async function buildSidecar(app: string, outDir: string): Promise<void> {
     });
   }
 
+  // Native analytics stays outside the JS bundle and is staged only for opted-in apps.
+  const duckdbModules = path.join(app, "node_modules");
+  if (existsSync(workerSrc)) for (const name of ["@duckdb/node-api", "@duckdb/node-bindings", `@duckdb/node-bindings-${process.platform}-${process.arch}`]) {
+    cpSync(path.join(duckdbModules, name), path.join(outDir, "duckdb-runtime/node_modules", name), { recursive: true });
+  }
+
   if (existsSync(path.join(app, "sidecar/builtin-skills"))) {
     cpSync(path.join(app, "sidecar/builtin-skills"), path.join(outDir, "builtin-skills"), { recursive: true });
   }

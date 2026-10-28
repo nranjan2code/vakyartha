@@ -1,3 +1,4 @@
+import { AppToolResults } from "./app-tool-results.ts";
 // The Vakyartha app server: @vak/host plus the app's own routes (settings, channels,
 // info) and, optionally, the built UI. The desktop sidecar runs it behind a
 // token for the Tauri window; the playground runs it open on :5177 for a
@@ -268,23 +269,26 @@ ${skills.index()}`;
   const sandboxBin = opts.sandboxBin || "vaksb";
   const pool = new SandboxPoolManager({ sandboxBin, enabled: () => process.env.VAK_SANDBOX_ENABLED !== "false" });
   await pool.start();
+  const appToolResults = new AppToolResults();
   const apps = new AppRegistry({ dataDir, pool, seedBuiltins: true, callTool: async (app, name, args, signal) => {
     // Unattended apps may use only explicit Allow policies. Ask remains Ask;
     // package declarations never grant a background approval.
-    const available = await integrations!.toolsFor(`app:${app.id}`);
-    const candidates = integrations!.view().filter(i => i.enabled && i.status === "ready")
-      .flatMap(i => i.tools.filter(t => toolName(i.entry.id, t.name) === name).map(t => ({ integration: i, tool: t })));
-    if (candidates.length !== 1 || candidates[0]!.tool.policy !== "allow") throw new Error("App data access requires an enabled integration tool with an explicit Allow policy in Settings");
-    const tool = available.find(t => t.spec.name === name);
-    if (!tool) throw new Error("Integration tool is unavailable");
-    const result = await tool.execute(args, { signal, callId: crypto.randomUUID() });
-    if (typeof result !== "string" && result.isError) throw new Error(result.text);
-    return result;
+    return appToolResults.execute(async session => {
+      const available = await integrations!.toolsFor(session);
+      const candidates = integrations!.view().filter(i => i.enabled && i.status === "ready")
+        .flatMap(i => i.tools.filter(t => toolName(i.entry.id, t.name) === name).map(t => ({ integration: i, tool: t })));
+      if (candidates.length !== 1 || candidates[0]!.tool.policy !== "allow") throw new Error("App data access requires an enabled integration tool with an explicit Allow policy in Settings");
+      const tool = available.find(t => t.spec.name === name);
+      if (!tool) throw new Error("Integration tool is unavailable");
+      const result = await tool.execute(args, { signal, callId: crypto.randomUUID() });
+      if (typeof result !== "string" && result.isError) throw new Error(result.text);
+      return result;
+    });
   } });
   await apps.init();
   marketplaces = new Marketplaces(dataDir, integrationCatalog(media, sandboxBin, dataDir), opts.marketplaceFetch, opts.marketplaceImageFetch);
   const processIsolationEnabled = process.env.VAK_SANDBOX_ENABLED !== "false";
-  integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: processIsolationEnabled, binaryPath: sandboxBin } }, media, marketplaces.catalog);
+  integrations = createIntegrations({ dataDir, observe: (request, result) => { appToolResults.observe(request.session, result); tasks?.observeResult(request, result); }, secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: processIsolationEnabled, binaryPath: sandboxBin } }, media, marketplaces.catalog);
   // Refresh app-owned tool schemas after an upgrade; the integration journal
   // may otherwise retain an older model's controls indefinitely.
   for (const entry of integrations.view().filter((i) => i.enabled && (i.entry.id.startsWith("media-") || i.entry.id === "sandbox-execution"))) {
@@ -621,6 +625,7 @@ ${skills.index()}`;
     if (!p.startsWith("/api/apps")) return false;
 
     try {
+      if (p === "/api/apps/builtin" && req.method === "GET") { json(res, 200, apps.listBuiltins()); return true; }
       const builtin = /^\/api\/apps\/builtin\/([a-z0-9][a-z0-9_-]{1,63})$/.exec(p);
       if (builtin && req.method === "POST") { json(res, 201, await apps.installBuiltin(builtin[1]!)); return true; }
       if (p === "/api/apps/drafts" && req.method === "GET") { json(res, 200, apps.listDrafts()); return true; }

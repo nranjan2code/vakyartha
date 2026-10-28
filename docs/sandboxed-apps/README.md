@@ -13,3 +13,5 @@ Start with the [runtime contract](RUNTIME-CONTRACT.md), which defines the suppor
 | [ADR-048](../ADR.md#adr-048-bounded-executable-app-invocations-and-reviewed-publication-2026-10-28) | Accepted runtime boundary, superseding ADR-047 |
 
 The earlier warm-worker/daemon design is superseded. Persistent filesystem databases, file watchers, raw network/model brokers, strict CPU/RSS/disk quotas and latency guarantees are not current capabilities. The primary-provider authoring gate remains open; runtime checks do not certify model-generated applications. Source changes have not replaced the installed app.
+
+2026-10-28 capability update: opted-in bounded DuckDB snapshots now persist atomically with each app record, with sandbox-owned SQL and no new writer/IPC. General persistent filesystem volumes remain unsupported. See [current runtime contract](RUNTIME-CONTRACT.md) and ADR-049 for the superseding interface and limits.

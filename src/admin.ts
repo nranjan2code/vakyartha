@@ -6,6 +6,7 @@ import type { AppSummary } from "../sidecar/sandbox-pool/app-registry.ts";
 import { connect, engineFetch, inTauri, type Backend } from "./backend.ts";
 import { applyAppearance } from "./theme.ts";
 import { icon } from "./icons.ts";
+import { chooseReferenceApp } from "./reference-apps.ts";
 import { estimateCost } from "../shared/finops.ts";
 
 // Apply Vakyartha theme & tokens immediately
@@ -504,10 +505,14 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   document.getElementById("install-app-btn")?.addEventListener("click", async () => {
     try {
-      notify("Installing Reference App…");
-      const res = await apiFetch("/api/apps/builtin/portfolio-risk-dashboard", { method: "POST", body: "{}" });
+      const entries = await (await apiFetch("/api/apps/builtin")).json();
+      const installed = await (await apiFetch("/api/apps")).json();
+      const id = await chooseReferenceApp(entries, installed.map((a: AppSummary) => a.id));
+      if (!id) return;
+      notify("Installing reference app…");
+      const res = await apiFetch(`/api/apps/builtin/${encodeURIComponent(id)}`, { method: "POST", body: "{}" });
       if (res.ok) {
-        notify("Portfolio Risk Monitor installed successfully!");
+        notify("Reference app installed successfully!");
         await refreshApps();
         await refreshFleet();
       } else {

@@ -127,13 +127,13 @@ Local table sorting/search/paging affects that table, not the chart or aggregate
 | Dense table or deliberately wide content | common `maxWidth: full` |
 | Track occupancy | grid `span`, independent of content measure |
 
-Web measures are 320 (`sm`), 720 (`md`), 960 (`lg`) pixels or available container width (`full`). Charts default to the medium measure (`md`). These are semantic props, never arbitrary model-supplied CSS.
+Web measures are 320 (`sm`), 720 (`md`), 1040 (`lg`) pixels or available container width (`full`). Charts default to the medium measure (`md`). These are semantic props, never arbitrary model-supplied CSS.
 
 ### Liquid & Adaptive Layout Rules
 1. **Never stretch single charts or cards across 100% width**: A single chart given `maxWidth: "full"` stretches 1400px+ across wide desktop screens, distorting bar aspect ratios and flattening trend lines. Single charts and forms must be clamped to `maxWidth: "md"` or `"lg"`.
 2. **Three-Tier Architecture**:
    - *Tier 1*: Executive headline & 4-column metric strip (`columns: 4, minItemWidth: "xs"`).
-   - *Tier 2*: Paired 2-column analytics grid (`columns: 2, minItemWidth: "sm"`) or split ratio (`split` with `ratio: [2, 1]`).
+   - *Tier 2*: Paired 2-column analytics grid (`columns: 2, minItemWidth: "sm"`) or split ratio (`split` with `ratio: "2:1"`).
    - *Tier 3*: Full-width dense detail table (`maxWidth: "full"`) and clamped actions (`maxWidth: "md"`).
 3. **Eliminate Card Soup**: Use `section` for thematic grouping with titles and descriptions; reserve `card` for standalone distinct focal units.
 4. **Color & Typography Guide**:
@@ -144,13 +144,14 @@ Web measures are 320 (`sm`), 720 (`md`), 960 (`lg`) pixels or available containe
 
 ## Chart choice and actual support
 
-All eight standard chart kinds render through the same dynamic component. Choose based on the analytical question, available data and comparable units. A renderer accepting a kind does not validate its statistical interpretation.
+All nine standard chart kinds render through the same dynamic component. Choose based on the analytical question, available data and comparable units. A renderer accepting a kind does not validate its statistical interpretation.
 
 | Question | Supported kind | Required data/limits |
 | --- | --- | --- |
 | Compare categories or supplied bins | bar | Category labels and comparable finite values; raw samples are not automatically histogram bins |
 | Compare additive parts across categories | stacked | Parts in the same unit; not automatic 100-percent normalization |
 | Show ordered observations over time | line | Correctly ordered dated observations; equal category spacing is not a continuous time-axis guarantee |
+| Show observed open/high/low/close intervals | candlestick | Four series in open, high, low, close order; mapped fields may use that order. Exact dated OHLC observations; separate volume chart. Invalid intervals are rejected. |
 | Show magnitude over ordered time | area | Same ordering constraints; avoid implying unsupported cumulative/stacked-area computation |
 | Show parts of one whole | pie (donut rendering) | One nonnegative series and a meaningful positive total; not negative balances |
 | Inspect paired numeric variables | scatter | Explicit numeric x and y; correlation/regression is not computed |
@@ -158,7 +159,9 @@ All eight standard chart kinds render through the same dynamic component. Choose
 | Compare a profile across common-scale axes | radar | Comparable measures; normalization is not automatic |
 | Show dated events, process state or planned work | calendar, timeline, steps, gantt when offered | These are separate components; preserve supplied dates/states rather than coercing them into a numerical chart |
 
-Candlestick/OHLC, sized bubbles, box/violin plots, waterfall, treemap, dual-axis/combo charts, error bands and statistical overlays are not standard chart kinds. Offer a supported line/bar/scatter/table where suitable and state the limitation; a name alias is not a new computation capability. In particular, `histogram`/`bubble` aliases do not implement binning or point-size encoding. Complex new chart execution belongs in Projection only after identifying a real missing general capability.
+Sized bubbles, box/violin plots, waterfall, treemap, dual-axis/combo charts, error bands and statistical overlays are not standard chart kinds. Offer a supported line/bar/scatter/table where suitable and state the limitation; a name alias is not a new computation capability. In particular, `histogram`/`bubble` aliases do not implement binning or point-size encoding. Complex new chart execution belongs in Projection only after identifying a real missing general capability.
+
+Analytical workspaces may opt into inherited `density: "compact"` on a layout root. Keep readable text and labels. Chart `height: "sm" | "md" | "lg"` selects 180/260/360px plot height; horizontal bar rankings expand to preserve readable rows. Use `orientation: "horizontal"` for long category names, with `colorBy: "sign"` only when the sign has clear meaning. Line/candlestick `yScale: "auto"` fits observed values and discloses its nonzero baseline; use `"zero"` when zero is the meaningful reference. Magnitude bars/areas always include zero. Titles and `xLabel`/`yLabel` name units and basis. Point inspection by pointer/touch or keyboard retains exact values without model calls; keep the detail table and visible interpretation.
 
 Before finalizing a chart, check that its plotted categories and series agree with its title, description and nearby interpretation. If it shows only part of the available data, name the selected categories or periods and say where the remaining values appear; do not describe a subset as complete.
 
@@ -206,3 +209,9 @@ The source map is intentionally small: `sidecar/builtin-skills/` (bundled packag
 ## Executable app packages
 
 Chat can stage complete executable packages with `save_app_draft`; Canvas promotion alone creates an inert presentation draft. Studio rehearses and publishes reviewed source. App actions and refresh handlers run ordinary code through the existing supervised sandbox, with persistent canonical state and governed integration tools. They do not require an LLM per refresh. Draft/publication, backend interface, multiple surfaces, data permissions, bounds and unsupported capabilities: [current contract](sandboxed-apps/RUNTIME-CONTRACT.md).
+
+## Executable app documentation method
+
+Every newly authored app package includes `README.md`, `AGENTS.md`, `SKILLS.md` and `ARCHITECTURE.md` alongside `app.json`, its backend and surfaces. `app-authoring` explicitly loads `references/package-template.md`; it specifies content and completion checks for each file. The Studio starter uses `shared/app-scaffold.ts` to create coherent documents plus an honestly labelled executable local counter, not synthetic health scores or a pretend external refresh. A domain app is not complete until those documents describe its actual behavior and verified limits.
+
+`app-maintainer` reads all four docs and loads `references/change-checklist.md` to align source/tool/schema/layout/schedule/recovery changes with their affected documents. `app-debugger` chains to enabled `debug-error` and `app-maintainer`, freezes the failure and inspects input/admission/source/SQL/projection/commit boundaries before repair. `app-operator` and `app-admin` also read the package documents before operating or diagnosing it. These are procedural requirements, not new authority or a claim that arbitrary model output is automatically correct. Existing reviewed skill update/removal preferences remain preserved.

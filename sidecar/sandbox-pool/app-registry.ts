@@ -80,7 +80,7 @@ interface AppRun {
 }
 interface RecordState {
   published: Package; fingerprint: string; revision: number;
-  state: Record<string, unknown>; surfaces: Record<string, SurfaceSnapshot>;
+  state: Record<string, unknown>; database?: string; surfaces: Record<string, SurfaceSnapshot>;
   scheduling: boolean; lastMinutes: Record<string, string>; lastExecutedAt: string | null;
   run?: AppRun;
   history?: AppRun[];
@@ -116,7 +116,7 @@ export class AppRegistry {
   private validate(manifestRaw: unknown, rawFiles: unknown): Package {
     const manifest = parseAppManifest(manifestRaw), files = packageFiles(rawFiles);
     if (manifest.runtime.engine !== "node24") throw new Error("Only node24 app execution is supported");
-    if (manifest.entitlements.storage.sqlite || manifest.entitlements.storage.duckdb) throw new Error("Persistent database files are unsupported; use context.state for durable app data");
+    if (manifest.entitlements.storage.sqlite) throw new Error("SQLite files are unsupported; use DuckDB or context.state for durable app data");
     if (manifest.entitlements.network.allowedDomains.length) throw new Error("Use governed MCP tools for remote data; direct network grants are unsupported");
     if (manifest.entrypoints.backend && (!/\.(ts|mjs|js)$/.test(manifest.entrypoints.backend) || !files[manifest.entrypoints.backend])) throw new Error("Declared backend source is missing or unsupported");
     if (manifest.entrypoints.surface && !files[manifest.entrypoints.surface]) throw new Error("Declared surface is missing");
@@ -163,6 +163,15 @@ export class AppRegistry {
       }
     }
     this.schedulerTimer = setInterval(() => { void this.checkSchedules().catch(() => {}); }, 30_000); this.schedulerTimer.unref();
+  }
+  listBuiltins(): AppManifest[] {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const source = [path.join(here, "..", "builtin-apps"), path.join(here, "builtin-apps")].find(existsSync);
+    if (!source) return [];
+    return readdirSync(source, { withFileTypes: true }).filter(e => e.isDirectory()).flatMap(entry => {
+      try { const manifest = parseAppManifest(JSON.parse(readBounded(path.join(source, entry.name, "app.json")))); return manifest.id === entry.name ? [manifest] : []; }
+      catch { return []; }
+    });
   }
   async installBuiltin(id: string): Promise<AppDetails> {
     appId(id);
@@ -278,7 +287,7 @@ export class AppRegistry {
     if (!expected || draft.fingerprint !== expected) throw new Error("Save and review the current draft");
     const pkg = this.validate(JSON.parse(draft.manifestText ?? JSON.stringify(draft.manifest)), draft.files);
     if (!pkg.manifest.entrypoints.backend) throw new Error("No executable backend");
-    return this.pool.execute(id, { backend: pkg.manifest.entrypoints.backend, files: pkg.files, state: {}, surfaces: this.initialSurfaces(pkg), controlId, value });
+    return this.pool.execute(id, { duckdb: pkg.manifest.entitlements.storage.duckdb, backend: pkg.manifest.entrypoints.backend, files: pkg.files, state: {}, surfaces: this.initialSurfaces(pkg), controlId, value });
   }
   async acknowledgeUncertain(id: string, runId: string): Promise<AppDetails> {
     return this.exclusive(id, async () => {
@@ -309,7 +318,7 @@ export class AppRegistry {
       this.save(id, { ...original, run, history });
       let effectAttempted = false;
       try {
-        const response = await this.pool.execute(id, { backend: manifest.entrypoints.backend, files: original.published.files, state: structuredClone(original.state), surfaces: structuredClone(original.surfaces), controlId, value, action, trigger, surface,
+        const response = await this.pool.execute(id, { duckdb: manifest.entitlements.storage.duckdb, database: original.database, backend: manifest.entrypoints.backend, files: original.published.files, state: structuredClone(original.state), surfaces: structuredClone(original.surfaces), controlId, value, action, trigger, surface,
           timeoutMs: trigger ? manifest.triggers.find(t => t.action === action)!.maxDurationSec * 1000 : 30000,
           callTool: async (name, args, signal) => {
             if (!manifest.entitlements.mcpTools.includes(name) || !this.callTool) throw new Error("Tool is not declared or available for this app");
@@ -323,6 +332,7 @@ export class AppRegistry {
         });
         const surfaces = structuredClone(original.surfaces);
         const result = response.result;
+        if (result.focusSurface !== undefined && (typeof result.focusSurface !== "string" || !surfaces[result.focusSurface])) throw new Error("Unknown app focus surface");
         const updates = !Object.keys(surfaces).length ? [] : Array.isArray(result.updates) ? result.updates : [{ surface: Object.keys(surfaces)[0], nodes: result.patches ?? [], data: result.data }];
         for (const update of updates) {
           if (!update || typeof update.surface !== "string" || !surfaces[update.surface]) throw new Error("Unknown app surface");
@@ -331,7 +341,7 @@ export class AppRegistry {
           if ([...diagnostics, ...store.lint(store.get(update.surface)!)].some(d => d.severity === "error")) throw new Error("App returned an invalid surface update");
           surfaces[update.surface] = store.snapshot(update.surface)!;
         }
-        const record: RecordState = { ...original, history, state: response.state, surfaces, revision: original.revision + 1, lastExecutedAt: new Date().toISOString(), run: { ...run, status: "completed" } };
+        const record: RecordState = { ...original, history, state: response.state, database: response.database, surfaces, revision: original.revision + 1, lastExecutedAt: new Date().toISOString(), run: { ...run, status: "completed" } };
         this.save(id, record);
         return { ...result, revision: record.revision, surfaces: record.surfaces, run: record.run };
       } catch (error) {

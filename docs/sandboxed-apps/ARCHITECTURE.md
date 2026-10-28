@@ -60,7 +60,7 @@ Network is denied inside app execution; declared real-data calls resolve through
 
 A missing handler, rejected promise, timeout, invalid result or failed commit is not a successful refresh. Tool-effect uncertainty is retained, pauses schedules and blocks further execution until exact-run acknowledgement after inspection. Restart marks interrupted runs uncertain. Recovery never automatically replays an external operation.
 
-No worker prewarming, LRU process eviction, permanent daemon, persistent filesystem database, watcher, raw network/model broker, hard spend ceiling or strict CPU/RSS/disk quota is claimed. Existing desktop private IPC and development-only loopback HTTP remain the UI transport boundaries.
+No worker prewarming, LRU process eviction, permanent daemon, arbitrary persistent filesystem database volume, watcher, raw network/model broker, hard spend ceiling or strict CPU/RSS/disk quota is claimed. Existing desktop private IPC and development-only loopback HTTP remain the UI transport boundaries.
 
 ## Source map
 
@@ -73,3 +73,5 @@ No worker prewarming, LRU process eviction, permanent daemon, persistent filesys
 - [Acceptance checks](../../scripts/apps-check.ts): real WebKit interaction, refresh, multiple surfaces and reopen.
 
 Current evidence and the failed primary-provider gate remain in [Evaluation](../EVALUATION.md#executable-local-app-runtime--2026-10-28). Mechanism success does not close earlier model/source/value/interpretation/interaction/receipt failures.
+
+2026-10-28 capability update: opted-in bounded DuckDB snapshots now persist atomically with each app record, with sandbox-owned SQL and no new writer/IPC. General persistent filesystem volumes remain unsupported. See [current runtime contract](RUNTIME-CONTRACT.md) and ADR-049 for the superseding interface and limits.

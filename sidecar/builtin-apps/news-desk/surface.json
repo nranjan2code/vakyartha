@@ -1,0 +1,411 @@
+[
+  {
+    "id": "headlines",
+    "title": "Headlines",
+    "version": 1,
+    "data": {
+      "feeds": "[\n  {\n    \"name\": \"BBC World\",\n    \"category\": \"World\",\n    \"url\": \"https://feeds.bbci.co.uk/news/world/rss.xml\"\n  },\n  {\n    \"name\": \"BBC Business\",\n    \"category\": \"Business\",\n    \"url\": \"https://feeds.bbci.co.uk/news/business/rss.xml\"\n  },\n  {\n    \"name\": \"BBC Technology\",\n    \"category\": \"Technology\",\n    \"url\": \"https://feeds.bbci.co.uk/news/technology/rss.xml\"\n  },\n  {\n    \"name\": \"BBC Science\",\n    \"category\": \"Science\",\n    \"url\": \"https://feeds.bbci.co.uk/news/science_and_environment/rss.xml\"\n  }\n]",
+      "category": "All",
+      "query": "",
+      "categoryOptions": [
+        {
+          "label": "All categories",
+          "value": "All"
+        }
+      ],
+      "articles": [],
+      "savedArticles": [],
+      "receipts": [],
+      "storyCount": "0",
+      "savedCount": "0",
+      "sourceCount": "0",
+      "message": "Connect Web pages and allow fetch_page, then refresh. No headlines have been retrieved yet.",
+      "basis": "Publisher feeds · publication time and retrieval time are separate · saved feed excerpts may be old",
+      "coverage": "No retrieved coverage yet.",
+      "empty": "No articles loaded. Refresh configured feeds to begin."
+    },
+    "nodes": [
+      {
+        "id": "root",
+        "type": "stack",
+        "props": {
+          "density": "compact",
+          "gap": "md"
+        },
+        "children": [
+          "basis",
+          "metrics",
+          "filters",
+          "refresh",
+          "coverage",
+          "empty",
+          "headlines",
+          "message"
+        ]
+      },
+      {
+        "id": "basis",
+        "type": "text",
+        "props": {
+          "content": "{/basis}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "metrics",
+        "type": "grid",
+        "props": {
+          "columns": 3,
+          "minItemWidth": "sm",
+          "gap": "md"
+        },
+        "children": [
+          "stories",
+          "sources",
+          "saved-count"
+        ]
+      },
+      {
+        "id": "stories",
+        "type": "stat",
+        "props": {
+          "label": "Matching articles",
+          "value": "{/storyCount}"
+        }
+      },
+      {
+        "id": "sources",
+        "type": "stat",
+        "props": {
+          "label": "Feeds represented",
+          "value": "{/sourceCount}"
+        }
+      },
+      {
+        "id": "saved-count",
+        "type": "stat",
+        "props": {
+          "label": "Saved for later",
+          "value": "{/savedCount}"
+        }
+      },
+      {
+        "id": "filters",
+        "type": "form",
+        "props": {
+          "submit": "apply_filters",
+          "submitLabel": "Apply filters",
+          "maxWidth": "md"
+        },
+        "children": [
+          "filter-grid"
+        ]
+      },
+      {
+        "id": "filter-grid",
+        "type": "grid",
+        "props": {
+          "columns": 2,
+          "minItemWidth": "sm",
+          "gap": "md"
+        },
+        "children": [
+          "category",
+          "query"
+        ]
+      },
+      {
+        "id": "category",
+        "type": "select",
+        "props": {
+          "label": "Category",
+          "bind": "/category",
+          "options": "{/categoryOptions}"
+        }
+      },
+      {
+        "id": "query",
+        "type": "input",
+        "props": {
+          "label": "Search headlines and excerpts",
+          "bind": "/query",
+          "kind": "text"
+        }
+      },
+      {
+        "id": "refresh",
+        "type": "button",
+        "props": {
+          "label": "Refresh publisher feeds",
+          "action": "refresh",
+          "style": "primary"
+        }
+      },
+      {
+        "id": "coverage",
+        "type": "text",
+        "props": {
+          "content": "{/coverage}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "empty",
+        "type": "text",
+        "props": {
+          "content": "{/empty}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "headlines",
+        "type": "grid",
+        "props": {
+          "columns": 2,
+          "minItemWidth": "lg",
+          "gap": "md"
+        },
+        "children": {
+          "each": "/articles",
+          "template": "headlines-card"
+        }
+      },
+      {
+        "id": "headlines-card",
+        "type": "card",
+        "props": {
+          "title": "{heading}",
+          "body": "{body}"
+        },
+        "children": [
+          "headlines-save"
+        ]
+      },
+      {
+        "id": "headlines-save",
+        "type": "button",
+        "props": {
+          "label": "{savedLabel}",
+          "action": "save_article",
+          "payload": {
+            "id": "{id}"
+          },
+          "style": "secondary"
+        }
+      },
+      {
+        "id": "message",
+        "type": "text",
+        "props": {
+          "content": "{/message}",
+          "variant": "caption"
+        }
+      }
+    ]
+  },
+  {
+    "id": "saved",
+    "title": "Reading list",
+    "version": 1,
+    "data": {
+      "feeds": "[\n  {\n    \"name\": \"BBC World\",\n    \"category\": \"World\",\n    \"url\": \"https://feeds.bbci.co.uk/news/world/rss.xml\"\n  },\n  {\n    \"name\": \"BBC Business\",\n    \"category\": \"Business\",\n    \"url\": \"https://feeds.bbci.co.uk/news/business/rss.xml\"\n  },\n  {\n    \"name\": \"BBC Technology\",\n    \"category\": \"Technology\",\n    \"url\": \"https://feeds.bbci.co.uk/news/technology/rss.xml\"\n  },\n  {\n    \"name\": \"BBC Science\",\n    \"category\": \"Science\",\n    \"url\": \"https://feeds.bbci.co.uk/news/science_and_environment/rss.xml\"\n  }\n]",
+      "category": "All",
+      "query": "",
+      "categoryOptions": [
+        {
+          "label": "All categories",
+          "value": "All"
+        }
+      ],
+      "articles": [],
+      "savedArticles": [],
+      "receipts": [],
+      "storyCount": "0",
+      "savedCount": "0",
+      "sourceCount": "0",
+      "message": "Connect Web pages and allow fetch_page, then refresh. No headlines have been retrieved yet.",
+      "basis": "Publisher feeds · publication time and retrieval time are separate · saved feed excerpts may be old",
+      "coverage": "No retrieved coverage yet.",
+      "empty": "No articles loaded. Refresh configured feeds to begin."
+    },
+    "nodes": [
+      {
+        "id": "root",
+        "type": "stack",
+        "props": {
+          "density": "compact",
+          "gap": "md"
+        },
+        "children": [
+          "basis",
+          "note",
+          "saved"
+        ]
+      },
+      {
+        "id": "basis",
+        "type": "text",
+        "props": {
+          "content": "{/basis}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "note",
+        "type": "text",
+        "props": {
+          "content": "Saved excerpts are local bookmarks, not a copy of the complete article. Open the publisher link for original reporting.",
+          "variant": "body"
+        }
+      },
+      {
+        "id": "saved",
+        "type": "grid",
+        "props": {
+          "columns": 2,
+          "minItemWidth": "lg",
+          "gap": "md"
+        },
+        "children": {
+          "each": "/savedArticles",
+          "template": "saved-card"
+        }
+      },
+      {
+        "id": "saved-card",
+        "type": "card",
+        "props": {
+          "title": "{heading}",
+          "body": "{body}"
+        },
+        "children": [
+          "saved-save"
+        ]
+      },
+      {
+        "id": "saved-save",
+        "type": "button",
+        "props": {
+          "label": "{savedLabel}",
+          "action": "save_article",
+          "payload": {
+            "id": "{id}"
+          },
+          "style": "secondary"
+        }
+      }
+    ]
+  },
+  {
+    "id": "sources",
+    "title": "Sources & refresh",
+    "version": 1,
+    "data": {
+      "feeds": "[\n  {\n    \"name\": \"BBC World\",\n    \"category\": \"World\",\n    \"url\": \"https://feeds.bbci.co.uk/news/world/rss.xml\"\n  },\n  {\n    \"name\": \"BBC Business\",\n    \"category\": \"Business\",\n    \"url\": \"https://feeds.bbci.co.uk/news/business/rss.xml\"\n  },\n  {\n    \"name\": \"BBC Technology\",\n    \"category\": \"Technology\",\n    \"url\": \"https://feeds.bbci.co.uk/news/technology/rss.xml\"\n  },\n  {\n    \"name\": \"BBC Science\",\n    \"category\": \"Science\",\n    \"url\": \"https://feeds.bbci.co.uk/news/science_and_environment/rss.xml\"\n  }\n]",
+      "category": "All",
+      "query": "",
+      "categoryOptions": [
+        {
+          "label": "All categories",
+          "value": "All"
+        }
+      ],
+      "articles": [],
+      "savedArticles": [],
+      "receipts": [],
+      "storyCount": "0",
+      "savedCount": "0",
+      "sourceCount": "0",
+      "message": "Connect Web pages and allow fetch_page, then refresh. No headlines have been retrieved yet.",
+      "basis": "Publisher feeds · publication time and retrieval time are separate · saved feed excerpts may be old",
+      "coverage": "No retrieved coverage yet.",
+      "empty": "No articles loaded. Refresh configured feeds to begin."
+    },
+    "nodes": [
+      {
+        "id": "root",
+        "type": "stack",
+        "props": {
+          "density": "compact",
+          "gap": "md"
+        },
+        "children": [
+          "message",
+          "feeds-form",
+          "receipts",
+          "limits"
+        ]
+      },
+      {
+        "id": "message",
+        "type": "text",
+        "props": {
+          "content": "{/message}",
+          "variant": "body"
+        }
+      },
+      {
+        "id": "feeds-form",
+        "type": "form",
+        "props": {
+          "submit": "refresh",
+          "submitLabel": "Validate & refresh feeds",
+          "maxWidth": "md"
+        },
+        "children": [
+          "feed-input"
+        ]
+      },
+      {
+        "id": "feed-input",
+        "type": "textarea",
+        "props": {
+          "label": "Publisher feeds JSON · 1–6 sources with name, category and HTTPS URL",
+          "bind": "/feeds",
+          "rows": 12
+        }
+      },
+      {
+        "id": "receipts",
+        "type": "table",
+        "props": {
+          "columns": [
+            {
+              "key": "source",
+              "label": "Source"
+            },
+            {
+              "key": "url",
+              "label": "Feed"
+            },
+            {
+              "key": "at",
+              "label": "Retrieved · UTC"
+            },
+            {
+              "key": "rows",
+              "label": "Usable items"
+            },
+            {
+              "key": "status",
+              "label": "Result"
+            }
+          ],
+          "rows": "{/receipts}",
+          "sortable": true,
+          "searchable": true,
+          "pageSize": 10,
+          "maxWidth": "full"
+        }
+      },
+      {
+        "id": "limits",
+        "type": "text",
+        "props": {
+          "content": "Scheduling is opt-in under Manage. Polling runs every 15 minutes while the host is running and awake. Failed reads retain prior articles; this app does not claim semantic event clustering or streaming.",
+          "variant": "caption"
+        }
+      }
+    ]
+  }
+]

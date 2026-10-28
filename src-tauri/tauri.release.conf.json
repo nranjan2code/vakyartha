@@ -11,7 +11,8 @@
       "resources/runtime-manifest.json",
       "resources/npm/**/*",
       "resources/builtin-skills/**/*",
-      "resources/builtin-apps/**/*"
+      "resources/builtin-apps/**/*",
+      "resources/duckdb-runtime/**/*"
     ]
   }
 }

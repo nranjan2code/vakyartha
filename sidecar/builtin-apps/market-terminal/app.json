@@ -1,0 +1,43 @@
+{
+  "id": "market-terminal",
+  "version": "1.0.0",
+  "name": "NSE Market Terminal",
+  "description": "Reference market workbench: delayed NSE observations, dated price and volume charts, persistent DuckDB analytics and auditable source receipts.",
+  "author": "Vakyartha",
+  "category": "finance",
+  "icon": "chart",
+  "entrypoints": {
+    "backend": "server.ts",
+    "surface": "surface.json"
+  },
+  "runtime": {
+    "engine": "node24",
+    "memoryLimitMb": 256,
+    "cpuTimeLimitSec": 30,
+    "maxStorageMb": 16
+  },
+  "entitlements": {
+    "network": {
+      "mode": "brokered",
+      "allowedDomains": []
+    },
+    "mcpTools": [
+      "nse-cmmkt__cm_get_live_indices",
+      "nse-cmmkt__cm_get_stock_quote",
+      "nse__get_stock_history"
+    ],
+    "storage": {
+      "sqlite": false,
+      "duckdb": true
+    }
+  },
+  "triggers": [
+    {
+      "id": "market-refresh",
+      "kind": "cron",
+      "expression": "*/5 * * * *",
+      "action": "refreshMarket",
+      "maxDurationSec": 30
+    }
+  ]
+}

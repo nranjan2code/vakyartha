@@ -5,7 +5,7 @@ license: MIT
 compatibility: Core required Vakyartha capability; active across desktop and web runtimes.
 metadata:
   author: nranjan2code
-  version: "1.3"
+  version: "1.4"
 allowed-tools: vak_render vak_update vak_submit
 ---
 
@@ -32,7 +32,7 @@ Surfaces adapt dynamically to container widths (from 375px mobile to 1400px+ des
      - Schedule/Timeline + Focus task card.
    - **Column Spans**: Use `span` on child nodes (`span: 2` or `span: "full"`) to balance asymmetric tracks.
 2. **Proportional Split Layouts (`split`)**:
-   - Use `split` with `props: { ratio: [2, 1], gap: "md" }` for primary/detail layouts:
+   - Use `split` with `props: { ratio: "2:1", gap: "md" }` for primary/detail layouts:
      - Left (2/3 width): Primary analytical chart or primary data view.
      - Right (1/3 width): Contextual summary card, filter form, or action buttons.
    - Automatically collapses into a clean vertical stack on narrow containers (<700px).
@@ -79,6 +79,7 @@ Canvases follow a world-class, durable desktop design system:
 
 Choose chart kinds strictly by the analytical question asked:
 - **`bar`**: Comparing discrete categories or ranking quantities.
+- **`candlestick`**: Dated open/high/low/close intervals, with four series in that order (mapped fields `["open","high","low","close"]`). Use real OHLC records and separate volume; never infer a candle from a quote or close-only series.
 - **`stacked`**: Additive composition across categories (parts of total per category).
 - **`line`**: Trends and continuous values over ordered time.
 - **`area`**: Cumulative volume or magnitude over ordered time.
@@ -87,10 +88,12 @@ Choose chart kinds strictly by the analytical question asked:
 - **`heatmap`**: Intensity or density across two discrete dimensions (e.g. day vs hour).
 - **`radar`**: Comparing multidimensional profiles across a shared normalized scale.
 
+Analytical workspaces may set `density: "compact"` on a layout root to reduce spacing without shrinking text. Use `height: "sm" | "md" | "lg"` on charts to balance primary and secondary plots. Long rankings use `orientation: "horizontal"` on bars; signed changes may use `colorBy: "sign"` with exact values and labels. Line/candle `yScale: "auto"` fits observed values and visibly discloses its baseline; choose `"zero"` when that reference matters. Bars/areas include zero. `title`, `xLabel` and `yLabel` name the analytical question and units. Preserve exact detail tables and visible interpretation; pointer/touch/keyboard inspection is supplementary.
+
 ### Visualization Constraints
 
 - **Histograms**: Must be rendered as `bar` charts using pre-calculated bin ranges.
-- **Unsupported charts**: Do not attempt bubble charts (sized scatter), candlesticks, box plots, waterfall, or dual-axis overlays. If requested, explain the limit and provide an equivalent supported chart or table.
+- **Unsupported charts**: Do not attempt bubble charts (sized scatter), box plots, waterfall, or dual-axis overlays. If requested, explain the limit and provide an equivalent supported chart or table.
 - **Truthful representation**: Before finalizing, check that a chart's plotted categories and series agree with its title, description and nearby interpretation. If it shows only part of the available data, name the selected categories or periods and say where the remaining values appear; do not describe a subset as complete. Avoid decorative or duplicate charts. Name periods, units and missing-data limitations.
 
 ## Dual Projection: Visual & Spoken Harmony

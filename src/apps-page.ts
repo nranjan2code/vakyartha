@@ -3,6 +3,8 @@
 
 import { $, api, ask, el } from "./core.ts";
 import { icon } from "./icons.ts";
+import { chooseReferenceApp } from "./reference-apps.ts";
+import type { AppManifest } from "../shared/app-manifest.ts";
 import { openAdminConsole } from "./backend.ts";
 import { basicCatalog, type SurfaceSnapshot, SurfaceStore } from "@vak/core";
 import type { VakActionDetail, VakSurfaceElement } from "@vak/web";
@@ -22,6 +24,7 @@ export class AppsPage {
   #apps: AppSummary[] = [];
   #activeApp: AppDetails | null = null;
   #activeStore: SurfaceStore | null = null;
+  #viewCache = new Map<string, { store: SurfaceStore; element: VakSurfaceElement; scroll: number }>();
   #poll?: ReturnType<typeof setInterval>;
   #dirty = false;
   #pending = Promise.resolve();
@@ -160,7 +163,7 @@ export class AppsPage {
       type: "button",
       className: "ghost small",
       onclick: () => void this.#installDefaultApp(),
-      title: "Install reference portfolio risk application",
+      title: "Browse documented reference applications",
     }, icon("plus", 14), document.createTextNode(" Add Reference App"));
 
     this.#page.replaceChildren(
@@ -274,6 +277,7 @@ export class AppsPage {
   async runApp(appId: string): Promise<void> {
     try {
       const details = await api<AppDetails>(`/api/apps/${encodeURIComponent(appId)}`);
+      this.#viewCache.clear();
       this.#activeApp = details; this.#dirty = false;
       this.#renderRunnerView(details);
       clearInterval(this.#poll);
@@ -300,14 +304,14 @@ export class AppsPage {
       className: "quiet back",
       onclick: () => this.#closeActiveApp(),
       title: "Back to applications catalog",
-    }, icon("arrow", 15), document.createTextNode(" Back to apps"));
+    }, icon("arrow", 15), document.createTextNode(" Apps"));
 
     const pollBtn = el("button", {
       type: "button",
       className: "ghost small",
       onclick: () => void this.#runTrigger(app.manifest.id),
       title: "Trigger scheduled background action",
-    }, icon("clock", 13), document.createTextNode(" Run Poll"));
+    }, icon("clock", 13), document.createTextNode(" Refresh"));
 
     const consoleBtn = el("button", {
       type: "button",
@@ -323,7 +327,7 @@ export class AppsPage {
         el("h1", { className: "app-runner-name", textContent: app.manifest.name }),
         el("span", { className: `app-status ${isRunning ? "live" : ""}`, textContent: isRunning ? "Running" : "Idle" })
       ),
-      el("div", { className: "app-runner-actions" }, pollBtn, consoleBtn)
+      el("div", { className: "app-runner-actions" }, ...(app.manifest.triggers.length ? [pollBtn] : []))
     );
 
     const surfaceMount = el("div", { className: "app-runner-content" });
@@ -345,19 +349,33 @@ export class AppsPage {
         this.#activeApp = updated; this.#renderRunnerView(updated);
       } catch (error) { status.textContent = (error as Error).message; }
     } });
-    if (app.manifest.triggers.length) actions.append(schedule);
+    const operations = el("details", { className: "app-runner-operations" },
+      el("summary", { textContent: "Manage" }),
+      el("div", { className: "app-runner-menu" }, consoleBtn, ...(app.manifest.triggers.length ? [schedule] : [])));
+    actions.append(operations);
+    const navigation = el("nav", { className: "app-surface-nav", "aria-label": "App views" });
     if (Object.keys(app.surfaces ?? {}).length > 1) {
-      const select = el("select", { "aria-label": "App surface" });
-      for (const [id, snap] of Object.entries(app.surfaces!)) select.append(el("option", { value: id, textContent: snap.title || id }));
-      select.value = String(app.surface?.id ?? "");
-      select.onchange = () => { app.surface = app.surfaces![select.value] as unknown as Record<string, unknown>; this.#renderRunnerView(app); };
-      actions.append(select);
+      const navigate = (id: string) => {
+        // The canonical owner can advance while a view is open; never rebuild from a stale closure.
+        const current = this.#activeApp;
+        if (!current || current.manifest.id !== app.manifest.id || !current.surfaces?.[id]) return;
+        const previous = String(current.surface?.id ?? "");
+        const cached = this.#viewCache.get(previous);
+        if (cached) cached.scroll = surfaceMount.scrollTop;
+        current.surface = current.surfaces[id] as unknown as Record<string, unknown>;
+        this.#renderRunnerView(current);
+      };
+      for (const [id, snap] of Object.entries(app.surfaces!)) navigation.append(el("button", {
+        type: "button", textContent: snap.title || id, "aria-pressed": String(id === app.surface?.id),
+        onclick: () => navigate(id),
+      }));
     }
 
-    this.#page.replaceChildren(header, status, surfaceMount);
+    this.#page.replaceChildren(header, navigation, status, surfaceMount);
 
     if (app.surface) {
-      const store = new SurfaceStore(basicCatalog);
+      const cached = this.#viewCache.get(String(app.surface.id));
+      const store = cached?.store ?? new SurfaceStore(basicCatalog);
       this.#activeStore = store;
       const rawSnap = app.surface as unknown as SurfaceSnapshot;
       const snapshot: SurfaceSnapshot = {
@@ -367,40 +385,54 @@ export class AppsPage {
         data: rawSnap.data ?? {},
         nodes: Array.isArray(rawSnap.nodes) ? rawSnap.nodes : [],
       };
-      store.load(snapshot);
+      if (!cached || store.snapshot(snapshot.id)?.version !== snapshot.version) store.load(snapshot);
 
-      const surfaceEl = document.createElement("vak-surface") as VakSurfaceElement;
+      const surfaceEl = cached?.element ?? document.createElement("vak-surface") as VakSurfaceElement;
       surfaceEl.mediaResolver = resolveMedia;
       surfaceMode(surfaceEl);
-      surfaceEl.attach(store, snapshot.id);
+      if (!cached) surfaceEl.attach(store, snapshot.id);
 
       const dispatch = (body: Record<string, unknown>) => {
         this.#dirty = true;
         this.#pending = this.#pending.then(async () => {
           this.#dirty = true;
-          status.textContent = "Running…";
+          if (this.#activeApp?.manifest.id !== app.manifest.id) return;
+          const liveStatus = document.getElementById("app-run-status")!;
+          liveStatus.textContent = "Running…";
           try {
-            const res = await api<{ revision: number; surfaces: Record<string, SurfaceSnapshot> }>(`/api/apps/${encodeURIComponent(app.manifest.id)}/action`, {
+            const res = await api<{ revision: number; surfaces: Record<string, SurfaceSnapshot>; focusSurface?: string }>(`/api/apps/${encodeURIComponent(app.manifest.id)}/action`, {
               method: "POST", body: JSON.stringify({ ...body, surface: snapshot.id, revision: this.#activeApp?.revision })
             });
             if (this.#activeApp?.manifest.id !== app.manifest.id) return;
             this.#activeApp.revision = res.revision; this.#activeApp.surfaces = res.surfaces;
             const next = res.surfaces[snapshot.id];
-            if (next) { store.load(next); this.#activeApp.surface = next as unknown as Record<string, unknown>; surfaceEl.refresh(); }
-            this.#dirty = false; status.textContent = "Saved";
-          } catch (error) { status.textContent = `${(error as Error).message}. Your local edits are retained; reopen to load saved state.`; }
+            if (next) { store.load(next); surfaceEl.refresh(); }
+            const selected = String(this.#activeApp.surface?.id ?? "");
+            if (res.surfaces[selected]) this.#activeApp.surface = res.surfaces[selected] as unknown as Record<string, unknown>;
+            for (const [id, view] of this.#viewCache) {
+              const snap = res.surfaces[id];
+              if (snap && id !== snapshot.id) { view.store.load(snap); view.element.refresh(); }
+            }
+            this.#dirty = false; liveStatus.textContent = "Saved";
+            if (res.focusSurface && res.surfaces[res.focusSurface]) {
+              this.#activeApp.surface = res.surfaces[res.focusSurface] as unknown as Record<string, unknown>;
+              this.#renderRunnerView(this.#activeApp);
+            }
+          } catch (error) { liveStatus.textContent = `${(error as Error).message}. Your local edits are retained; reopen to load saved state.`; }
         });
       };
-      surfaceEl.addEventListener("vak-change", (event: Event) => {
+      if (!cached) surfaceEl.addEventListener("vak-change", (event: Event) => {
         const detail = (event as CustomEvent<{ path: string; value: unknown }>).detail;
         dispatch({ controlId: detail.path, value: detail.value });
       });
-      surfaceEl.addEventListener("vak-action", (event: Event) => {
+      if (!cached) surfaceEl.addEventListener("vak-action", (event: Event) => {
         const detail = (event as CustomEvent<VakActionDetail>).detail;
         dispatch({ controlId: detail.action.source, value: detail.action.data ?? detail.data, action: detail.action.action });
       });
 
+      this.#viewCache.set(snapshot.id, { store, element: surfaceEl, scroll: cached?.scroll ?? 0 });
       surfaceMount.append(surfaceEl);
+      surfaceMount.scrollTop = cached?.scroll ?? 0;
     } else {
       surfaceMount.append(el("div", { className: "artifact-empty" },
         el("h2", { textContent: "No interactive surface declared" }),
@@ -463,10 +495,13 @@ export class AppsPage {
 
   async #installDefaultApp(): Promise<void> {
     try {
-      this.#feedback("Installing Reference App…");
-      await api("/api/apps/builtin/portfolio-risk-dashboard", { method: "POST", body: "{}" });
+      const entries = await api<AppManifest[]>("/api/apps/builtin");
+      const id = await chooseReferenceApp(entries, this.#apps.map(a => a.id));
+      if (!id) return;
+      this.#feedback("Installing reference app…");
+      await api(`/api/apps/builtin/${encodeURIComponent(id)}`, { method: "POST", body: "{}" });
       await this.refresh();
-      this.#feedback("Installed Reference App");
+      this.#feedback("Installed reference app");
     } catch (err) {
       this.#feedback(`Install failed: ${(err as Error).message}`, true);
     }

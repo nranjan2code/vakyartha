@@ -1,0 +1,1035 @@
+[
+  {
+    "id": "market",
+    "title": "Market",
+    "version": 1,
+    "data": {
+      "symbol": "RELIANCE",
+      "months": "1",
+      "watchlist": "RELIANCE,TCS,INFY,HDFCBANK",
+      "message": "Ready to connect. Enable NSE and NSE Market Live in Settings → Integrations. Set the three declared read tools to Allow, then refresh a view.",
+      "freshness": "NSE delayed snapshots · INR · refresh to recheck saved observations · informational use",
+      "sourceTimes": "No successful retrieval yet. No sample market prices are supplied.",
+      "nifty": "Unavailable",
+      "niftyChange": "Unavailable",
+      "bank": "Unavailable",
+      "bankChange": "Unavailable",
+      "sectorCount": "0",
+      "watchCount": "0 / 4",
+      "quotePrice": "Unavailable",
+      "quoteChange": "Unavailable",
+      "quoteTime": "No quote fetched for selected symbol.",
+      "quoteRange": "Unavailable",
+      "quoteVolume": "Unavailable",
+      "previous": "Unavailable",
+      "historyTitle": "RELIANCE · daily close (INR)",
+      "historyWindow": "No daily history retrieved.",
+      "historyInterpretation": "Fetch instrument history to calculate observed price return. No synthetic price series is supplied.",
+      "history": [],
+      "sma": [],
+      "priceReturn": "Unavailable",
+      "volatility": "Unavailable",
+      "maxDrawdown": "Unavailable",
+      "sessions": "0",
+      "averageVolume": "Unavailable",
+      "analysisNote": "DuckDB uses dated observations only. Volatility is sample standard deviation of daily simple returns × √252. Drawdown uses running closing-price peaks. SMA requires 20 sessions. Charts use equal trading-session spacing. Corporate actions and dividends are not adjusted.",
+      "sectors": [],
+      "indices": [],
+      "watch": [],
+      "receipts": [],
+      "coverage": "No sector observations retrieved. Index coverage is not stock market breadth.",
+      "storage": "Canonical OHLCV rows persist in an app-owned DuckDB snapshot. SQL, refresh and actions execute inside the sandbox without model requests.",
+      "ohlcTitle": "RELIANCE · daily OHLC (INR)",
+      "watchOptions": [
+        {
+          "label": "RELIANCE",
+          "value": "RELIANCE"
+        },
+        {
+          "label": "TCS",
+          "value": "TCS"
+        },
+        {
+          "label": "INFY",
+          "value": "INFY"
+        },
+        {
+          "label": "HDFCBANK",
+          "value": "HDFCBANK"
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "root",
+        "type": "stack",
+        "props": {
+          "direction": "vertical",
+          "gap": "md",
+          "density": "compact"
+        },
+        "children": [
+          "eyebrow",
+          "freshness",
+          "metrics",
+          "watch-settings",
+          "market-panels",
+          "indices-panel",
+          "status",
+          "source-times"
+        ]
+      },
+      {
+        "id": "eyebrow",
+        "type": "text",
+        "props": {
+          "content": "NSE / CASH EQUITIES / INR / ASIA–KOLKATA",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "status",
+        "type": "text",
+        "props": {
+          "content": "{/message}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "freshness",
+        "type": "text",
+        "props": {
+          "content": "{/freshness}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "metrics",
+        "type": "grid",
+        "props": {
+          "columns": 4,
+          "minItemWidth": "sm",
+          "gap": "md"
+        },
+        "children": [
+          "nifty",
+          "bank",
+          "sectors-count",
+          "watch-count"
+        ]
+      },
+      {
+        "id": "nifty",
+        "type": "stat",
+        "props": {
+          "label": "NIFTY 50 · points",
+          "value": "{/nifty}",
+          "delta": "{/niftyChange}"
+        }
+      },
+      {
+        "id": "bank",
+        "type": "stat",
+        "props": {
+          "label": "NIFTY BANK · points",
+          "value": "{/bank}",
+          "delta": "{/bankChange}"
+        }
+      },
+      {
+        "id": "sectors-count",
+        "type": "stat",
+        "props": {
+          "label": "Sector indices observed",
+          "value": "{/sectorCount}"
+        }
+      },
+      {
+        "id": "watch-count",
+        "type": "stat",
+        "props": {
+          "label": "Watchlist coverage",
+          "value": "{/watchCount}"
+        }
+      },
+      {
+        "id": "watch-settings",
+        "type": "form",
+        "props": {
+          "submit": "refresh_market",
+          "submitLabel": "Refresh market & watchlist",
+          "maxWidth": "md"
+        },
+        "children": [
+          "watch-input"
+        ]
+      },
+      {
+        "id": "watch-input",
+        "type": "input",
+        "props": {
+          "label": "Watchlist · 1–6 exact EQ symbols, comma separated",
+          "bind": "/watchlist",
+          "kind": "text"
+        }
+      },
+      {
+        "id": "market-panels",
+        "type": "grid",
+        "props": {
+          "columns": 2,
+          "minItemWidth": "sm",
+          "gap": "md"
+        },
+        "children": [
+          "sector-panel",
+          "watch-panel"
+        ]
+      },
+      {
+        "id": "sector-panel",
+        "type": "section",
+        "props": {
+          "title": "01 / Sector rotation",
+          "description": "All observed sector indices, ranked by signed session return. Exact values and full names are retained."
+        },
+        "children": [
+          "sector-chart",
+          "coverage"
+        ]
+      },
+      {
+        "id": "sector-chart",
+        "type": "chart",
+        "props": {
+          "kind": "bar",
+          "title": "Sector indices · session change (%)",
+          "series": {
+            "records": "{/sectors}",
+            "label": "label",
+            "fields": [
+              "changePct"
+            ]
+          },
+          "maxWidth": "lg",
+          "orientation": "horizontal",
+          "colorBy": "sign",
+          "height": "md",
+          "xLabel": "Session change (%)"
+        }
+      },
+      {
+        "id": "coverage",
+        "type": "text",
+        "props": {
+          "content": "{/coverage}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "watch-panel",
+        "type": "section",
+        "props": {
+          "title": "02 / Watchlist",
+          "description": "Each observation keeps its own exchange and cache timestamp."
+        },
+        "children": [
+          "watch-table",
+          "focus-form"
+        ]
+      },
+      {
+        "id": "watch-table",
+        "type": "table",
+        "props": {
+          "rows": "{/watch}",
+          "columns": [
+            {
+              "key": "symbol",
+              "label": "Symbol"
+            },
+            {
+              "key": "price",
+              "label": "Last · INR"
+            },
+            {
+              "key": "change",
+              "label": "Session %"
+            },
+            {
+              "key": "source",
+              "label": "Exchange time"
+            }
+          ],
+          "sortable": true,
+          "searchable": true,
+          "pageSize": 10,
+          "maxWidth": "full"
+        }
+      },
+      {
+        "id": "indices-panel",
+        "type": "section",
+        "props": {
+          "title": "03 / Index monitor"
+        },
+        "children": [
+          "indices-table"
+        ]
+      },
+      {
+        "id": "indices-table",
+        "type": "table",
+        "props": {
+          "rows": "{/indices}",
+          "columns": [
+            {
+              "key": "label",
+              "label": "Index"
+            },
+            {
+              "key": "last",
+              "label": "Level · points"
+            },
+            {
+              "key": "changePct",
+              "label": "Session change %"
+            },
+            {
+              "key": "exchangeAt",
+              "label": "Exchange time · IST"
+            }
+          ],
+          "sortable": true,
+          "searchable": true,
+          "pageSize": 10,
+          "maxWidth": "full"
+        }
+      },
+      {
+        "id": "source-times",
+        "type": "text",
+        "props": {
+          "content": "{/sourceTimes}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "watch-focus",
+        "type": "select",
+        "props": {
+          "label": "Focus instrument",
+          "bind": "/symbol",
+          "options": "{/watchOptions}"
+        }
+      },
+      {
+        "id": "focus-form",
+        "type": "form",
+        "props": {
+          "submit": "focus_instrument",
+          "submitLabel": "Open instrument"
+        },
+        "children": [
+          "watch-focus"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "instrument",
+    "title": "Instrument",
+    "version": 1,
+    "data": {
+      "symbol": "RELIANCE",
+      "months": "1",
+      "watchlist": "RELIANCE,TCS,INFY,HDFCBANK",
+      "message": "Ready to connect. Enable NSE and NSE Market Live in Settings → Integrations. Set the three declared read tools to Allow, then refresh a view.",
+      "freshness": "NSE delayed snapshots · INR · refresh to recheck saved observations · informational use",
+      "sourceTimes": "No successful retrieval yet. No sample market prices are supplied.",
+      "nifty": "Unavailable",
+      "niftyChange": "Unavailable",
+      "bank": "Unavailable",
+      "bankChange": "Unavailable",
+      "sectorCount": "0",
+      "watchCount": "0 / 4",
+      "quotePrice": "Unavailable",
+      "quoteChange": "Unavailable",
+      "quoteTime": "No quote fetched for selected symbol.",
+      "quoteRange": "Unavailable",
+      "quoteVolume": "Unavailable",
+      "previous": "Unavailable",
+      "historyTitle": "RELIANCE · daily close (INR)",
+      "historyWindow": "No daily history retrieved.",
+      "historyInterpretation": "Fetch instrument history to calculate observed price return. No synthetic price series is supplied.",
+      "history": [],
+      "sma": [],
+      "priceReturn": "Unavailable",
+      "volatility": "Unavailable",
+      "maxDrawdown": "Unavailable",
+      "sessions": "0",
+      "averageVolume": "Unavailable",
+      "analysisNote": "DuckDB uses dated observations only. Volatility is sample standard deviation of daily simple returns × √252. Drawdown uses running closing-price peaks. SMA requires 20 sessions. Charts use equal trading-session spacing. Corporate actions and dividends are not adjusted.",
+      "sectors": [],
+      "indices": [],
+      "watch": [],
+      "receipts": [],
+      "coverage": "No sector observations retrieved. Index coverage is not stock market breadth.",
+      "storage": "Canonical OHLCV rows persist in an app-owned DuckDB snapshot. SQL, refresh and actions execute inside the sandbox without model requests.",
+      "ohlcTitle": "RELIANCE · daily OHLC (INR)",
+      "watchOptions": [
+        {
+          "label": "RELIANCE",
+          "value": "RELIANCE"
+        },
+        {
+          "label": "TCS",
+          "value": "TCS"
+        },
+        {
+          "label": "INFY",
+          "value": "INFY"
+        },
+        {
+          "label": "HDFCBANK",
+          "value": "HDFCBANK"
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "root",
+        "type": "stack",
+        "props": {
+          "direction": "vertical",
+          "gap": "md",
+          "density": "compact"
+        },
+        "children": [
+          "eyebrow",
+          "freshness",
+          "instrument-settings",
+          "price-panels",
+          "ohlcv-section"
+        ]
+      },
+      {
+        "id": "eyebrow",
+        "type": "text",
+        "props": {
+          "content": "NSE / CASH EQUITIES / INR / ASIA–KOLKATA",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "status",
+        "type": "text",
+        "props": {
+          "content": "{/message}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "freshness",
+        "type": "text",
+        "props": {
+          "content": "{/freshness}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "instrument-settings",
+        "type": "form",
+        "props": {
+          "submit": "refresh_instrument",
+          "submitLabel": "Fetch quote & history",
+          "maxWidth": "md"
+        },
+        "children": [
+          "settings-grid"
+        ]
+      },
+      {
+        "id": "settings-grid",
+        "type": "grid",
+        "props": {
+          "columns": 2,
+          "minItemWidth": "sm",
+          "gap": "md"
+        },
+        "children": [
+          "symbol",
+          "months"
+        ]
+      },
+      {
+        "id": "symbol",
+        "type": "input",
+        "props": {
+          "label": "Exact NSE EQ symbol",
+          "bind": "/symbol",
+          "kind": "text"
+        }
+      },
+      {
+        "id": "months",
+        "type": "select",
+        "props": {
+          "label": "Daily history window",
+          "bind": "/months",
+          "options": [
+            {
+              "label": "1 month",
+              "value": "1"
+            },
+            {
+              "label": "2 months",
+              "value": "2"
+            },
+            {
+              "label": "3 months",
+              "value": "3"
+            }
+          ]
+        }
+      },
+      {
+        "id": "instrument-metrics",
+        "type": "grid",
+        "props": {
+          "columns": 2,
+          "minItemWidth": "sm",
+          "gap": "md"
+        },
+        "children": [
+          "price",
+          "change",
+          "range",
+          "volume"
+        ]
+      },
+      {
+        "id": "price",
+        "type": "stat",
+        "props": {
+          "label": "Selected quote · INR",
+          "value": "{/quotePrice}"
+        }
+      },
+      {
+        "id": "change",
+        "type": "stat",
+        "props": {
+          "label": "Session change · previous close",
+          "value": "{/quoteChange}"
+        }
+      },
+      {
+        "id": "range",
+        "type": "stat",
+        "props": {
+          "label": "Session low – high · INR",
+          "value": "{/quoteRange}"
+        }
+      },
+      {
+        "id": "volume",
+        "type": "stat",
+        "props": {
+          "label": "Session volume · shares",
+          "value": "{/quoteVolume}"
+        }
+      },
+      {
+        "id": "quote-time",
+        "type": "text",
+        "props": {
+          "content": "{/quoteTime}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "price-panels",
+        "type": "split",
+        "props": {
+          "ratio": "2:1",
+          "gap": "md"
+        },
+        "children": [
+          "chart-stack",
+          "instrument-context"
+        ]
+      },
+      {
+        "id": "price-section",
+        "type": "section",
+        "props": {
+          "title": "01 / Price structure",
+          "description": "Daily OHLC candles. Colour compares close with open; source prices are unadjusted."
+        },
+        "children": [
+          "close-chart"
+        ]
+      },
+      {
+        "id": "close-chart",
+        "type": "chart",
+        "props": {
+          "kind": "candlestick",
+          "title": "{/ohlcTitle}",
+          "series": {
+            "records": "{/history}",
+            "label": "date",
+            "fields": [
+              "open",
+              "high",
+              "low",
+              "close"
+            ]
+          },
+          "maxWidth": "lg",
+          "height": "lg",
+          "yScale": "auto",
+          "yLabel": "INR"
+        }
+      },
+      {
+        "id": "window",
+        "type": "text",
+        "props": {
+          "content": "{/historyWindow}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "volume-section",
+        "type": "section",
+        "props": {
+          "title": "02 / Participation",
+          "description": "Actual daily traded quantity; no mixed price/volume axis."
+        },
+        "children": [
+          "volume-chart"
+        ]
+      },
+      {
+        "id": "volume-chart",
+        "type": "chart",
+        "props": {
+          "kind": "bar",
+          "title": "Daily volume · shares",
+          "series": {
+            "records": "{/history}",
+            "label": "date",
+            "fields": [
+              "volume"
+            ]
+          },
+          "maxWidth": "lg",
+          "height": "sm",
+          "yLabel": "Shares"
+        }
+      },
+      {
+        "id": "interpretation",
+        "type": "text",
+        "props": {
+          "content": "{/historyInterpretation}",
+          "variant": "body"
+        }
+      },
+      {
+        "id": "ohlcv-section",
+        "type": "section",
+        "props": {
+          "title": "03 / Exact observations"
+        },
+        "children": [
+          "ohlcv"
+        ]
+      },
+      {
+        "id": "ohlcv",
+        "type": "table",
+        "props": {
+          "rows": "{/history}",
+          "columns": [
+            {
+              "key": "date",
+              "label": "Session"
+            },
+            {
+              "key": "open",
+              "label": "Open · INR"
+            },
+            {
+              "key": "high",
+              "label": "High · INR"
+            },
+            {
+              "key": "low",
+              "label": "Low · INR"
+            },
+            {
+              "key": "close",
+              "label": "Close · INR"
+            },
+            {
+              "key": "volume",
+              "label": "Shares"
+            }
+          ],
+          "sortable": true,
+          "searchable": true,
+          "pageSize": 10,
+          "maxWidth": "full"
+        }
+      },
+      {
+        "id": "chart-stack",
+        "type": "stack",
+        "props": {
+          "gap": "md"
+        },
+        "children": [
+          "price-section",
+          "volume-section"
+        ]
+      },
+      {
+        "id": "instrument-context",
+        "type": "section",
+        "props": {
+          "title": "Observation desk",
+          "description": "Quote and history are separate datasets."
+        },
+        "children": [
+          "instrument-metrics",
+          "quote-time",
+          "interpretation",
+          "window",
+          "status"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "analytics",
+    "title": "Analytics",
+    "version": 1,
+    "data": {
+      "symbol": "RELIANCE",
+      "months": "1",
+      "watchlist": "RELIANCE,TCS,INFY,HDFCBANK",
+      "message": "Ready to connect. Enable NSE and NSE Market Live in Settings → Integrations. Set the three declared read tools to Allow, then refresh a view.",
+      "freshness": "NSE delayed snapshots · INR · refresh to recheck saved observations · informational use",
+      "sourceTimes": "No successful retrieval yet. No sample market prices are supplied.",
+      "nifty": "Unavailable",
+      "niftyChange": "Unavailable",
+      "bank": "Unavailable",
+      "bankChange": "Unavailable",
+      "sectorCount": "0",
+      "watchCount": "0 / 4",
+      "quotePrice": "Unavailable",
+      "quoteChange": "Unavailable",
+      "quoteTime": "No quote fetched for selected symbol.",
+      "quoteRange": "Unavailable",
+      "quoteVolume": "Unavailable",
+      "previous": "Unavailable",
+      "historyTitle": "RELIANCE · daily close (INR)",
+      "historyWindow": "No daily history retrieved.",
+      "historyInterpretation": "Fetch instrument history to calculate observed price return. No synthetic price series is supplied.",
+      "history": [],
+      "sma": [],
+      "priceReturn": "Unavailable",
+      "volatility": "Unavailable",
+      "maxDrawdown": "Unavailable",
+      "sessions": "0",
+      "averageVolume": "Unavailable",
+      "analysisNote": "DuckDB uses dated observations only. Volatility is sample standard deviation of daily simple returns × √252. Drawdown uses running closing-price peaks. SMA requires 20 sessions. Charts use equal trading-session spacing. Corporate actions and dividends are not adjusted.",
+      "sectors": [],
+      "indices": [],
+      "watch": [],
+      "receipts": [],
+      "coverage": "No sector observations retrieved. Index coverage is not stock market breadth.",
+      "storage": "Canonical OHLCV rows persist in an app-owned DuckDB snapshot. SQL, refresh and actions execute inside the sandbox without model requests.",
+      "ohlcTitle": "RELIANCE · daily OHLC (INR)",
+      "watchOptions": [
+        {
+          "label": "RELIANCE",
+          "value": "RELIANCE"
+        },
+        {
+          "label": "TCS",
+          "value": "TCS"
+        },
+        {
+          "label": "INFY",
+          "value": "INFY"
+        },
+        {
+          "label": "HDFCBANK",
+          "value": "HDFCBANK"
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "root",
+        "type": "stack",
+        "props": {
+          "direction": "vertical",
+          "gap": "md",
+          "density": "compact"
+        },
+        "children": [
+          "eyebrow",
+          "freshness",
+          "selected",
+          "history-window",
+          "analytics-metrics",
+          "recalculate",
+          "risk-panels",
+          "analysis-note",
+          "storage",
+          "receipts-section",
+          "status"
+        ]
+      },
+      {
+        "id": "eyebrow",
+        "type": "text",
+        "props": {
+          "content": "NSE / CASH EQUITIES / INR / ASIA–KOLKATA",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "status",
+        "type": "text",
+        "props": {
+          "content": "{/message}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "freshness",
+        "type": "text",
+        "props": {
+          "content": "{/freshness}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "selected",
+        "type": "text",
+        "props": {
+          "content": "{/symbol}",
+          "variant": "subheading"
+        }
+      },
+      {
+        "id": "history-window",
+        "type": "text",
+        "props": {
+          "content": "{/historyWindow}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "analytics-metrics",
+        "type": "grid",
+        "props": {
+          "columns": 4,
+          "minItemWidth": "sm",
+          "gap": "md"
+        },
+        "children": [
+          "return",
+          "vol",
+          "drawdown",
+          "sessions"
+        ]
+      },
+      {
+        "id": "return",
+        "type": "stat",
+        "props": {
+          "label": "Observed price return",
+          "value": "{/priceReturn}"
+        }
+      },
+      {
+        "id": "vol",
+        "type": "stat",
+        "props": {
+          "label": "Annualized sample volatility",
+          "value": "{/volatility}"
+        }
+      },
+      {
+        "id": "drawdown",
+        "type": "stat",
+        "props": {
+          "label": "Maximum closing drawdown",
+          "value": "{/maxDrawdown}"
+        }
+      },
+      {
+        "id": "sessions",
+        "type": "stat",
+        "props": {
+          "label": "Daily observations",
+          "value": "{/sessions}"
+        }
+      },
+      {
+        "id": "recalculate",
+        "type": "button",
+        "props": {
+          "label": "Recalculate from saved DuckDB data",
+          "action": "recalculate",
+          "style": "primary"
+        }
+      },
+      {
+        "id": "risk-panels",
+        "type": "grid",
+        "props": {
+          "columns": 2,
+          "minItemWidth": "sm",
+          "gap": "md"
+        },
+        "children": [
+          "drawdown-section",
+          "sma-section"
+        ]
+      },
+      {
+        "id": "drawdown-section",
+        "type": "section",
+        "props": {
+          "title": "01 / Capital retracement",
+          "description": "Closing-price decline from the observed running peak."
+        },
+        "children": [
+          "drawdown-chart"
+        ]
+      },
+      {
+        "id": "drawdown-chart",
+        "type": "chart",
+        "props": {
+          "kind": "line",
+          "title": "Drawdown from running close peak (%)",
+          "series": {
+            "records": "{/history}",
+            "label": "date",
+            "fields": [
+              "drawdownPct"
+            ]
+          },
+          "maxWidth": "lg",
+          "yScale": "zero",
+          "height": "md",
+          "yLabel": "%"
+        }
+      },
+      {
+        "id": "sma-section",
+        "type": "section",
+        "props": {
+          "title": "02 / Smoothing",
+          "description": "Available only from the twentieth observed session; no zero-filled warm-up."
+        },
+        "children": [
+          "sma-chart"
+        ]
+      },
+      {
+        "id": "sma-chart",
+        "type": "chart",
+        "props": {
+          "kind": "line",
+          "title": "Close & 20-session SMA · INR",
+          "series": {
+            "records": "{/sma}",
+            "label": "date",
+            "fields": [
+              "close",
+              "sma20"
+            ]
+          },
+          "maxWidth": "lg",
+          "yScale": "auto",
+          "height": "md",
+          "yLabel": "INR"
+        }
+      },
+      {
+        "id": "analysis-note",
+        "type": "text",
+        "props": {
+          "content": "{/analysisNote}",
+          "variant": "body"
+        }
+      },
+      {
+        "id": "storage",
+        "type": "text",
+        "props": {
+          "content": "{/storage}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "receipts-section",
+        "type": "section",
+        "props": {
+          "title": "03 / Source ledger",
+          "description": "Latest 40 attempts. Failed reads retain prior observations and never become fresh data."
+        },
+        "children": [
+          "receipts"
+        ]
+      },
+      {
+        "id": "receipts",
+        "type": "table",
+        "props": {
+          "rows": "{/receipts}",
+          "columns": [
+            {
+              "key": "tool",
+              "label": "Governed tool"
+            },
+            {
+              "key": "subject",
+              "label": "Symbol / group"
+            },
+            {
+              "key": "sourceAt",
+              "label": "Source as of"
+            },
+            {
+              "key": "fetchedAt",
+              "label": "Retrieval · UTC"
+            },
+            {
+              "key": "rows",
+              "label": "Validated rows"
+            },
+            {
+              "key": "status",
+              "label": "Outcome"
+            }
+          ],
+          "sortable": true,
+          "searchable": true,
+          "pageSize": 10,
+          "maxWidth": "full"
+        }
+      }
+    ]
+  }
+]

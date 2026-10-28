@@ -8,7 +8,7 @@ Vakyartha reuses the same sandbox boundary for distinct product lifetimes:
 
 - **Disposable commands and skill rehearsals:** bounded execution in a temporary copy; changes are discarded.
 - **Retained Realms:** helper-owned project copies for repeated commands, review, promotion, recovery and rollback. A Realm persists files; it is not a permanent running daemon.
-- **Executable apps:** app-owned published source, JSON domain state and multiple surface projections persist in host records. Each action or named refresh function runs in a fresh disposable workspace through `vaksb run`. Execution capacity is bounded; no warm process pool or filesystem database persistence is claimed. App real-data calls retain existing integration authority. See [app runtime contract](../sandboxed-apps/RUNTIME-CONTRACT.md) and [operations](../sandboxed-apps/OPERATIONS-AND-LIFECYCLE.md).
+- **Executable apps:** app-owned published source, JSON domain state and multiple surface projections persist in host records. Each action or named refresh function runs in a fresh disposable workspace through `vaksb run`. Execution capacity is bounded; no warm process pool or unbounded filesystem database persistence is claimed. App real-data calls retain existing integration authority. See [app runtime contract](../sandboxed-apps/RUNTIME-CONTRACT.md) and [operations](../sandboxed-apps/OPERATIONS-AND-LIFECYCLE.md).
 
 ## Workspace lifetimes
 
@@ -44,3 +44,5 @@ Promotion is recoverable across files, not a single filesystem-wide atomic commi
 ## Verification
 
 `node scripts/sandbox-check.ts` uses the actual macOS helper through agent tool adapters: approvals/denial, disposable execution, outside read/write and network denial, minimal environment, path checks, off/missing-helper failure, Realm creation/repeated writes, review/read, promotion, restart/resumption, rollback, conflicts and destruction. `node scripts/settings-check.ts` exercises the real Settings journey and Realm review/apply/undo/discard in WebKit at 1100/620/375 px. Rust tests inject partial apply and metadata interruption states and check recovery without command replay. See [EVALUATION.md](../EVALUATION.md) for receipts and independent model-outcome limits.
+
+2026-10-28 capability update: opted-in bounded DuckDB snapshots now persist atomically with each app record, with sandbox-owned SQL and no new writer/IPC. General persistent filesystem volumes remain unsupported. See [current runtime contract](../sandboxed-apps/RUNTIME-CONTRACT.md) and ADR-049 for the superseding interface and limits.

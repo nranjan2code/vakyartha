@@ -15,7 +15,7 @@ Vakyartha supports five distinct projection surfaces, each governed by an exact 
 | **Primary Markup** | HTML / Shadow DOM / SVG | HTML / Telegram Rich Msg | Block Kit JSON | Components V2 JSON | Plain Text / SSML WAV |
 | **Layout Model** | Liquid Adaptive Container | Linear 1-Column | Linear 1-Column | Linear 1-Column | Prioritized Speech Sequence |
 | **Grid / Split / Tabs** | **Native** (CSS Container Queries) | **Degraded** (linear by priority) | **Degraded** (linear by priority) | **Degraded** (linear by priority) | **Degraded** (traversed by priority) |
-| **Charts** | **Native** (8 SVG kinds, responsive) | **Degraded** (HTML Data Table) | **Degraded** (Slack `table` block) | **Degraded** (Monospace Code Block) | **Degraded** (Endpoint narration) |
+| **Charts** | **Native** (9 SVG kinds including OHLC, responsive) | **Degraded** (HTML Data Table) | **Degraded** (Slack `table` block) | **Degraded** (Monospace Code Block) | **Degraded** (Endpoint narration) |
 | **Data Tables** | **Native** (Sortable, Search, Paged) | **Native** (HTML table, ≤20 cols) | **Native** (`table` block, ≤100 rows) | **Degraded** (Monospace Code Block) | **Degraded** (Top 3-6 rows spoken) |
 | **Stats / KPIs** | **Native** (Grid-aligned stat cards) | **Native** (Compact HTML table) | **Native** (Section `fields` array) | **Native** (Bold KPI text inline) | **Native** (Label + value + delta) |
 | **Forms & Inputs** | **Native** (Reactive 2-way bindings) | **Degraded** (Step-by-step Q&A flow) | **Native Modal** (`views.open` dialog) | **Native Modal** (Paged dialog, ≤5/page) | **Interactive Flow** (Voice Q&A) |
@@ -141,3 +141,5 @@ node scripts/canvas-check.ts
 npm test -- test/voice.test.ts
 ```
 
+
+Analytical chart additions (2026-10-28): OHLC candlesticks, fitted/disclosed trend scales, horizontal signed bars, semantic heights and compact density are native web geometry. Lowered channels retain the canonical four OHLC series/observations; they do not receive a bitmap market chart or interactive inspector. App navigation remains product-owned.

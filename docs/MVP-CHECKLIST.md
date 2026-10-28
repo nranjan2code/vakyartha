@@ -297,3 +297,10 @@ Supersedes the earlier mini-cloud completion claims: [current bounded runtime co
 - [x] Real-helper/API mechanism checks and WebKit arithmetic/refresh/reopen journeys at 1100/620/375; no installed-app claim.
 - [ ] Reliable primary-provider chat-to-executable-app authoring: graph gate remains 2/3; no broader model workflow trial followed.
 - [ ] Permanent daemons, filesystem databases, watchers and stronger resource/platform isolation remain later capabilities.
+
+## Reference analytical app checkpoint — 2026-10-29
+
+- [x] Deterministically authored executable reference package with independent market/instrument/analytics views, real governed source reads, bounded persistent sandbox DuckDB and complete operator/agent/skill documentation.
+- [x] Reusable Projection OHLC intervals, truthful fitted trend scales, horizontal signed rankings, explicit plot sizes/axis context, compact density and exact observation inspection; adopted through pushed pin `b28c317`.
+- [x] Independent source/SQL/persistence checks and actual WebKit navigation/inspection/actions at wide/narrow widths; ordinary Canvas remains covered. Earlier visual false positives are retained and corrected in Evaluation.
+- [ ] Broader model-authored app reliability, installed delivery, comprehensive accessibility/channel parity, pan/zoom/brush/linked-axis capabilities and unbounded database volumes. No existing unchecked task-outcome gate is closed by this reference.

@@ -1,0 +1,464 @@
+[
+  {
+    "id": "overview",
+    "title": "Overview",
+    "version": 1,
+    "data": {
+      "month": "2026-10",
+      "budget": "0",
+      "importText": "",
+      "transactions": [],
+      "categories": [],
+      "daily": [],
+      "income": "₹0.00",
+      "spent": "₹0.00",
+      "net": "₹0.00",
+      "count": "0",
+      "budgetUsed": 0,
+      "budgetMax": 1,
+      "hasBudget": false,
+      "budgetNote": "No budget set.",
+      "message": "No sample financial transactions are supplied. Import your own signed INR records.",
+      "basis": "INR only · exact integer paise · imported records only · net flow is not account balance",
+      "importReceipt": "No completed import receipt."
+    },
+    "nodes": [
+      {
+        "id": "root",
+        "type": "stack",
+        "props": {
+          "density": "compact",
+          "gap": "md"
+        },
+        "children": [
+          "basis",
+          "criteria",
+          "metrics",
+          "budget-progress",
+          "budget-note",
+          "charts",
+          "message"
+        ]
+      },
+      {
+        "id": "basis",
+        "type": "text",
+        "props": {
+          "content": "{/basis}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "criteria",
+        "type": "form",
+        "props": {
+          "submit": "apply_criteria",
+          "submitLabel": "Apply month & budget",
+          "maxWidth": "md"
+        },
+        "children": [
+          "criteria-grid"
+        ]
+      },
+      {
+        "id": "criteria-grid",
+        "type": "grid",
+        "props": {
+          "columns": 2,
+          "minItemWidth": "sm",
+          "gap": "md"
+        },
+        "children": [
+          "month",
+          "budget"
+        ]
+      },
+      {
+        "id": "month",
+        "type": "input",
+        "props": {
+          "label": "Month · YYYY-MM",
+          "bind": "/month",
+          "kind": "text"
+        }
+      },
+      {
+        "id": "budget",
+        "type": "input",
+        "props": {
+          "label": "Monthly expense budget · INR decimal",
+          "bind": "/budget",
+          "kind": "text"
+        }
+      },
+      {
+        "id": "metrics",
+        "type": "grid",
+        "props": {
+          "columns": 4,
+          "minItemWidth": "sm",
+          "gap": "md"
+        },
+        "children": [
+          "income",
+          "spent",
+          "net",
+          "count"
+        ]
+      },
+      {
+        "id": "income",
+        "type": "stat",
+        "props": {
+          "label": "Imported inflows",
+          "value": "{/income}"
+        }
+      },
+      {
+        "id": "spent",
+        "type": "stat",
+        "props": {
+          "label": "Imported outflows",
+          "value": "{/spent}"
+        }
+      },
+      {
+        "id": "net",
+        "type": "stat",
+        "props": {
+          "label": "Net flow · not balance",
+          "value": "{/net}"
+        }
+      },
+      {
+        "id": "count",
+        "type": "stat",
+        "props": {
+          "label": "Transactions in month",
+          "value": "{/count}"
+        }
+      },
+      {
+        "id": "budget-progress",
+        "type": "progress",
+        "props": {
+          "label": "Monthly expense budget",
+          "value": "{/budgetUsed}",
+          "max": "{/budgetMax}",
+          "note": "{/budgetNote}",
+          "visibleIf": "{/hasBudget}"
+        }
+      },
+      {
+        "id": "budget-note",
+        "type": "text",
+        "props": {
+          "content": "{/budgetNote}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "charts",
+        "type": "grid",
+        "props": {
+          "columns": 2,
+          "minItemWidth": "sm",
+          "gap": "md"
+        },
+        "children": [
+          "spending-section",
+          "flow-section"
+        ]
+      },
+      {
+        "id": "spending-section",
+        "type": "section",
+        "props": {
+          "title": "Spending by category"
+        },
+        "children": [
+          "spending-chart"
+        ]
+      },
+      {
+        "id": "spending-chart",
+        "type": "chart",
+        "props": {
+          "kind": "bar",
+          "title": "Imported outflows · INR",
+          "series": {
+            "records": "{/categories}",
+            "label": "label",
+            "fields": [
+              "amount"
+            ]
+          },
+          "height": "md",
+          "maxWidth": "lg"
+        }
+      },
+      {
+        "id": "flow-section",
+        "type": "section",
+        "props": {
+          "title": "Net flow by transaction date",
+          "description": "Dates without transactions are omitted; this is not an account balance."
+        },
+        "children": [
+          "flow-chart"
+        ]
+      },
+      {
+        "id": "flow-chart",
+        "type": "chart",
+        "props": {
+          "kind": "bar",
+          "title": "Net flow · INR",
+          "series": {
+            "records": "{/daily}",
+            "label": "date",
+            "fields": [
+              "net"
+            ]
+          },
+          "height": "md",
+          "maxWidth": "lg"
+        }
+      },
+      {
+        "id": "message",
+        "type": "text",
+        "props": {
+          "content": "{/message}",
+          "variant": "caption"
+        }
+      }
+    ]
+  },
+  {
+    "id": "ledger",
+    "title": "Ledger",
+    "version": 1,
+    "data": {
+      "month": "2026-10",
+      "budget": "0",
+      "importText": "",
+      "transactions": [],
+      "categories": [],
+      "daily": [],
+      "income": "₹0.00",
+      "spent": "₹0.00",
+      "net": "₹0.00",
+      "count": "0",
+      "budgetUsed": 0,
+      "budgetMax": 1,
+      "hasBudget": false,
+      "budgetNote": "No budget set.",
+      "message": "No sample financial transactions are supplied. Import your own signed INR records.",
+      "basis": "INR only · exact integer paise · imported records only · net flow is not account balance",
+      "importReceipt": "No completed import receipt."
+    },
+    "nodes": [
+      {
+        "id": "root",
+        "type": "stack",
+        "props": {
+          "density": "compact",
+          "gap": "md"
+        },
+        "children": [
+          "basis",
+          "criteria",
+          "transactions",
+          "receipt"
+        ]
+      },
+      {
+        "id": "basis",
+        "type": "text",
+        "props": {
+          "content": "{/basis}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "criteria",
+        "type": "form",
+        "props": {
+          "submit": "apply_criteria",
+          "submitLabel": "Apply month & budget",
+          "maxWidth": "md"
+        },
+        "children": [
+          "criteria-grid"
+        ]
+      },
+      {
+        "id": "criteria-grid",
+        "type": "grid",
+        "props": {
+          "columns": 2,
+          "minItemWidth": "sm",
+          "gap": "md"
+        },
+        "children": [
+          "month",
+          "budget"
+        ]
+      },
+      {
+        "id": "month",
+        "type": "input",
+        "props": {
+          "label": "Month · YYYY-MM",
+          "bind": "/month",
+          "kind": "text"
+        }
+      },
+      {
+        "id": "budget",
+        "type": "input",
+        "props": {
+          "label": "Monthly expense budget · INR decimal",
+          "bind": "/budget",
+          "kind": "text"
+        }
+      },
+      {
+        "id": "transactions",
+        "type": "table",
+        "props": {
+          "columns": [
+            {
+              "key": "id",
+              "label": "ID"
+            },
+            {
+              "key": "date",
+              "label": "Date"
+            },
+            {
+              "key": "description",
+              "label": "Description"
+            },
+            {
+              "key": "category",
+              "label": "Category"
+            },
+            {
+              "key": "amount",
+              "label": "Signed INR"
+            }
+          ],
+          "rows": "{/transactions}",
+          "sortable": true,
+          "searchable": true,
+          "pageSize": 10,
+          "maxWidth": "full"
+        }
+      },
+      {
+        "id": "receipt",
+        "type": "text",
+        "props": {
+          "content": "{/importReceipt}",
+          "variant": "caption"
+        }
+      }
+    ]
+  },
+  {
+    "id": "import",
+    "title": "Import & methods",
+    "version": 1,
+    "data": {
+      "month": "2026-10",
+      "budget": "0",
+      "importText": "",
+      "transactions": [],
+      "categories": [],
+      "daily": [],
+      "income": "₹0.00",
+      "spent": "₹0.00",
+      "net": "₹0.00",
+      "count": "0",
+      "budgetUsed": 0,
+      "budgetMax": 1,
+      "hasBudget": false,
+      "budgetNote": "No budget set.",
+      "message": "No sample financial transactions are supplied. Import your own signed INR records.",
+      "basis": "INR only · exact integer paise · imported records only · net flow is not account balance",
+      "importReceipt": "No completed import receipt."
+    },
+    "nodes": [
+      {
+        "id": "root",
+        "type": "stack",
+        "props": {
+          "density": "compact",
+          "gap": "md"
+        },
+        "children": [
+          "message",
+          "import-form",
+          "format",
+          "receipt",
+          "privacy"
+        ]
+      },
+      {
+        "id": "message",
+        "type": "text",
+        "props": {
+          "content": "{/message}",
+          "variant": "body"
+        }
+      },
+      {
+        "id": "import-form",
+        "type": "form",
+        "props": {
+          "submit": "import_records",
+          "submitLabel": "Validate & append transactions",
+          "maxWidth": "md"
+        },
+        "children": [
+          "import-text"
+        ]
+      },
+      {
+        "id": "import-text",
+        "type": "textarea",
+        "props": {
+          "label": "JSON array: id, date, description, category, amount (signed decimal string in INR)",
+          "bind": "/importText",
+          "rows": 14
+        }
+      },
+      {
+        "id": "format",
+        "type": "text",
+        "props": {
+          "content": "Use your own records. Example shape only: [{\"id\":\"unique-id\",\"date\":\"YYYY-MM-DD\",\"description\":\"description\",\"category\":\"category\",\"amount\":\"-12.50\"}]. Positive is inflow; negative is outflow. Duplicate existing IDs reject the entire import. Exclude transfers if interpreting outflows as spending.",
+          "variant": "body"
+        }
+      },
+      {
+        "id": "receipt",
+        "type": "text",
+        "props": {
+          "content": "{/importReceipt}",
+          "variant": "caption"
+        }
+      },
+      {
+        "id": "privacy",
+        "type": "text",
+        "props": {
+          "content": "No external tool is declared. Ledger data stays in the bounded sandbox database snapshot. No bank login, remote sync, recurring import, account-balance or tax calculation is implemented.",
+          "variant": "caption"
+        }
+      }
+    ]
+  }
+]

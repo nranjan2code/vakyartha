@@ -17,6 +17,7 @@ import type {
   SkillView,
 } from "../shared/skills.ts";
 import type { AppSummary, AppDetails } from "../sidecar/sandbox-pool/app-registry.ts";
+import { createAppScaffold } from "../shared/app-scaffold.ts";
 import { parseAppManifest, type AppManifest } from "../shared/app-manifest.ts";
 
 let activeStudioBackAction: (() => Promise<void>) | null = null;
@@ -294,113 +295,12 @@ Analyze domain records from verified sources and project structured findings ont
 
   function initNewApp(name = "custom-app"): void {
     appDraftFingerprint = undefined; appBaseFingerprint = undefined; appManifestText = undefined; hasDraft = false;
-    const slug = name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
-    const manifest: AppManifest = {
-      $schema: "https://vakyartha.dev/schemas/app-manifest.v1.json",
-      id: slug,
-      version: "1.0.0",
-      name: slug.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
-      description: "Sandboxed application executing in an isolated Seatbelt runtime with Canvas projection.",
-      author: "Studio Author",
-      icon: "cpu",
-      category: "utilities",
-      entrypoints: {
-        backend: "server.ts",
-        surface: "surface.json",
-      },
-      runtime: {
-        engine: "node24",
-        memoryLimitMb: 256,
-        cpuTimeLimitSec: 60,
-        maxStorageMb: 512,
-      },
-      entitlements: {
-        network: { mode: "airgap", allowedDomains: [] },
-        mcpTools: [],
-        storage: { sqlite: false, duckdb: false },
-      },
-      triggers: [
-        {
-          id: "refresh-poll",
-          kind: "cron",
-          expression: "*/5 * * * *",
-          action: "recalculateMetrics",
-          maxDurationSec: 30,
-        }
-      ],
-    };
-
-    const serverScript = `// Each invocation receives durable state and canonical surface snapshots.
-export async function handleAction(controlId, value, context) {
-  context.state.lastInput = { controlId, value };
-  return { data: { lastInput: value } };
-}
-
-export async function recalculateMetrics(context) {
-  context.state.refreshCount = (context.state.refreshCount ?? 0) + 1;
-  return { data: { refreshCount: context.state.refreshCount } };
-}
-`;
-
-    const surfaceJson = JSON.stringify({
-      id: `${slug}-surface`,
-      version: 1,
-      title: manifest.name,
-      data: {
-        records: [
-          { id: "1", label: "Worker Process", value: 100, status: "normal" },
-          { id: "2", label: "Sandbox Security", value: 95, status: "normal" },
-        ]
-      },
-      nodes: [
-        {
-          id: "root-section",
-          type: "section",
-          props: { title: manifest.name, description: manifest.description },
-          children: ["stats-grid", "records-table"]
-        },
-        {
-          id: "stats-grid",
-          type: "grid",
-          props: { columns: 2 },
-          children: ["s1", "s2"]
-        },
-        {
-          id: "s1",
-          type: "stat",
-          props: { label: "Execution limit", value: "30 seconds" }
-        },
-        {
-          id: "s2",
-          type: "stat",
-          props: { label: "Runtime", value: "Requires sandbox helper" }
-        },
-        {
-          id: "records-table",
-          type: "table",
-          props: {
-            title: "Application Components",
-            columns: ["id", "label", "value", "status"],
-            rows: { records: "{/records}", fields: ["id", "label", "value", "status"] }
-          }
-        }
-      ]
-    }, null, 2);
-
+    const { manifest, files } = createAppScaffold(name);
     currentAppDetails = {
-      manifest,
-      workspaceDir: "",
-      isRunning: false,
-      storageBytes: 0,
-      state: {},
-      surface: JSON.parse(surfaceJson),
-      lastExecutedAt: null,
+      manifest, workspaceDir: "", isRunning: false, storageBytes: 0, state: {},
+      surface: JSON.parse(files["surface.json"]!), lastExecutedAt: null,
+      _supportingFiles: Object.entries(files).map(([path, text]) => ({ path, text })),
     };
-
-    (currentAppDetails as any)._supportingFiles = [
-      { path: "server.ts", text: serverScript },
-      { path: "surface.json", text: surfaceJson }
-    ];
     isDirty = true;
     scheduleAutoSave();
   }
@@ -2457,8 +2357,8 @@ export async function recalculateMetrics(context) {
           linterNotes.append(el("li", { className: "warn", textContent: "Raw hex color detected. Use semantic tones: positive, caution, critical, neutral." }));
           warnings++;
         }
-        if (/candlestick|waterfall/i.test(bodyLower)) {
-          linterNotes.append(el("li", { className: "warn", textContent: "Unsupported chart kind requested. Standard kinds are bar, stacked, line, area, pie, scatter, heatmap, radar." }));
+        if (/waterfall|violin|box plot/i.test(bodyLower)) {
+          linterNotes.append(el("li", { className: "warn", textContent: "Unsupported chart kind requested. Standard kinds are bar, stacked, line, area, pie, scatter, heatmap, radar, candlestick." }));
           warnings++;
         }
 
