@@ -67,13 +67,11 @@ export async function skillsPage(initialSkill?: string, openSandbox?: () => void
   let view: "installed" | "explore" = "installed";
 
   async function openStudio(name?: string): Promise<void> {
-    root.classList.add("skill-detail-layout");
-    const studioEl = await openSkillStudio(name, async () => {
+    await openSkillStudio(name, async () => {
       await reload();
       if (name) detail(name);
       else home();
     }, reload);
-    root.replaceChildren(studioEl);
   }
 
   const grid = el("div", { className: "market skills-market" });

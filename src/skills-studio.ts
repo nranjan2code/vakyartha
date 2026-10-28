@@ -24,7 +24,15 @@ export async function openSkillStudio(
   onBack: () => void | Promise<void>,
   reloadParentList: () => Promise<void>
 ): Promise<HTMLElement> {
-  const root = el("div", { className: "skill-studio-layout" });
+  const root = (document.getElementById("skills-studio-page") ?? el("div", { id: "skills-studio-page", className: "skills-studio-page" })) as HTMLElement;
+  if (!root.parentElement) document.body.append(root);
+  root.replaceChildren();
+  root.hidden = false;
+  document.body.classList.add("in-skill-studio");
+
+  const settingsEl = document.getElementById("settings");
+  const wasSettingsOpen = settingsEl ? !settingsEl.hidden : false;
+  if (settingsEl) settingsEl.hidden = true;
 
   let pkg: SkillPackageView;
   let hasDraft = false;
@@ -43,15 +51,31 @@ export async function openSkillStudio(
   let activeTools: { id: string; name: string }[] = [];
   let installedSkills: SkillView[] = [];
 
+  // Tab indentation handler for code/text editors
+  function enableTabIndent(textarea: HTMLTextAreaElement): void {
+    textarea.addEventListener("keydown", (e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        textarea.value = textarea.value.substring(0, start) + "  " + textarea.value.substring(end);
+        textarea.selectionStart = textarea.selectionEnd = start + 2;
+        textarea.dispatchEvent(new Event("input"));
+      }
+    });
+  }
+
   // Feedback banner
   const feedback = el("p", { className: "settings-feedback", role: "status", "aria-live": "polite" });
   const showError = (err: unknown) => {
     feedback.textContent = (err as Error).message;
     feedback.className = "settings-feedback bad";
+    render();
   };
   const showNotice = (msg: string) => {
     feedback.textContent = msg;
     feedback.className = "settings-feedback ok";
+    render();
   };
 
   // Load existing draft/package or initialize a fresh new package
@@ -292,8 +316,25 @@ Analyze domain records from supplied inputs and project structured findings acro
         await saveDraftAction();
       }
     }
+    window.removeEventListener("keydown", onKeyDown, true);
+    root.hidden = true;
+    root.replaceChildren();
+    document.body.classList.remove("in-skill-studio");
+    if (wasSettingsOpen && settingsEl) {
+      settingsEl.hidden = false;
+    }
     await onBack();
   }
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      if (document.querySelector(".studio-inspect-overlay") || document.querySelector("dialog[open]")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void backAction();
+    }
+  };
+  window.addEventListener("keydown", onKeyDown, true);
 
   // --- Run Test Prompts ---
   async function runEvaluation(): Promise<void> {
@@ -400,12 +441,15 @@ Analyze domain records from supplied inputs and project structured findings acro
   function render(): void {
     root.replaceChildren();
 
-    // 1. Toolbar
+    // 1. Fixed Header
     const backBtn = el("button", {
       type: "button",
-      className: "ghost small studio-back-btn",
-      textContent: "‹ Skills"
-    });
+      className: "quiet back studio-back-btn",
+      title: "Back to Skills (Esc)"
+    },
+      icon("arrow", 14),
+      el("span", { textContent: "Back to Skills" })
+    );
     backBtn.onclick = () => void backAction();
 
     const titleBox = el("div", { className: "studio-title-box" },
@@ -413,8 +457,8 @@ Analyze domain records from supplied inputs and project structured findings acro
       pill(pkg.skill.builtin ? "Built in" : "Yours", "info"),
       pill(pkg.skill.enabled ? "On" : "Off", pkg.skill.enabled ? "ok" : ""),
       hasDraft
-        ? pill(`Draft · Unpublished${draftSavedAt ? ` (${new Date(draftSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})` : ""}`, "caution")
-        : pill("Live / Published", "ok"),
+        ? pill(`Draft${draftSavedAt ? ` (${new Date(draftSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})` : ""}`, "caution")
+        : pill("Published", "ok"),
       isDirty ? pill("Unsaved edits", "info") : null,
       pill(`${Math.ceil((new TextEncoder().encode(pkg.skill.text).length + pkg.files.reduce((acc, f) => acc + f.bytes, 0)) / 1024)} KB`),
     );
@@ -427,7 +471,7 @@ Analyze domain records from supplied inputs and project structured findings acro
     modeSelector.classList.add("studio-mode-selector");
 
     const bpSelector = segmented(
-      [["sm", "320px (Mobile)"], ["md", "720px (Medium)"], ["lg", "960px (Grid)"], ["full", "Full Width"]] as const,
+      [["sm", "320px"], ["md", "720px"], ["lg", "960px"], ["full", "Full Width"]] as const,
       activeBreakpoint,
       v => { activeBreakpoint = v; updateCanvasWidth(); }
     );
@@ -436,7 +480,7 @@ Analyze domain records from supplied inputs and project structured findings acro
     const saveDraftBtn = el("button", {
       type: "button",
       className: "ghost small studio-save-draft-btn",
-      textContent: isSavingDraft ? "Saving Draft…" : "Save Draft",
+      textContent: isSavingDraft ? "Saving…" : "Save Draft",
       title: "Save draft to isolated drafts directory without affecting the live assistant."
     });
     saveDraftBtn.onclick = () => void saveDraftAction();
@@ -462,20 +506,29 @@ Analyze domain records from supplied inputs and project structured findings acro
     const runTestsBtn = el("button", {
       type: "button",
       className: "ghost small studio-test-btn",
-      textContent: isRunningTests ? "Testing…" : "Run Test Suite"
+      textContent: isRunningTests ? "Testing…" : "Run Tests"
     });
     runTestsBtn.onclick = () => void runEvaluation();
 
-    const toolbar = el("div", { className: "studio-toolbar" },
-      el("div", { className: "studio-toolbar-left" }, backBtn, titleBox),
-      el("div", { className: "studio-toolbar-center" }, modeSelector, bpSelector),
-      el("div", { className: "studio-toolbar-right" },
+    const header = el("header", { className: "studio-header", "data-tauri-drag-region": "true" },
+      el("div", { className: "studio-header-left" },
+        backBtn,
+        el("span", { className: "studio-header-divider" }),
+        titleBox
+      ),
+      el("div", { className: "studio-header-center" }, modeSelector, bpSelector),
+      el("div", { className: "studio-header-right" },
         runTestsBtn,
         saveDraftBtn,
         ...(discardDraftBtn ? [discardDraftBtn] : []),
         publishBtn
       )
     );
+
+    const feedbackBanner = el("div", {
+      className: `studio-feedback-bar${feedback.textContent ? ` ${feedback.className}` : ""}`,
+      hidden: !feedback.textContent
+    }, feedback);
 
     // 2. Three-Column Workspace Layout
     const workspace = el("div", { className: "studio-workspace" });
@@ -549,12 +602,13 @@ Analyze domain records from supplied inputs and project structured findings acro
 
     // Smart Co-Pilot Suggestions Drawer
     const suggestionsBox = el("div", { className: "studio-suggestions-drawer" },
-      el("div", { className: "studio-section-label", textContent: "✨ Smart Element Suggestions" }),
-      el("div", { className: "studio-chip-group" },
+      el("div", { className: "studio-section-label", textContent: "✨ Co-Pilot Assistance" }),
+      el("div", { className: "studio-chip-grid" },
         el("button", {
           type: "button",
-          className: "ghost tiny studio-suggest-chip",
-          textContent: "Optimize Trigger",
+          className: "studio-suggest-chip",
+          textContent: "⚡ Trigger",
+          title: "Optimize semantic trigger description for model discovery",
           onclick: async () => {
             try {
               const res = await api<SkillSuggestResponse>("/api/skills/suggest", {
@@ -570,8 +624,9 @@ Analyze domain records from supplied inputs and project structured findings acro
         }),
         el("button", {
           type: "button",
-          className: "ghost tiny studio-suggest-chip",
-          textContent: "Suggest Best Chart",
+          className: "studio-suggest-chip",
+          textContent: "📊 Best Chart",
+          title: "Suggest best chart kind for procedure",
           onclick: async () => {
             try {
               const res = await api<SkillSuggestResponse>("/api/skills/suggest", {
@@ -584,8 +639,9 @@ Analyze domain records from supplied inputs and project structured findings acro
         }),
         el("button", {
           type: "button",
-          className: "ghost tiny studio-suggest-chip",
-          textContent: "Auto-Bind Schema",
+          className: "studio-suggest-chip",
+          textContent: "🔗 Auto-Bind",
+          title: "Copy canonical pointer fragment to clipboard",
           onclick: async () => {
             try {
               const res = await api<SkillSuggestResponse>("/api/skills/suggest", {
@@ -599,8 +655,9 @@ Analyze domain records from supplied inputs and project structured findings acro
         }),
         el("button", {
           type: "button",
-          className: "ghost tiny studio-suggest-chip",
-          textContent: "Detect Tools",
+          className: "studio-suggest-chip",
+          textContent: "🛠️ Detect Tools",
+          title: "Detect tools required from instructions",
           onclick: async () => {
             try {
               const res = await api<SkillSuggestResponse>("/api/skills/suggest", {
@@ -616,8 +673,9 @@ Analyze domain records from supplied inputs and project structured findings acro
         }),
         el("button", {
           type: "button",
-          className: "ghost tiny studio-suggest-chip",
-          textContent: "Voice Gist Summary",
+          className: "studio-suggest-chip",
+          textContent: "🎙️ Voice Gist",
+          title: "Propose concise spoken summary for Voice TTS",
           onclick: async () => {
             try {
               const res = await api<SkillSuggestResponse>("/api/skills/suggest", {
@@ -630,8 +688,9 @@ Analyze domain records from supplied inputs and project structured findings acro
         }),
         el("button", {
           type: "button",
-          className: "ghost tiny studio-suggest-chip",
-          textContent: "Recommend Chaining",
+          className: "studio-suggest-chip",
+          textContent: "🔀 Chaining",
+          title: "Recommend chaining companions",
           onclick: async () => {
             try {
               const res = await api<SkillSuggestResponse>("/api/skills/suggest", {
@@ -650,8 +709,9 @@ Analyze domain records from supplied inputs and project structured findings acro
         }),
         el("button", {
           type: "button",
-          className: "ghost tiny studio-suggest-chip",
-          textContent: "Research Topic",
+          className: "studio-suggest-chip",
+          textContent: "🔍 Research",
+          title: "Research technical specifications and create domain reference",
           onclick: async () => {
             const topic = window.prompt("Enter technical topic, API, or domain rules to research:", pkg.skill.name.replace(/-/g, " "));
             if (!topic || !topic.trim()) return;
@@ -797,6 +857,24 @@ Analyze domain records from supplied inputs and project structured findings acro
               rows: 3,
               placeholder: "e.g. Create a Customer Retention & Churn Analytics skill with interactive forecast chart, customer health table, and sandbox Python data parser."
             });
+            const inspirations = [
+              "Kubecost EKS Spend Analytics",
+              "PostgreSQL Slow Query Optimizer",
+              "GitHub PR Security Audit",
+              "Customer Churn & Retention Analytics"
+            ];
+            const inspirationGroup = el("div", { className: "yolo-inspiration-group" });
+            for (const prompt of inspirations) {
+              const chip = el("button", {
+                type: "button",
+                className: "yolo-inspiration-chip",
+                textContent: `+ ${prompt}`,
+                onclick: () => {
+                  yoloPrompt.value = `Create a ${prompt} skill with interactive 3-tier canvas surfaces, canonical records binding, and supporting references.`;
+                }
+              });
+              inspirationGroup.append(chip);
+            }
             const genBtn = el("button", {
               type: "button",
               className: "primary",
@@ -834,7 +912,9 @@ Analyze domain records from supplied inputs and project structured findings acro
                 }
               }
             });
-            return el("div", {}, yoloPrompt, el("div", { className: "row-actions" }, genBtn));
+            const actRow = el("div", { className: "row-actions" }, genBtn);
+            actRow.style.marginTop = "10px";
+            return el("div", {}, yoloPrompt, inspirationGroup, actRow);
           })()
         )
       );
@@ -900,6 +980,7 @@ Analyze domain records from supplied inputs and project structured findings acro
         spellcheck: false,
         "aria-label": "Skill Instructions"
       });
+      enableTabIndent(bodyEditor);
       bodyEditor.oninput = () => {
         rebuildSkillMdFromVisual(nameInput.value, descInput.value, toolsInput.value, bodyEditor.value);
         updateLiveCanvas();
@@ -930,6 +1011,7 @@ Analyze domain records from supplied inputs and project structured findings acro
         spellcheck: false,
         "aria-label": activeFileName
       });
+      enableTabIndent(codeEditor);
       codeEditor.oninput = () => {
         setActiveText(codeEditor.value);
         updateLiveCanvas();
@@ -997,7 +1079,10 @@ Analyze domain records from supplied inputs and project structured findings acro
     }
 
     rightCol.append(
-      el("div", { className: "studio-section-label", textContent: "Live Canvas Staging" }),
+      el("div", { className: "linter-head" },
+        el("span", { className: "studio-section-label", textContent: "Live Canvas Staging" }),
+        pill(`Viewport: ${activeBreakpoint.toUpperCase()}`, "info")
+      ),
       canvasContainer,
       linterCard,
       voiceCard,
@@ -1005,7 +1090,7 @@ Analyze domain records from supplied inputs and project structured findings acro
     );
 
     workspace.append(leftCol, centerCol, rightCol);
-    root.append(toolbar, feedback, workspace);
+    root.append(header, feedbackBanner, workspace);
 
     // Initial canvas paint
     updateCanvasWidth();
@@ -1089,33 +1174,33 @@ Analyze domain records from supplied inputs and project structured findings acro
       {
         id: "metric-grid",
         type: "grid",
-        props: { columns: 4, minItemWidth: "xs" },
+        props: { columns: 4, minItemWidth: "sm" },
         children: ["m1", "m2", "m3", "m4"]
       },
       {
         id: "m1",
-        type: "metric",
+        type: "stat",
         props: { label: "Total Volume", value: { records: "{/records}", field: "value", aggregate: "sum" } }
       },
       {
         id: "m2",
-        type: "metric",
+        type: "stat",
         props: { label: "Average Size", value: { records: "{/records}", field: "value", aggregate: "mean" } }
       },
       {
         id: "m3",
-        type: "metric",
+        type: "stat",
         props: { label: "Peak Observed", value: { records: "{/records}", field: "value", aggregate: "max" } }
       },
       {
         id: "m4",
-        type: "metric",
+        type: "stat",
         props: { label: "Tracked Entities", value: { records: "{/records}", field: "id", aggregate: "count" } }
       },
       {
         id: "analytics-split",
         type: "split",
-        props: { ratio: [2, 1], maxWidth: "lg" },
+        props: { ratio: "2:1", maxWidth: "lg" },
         children: ["trend-chart", "status-chart"]
       },
       {
@@ -1141,10 +1226,11 @@ Analyze domain records from supplied inputs and project structured findings acro
         type: "table",
         props: {
           title: "Granular Source Records",
+          columns: ["id", "label", "value", "status"],
+          rows: { records: "{/records}", fields: ["id", "label", "value", "status"] },
           maxWidth: "full",
           searchable: true,
-          sortable: true,
-          rows: { records: "{/records}", fields: ["id", "label", "value", "status"] }
+          sortable: true
         }
       }
     ];
