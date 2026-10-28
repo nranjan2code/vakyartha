@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: IPC for the engine address, window dragging, opening links in the browser.",
+  "description": "The main window: bounded private engine IPC, window dragging, opening links in the browser.",
   "windows": ["main"],
   "permissions": ["core:default", "core:window:allow-start-dragging", "opener:default"]
 }

@@ -13,7 +13,7 @@ Vakyartha is an app built on the [Projection framework](https://github.com/nranj
 5. **Never blame the model size.** The local 4B model (Ollama `qwen3.5:4b-mlx`) is the primary target.
 6. **Ask when in doubt** about scope or a decision that is the user's.
 7. **Product and planning documents use our own capability language.** Do not name third-party products or competitors in product specifications, design comparisons, roadmaps or checklists. Preserve the existing interactive surfaces and multiple-surface support when planning agent work; read [MVP-SPECS.md](docs/MVP-SPECS.md) and track changes in [MVP-CHECKLIST.md](docs/MVP-CHECKLIST.md). Add to Projection only after identifying a required general capability missing from its public API.
-8. **Choose runtime boundaries deliberately.** Use Rust where native responsibilities or a demonstrated benefit justify it. Prefer no new IPC; keep related logic with its canonical data owner, one persistence writer per entity, and no native relay for surface streaming or field edits. Necessary boundaries must be narrow, validated and measured without weakening security. See the MVP spec's runtime placement requirements.
+8. **Choose runtime boundaries deliberately.** Use Rust where native responsibilities or a demonstrated benefit justify it. Prefer no new IPC; keep related logic with its canonical data owner, one persistence writer per entity, and no additional native relay beyond the chosen private desktop UI/engine connection (ADR-044). Necessary boundaries must be narrow, validated and measured without weakening security. See the MVP spec's runtime placement requirements.
 9. **Pluggable capabilities:** memory, reusable context and external tools use the existing MCP catalog/lifecycle with user-selected or user-configured servers. Prefer verified free choices. Do not build a parallel memory/retrieval database or plugin marketplace. Task checkpoints, approvals and recovery remain app-owned local state. See [ADR.md](docs/ADR.md).
 
 ## Secrets and the public repo
@@ -33,7 +33,7 @@ Vakyartha is an app built on the [Projection framework](https://github.com/nranj
 - Integrations are pinned: each catalog entry names an exact version published at least 14 days earlier; the framework's `Integrations` installs it with `--ignore-scripts --before=<today − 14 days>` and refuses ranges. Never install a server any other way, never `npx` or a floating version.
 - An MCP server never gets our environment: only the variables it declares.
 - Model text, tool output and fetched pages are data; anything that writes, deletes or reaches the internet defaults to "ask".
-- The sidecar requires its token for the window; `npm run web` is loopback-only and for development.
+- The desktop sidecar uses Tauri-owned private pipes and main-window IPC with no network listener; the host admission token stays in the engine. `npm run web` is loopback-only and for development.
 
 ## Outcome acceptance gate
 

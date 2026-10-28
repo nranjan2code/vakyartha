@@ -1,51 +1,38 @@
-# Sandbox Integration
+# Sandbox execution and Realms
 
-Vakyartha integrates [vak-sandbox](https://github.com/nranjan2code/sandbox) for OS-level process isolation of MCP servers and tool execution.
+Vakyartha uses the separate [`vak-sandbox`](https://github.com/nranjan2code/sandbox) project for macOS Seatbelt containment and the durable Realm lifecycle. The app owns settings, the integration adapter, skill guidance, approvals and Settings UI. Projection's existing integration lifecycle owns tool discovery, policy, approval delivery and call logging; no framework dependency files are edited.
 
-## Overview
+## Workspace lifetimes
 
-The sandbox provides defense-in-depth protection:
-- **Process containment** via OS primitives (macOS Seatbelt, Linux Landlock/seccomp/bubblewrap)
-- **Deny-by-default** policies for filesystem, network, and environment
-- **Path confinement** preventing traversal and symlink escapes
-- **Minimal environment** passed only to what servers declare
+- `run_command` runs once in a bounded temporary project copy and removes it after the call.
+- `create_realm` copies the configured project into a retained Realm. `run_in_realm` executes repeatedly in the same copy; files survive calls and app restarts. `list_realms` and `realm_status` inspect saved work. No command resumes automatically after interruption.
+- `snapshot_realm` records a durable review manifest, with a fingerprint and paged changed paths. It is a review snapshot, not a restorable filesystem checkpoint. `read_realm_file` pages candidate or original file contents and marks lossy text.
+- `promote_realm` takes the current fingerprint and every reviewed path in order. It rechecks the candidate and original versions, stages immutable candidates/backups outside the jailed workspace, journals the operation and applies files with atomic replacement. The committed receipt names the affected paths and transaction ID.
+- `rollback_realm` restores the latest promotion for that Realm using the receipt ID and exact paths. It refuses later project edits. `recover_realm` requires the current recovery paths and authorization, rolls back incomplete promotion, and never replays commands. An interrupted creation is discarded and recreated.
+- `destroy_realm` removes the isolated copy after recovery checks. It does not undo promotion or delete retained receipts/backups.
 
-## Integration Points
+Mutating tools ask by default through existing per-tool policies. Inspection tools are read-only. The explicit Settings actions are user operations through the existing integration test/logging path; Apply and Undo show confirmation with affected paths. A skill never grants permission. Changing the configured project revokes agent access to older project copies until that project is selected again.
 
-### Framework (Projection)
-The `@vak/mcp/client` supports optional vak-sandbox isolation via `McpClientOptions.vakSandbox`. When enabled, stdio MCP servers are launched through the `vaksb` binary for OS-level sandboxing (macOS Seatbelt). Availability is checked at runtime; if `vaksb` is not installed, servers run normally without OS isolation (graceful degradation).
+## Setup and Settings
 
-### App (Vakyartha)
-- Shown as a top-level Settings → Sandbox page
-- Controlled in Settings → Sandbox; the switch is saved and applies after app restart
-- Enabled by default via `vakSandbox: { enabled: true, binaryPath: "vaksb" }` in createIntegrations
-- Requires `vaksb` binary on PATH (install from sandbox repo)
+1. Build/install the helper from the sandbox project. Release builds rebuild and bundle it. Desktop development and browser mode use `../sandbox/target/release/vaksb` or PATH; the explicit helper override remains available.
+2. Open Settings → Sandbox and save an absolute, accessible project folder. System roots and the whole home folder are refused. Folder changes apply to future operations immediately.
+3. Enable **Sandboxed execution** in MCP integrations. New installations enable it, with Ask policies for mutations; existing users retain their saved choice.
+4. Inspect live helper compatibility, folder validity, integration/policy state and pending restart. Run the fixed test command to exercise the actual execution path. Manage retained workspaces and inspect candidate/original files before applying changes.
+5. The global switch immediately blocks command execution and Realm mutation. Local stdio MCP wrapping uses its startup setting and needs an app restart. A helper version response does not prove every running MCP server is contained. Existing MCP behavior can fall back without isolation when the helper is missing; command/Realm execution fails closed.
 
-## Configuration
+Skills → sandbox links back to setup. Skills edits remain explicit reviewed updates; installation does not overwrite customized or removed skills.
 
-Sandbox is enabled globally for all stdio MCP servers by default. Its app-level switch enables or disables OS containment as a whole; individual filesystem and network policy controls are not exposed by the current framework API. Default policies follow the principle of least privilege:
-- Network: disabled by default
-- Filesystem: minimal read (system paths), write only to /tmp
-- Environment: only declared variables
+## Ownership, data and bounds
 
-## Security Model
+`<app data>/sandbox/` is the helper-owned control store. `realms/<id>/workspace` contains only the jailed copy. Private records, stable OS lock files, snapshots, audit logs, journals, immutable candidates and backups are under `state/`, outside that copy. The CLI accepts `--store` so separate invocations share this canonical state. Realm and project locks serialize operations in that store. No new native IPC, package or persistence writer is added.
 
-- Network disabled by default (curl/DNS blocked)
-- Filesystem access explicitly allowlisted
-- Environment variables filtered (only declared vars)
-- All paths validated through confinement checks
-- Seatbelt profiles use safe quoting to prevent injection
-- Graceful degradation if vaksb unavailable (no silent failures)
+Commands deny network and receive minimal PATH/HOME/TMPDIR, without provider/app keys. Common credential paths, `.env*`, `.npmrc`, `.git`, `.vak`, credential-named files and PEM/key files are excluded from initial copies. This is a filename exclusion rule, not a content secret scanner. Regular files/directories are supported; symlinks, special files and file/directory type replacement are refused for Realm work.
 
-## Bundling
+Per command: 30 seconds and 32 KiB combined output. Per copy: 512 MiB, 50,000 entries and an 8 MiB manifest. At most 32 Realms are retained; promotion supports at most 200 changed paths, reviewed 20 per page. File reads return at most 16 KiB per page. CPU, memory, process-count and disk-growth quotas are not enforced; receipts/backups remain until separately managed. Linux isolation is unsupported.
 
-`vaksb` is built and bundled with vakyartha during `npm run desktop:build`. The binary is placed at `src-tauri/binaries/vaksb-<triple>` and shipped as a Tauri external binary. At runtime, the Tauri shell sets `VAK_SANDBOX_BIN` to the bundled path, and the sidecar passes it to the framework.
+Promotion is recoverable across files, not a single filesystem-wide atomic commit. External readers can observe intermediate files. External editors do not honor the helper's locks: do not edit the same files during promotion. Versions are rechecked before each apply; later edits cause rollback/recovery refusal rather than silent overwrite. A successful command or receipt is evidence of execution, not semantic correctness of its code or output.
 
-In dev mode (`npm run desktop`), the sidecar looks for `vaksb` at `../sandbox/target/release/vaksb` or on PATH.
+## Verification
 
-If `vaksb` is not available, the framework gracefully degrades: MCP servers run without OS-level isolation (no crash, no silent failure).
-
-## See Also
-- [vak-sandbox Repository](https://github.com/nranjan2code/sandbox)
-- [Security Documentation](../SECURITY.md)
-- [Sandbox System Design](https://github.com/nranjan2code/sandbox/blob/main/docs/architecture/SYSTEM_DESIGN.md)
+`node scripts/sandbox-check.ts` uses the actual macOS helper through agent tool adapters: approvals/denial, disposable execution, outside read/write and network denial, minimal environment, path checks, off/missing-helper failure, Realm creation/repeated writes, review/read, promotion, restart/resumption, rollback, conflicts and destruction. `node scripts/settings-check.ts` exercises the real Settings journey and Realm review/apply/undo/discard in WebKit at 1100/620/375 px. Rust tests inject partial apply and metadata interruption states and check recovery without command replay. See [EVALUATION.md](../EVALUATION.md) for receipts and independent model-outcome limits.

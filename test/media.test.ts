@@ -38,7 +38,7 @@ test("media plugins are independent, off by default, and use existing approval p
   const { dir, media, calls, configs } = setup();
   const decisions: unknown[] = [];
   const integrations = createIntegrations({ dataDir: dir, secrets: fileSecrets(path.join(dir, "settings.env")), approve: async (req) => { decisions.push(req); return "deny"; } }, media);
-  assert.deepEqual(integrations.view().filter((i) => i.enabled).map((i) => i.entry.id), ["time"]);
+  assert.deepEqual(integrations.view().filter((i) => i.enabled).map((i) => i.entry.id), ["time", "sandbox-execution"]);
   assert.deepEqual(media.entries().map((e) => e.id), ["media-image", "media-audio", "media-video"]);
   assert.ok(media.entries().every((e) => !e.config.some((f) => f.kind === "secret")));
   await integrations.configure("media-image", { config: { generate_image: pick }, enabled: true });

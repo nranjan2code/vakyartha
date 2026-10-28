@@ -202,3 +202,16 @@ test("run accounting isolates overlapping runs and keeps absent, partial and unp
   assert.throws(() => parseRunUsage({ requests: -1 }));
   assert.throws(() => parseRunUsage({ requests: 1, estimatedModelUsd: Infinity }));
 });
+
+test("history deduplication keeps session, provider and strict timestamp-skew boundaries", (t) => {
+  const { dir, ledger } = manager(t);
+  mkdirSync(path.join(dir, "sessions")); mkdirSync(path.join(dir, "logs"));
+  const at = Date.UTC(2026, 0, 1);
+  const turns: Turn[] = [999, -999, 1000, -1000].map((offset, n) => ({ id: `record-${n}`, session: `chat-${n}`, at: new Date(at + offset).toISOString(), provider: "fake", model: "model", local: true, ms: 1, source: "recorded", context: emptyShape(), output: emptyShape(), steps: [], projectionCalls: 0, externalCalls: 0, errors: 0, complete: true }));
+  // Out-of-order ledger timestamps must not affect matching.
+  writeFileSync(ledger.file, turns.reverse().map((turn) => JSON.stringify(turn)).join("\n"));
+  for (let n = 0; n < 5; n++) writeFileSync(path.join(dir, "sessions", `chat-${n}.json`), JSON.stringify({ id: `chat-${n}`, timeline: [{ kind: "assistant", at: new Date(at).toISOString(), status: `${n === 4 ? "other" : "fake"} · model · 1.0s` }], messages: [{ role: "user", content: "test" }, { role: "assistant", content: "reply" }] }));
+  const view = ledger.view();
+  assert.deepEqual(view.turns.filter((turn) => turn.source === "reconstructed").map((turn) => turn.session).sort(), ["chat-2", "chat-3", "chat-4"]);
+  assert.equal(view.turns.filter((turn) => turn.source === "recorded").length, 4);
+});

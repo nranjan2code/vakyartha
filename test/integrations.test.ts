@@ -17,9 +17,9 @@ test("every npm server in the catalog is pinned to an exact version the framewor
   assert.equal(new Set(CATALOG.map((e) => e.id)).size, CATALOG.length);
 });
 
-test("first run: only Time is on", () => {
+test("first run: Time and approval-gated sandbox execution are on", () => {
   const list = createIntegrations(deps(mkdtempSync(path.join(tmpdir(), "vakyartha-int-"))));
-  assert.deepEqual(list.view().filter((v) => v.enabled).map((v) => v.entry.id), ["time"]);
+  assert.deepEqual(list.view().filter((v) => v.enabled).map((v) => v.entry.id), ["time", "sandbox-execution"]);
 });
 
 test("state saved before integrations moved into the framework still loads", () => {

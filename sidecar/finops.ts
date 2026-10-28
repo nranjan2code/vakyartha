@@ -144,6 +144,25 @@ export class Finops {
     for (const f of [`${this.file}.1`, this.file]) if (existsSync(f)) for (const line of readFileSync(f, "utf8").split("\n")) {
       try { const t = JSON.parse(line) as Turn; if (t.id && t.session && Array.isArray(t.steps)) turns.push(t); } catch { /* interrupted append */ }
     }
+    // Build an ephemeral lookup once, rather than scanning the entire ledger for
+    // every saved reply. It is not a cache or a second persistence owner.
+    const recordedAt = new Map<string, Map<string, number[]>>();
+    for (const turn of turns) if (turn.source === "recorded") {
+      const at = Date.parse(turn.at);
+      if (!Number.isFinite(at)) continue;
+      let providers = recordedAt.get(turn.session);
+      if (!providers) recordedAt.set(turn.session, providers = new Map());
+      let times = providers.get(turn.provider);
+      if (!times) providers.set(turn.provider, times = []);
+      times.push(at);
+    }
+    for (const providers of recordedAt.values()) for (const times of providers.values()) times.sort((a, b) => a - b);
+    const hasRecorded = (session: string, provider: string, at: number): boolean => {
+      const times = recordedAt.get(session)?.get(provider) ?? [];
+      let lo = 0, hi = times.length;
+      while (lo < hi) { const mid = (lo + hi) >>> 1; if (times[mid]! <= at - 1000) lo = mid + 1; else hi = mid; }
+      return Number.isFinite(at) && lo < times.length && times[lo]! < at + 1000;
+    };
     const sessionsDir = path.join(this.dir, "sessions");
     if (existsSync(sessionsDir)) for (const f of readdirSync(sessionsDir).filter((f) => f.endsWith(".json"))) {
       try {
@@ -157,7 +176,7 @@ export class Finops {
           if (!provider || !model || !duration || !/^\d+(\.\d+)?s$/.test(duration)) continue;
           // The host timestamps its reply at request admission. Match it to the app's
           // admission timestamp, allowing scheduling skew but never matching two replies.
-          const recorded = turns.find((t) => t.source === "recorded" && t.session === s.id && t.provider === provider && Math.abs(Date.parse(t.at) - Date.parse(reply.at)) < 1000);
+          const recorded = hasRecorded(s.id, provider, Date.parse(reply.at));
           if (recorded) continue;
           const end = starts[n + 1] ?? s.messages.length, chunk = s.messages.slice(start, end), output = messageShape(chunk.filter((m) => m.role === "assistant"));
           const calls = chunk.flatMap((m) => m.toolCalls ?? []);

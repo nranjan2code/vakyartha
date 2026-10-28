@@ -1,3 +1,4 @@
+import { engineFetch } from "./backend.ts";
 // Local marks identify catalog sources and curated publishers. External listing
 // icons arrive through authenticated, bounded public-image fetching, never HTML.
 import { el, engine } from "./core.ts";
@@ -56,7 +57,7 @@ function imageTile(label: string, route: string | undefined, size = 40): HTMLEle
     let blobUrl: string | undefined;
     try {
       const b = engine();
-      const response = await fetch(`${b.url}${route}`, { headers: { authorization: `Bearer ${b.token}` }, signal: AbortSignal.timeout(15_000) });
+      const response = await engineFetch(`${b.url}${route}`, { headers: { authorization: `Bearer ${b.token}` }, signal: AbortSignal.timeout(15_000) });
       if (!response.ok || !box.isConnected) return;
       let blob = await response.blob();
       if (blob.type === "image/svg+xml") blob = new Blob([passiveSvg(await blob.text())], { type: "image/svg+xml" });

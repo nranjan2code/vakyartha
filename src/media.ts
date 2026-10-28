@@ -1,3 +1,4 @@
+import { engineFetch } from "./backend.ts";
 import type { MediaResource } from "@vak/web";
 import { engine } from "./core.ts";
 
@@ -6,7 +7,7 @@ export async function resolveMedia(uri: string): Promise<MediaResource | undefin
   const id = /^media:([0-9a-f-]{36})$/.exec(uri)?.[1];
   if (!id) return undefined;
   const { url, token } = engine();
-  const res = await fetch(`${url}/api/media/assets/${id}`, { headers: { authorization: `Bearer ${token}` } });
+  const res = await engineFetch(`${url}/api/media/assets/${id}`, { headers: { authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error("The saved media file is unavailable");
   const blob = await res.blob();
   const source = URL.createObjectURL(blob);

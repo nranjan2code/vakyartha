@@ -10,6 +10,7 @@
 import path from "node:path";
 import { type CatalogEntry, Integrations, type IntegrationsOptions, timeServer, webFetchServer } from "@vak/mcp/client";
 import { ollamaOcrServer } from "./ocr.ts";
+import { sandboxExecutionEntry } from "./sandbox-execution.ts";
 import type { Media } from "./media/index.ts";
 
 /** Only documented workspace MCP endpoints may receive this integration's bearer token. */
@@ -178,7 +179,16 @@ export const CATALOG: CatalogEntry[] = [
   },
 ];
 
-/** The app's integrations: its catalog run by the framework; Time is on from the first run (it runs no outside code). */
+/** Keep one live catalog array so reviewed imports reach the existing lifecycle. */
+export function integrationCatalog(media?: Media, binaryPath = "vaksb", dataDir = "."): CatalogEntry[] {
+  return [...CATALOG, ...(media?.entries() ?? []), sandboxExecutionEntry({
+    binaryPath, dataDir,
+    enabled: () => process.env.VAK_SANDBOX_ENABLED !== "false",
+    workspace: () => process.env.VAK_SANDBOX_WORKSPACE ?? "",
+  })];
+}
+
+/** App-owned catalog entries run through the framework's common integration lifecycle. */
 export function createIntegrations(deps: Omit<IntegrationsOptions, "catalog" | "enabledAtFirstRun">, media?: Media, catalog?: CatalogEntry[]): Integrations {
-  return new Integrations({ ...deps, catalog: catalog ?? [...CATALOG, ...(media?.entries() ?? [])], enabledAtFirstRun: ["time"] });
+  return new Integrations({ ...deps, catalog: catalog ?? integrationCatalog(media, deps.vakSandbox?.binaryPath, deps.dataDir), enabledAtFirstRun: ["time", "sandbox-execution"] });
 }

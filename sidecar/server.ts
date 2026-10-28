@@ -5,7 +5,8 @@
 
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from "node:fs";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer } from "node:http";
+import { createFetchHandler, type HostRequest, type HostResponse } from "@vak/host";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createHost, json, readJson } from "@vak/host";
@@ -16,7 +17,7 @@ import { Channels, CHANNELS } from "./channels.ts";
 import { Marketplaces } from "./marketplaces.ts";
 import { Skills } from "./skills.ts";
 import { MARKETPLACES, type MarketplaceId } from "../shared/marketplaces.ts";
-import { CATALOG, createIntegrations } from "./integrations.ts";
+import { integrationCatalog, createIntegrations } from "./integrations.ts";
 import { runUsage } from "../shared/finops.ts";
 import { Finops } from "./finops.ts";
 import { TaskFiles } from "./task-files.ts";
@@ -26,6 +27,7 @@ import { Tasks } from "./tasks.ts";
 import { voiceRoutes } from "./voice/index.ts";
 import { Media } from "./media/index.ts";
 import { isMediaKind } from "../shared/media.ts";
+import { sandboxHelper, validateSandboxWorkspace } from "./sandbox-status.ts";
 
 export interface AppServerOptions {
   /** Conversations, settings, channels, logs (and profiles/transcripts unless given). */
@@ -55,10 +57,13 @@ export interface AppServerOptions {
   uiDir?: string;
   appName?: string;
   version?: string;
+  /** Desktop uses private parent pipes and opens no network listener. */
+  transport?: "http" | "stdio";
 }
 
 export interface AppServer {
   port: number;
+  request(request: Request): Promise<Response>;
   token?: string;
   url: string;
   shutdown(): Promise<void>;
@@ -98,7 +103,22 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   for (const file of opts.envFiles ?? []) loadEnvFile(file);
   hardenNetwork();
 
-  async function settingsRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  async function settingsRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
+    if (url.pathname === "/api/sandbox" && req.method === "GET") {
+      const enabled = process.env.VAK_SANDBOX_ENABLED !== "false";
+      const workspace = process.env.VAK_SANDBOX_WORKSPACE ?? "";
+      let workspaceError: string | undefined;
+      try { if (workspace) validateSandboxWorkspace(workspace); else workspaceError = "Choose a project folder to enable command execution."; }
+      catch (error) { workspaceError = (error as Error).message; }
+      const execution = integrations!.view().find(i => i.entry.id === "sandbox-execution");
+      json(res, 200, {
+        enabled, processIsolationEnabled, restartRequired: enabled !== processIsolationEnabled,
+        platform: process.platform, helper: await sandboxHelper(sandboxBin),
+        workspace: { path: workspace, valid: !workspaceError, error: workspaceError },
+        execution: { enabled: execution?.enabled ?? false, status: execution?.status ?? "off", policy: execution?.tools.find(t => t.name === "run_command")?.policy ?? "ask" },
+      });
+      return true;
+    }
     if (url.pathname !== "/api/settings") return false;
     if (req.method === "PUT") {
       const body = await readJson(req);
@@ -121,7 +141,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   }
 
   /** UI errors (and debug-build probes) into the engine log: a release window has no console. */
-  async function clientLogRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  async function clientLogRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
     if (url.pathname !== "/api/client-log" || req.method !== "POST") return false;
     const body = await readJson(req);
     log(`[ui ${String(body.level ?? "error").slice(0, 10)}] ${String(body.message ?? "").slice(0, 2000)}`);
@@ -133,13 +153,13 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   const voiceRoute = voiceRoutes(voiceDir, log, () => modelProviders());
 
   /** For the About page: where things are kept. */
-  function infoRoute(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
+  function infoRoute(req: HostRequest, res: HostResponse, url: URL): boolean {
     if (url.pathname !== "/api/info" || req.method !== "GET") return false;
     json(res, 200, { version: opts.version ?? "dev", node: process.version, platform: process.platform, dataDir, logFile, keys: settings.secrets.kind === "keychain" ? "macOS Keychain" : "settings file (owner-only)" });
     return true;
   }
 
-  async function channelsRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  async function channelsRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
     if (url.pathname === "/api/channels" && req.method === "GET") {
       json(res, 200, channels.view());
       return true;
@@ -237,12 +257,13 @@ ${skills.index()}`;
     log,
   });
 
-  marketplaces = new Marketplaces(dataDir, [...CATALOG, ...media.entries()], opts.marketplaceFetch, opts.marketplaceImageFetch);
   const sandboxBin = opts.sandboxBin || "vaksb";
-  integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: process.env.VAK_SANDBOX_ENABLED !== "false", binaryPath: sandboxBin } }, media, marketplaces.catalog);
+  marketplaces = new Marketplaces(dataDir, integrationCatalog(media, sandboxBin, dataDir), opts.marketplaceFetch, opts.marketplaceImageFetch);
+  const processIsolationEnabled = process.env.VAK_SANDBOX_ENABLED !== "false";
+  integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: processIsolationEnabled, binaryPath: sandboxBin } }, media, marketplaces.catalog);
   // Refresh app-owned tool schemas after an upgrade; the integration journal
   // may otherwise retain an older model's controls indefinitely.
-  for (const entry of integrations.view().filter((i) => i.enabled && i.entry.id.startsWith("media-"))) {
+  for (const entry of integrations.view().filter((i) => i.enabled && (i.entry.id.startsWith("media-") || i.entry.id === "sandbox-execution"))) {
     if (entry.entry.id === "media-audio") { try { await media.models("audio"); } catch { log("Media voice metadata is unavailable; no generation was attempted."); } }
     await integrations.refresh(entry.entry.id);
   }
@@ -263,7 +284,7 @@ ${skills.index()}`;
     },
   });
 
-  async function tasksRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  async function tasksRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
     const p = url.pathname;
     const outputRun = /^\/api\/tasks\/([\w-]+)\/runs\/([\w-]+)\/output$/.exec(p);
     if (outputRun && (req.method === "POST" || req.method === "GET")) {
@@ -312,7 +333,7 @@ ${skills.index()}`;
     return [...tools, ...skills.tools() as T[]];
   }
 
-  async function skillsRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  async function skillsRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
     const p = url.pathname;
     if (!p.startsWith("/api/skills")) return false;
     try {
@@ -339,7 +360,7 @@ ${skills.index()}`;
     return true;
   }
 
-  async function finopsRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  async function finopsRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
     if (url.pathname !== "/api/finops") return false;
     if (req.method === "GET") json(res, 200, finops.view());
     else if (req.method === "PUT") {
@@ -349,7 +370,7 @@ ${skills.index()}`;
     return true;
   }
 
-  async function integrationsRoute(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  async function integrationsRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
     const p = url.pathname;
     if (p === "/api/marketplaces" && req.method === "GET") { json(res, 200, MARKETPLACES); return true; }
     if (p.startsWith("/api/marketplaces/")) {
@@ -415,7 +436,7 @@ ${skills.index()}`;
     return true;
   }
 
-  const server = createServer(async (req, res) => {
+  const handle = async (req: HostRequest, res: HostResponse) => {
     try {
       if (req.method === "POST" && new URL(req.url ?? "/", "http://localhost").pathname === "/api/chat") {
         await finops.chat(async () => { await host.handle(req, res); });
@@ -429,19 +450,21 @@ ${skills.index()}`;
       if (!res.headersSent) res.writeHead(500).end();
       else res.end();
     }
-  });
+  };
+  const server = opts.transport === "stdio" ? undefined : createServer((req, res) => void handle(req, res));
 
-  // Loopback only: the server holds API keys and runs model calls.
-  await new Promise<void>((resolve) => server.listen(opts.port ?? 0, "127.0.0.1", resolve));
-  const { port } = server.address() as { port: number };
+  // Only the explicit browser/development adapter opens a listener.
+  if (server) await new Promise<void>((resolve) => server.listen(opts.port ?? 0, "127.0.0.1", resolve));
+  const port = server ? (server.address() as { port: number }).port : 0;
   listening = port;
   void channels.startAll();
   return {
     port,
+    request: createFetchHandler(handle),
     token,
-    url: `http://127.0.0.1:${port}`,
+    url: server ? `http://127.0.0.1:${port}` : "vak://localhost",
     async shutdown() {
-      server.close();
+      server?.close();
       await tasks?.close();
       await media.close();
       await channels.stopAll();
@@ -461,7 +484,7 @@ const MIME: Record<string, string> = {
 };
 
 /** The built UI: hashed assets cached for good, everything else falls back to index.html. */
-async function serveUi(root: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function serveUi(root: string, req: HostRequest, res: HostResponse): Promise<void> {
   const rel = decodeURIComponent(new URL(req.url ?? "/", "http://x").pathname).replace(/^\/+/, "");
   let file = path.resolve(root, rel || "index.html");
   if (!file.startsWith(path.resolve(root) + path.sep)) return void res.writeHead(403).end();

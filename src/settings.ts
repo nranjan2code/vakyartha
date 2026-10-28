@@ -1,3 +1,4 @@
+import { engineFetch } from "./backend.ts";
 // Settings: a full page with a section sidebar. Every change applies as it is
 // made (keys when you press Save next to them), so there is no page-wide Save.
 
@@ -53,7 +54,6 @@ const content = () => $<HTMLElement>("settings-content");
 let section: Section = (prefs.get("settings:section") as Section | null) ?? "models";
 let settings: Setting[] = [];
 let timer: ReturnType<typeof setInterval> | undefined;
-window.addEventListener("vak:finops-refresh", () => { if (settingsOpen() && section === "finops") void show("finops"); });
 window.addEventListener("vak:media-providers", () => void show("providers"));
 
 export function settingsOpen(): boolean {
@@ -97,37 +97,43 @@ async function show(to: Section, arg?: string): Promise<void> {
   section = to;
   prefs.set("settings:section", to);
   nav();
-  settings = await api<Setting[]>("/api/settings").catch(() => []);
-  const integration = to.startsWith("integration:") ? to.slice("integration:".length) : undefined;
-  const render: Record<string, () => Promise<HTMLElement[]>> = {
-    integrations: async () => marketplace((id) => void show(`integration:${id}`), () => void show("integrations:add"), await voiceSection((id) => void show(`voice:${id}`))),
-    skills: () => skillsPage(),
-    sandbox: async () => sandboxPage(),
-    voice: () => voiceSettingsPage((id) => void show(`voice:${id}`)),
-    "integrations:add": async () => addOwnPage(() => void show("integrations"), (id) => void show(`integration:${id}`)),
-    models: () => modelsPage(arg),
-    providers: providersPage,
-    "channel:telegram": () => channelPage("telegram"),
-    "channel:slack": () => comingPage("slack", "Slack"),
-    "channel:discord": () => comingPage("discord", "Discord"),
-    appearance: appearancePage,
-    chats: chatsPage,
-    tasks: async () => [
-      ...title("Schedule", "Plan work for now or a chosen time. Every surface remains interactive; completion requires your review."),
-      group("Timing", row("One-time schedules", "Save a future date and time, pause or resume, or run now from Schedule. Missed times are held for review. Repeating schedules are not enabled yet.", el("span"))),
-      group("Spending", row("Model policy", "New tasks default to a local provider on this computer. Model API charges require explicit acknowledgement. Strict monetary ceilings cannot be enforced yet; tool/server charges, compute and hosting are separate.", el("span"))),
-      group("Execution", row("Availability", "Work continues while you switch views or hide the window. Keep the app running and the computer awake. Interrupted work requires review before continuation.", el("span")), row("Per-run limits", `${TASK_LIMITS.rounds} model requests, ${TASK_LIMITS.tools} tool calls and ${TASK_LIMITS.activeMs / 60000} active minutes. Approval waiting has its own five-minute expiry. Each task also has shared run/request/tool/time limits; continuations and restarts do not reset them.`, el("span"))),
-      group("Access and results", row("Capabilities", "Select ready, free capabilities per task. Configure access in Integrations; no capability is installed or enabled automatically.", el("button", { type: "button", className: "ghost small", textContent: "Open Integrations", onclick: () => void show("integrations") })), row("Review", "A generated interface does not prove that an external action happened. Check the criteria and any operation receipts before marking a task complete.", el("span"))),
-    ],
-    finops: finopsPage,
-    general: generalPage,
-    about: aboutPage,
-  };
-  const voiceId = to.startsWith("voice:") ? to.slice("voice:".length) : undefined;
-  const parts = voiceId ? await voicePage(voiceId, settings, () => void show("integrations"), () => void show(to)) : integration ? await integrationPage(integration, () => void show("integrations"), () => void show(to)) : await (render[to] ?? render.models!)();
-  if (section !== to) return;
-  content().replaceChildren(...parts);
-  content().scrollTop = 0;
+  content().replaceChildren(el("p", { className: "row-hint", role: "status", textContent: "Loading settings…" }));
+  try {
+    settings = await api<Setting[]>("/api/settings");
+    const integration = to.startsWith("integration:") ? to.slice("integration:".length) : undefined;
+    const render: Record<string, () => Promise<HTMLElement[]>> = {
+      integrations: async () => marketplace((id) => void show(`integration:${id}`), () => void show("integrations:add"), await voiceSection((id) => void show(`voice:${id}`))),
+      skills: () => skillsPage(arg, () => void show("sandbox")),
+      sandbox: async () => sandboxPage(() => void show("integration:sandbox-execution"), () => void show("skills", "sandbox")),
+      voice: () => voiceSettingsPage((id) => void show(`voice:${id}`)),
+      "integrations:add": async () => addOwnPage(() => void show("integrations"), (id) => void show(`integration:${id}`)),
+      models: () => modelsPage(arg),
+      providers: providersPage,
+      "channel:telegram": () => channelPage("telegram"),
+      "channel:slack": () => comingPage("slack", "Slack"),
+      "channel:discord": () => comingPage("discord", "Discord"),
+      appearance: appearancePage,
+      chats: chatsPage,
+      tasks: async () => [
+        ...title("Schedule", "Plan work for now or a chosen time. Every surface remains interactive; completion requires your review."),
+        group("Timing", row("One-time schedules", "Save a future date and time, pause or resume, or run now from Schedule. Missed times are held for review. Repeating schedules are not enabled yet.", el("span"))),
+        group("Spending", row("Model policy", "New tasks default to a local provider on this computer. Model API charges require explicit acknowledgement. Strict monetary ceilings cannot be enforced yet; tool/server charges, compute and hosting are separate.", el("span"))),
+        group("Execution", row("Availability", "Work continues while you switch views or hide the window. Keep the app running and the computer awake. Interrupted work requires review before continuation.", el("span")), row("Per-run limits", `${TASK_LIMITS.rounds} model requests, ${TASK_LIMITS.tools} tool calls and ${TASK_LIMITS.activeMs / 60000} active minutes. Approval waiting has its own five-minute expiry. Each task also has shared run/request/tool/time limits; continuations and restarts do not reset them.`, el("span"))),
+        group("Access and results", row("Capabilities", "Select ready, free capabilities per task. Configure access in Integrations; no capability is installed or enabled automatically.", el("button", { type: "button", className: "ghost small", textContent: "Open Integrations", onclick: () => void show("integrations") })), row("Review", "A generated interface does not prove that an external action happened. Check the criteria and any operation receipts before marking a task complete.", el("span"))),
+      ],
+      finops: finopsPage,
+      general: generalPage,
+      about: aboutPage,
+    };
+    const voiceId = to.startsWith("voice:") ? to.slice("voice:".length) : undefined;
+    const parts = voiceId ? await voicePage(voiceId, settings, () => void show("integrations"), () => void show(to)) : integration ? await integrationPage(integration, () => void show("integrations"), () => void show(to)) : await (render[to] ?? render.models!)();
+    if (section !== to) return;
+    content().replaceChildren(...parts);
+    content().scrollTop = 0;
+  } catch (error) {
+    if (section !== to) return;
+    content().replaceChildren(...title("Settings unavailable", "Your settings could not be loaded."), el("p", { className: "settings-feedback bad", role: "alert", textContent: (error as Error).message }), el("button", { type: "button", className: "primary small", textContent: "Try again", onclick: () => void show(to, arg) }));
+  }
 }
 
 // --- Models -----------------------------------------------------------------
@@ -216,7 +222,7 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     let done = 0;
     try {
       const { url, token } = engine();
-      const res = await fetch(`${url}/api/calibrate`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ provider: p, model }) });
+      const res = await engineFetch(`${url}/api/calibrate`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ provider: p, model }) });
       for await (const msg of readSse(res.body!)) {
         const data = JSON.parse(msg.data);
         if (msg.event === "start") calibration.textContent = `Calibrating: 0/${data.calls} runs`;

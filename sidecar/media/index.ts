@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { constants, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { open, realpath } from "node:fs/promises";
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { HostRequest, HostResponse } from "@vak/host";
 import path from "node:path";
 import { json, readJson } from "@vak/host";
 import type { BuiltinServer, CatalogEntry } from "@vak/mcp/client";
@@ -328,7 +328,7 @@ export class Media {
     this.saved.jobs = this.saved.jobs.filter((j) => j.id !== id); this.persist();
   }
   async close(): Promise<void> { this.closed = true; const active = [...this.active.values()]; active.forEach((j) => j.abort.abort()); await Promise.allSettled(active.map((j) => j.work)); }
-  async route(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  async route(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
     const deletedSession = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
     if (deletedSession && req.method === "DELETE" && !this.failure) {
       const session = decodeURIComponent(deletedSession[1]!);

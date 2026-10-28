@@ -190,7 +190,9 @@ Existing live-turn approvals are not durable task permissions: they expire, depe
 
 ### Runtime placement, performance and security
 
-Prefer no new interprocess boundary. Keep related behavior beside its canonical data owner and reuse the existing UI-to-engine connection. Do not relay ordinary task commands or streamed surfaces through the native shell. Field edits, local table controls and canvas placement stay in the UI; they require no native IPC or model call. Task orchestration stays near the existing engine/session state by default.
+The user selected a private desktop transport on 2026-10-27: the existing UI/engine connection now crosses main-window native IPC and parent-owned pipes instead of a loopback listener. This is a deliberate exception to the earlier no-native-relay preference. The relay carries only versioned request identity, route, bounded body, status and streamed bytes; the engine retains all session/task/data authority, cancellation and admission checks. Consumer acknowledgements bound streaming, and native integration checks cover rendering, no listening port and parent-exit cleanup. Browser HTTP remains a development adapter. See [runtime audit](NODE-RUNTIME.md).
+
+Prefer no additional interprocess boundary. Keep related behavior beside its canonical data owner and reuse the existing UI-to-engine connection. Do not relay ordinary task commands or streamed surfaces through the native shell. Field edits, local table controls and canvas placement stay in the UI; they require no native IPC or model call. Task orchestration stays near the existing engine/session state by default.
 
 Use Rust where native capabilities or a demonstrated correctness, performance or security benefit justify it: process supervision and graceful shutdown, platform integration, and confined native file operations already belong there. Evaluate native notification or credential changes individually rather than moving working code by language preference. The task authority, not the process supervisor, determines recoverable or uncertain execution state.
 
@@ -222,7 +224,7 @@ The following are planned candidates, not MVP commitments or implemented feature
 - Inspectable, editable user memory across tasks; task-local continuity is already MVP scope.
 - Scheduled routines and event triggers, including time zones, missed runs and change-only notifications.
 - Additional connectors, authorization flows and supported input formats.
-- Browser and computer interaction, isolated command execution and stronger process isolation.
+- Browser/computer interaction and broader isolation guarantees. The bounded macOS command/Realm lifecycle is implemented and independently tool-tested; [scope and limits](sandbox/OVERVIEW.md). Autonomous provider outcomes remain separate.
 - Multiple agent roles, delegated work and concurrent execution.
 - Remote channels, cloud execution and work while the local computer is unavailable.
 - Artifact version history, collaboration and publishing.

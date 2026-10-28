@@ -29,7 +29,7 @@
     "security": {
       "csp": {
         "default-src": "'self'",
-        "connect-src": "'self' ipc: http://ipc.localhost http://127.0.0.1:*",
+        "connect-src": "'self' ipc: http://ipc.localhost",
         "img-src": "'self' https: data: blob:",
         "media-src": "'self' blob:",
         "style-src": "'self' 'unsafe-inline'",

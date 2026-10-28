@@ -1,6 +1,6 @@
 # RELEASING.md: Vakyartha
 
-Current local checkpoint (2026-10-27): pushed app `067c606` / Projection `dab83cf` was freshly cloned, built and installed with bundled skill folders and the reviewed market template. The exact bundle manifest and recoverable backup are recorded below. 175 app/393 framework tests, typecheck, UI build and responsive Skills/surface checks pass. The bounded fictional market outcome passes; the broader mapped-table and real-source gates remain open.
+Current work (2026-10-28): the user requested all changes committed/pushed, a fresh build and local installation of the private desktop runtime, live FinOps and functional Sandbox/Realm settings. The new source uses Projection `479323e`; the separate sandbox source must also be pushed and clean before packaging. The final executable-source commits, runtime manifest, full installed bundle comparison and recoverable backup will be recorded below after verification. Older installation records are historical. Failed primary-local model/source/value/interaction outcomes remain open.
 
 
 ## Market dashboard package local install — 2026-10-27
@@ -70,6 +70,10 @@ The release app ships the Node binary that runs the build (and its npm), so the 
 To update: download `node-vX.Y.Z-darwin-arm64.tar.gz`, `SHASUMS256.txt` and `SHASUMS256.txt.sig` from `https://nodejs.org/dist/vX.Y.Z/` into an empty folder; check the tarball against `SHASUMS256.txt` (`shasum -a 256 -c`), and the PGP signature when `gpg` and the release keys are available; check `codesign --verify --strict` and the team ID on `bin/node`; then replace `~/.local/bin/node`, `~/.local/lib/node_modules/{npm,corepack}` and `~/.local/include/node`, keeping the previous copy until the new build is verified. A security release is taken as soon as it is verified; the 14-day age rule is for packages and integrations.
 
 Current: Node 24.22.1 (Krypton LTS, security release of 2026-10-20) with npm 11.19.1, adopted 2026-10-26. Tarball SHA-256 matched `SHASUMS256.txt`; signature valid for Node.js Foundation (HX7739G8FX), timestamped 2026-10-21. The PGP signature of `SHASUMS256.txt` was not checked (`gpg` is not installed).
+
+The bundler now also rebuilds the adjacent sandbox repository using `cargo build --locked --release --target <host>` and refuses a failed build. It copies only the self-contained engine and skill resources, trims npm top-level docs/man pages, and writes `resources/runtime-manifest.json` with Node/npm versions, source commits/dirty flags and content hashes. Check that receipt against the intended clean source before installation. The manifest is diagnostic provenance, not a signature.
+
+Desktop smoke must exercise private main-window IPC, streamed surfaces and binary responses, verify the Node child has no listening TCP port, and check that parent exit closes the child. Browser HTTP tests alone do not certify the installed transport. No installation is implied by a source commit.
 
 ## Release checklist
 

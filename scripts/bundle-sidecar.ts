@@ -10,10 +10,10 @@
 // VAK_NODE_CHECK=offline skips only the nodejs.org lookup, with a warning.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, cpSync, mkdirSync, realpathSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { build } from "vite";
+import { buildSidecar, copyNpm, treeReceipt } from "./sidecar-bundle.ts";
 
 const NODE_TEAM = "HX7739G8FX"; // Developer ID: Node.js Foundation
 
@@ -40,22 +40,7 @@ await checkNode();
 const app = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tauri = path.join(app, "src-tauri");
 
-await build({
-  configFile: false,
-  root: app,
-  logLevel: "warn",
-  build: {
-    ssr: path.join(app, "sidecar/main.ts"),
-    outDir: path.join(tauri, "resources"),
-    emptyOutDir: true,
-    target: "node24",
-    minify: false,
-    rollupOptions: { output: { entryFileNames: "sidecar.mjs", format: "es" } },
-  },
-  // Inline the workspace packages; only node: built-ins remain external.
-  ssr: { noExternal: true, target: "node" },
-});
-cpSync(path.join(app, "sidecar/builtin-skills"), path.join(tauri, "resources/builtin-skills"), { recursive: true });
+await buildSidecar(app, path.join(tauri, "resources"));
 
 const triple = /host: (\S+)/.exec(execFileSync("rustc", ["-vV"], { encoding: "utf8" }))?.[1];
 if (!triple) throw new Error("could not read the Rust host triple from `rustc -vV`");
@@ -66,23 +51,35 @@ copyFileSync(realpathSync(process.execPath), bin);
 chmodSync(bin, 0o755);
 // npm, so integrations can be installed in the release app (it runs with the bundled Node).
 const npmDir = path.resolve(path.dirname(realpathSync(process.execPath)), "../lib/node_modules/npm");
-cpSync(npmDir, path.join(tauri, "resources", "npm"), { recursive: true, dereference: true });
+copyNpm(npmDir, path.join(tauri, "resources", "npm"));
 console.log(`sidecar → ${path.relative(app, path.join(tauri, "resources/sidecar.mjs"))}, node ${process.version} → ${path.relative(app, bin)}`);
 
 // Bundle vaksb (vak-sandbox CLI) as an external binary alongside node.
 const sandboxRepo = path.resolve(app, "..", "sandbox");
-const vaksbSrc = path.join(sandboxRepo, "target", "release", "vaksb");
-// Build if not already built
-const { existsSync } = await import("node:fs");
-if (!existsSync(vaksbSrc)) {
-  console.log("Building vaksb from sandbox repo...");
-  spawnSync("cargo", ["build", "--release", "-p", "vak-sandbox-ctl"], { cwd: sandboxRepo, stdio: "inherit" });
-}
+const vaksbSrc = path.join(sandboxRepo, "target", triple, "release", `vaksb${ext}`);
+// Always ask Cargo to validate current sources and its lockfile. Its incremental
+// build is cheap; binary existence alone cannot establish source provenance.
+const sandboxBuild = spawnSync("cargo", ["build", "--locked", "--release", "--target", triple, "-p", "vak-sandbox-ctl"], { cwd: sandboxRepo, stdio: "inherit", env: { ...process.env, CARGO_TARGET_DIR: path.join(sandboxRepo, "target") } });
+if (sandboxBuild.error) throw sandboxBuild.error;
+if (sandboxBuild.status !== 0) throw new Error(`Sandbox build failed (${sandboxBuild.status ?? sandboxBuild.signal}); refusing to package an old binary`);
 const vaksbBin = path.join(tauri, "binaries", `vaksb-${triple}${ext}`);
-if (existsSync(vaksbSrc)) {
-  copyFileSync(vaksbSrc, vaksbBin);
-  chmodSync(vaksbBin, 0o755);
-  console.log(`vaksb → ${path.relative(app, vaksbBin)}`);
-} else {
-  console.warn("warning: vaksb binary not found; sandbox isolation will be unavailable in this build");
-}
+copyFileSync(vaksbSrc, vaksbBin);
+chmodSync(vaksbBin, 0o755);
+console.log(`vaksb → ${path.relative(app, vaksbBin)}`);
+
+const git = (repo: string, ...args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" }).trim();
+const resources = path.join(tauri, "resources");
+const npmVersion = (JSON.parse(readFileSync(path.join(resources, "npm/package.json"), "utf8")) as { version: string }).version;
+const receipt = {
+  schema: 1,
+  app: { commit: git(app, "rev-parse", "HEAD"), dirty: Boolean(git(app, "status", "--porcelain")) },
+  framework: git(path.join(app, "framework"), "rev-parse", "HEAD"),
+  lockfile: treeReceipt(path.join(app, "package-lock.json")),
+  node: { version: process.version, ...treeReceipt(bin) },
+  npm: { version: npmVersion, ...treeReceipt(path.join(resources, "npm")) },
+  sidecar: treeReceipt(path.join(resources, "sidecar.mjs")),
+  skills: treeReceipt(path.join(resources, "builtin-skills")),
+  sandbox: { commit: git(sandboxRepo, "rev-parse", "HEAD"), dirty: Boolean(git(sandboxRepo, "status", "--porcelain")), ...treeReceipt(vaksbBin) },
+};
+writeFileSync(path.join(resources, "runtime-manifest.json"), JSON.stringify(receipt, null, 2) + "\n");
+console.log(`Runtime receipt: Node ${receipt.node.bytes} bytes; npm ${receipt.npm.files} files / ${receipt.npm.bytes} bytes; sidecar ${receipt.sidecar.bytes} bytes`);

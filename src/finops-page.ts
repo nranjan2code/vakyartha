@@ -2,8 +2,8 @@ import { estimateCost, shapeTotal, type FinopsView, type Shape, type Turn } from
 import { api, el } from "./core.ts";
 import { select, title } from "./ui.ts";
 
-let observer: ResizeObserver | undefined;
-export function disposeFinops(): void { observer?.disconnect(); observer = undefined; }
+let disposeCurrent = () => {};
+export function disposeFinops(): void { disposeCurrent(); disposeCurrent = () => {}; }
 const keys = ["user", "text", "projection", "tools", "feedback", "results"] as const;
 const names = ["User / actions", "Assistant text", "UI arguments", "Other tool args", "Engine feedback", "External results"];
 const palette = ["var(--accent)", "var(--finops-2)", "var(--finops-3)", "var(--finops-4)", "var(--finops-5)", "var(--finops-6)"];
@@ -19,7 +19,15 @@ function sv<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, 
 }
 
 export async function finopsPage(): Promise<HTMLElement[]> {
-  let data = await api<FinopsView>("/api/finops");
+  disposeFinops();
+  const abort = new AbortController();
+  let disposed = false, timer: ReturnType<typeof setInterval> | undefined;
+  let observer: ResizeObserver | undefined, layoutFrame = 0;
+  disposeCurrent = () => { disposed = true; abort.abort(); clearInterval(timer); observer?.disconnect(); cancelAnimationFrame(layoutFrame); };
+  let data: FinopsView;
+  try { data = await api<FinopsView>("/api/finops", { signal: abort.signal }); }
+  catch (error) { if (disposed) return []; throw error; }
+  if (disposed) return [];
   const box = el("div", { className: "finops" });
   const summary = el("p", { className: "lead" });
   const controls = el("div", { className: "finops-controls" });
@@ -27,17 +35,15 @@ export async function finopsPage(): Promise<HTMLElement[]> {
   const detail = el("div", { className: "finops-detail", "aria-live": "polite" });
   const error = el("p", { className: "error", role: "alert" });
   let session = "", selected = "", scope = "all";
-  const sessions = [...new Set(data.turns.map((t) => t.session))];
-  const labels = new Map(sessions.map((id, i) => [id, String.fromCharCode(65 + i)]));
   const ordinals = new Map<string, string>();
-  for (const id of sessions) data.turns.filter((t) => t.session === id).forEach((t, i) => ordinals.set(t.id, `${labels.get(id)}${i + 1}`));
-  const filter = select([["", "All chats"], ...sessions.map((id) => [id, `Chat ${labels.get(id)} · ${id.slice(0, 8)}`] as const)], "", (v) => { session = v; selected = ""; render(); });
+  const filter = select([["", "All chats"]], "", (v) => { session = v; selected = ""; render(); });
   filter.setAttribute("aria-label", "FinOps chat");
   const refresh = el("button", { type: "button", className: "ghost", textContent: "Refresh" });
-  refresh.addEventListener("click", () => window.dispatchEvent(new Event("vak:finops-refresh")));
+  refresh.addEventListener("click", () => void reload());
   const exportButton = el("button", { type: "button", className: "ghost", textContent: "Export CSV" });
   const scopeFilter = select([["all", "All work"], ["tasks", "Task runs"], ["chats", "Ordinary chats"]], "all", (value) => { scope = value; selected = ""; render(); });
   scopeFilter.setAttribute("aria-label", "FinOps work type");
+  const updated = el("p", { className: "row-hint", role: "status", "aria-live": "polite" });
   controls.append(scopeFilter, filter, refresh, exportButton);
   const picker = el("select", { "aria-label": "Inspect turn" });
   picker.addEventListener("change", () => { selected = picker.value; showDetail(); });
@@ -70,7 +76,7 @@ export async function finopsPage(): Promise<HTMLElement[]> {
   }
 
   function plot(heading: string, units: string, legends: string[], colors: string[], values: (t: Turn) => number[] | undefined): void {
-    const turns = visible(), fig = el("figure"), svg = sv("svg", { role: "img", "aria-label": heading });
+    const turns = visible().slice(-200), fig = el("figure"), svg = sv("svg", { role: "img", "aria-label": heading });
     const legend = el("div", { className: "finops-legend" });
     legends.forEach((n, i) => { const swatch = el("i"); swatch.style.background = colors[i]!; legend.append(el("span", {}, swatch, n)); });
     fig.append(el("figcaption", { textContent: heading }), legend, svg); charts.append(fig);
@@ -116,7 +122,7 @@ export async function finopsPage(): Promise<HTMLElement[]> {
   }
 
   const pricing = el("details", { className: "finops-pricing" }, el("summary", { textContent: "Model rates · USD per million tokens" }));
-  const models = [...new Map(data.turns.filter((t) => !t.local).map((t) => [JSON.stringify([t.provider, t.model]), t])).entries()];
+  let models: [string, Turn][] = [];
   const rateModel = select(models.map(([id, t]) => [id, `${t.provider} / ${t.model}`] as const), models[0]?.[0] ?? "", loadRate);
   rateModel.setAttribute("aria-label", "Rate model");
   const fields = ["Input", "Cached input", "Output"].map((label) => el("input", { type: "number", min: "0", step: "any", "aria-label": `${label} USD per million tokens` }));
@@ -135,12 +141,44 @@ export async function finopsPage(): Promise<HTMLElement[]> {
     if (!t) return;
     try {
       data = await api<FinopsView>("/api/finops", { method: "PUT", body: JSON.stringify({ provider: t.provider, model: t.model, input: Number(fields[0]!.value), cached: Number(fields[1]!.value), output: Number(fields[2]!.value) }) });
-      loadRate(); render();
+      metadata(); loadRate();
+  pricing.open = models.length > 0 && data.rates.length === 0; render();
     } catch (e) { error.textContent = (e as Error).message; }
   });
-  pricing.append(el("p", { className: "row-hint", textContent: "Estimates use your current rates, not an invoice. Excludes cache-write premiums, provider extras, tool fees and local compute. Missing usage stays unknown. Chat turns only; calibration and channels are outside this view." }), rateModel,
+  pricing.append(el("p", { className: "row-hint", textContent: "Hosted cost needs your exact model rates below; none are assumed. Local model API cost is zero. Estimates use current rates, not an invoice, and exclude provider extras, tool fees and local compute. Completed chats and task runs are included; calibration and channels are outside this view." }), rateModel,
     el("div", { className: "finops-controls" }, ...fields.map((f, i) => el("label", {}, ["Input", "Cached input", "Output"][i], f))), save, rateDate);
-  loadRate();
+  function metadata(): void {
+    const sessions = [...new Set(data.turns.map((t) => t.session))];
+    const labels = new Map(sessions.map((id, i) => [id, String(i + 1)]));
+    if (session && !labels.has(session)) session = "";
+    filter.replaceChildren(el("option", { value: "", textContent: "All chats" }), ...sessions.map((id) => el("option", { value: id, textContent: `Chat ${labels.get(id)} · ${id.slice(0, 8)}` })));
+    filter.value = session;
+    ordinals.clear();
+    const counts = new Map<string, number>();
+    for (const turn of data.turns) { const n = (counts.get(turn.session) ?? 0) + 1; counts.set(turn.session, n); ordinals.set(turn.id, `${labels.get(turn.session)}.${n}`); }
+    models = [...new Map(data.turns.filter((t) => !t.local).map((t) => [JSON.stringify([t.provider, t.model]), t])).entries()];
+    const prior = rateModel.value;
+    rateModel.replaceChildren(...models.map(([id, turn]) => el("option", { value: id, textContent: `${turn.provider} / ${turn.model}` })));
+    rateModel.value = models.some(([id]) => id === prior) ? prior : models[0]?.[0] ?? "";
+    save.disabled = !models.length;
+    if (rateModel.value !== prior) loadRate();
+    const measured = data.turns.filter((t) => t.source === "recorded").length;
+    updated.textContent = `Updated ${new Date().toLocaleTimeString()} · ${measured} measured turns · ${data.turns.length - measured} reconstructed · ${data.rates.length} model rates configured. Refreshes every 5 seconds while visible, after turns finish. Charts show the latest 200 filtered turns; details and export include all filtered turns.`;
+  }
+  let loading = false;
+  async function reload(): Promise<void> {
+    if (loading || disposed) return;
+    loading = true; refresh.disabled = true;
+    try {
+      const next = await api<FinopsView>("/api/finops", { signal: abort.signal });
+      if (disposed) return;
+      data = next; metadata(); render(); error.textContent = "";
+    } catch (e) { if (!disposed) error.textContent = `Refresh failed; showing the previous snapshot. ${(e as Error).message}`; }
+    finally { loading = false; refresh.disabled = false; }
+  }
+  metadata(); loadRate();
+  pricing.open = models.length > 0 && data.rates.length === 0;
+  timer = setInterval(() => { if (box.isConnected && !document.hidden && !pricing.contains(document.activeElement)) void reload(); }, 5000);
   exportButton.addEventListener("click", () => {
     const rows: (string | number)[][] = [["turn", "task_id", "run_id", "session", "at", "provider", "model", "source", "seconds", "steps", "input_tokens", "cached_tokens", "output_tokens", "estimated_usd", "first_context_chars", "repeated_context_chars", "ui_chars", "tool_arg_chars", "text_chars"]];
     for (const t of visible()) rows.push([ordinals.get(t.id)!, t.task?.taskId ?? "", t.task?.runId ?? "", t.session, t.at, t.provider, t.model, t.source, t.ms / 1000, t.steps.length, usage(t, "input") ?? "", usage(t, "cachedInput") ?? "", usage(t, "outputTokens") ?? "", estimateCost(t, data.rates) ?? "", shapeTotal(t.context), t.steps.reduce((a, s) => a + shapeTotal(s.context), 0), t.output.projection, t.output.tools, t.output.text]);
@@ -149,10 +187,10 @@ export async function finopsPage(): Promise<HTMLElement[]> {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = el("a", { href: url, download: "vak-finops.csv" }); a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
-  box.append(controls, summary, pricing, error, charts, el("label", { className: "finops-picker" }, "Inspect turn", picker), detail,
+  box.append(controls, updated, summary, pricing, error, charts, el("label", { className: "finops-picker" }, "Inspect turn", picker), detail,
     el("p", { className: "row-hint", textContent: "Character charts exclude system instructions, tool schemas and native replay; their measured sizes appear in turn details. Characters are not tokens. Old turns use saved messages and the default last 10 turns; their actual window and token usage were not recorded. Tool and approval waits are included in turn duration. Empty token/cost marks mean unknown, not zero. Estimates cover model API usage; tool/server charges, local compute and hosting are excluded. This is accounting, not an enforced spending ceiling." }));
   // Settings attaches the page after this function returns; observe actual width then.
-  let observedWidth = 0, layoutFrame = 0;
+  let observedWidth = 0;
   observer = new ResizeObserver(() => {
     const width = Math.floor(box.getBoundingClientRect().width);
     // Rendering changes chart height; only width changes require another layout.

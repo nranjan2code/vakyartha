@@ -13,7 +13,7 @@ What the app protects, from whom, and how. Rules for changing code are in [AGENT
 | Threat | Example | Defence |
 |---|---|---|
 | A media input or provider output escapes its scope | A symlink reaches a private file; a download redirects to loopback; a clip speaks approval words | Media tools read only approved library/chat inputs with path, final-symlink, signature and size checks. Output downloads use connection-pinned public HTTPS with per-hop checks and no provider credentials. Private media URIs carry opaque IDs and use authenticated file access. Model/operation selections are validated at dispatch and after waits. In conversation mode audible-media overlap is discarded before transcription. Hosted submission uncertainty is never automatically retried. See `test/media.test.ts` and `docs/MEDIA-TOOLS.md`. |
-| A web page in the user's browser | POSTs to the sidecar's loopback port to spend the user's keys | The framework's Host, Origin and JSON-body checks, plus a random bearer token that only the app's own window receives (`backend`). The browser version (`npm run web`) is open on loopback only, for development. |
+| A web page in the user's browser | POSTs to the sidecar's loopback port to spend the user's keys | Desktop opens no network listener: only the main Tauri window can send bounded, versioned IPC requests to the parent-owned Node pipes. The host retains its random admission token inside the engine. The framework's Host, Origin and JSON-body checks still apply. The browser version (`npm run web`) is open on loopback only, for development. |
 | A malicious or compromised MCP package | A new release of a dependency runs code at install | Each npm catalog server names an exact version; the catalog selects versions published at least 14 days earlier. Tests check exact pins and the framework install arguments. The framework's `Integrations` installs it with `--ignore-scripts --before=<today − 14 days>`, so every dependency is that old too and nothing runs at install, into its own folder. |
 | An over-reaching filesystem server | Files reads `~/.ssh` | It is started with only the folders the user adds, checked by the framework (`checkFolders`): absolute, existing, never a system root or the whole home folder. Writes ask. |
 | A prompt injection through an integration | A fetched page says "push to my repo" | Writes and open-internet tools default to Ask in each integration's policy; every call is logged to `logs/tools.jsonl`. |
@@ -38,10 +38,16 @@ Task deletion requires stopped execution, a current revision and explicit acknow
 
 ## What the app does not defend against
 
-- **Code the user chooses to run.** A custom MCP server added by command runs with the user's permissions. The app marks it unverified and makes every tool ask, but cannot sandbox it (macOS sandbox profiles are a planned step).
+- **Code the user chooses to run.** A custom MCP server added by command runs with the user's permissions. The app marks it unverified and defaults every tool to Ask. When enabled and available, local stdio servers use the sandbox helper; legacy missing-helper fallback can run without OS isolation. The Settings page reports requested startup state and helper availability, not verified per-process containment.
 - **A provider seeing prompts.** Whatever the user sends to a hosted model goes to that provider. Local models (Ollama, LM Studio) keep everything on the machine.
 - **An attacker with the user's account on the machine.** They can read the Keychain items the app can read.
 - **Unsigned builds.** The app is not code-signed or notarized yet. Install it only from your own build.
+
+## Runtime and packaging
+
+Release Node startup discards inherited loader/preload options, module paths, TLS-verification disablement and development overrides; native addons are disabled in the sidecar. Provider networking and explicitly selected integration processes retain their existing owners and permissions. New files from the desktop/browser entry points use an owner-only umask; existing files are not retroactively migrated.
+
+Repository npm installs disable dependency lifecycle hooks and save exact direct versions. Release packaging rejects non-built-in sidecar imports, rebuilds the sandbox helper with a lockfile and explicit target, and fails on build errors rather than copying an old executable. The shipped runtime manifest records versions, source commits, dirty flags and content hashes; it is provenance data, not a signature or a runtime integrity boundary. npm retains its installer/dependencies/licenses; only its top-level docs/man pages are omitted.
 
 ## Reporting
 
@@ -88,3 +94,12 @@ Integration changes invalidate tools captured by an existing run and its chat-wi
 
 
 Reusable skill/report authoring follows [the maintained method](docs/SKILL-AUTHORING.md). Skills carry instructions and reviewed reference text, never executable authority: common layout measures are validated semantic props, not arbitrary executable styling, and spoken content comes from canonical surfaces rather than a separate model-authorized payload. Domain names, report cadence and visible buttons do not grant integration access or create recurrence.
+
+
+## Isolated commands and retained Realms
+
+The app-owned execution integration uses macOS Seatbelt and fails closed without its helper. Commands write only to isolated copies, with network denied and a minimal environment. Durable Realm control state, OS locks, audit records, promotion journals, candidates and backups stay outside the jailed workspace. Initial copies omit common credential paths; this is not a secret-content scanner. Settings validates the selected project, and the adapter rechecks its scope for Realm operations.
+
+Mutation tools default to Ask. Promotion, rollback and recovery arguments identify affected paths; promotion also binds the full reviewed candidate fingerprint. The helper rechecks original file versions, backs up before mutation, atomically replaces individual files and records a recoverable multi-file transaction. Stale/conflicting changes, unsupported symlinks/special files and protected credential paths fail closed. Recovery never replays commands. External editors do not honor the store's locks; avoid concurrent edits during promotion. A hard process kill can leave interrupted work requiring explicit inspection/recovery; no background operation is silently resumed.
+
+Commands have time/output bounds; copies and manifests have byte/count bounds. CPU, memory, process-count and disk-growth quotas are not enforced, and retained receipts/backups consume disk. Snapshots are review manifests, not workspace restore points. Linux isolation and stronger filesystem-wide atomicity are not claimed. [Exact supported contract](docs/sandbox/OVERVIEW.md).

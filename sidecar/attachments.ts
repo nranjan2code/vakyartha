@@ -6,7 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { HostRequest, HostResponse } from "@vak/host";
 import path from "node:path";
 import { json } from "@vak/host";
 import { mediaType, TYPES as MEDIA_TYPES } from "./media/io.ts";
@@ -16,7 +16,7 @@ const MAX_BYTES = 20_000_000;
 const CHAT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 export function attachmentsRoute(dir: string) {
-  return async (req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> => {
+  return async (req: HostRequest, res: HostResponse, url: URL): Promise<boolean> => {
     const gone = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
     if (gone && req.method === "DELETE") {
       const id = decodeURIComponent(gone[1]!);

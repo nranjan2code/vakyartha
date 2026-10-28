@@ -1,15 +1,14 @@
 // Vakyartha desktop shell. The engine is the framework's own TypeScript, run by a
 // Node sidecar (sidecar/main.ts); this side only starts it,
-// hands its address and token to the webview, and stops it on quit.
+// provides private main-window IPC, and stops it on quit.
 //
 // Dev builds run the sidecar source with the `node` on PATH (or VAK_NODE) and
 // keep data in <repo>/.vak/desktop. Release builds run the bundled Node binary
 // and bundled sidecar, with data in the OS app-data directory.
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::Mutex;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
@@ -24,24 +23,14 @@ struct Backend {
     token: String,
 }
 
-#[derive(Deserialize)]
-struct Ready {
-    port: u16,
-    token: String,
-}
-
-struct Sidecar {
-    child: Mutex<Option<Child>>,
-    /// Kept open: the sidecar exits when its stdin closes, so it never outlives the app.
-    stdin: Mutex<Option<ChildStdin>>,
-    backend: Result<Backend, String>,
-}
+mod engine;
+use engine::{Engine as Sidecar, engine_request, engine_ack, engine_cancel};
 
 /// Closing the window hides it while this is set, so the engine and its
 /// channels (Telegram, ...) keep running; Quit in the tray menu ends both.
 static KEEP_RUNNING: AtomicBool = AtomicBool::new(true);
 
-/// Where the engine listens and the token it requires; the webview asks once at start.
+/// The private desktop transport identifier; the webview asks once at start.
 #[tauri::command]
 fn backend(state: tauri::State<Sidecar>) -> Result<Backend, String> {
     state.backend.clone()
@@ -157,6 +146,36 @@ fn tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+fn configure_release_runtime(cmd: &mut Command) {
+    // The installed engine chooses its own runtime and settings. Terminal or
+    // launch-agent hooks must not preload code or override these boundaries.
+    for name in ["NODE_OPTIONS", "NODE_PATH", "NODE_TLS_REJECT_UNAUTHORIZED", "NODE_V8_COVERAGE", "NODE_COMPILE_CACHE", "VAK_ENV_FILES", "VAK_PORT", "VAK_KEYCHAIN_SERVICE", "VAK_SANDBOX_BIN", "VAK_SANDBOX_ENABLED"] {
+        cmd.env_remove(name);
+    }
+    // This bundle imports only Node built-ins; integrations run in separate processes.
+    cmd.arg("--no-addons");
+}
+
+#[cfg(test)]
+mod runtime_tests {
+    use super::configure_release_runtime;
+    use std::process::Command;
+
+    #[test]
+    fn release_discards_inherited_startup_hooks_and_development_overrides() {
+        let mut cmd = Command::new("node");
+        cmd.env("NODE_OPTIONS", "--import=untrusted.mjs").env("VAK_ENV_FILES", "/untrusted.env");
+        configure_release_runtime(&mut cmd);
+        let changes: std::collections::HashMap<_, _> = cmd.get_envs().collect();
+        for name in ["NODE_OPTIONS", "NODE_PATH", "NODE_TLS_REJECT_UNAUTHORIZED", "VAK_ENV_FILES", "VAK_PORT", "VAK_KEYCHAIN_SERVICE", "VAK_SANDBOX_BIN", "VAK_SANDBOX_ENABLED"] {
+            assert_eq!(changes.get(std::ffi::OsStr::new(name)), Some(&None));
+        }
+        assert!(cmd.get_args().any(|arg| arg == "--no-addons"));
+        assert!(!changes.contains_key(std::ffi::OsStr::new("HOME")));
+        assert!(!changes.contains_key(std::ffi::OsStr::new("PATH")));
+    }
+}
+
 fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
     if cfg!(debug_assertions) {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -165,10 +184,10 @@ fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
         let mut cmd = Command::new(node);
         cmd.arg("--disable-warning=ExperimentalWarning")
             .arg(repo.join("sidecar/main.ts"))
-            .env("VAK_DATA_DIR", repo.join(".vak/desktop"))
+            .env("VAK_DATA_DIR", std::env::var_os("VAK_DATA_DIR").map(PathBuf::from).unwrap_or_else(|| repo.join(".vak/desktop")))
             // Dev keys stay apart from the installed app's.
-            .env("VAK_KEYCHAIN_SERVICE", "com.nranjan2code.vakyartha.dev")
-            .env("VAK_ENV_FILES", repo.join(".env"));
+            .env("VAK_KEYCHAIN_SERVICE", std::env::var("VAK_KEYCHAIN_SERVICE").unwrap_or_else(|_| "com.nranjan2code.vakyartha.dev".into()))
+            .env("VAK_ENV_FILES", std::env::var_os("VAK_ENV_FILES").unwrap_or_else(|| repo.join(".env").into_os_string()));
         // Dev: point at the sandbox binary if built.
         let dev_vaksb = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("sandbox").join("target").join("release").join("vaksb");
         if dev_vaksb.exists() {
@@ -197,6 +216,7 @@ fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
             .join("resources/npm/bin/npm-cli.js");
         let vaksb = dir.join(if cfg!(windows) { "vaksb.exe" } else { "vaksb" });
         let mut cmd = Command::new(node);
+        configure_release_runtime(&mut cmd);
         cmd.arg("--disable-warning=ExperimentalWarning").arg(script).env("VAK_DATA_DIR", data).env("VAK_APP_VERSION", env!("CARGO_PKG_VERSION")).env("VAK_NPM_CLI", npm);
         if vaksb.exists() {
             cmd.env("VAK_SANDBOX_BIN", vaksb);
@@ -205,43 +225,10 @@ fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
     }
 }
 
-/// Start the sidecar and wait for its ready line.
-fn start(app: &tauri::AppHandle) -> (Option<Child>, Option<ChildStdin>, Result<Backend, String>) {
-    let mut cmd = match sidecar_command(app) {
-        Ok(c) => c,
-        Err(e) => return (None, None, Err(e)),
-    };
-    let mut child = match cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn() {
-        Ok(c) => c,
-        Err(e) => return (None, None, Err(format!("could not start the engine (is Node 24+ installed?): {e}"))),
-    };
-    let stdin = child.stdin.take();
-    let mut lines = BufReader::new(child.stdout.take().expect("piped stdout"));
-    let mut line = String::new();
-    let backend = loop {
-        line.clear();
-        match lines.read_line(&mut line) {
-            Ok(0) => break Err("the engine exited before it was ready".to_string()),
-            Ok(_) => {
-                if let Some(json) = line.trim().strip_prefix("VAK_READY ") {
-                    break serde_json::from_str::<Ready>(json)
-                        .map(|r| Backend { url: format!("http://127.0.0.1:{}", r.port), token: r.token })
-                        .map_err(|e| format!("bad ready line: {e}"));
-                }
-                eprint!("[engine] {line}");
-            }
-            Err(e) => break Err(format!("reading the engine: {e}")),
-        }
-    };
-    // Keep draining stdout so the sidecar never blocks on a full pipe.
-    std::thread::spawn(move || {
-        let mut sink = Vec::new();
-        let _ = lines.read_to_end(&mut sink);
-    });
-    (Some(child), stdin, backend)
+fn start(app: &tauri::AppHandle) -> Sidecar {
+    match sidecar_command(app) { Ok(cmd) => engine::start(cmd), Err(error) => Sidecar::failed(error) }
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         // A second launch focuses the running window: two engines would share
@@ -254,7 +241,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![backend, set_keep_running, autostart, save_canvas])
+        .invoke_handler(tauri::generate_handler![backend, engine_request, engine_ack, engine_cancel, set_keep_running, autostart, save_canvas])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if KEEP_RUNNING.load(Ordering::Relaxed) {
@@ -265,11 +252,11 @@ pub fn run() {
         })
         .setup(|app| {
             tray(app)?;
-            let (child, stdin, backend) = start(app.handle());
-            if let Err(e) = &backend {
+            let sidecar = start(app.handle());
+            if let Err(e) = &sidecar.backend {
                 eprintln!("[engine] {e}");
             }
-            app.manage(Sidecar { child: Mutex::new(child), stdin: Mutex::new(stdin), backend });
+            app.manage(sidecar);
             // Debug builds only: run a script inside the window (UI probes, no screen needed).
             #[cfg(debug_assertions)]
             if let Ok(path) = std::env::var("VAK_DEBUG_JS") {
@@ -298,7 +285,7 @@ pub fn run() {
             let state = handle.state::<Sidecar>();
             // Closing stdin asks the engine to stop its channels and exit;
             // it gets a few seconds before it is killed.
-            drop(state.stdin.lock().unwrap().take());
+            state.close();
             if let Some(mut child) = state.child.lock().unwrap().take() {
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
                 while std::time::Instant::now() < deadline {

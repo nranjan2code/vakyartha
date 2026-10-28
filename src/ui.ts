@@ -11,7 +11,8 @@ export function group(heading: string | null, ...rows: (HTMLElement | null)[]): 
   return el("section", { className: "group" }, heading ? el("h2", { textContent: heading }) : null, el("div", { className: "rows" }, ...rows));
 }
 
-export function row(label: string, hint: string | null, control: HTMLElement): HTMLElement {
+export function row(label: string, hint: string | null, control?: HTMLElement): HTMLElement {
+  if (control?.matches("input, select") && !control.hasAttribute("aria-label")) control.setAttribute("aria-label", label);
   return el("div", { className: "row" }, el("div", { className: "row-text" }, el("div", { className: "row-label", textContent: label }), hint ? el("div", { className: "row-hint", textContent: hint }) : null), el("div", { className: "row-control" }, control));
 }
 
@@ -22,7 +23,7 @@ export function toggle(checked: boolean, onChange: (on: boolean) => void | Promi
 }
 
 export function segmented<T extends string>(options: readonly (readonly [T, string])[], value: T, onChange: (v: T) => void): HTMLElement {
-  const box = el("div", { className: "seg", role: "radiogroup" });
+  const box = el("div", { className: "seg", role: "group" });
   for (const [id, label] of options) {
     const b = el("button", { type: "button", "aria-pressed": String(id === value), textContent: label });
     b.addEventListener("click", () => {

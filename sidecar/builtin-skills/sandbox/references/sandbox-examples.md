@@ -1,51 +1,9 @@
-# Sandbox Usage Examples
+# Isolated command examples
 
-## Example 1: Running a build command
+For a single check, call `run_command` with `command: "/bin/pwd"` and `args: []`. It returns a result from a disposable copy and does not save changes.
 
-User: "Run npm test in the project"
+For multi-step edits, create a Realm, keep its returned ID, then call `run_in_realm` for each command. A second call sees files written by the first. Read actual stdout/stderr and exit codes; network-dependent installation will fail because network access is denied.
 
-With sandbox enabled, the command runs under Seatbelt with:
-- Read access to /usr, /bin, /System, /Library, /etc, /opt, /tmp
-- Write access to /tmp only
-- No network access
-- Minimal environment (PATH, HOME, TMPDIR)
+To apply work, snapshot the Realm, read every changed-path page and inspect candidate/original file contents as needed. Explain the effect before requesting `promote_realm` with the exact fingerprint and complete path list. A denied or stale request changes nothing. A committed promotion returns the transaction ID and affected paths required for rollback.
 
-If npm needs network (to download dependencies), it will fail. Suggest running outside sandbox or enabling network.
-
-## Example 2: Running untrusted code
-
-User: "Run this Python script I found online"
-
-With sandbox enabled:
-- Script can read system libraries
-- Script can write to /tmp
-- Script cannot access user files, network, or sensitive paths
-- Script cannot install packages (no network)
-
-## Example 3: MCP server with sandbox
-
-When `vaksb` is available, all stdio MCP servers are launched through `vaksb run`. This means:
-- The MCP server process is sandboxed
-- It can only access its declared folders
-- It cannot leak the app's environment variables
-- Network is blocked unless the integration declares it needs network
-
-## Example 4: Debugging sandbox failures
-
-If a command fails in the sandbox:
-1. Check if the error is "Permission denied" (filesystem) or "Couldn't resolve host" (network)
-2. Identify the missing permission
-3. Either adjust the sandbox policy or run outside the sandbox
-4. Never disable security features to work around restrictions
-
-## Troubleshooting
-
-### Command works outside sandbox but fails inside
-- Check if the command needs network access
-- Check if the command writes to a path outside /tmp
-- Check if the command needs environment variables not declared
-
-### MCP server fails to start
-- Check if the server binary is in /usr/bin or /bin
-- Check if the server needs network (declare in integration config)
-- Check if the server needs specific folders (add to folders config)
+On restart, list Realms and inspect the selected ID. Do not replay an interrupted command automatically. Recovery rolls back incomplete promotion without executing commands. Discarding a Realm leaves the original project and prior promotion receipts intact.

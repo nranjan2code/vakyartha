@@ -1,3 +1,4 @@
+import { engineFetch } from "../backend.ts";
 // Dictation: speak instead of typing. "system" is the speech recognition built
 // into the window's WebKit (free, words appear as they are said); any other
 // provider (Whistle on this Mac, or a hosted one) gets a 16 kHz mono WAV
@@ -207,7 +208,7 @@ export async function transcribeWav(c: DictationChoice, audio: Uint8Array, signa
   const { loadVoices } = await import("./read-aloud.ts");
   const model = (await loadVoices().catch(() => [])).find((p) => p.id === c.provider)?.stt?.find((m) => m.id === c.model);
   const language = dictationLanguage(dictationPrefs.language || navigator.language, model?.languages);
-  const res = await fetch(`${engine().url}/api/transcribe`, {
+  const res = await engineFetch(`${engine().url}/api/transcribe`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${engine().token}` },
     body: JSON.stringify({ provider: c.provider, model: c.model, language, audio: base64(audio) }),

@@ -146,7 +146,7 @@ These boxes track future candidates only. Do not start them simply because they 
 - [ ] L3. Repeating routines and event triggers with wall-clock/DST rules, cumulative budgets and long-term run retention. One-time triggers and bounded run records are implemented.
 - [ ] L3a. Task chains: verified sequential dependencies, typed artifact handoffs, per-step permissions and budgets, partial failure handling and deletion without cascades.
 - [ ] L4. Additional connectors, authorization methods and document formats.
-- [ ] L5. Browser/computer interaction and isolated command execution.
+- [ ] L5. Browser/computer interaction and broader isolation outcomes. The bounded macOS command/Realm tool lifecycle and responsive Settings are verified independently (2026-10-28): approval/denial, containment, durable writes, review, promotion, restart, rollback, conflict refusal and destruction. Full autonomous provider and broader resource/platform isolation remain open. [Evidence](EVALUATION.md#sandbox-settings-and-realms--2026-10-28).
 - [ ] L6. Multiple agent roles, delegation and concurrent execution.
 - [ ] L7. Remote execution, remote notifications and cross-device channels.
 - [ ] L8. Artifact history, collaboration and publishing.

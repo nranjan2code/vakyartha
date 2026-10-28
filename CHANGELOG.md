@@ -4,9 +4,17 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Make Sandbox settings functional: live helper compatibility/startup state, validated folder saving, real execution checks, linked tool/skill pages and responsive Realm management. Improve Skills feedback, toggle rollback, edit cancellation, file-preview retry and detail spacing; surface failed Settings loads with retry.
+- Expose durable Realm creation, repeated isolated commands, paged change/file review, fingerprint-bound promotion, recovery, latest-promotion rollback and discard through the existing approval/logging lifecycle. The helper owns private locked state and recoverable promotion; no new dependency or IPC. Existing MCP fallback and resource/platform limits remain explicit. [Contract](docs/sandbox/OVERVIEW.md).
+- Keep the integration catalog array live so new reviewed imports remain visible; refresh sandbox tool metadata at startup. Strengthen the Skills checker to wait for completed installation before reading stored files.
+
+- Desktop engine uses Tauri-owned private pipes and main-window streaming IPC with no HTTP listener. Adopt Projection `479323e` for a general listener-free host adapter and injectable client transport.
+- FinOps refreshes in place while visible, preserves filters and price drafts, discloses missing prices and limits chart drawing to 200 recent filtered turns. Historical lookup avoids repeated full-ledger scans.
+- Block dependency install hooks by default, pin direct dependencies, discard inherited release Node hooks, create new runtime files privately, omit duplicate engine assets/npm documentation and record release runtime provenance.
+
 - Add `sandbox` built-in skill teaching the LLM when and how to use OS-level process isolation. On/off supported via Settings → Skills.
 
-- Integrate vak-sandbox for OS-level process isolation of MCP servers (macOS Seatbelt). Add sandbox integration in app catalog, Tauri dependencies, and framework MCP client support. See [docs/sandbox/OVERVIEW.md](docs/sandbox/OVERVIEW.md).
+- Integrate vak-sandbox for OS-level process isolation of MCP servers (macOS Seatbelt). Add app settings and bundled helper wiring using the framework’s existing MCP client support. See [docs/sandbox/OVERVIEW.md](docs/sandbox/OVERVIEW.md).
 
 - Adopt pushed Projection `d330d99`: common surface-property guidance is emitted once instead of repeated in every strict component branch, reducing the primary local core-tier tool definition by 4,392 characters. The required record-view model gate still fails; this is a measured context-size improvement, not a proven latency or authoring-outcome pass.
 - Preserve standard optional skill frontmatter in Settings edits, show license/author metadata/requested tools without granting access, and import reviewed UTF-8 script source as inert supporting text. Binary assets and script execution remain unsupported. Pinned external reviews and responsive WebKit checks cover the declared subset.

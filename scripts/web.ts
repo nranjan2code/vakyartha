@@ -7,10 +7,14 @@
 // Usage: npm run web   (builds the UI first; env: PORT; keys from .env)
 
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { startAppServer } from "../sidecar/server.ts";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// Chats, transcripts and logs are private even when the launching shell uses 022.
+process.umask(0o077);
+
 const app = await startAppServer({
   dataDir: path.join(repo, ".vak/web"),
   envFiles: [path.join(repo, ".env")],
@@ -22,5 +26,6 @@ const app = await startAppServer({
   access: "open",
   uiDir: path.join(repo, "dist"),
   appName: "Vakyartha (browser)",
+  sandboxBin: process.env.VAK_SANDBOX_BIN || (existsSync(path.resolve(repo, "../sandbox/target/release/vaksb")) ? path.resolve(repo, "../sandbox/target/release/vaksb") : undefined),
 });
 console.log(`Vakyartha → ${app.url}`);

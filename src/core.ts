@@ -1,3 +1,4 @@
+import { engineFetch } from "./backend.ts";
 // Shared plumbing for the desktop UI: the engine connection, saved
 // preferences, a confirm sheet and a small DOM builder.
 
@@ -29,7 +30,7 @@ export function setBackend(b: Backend): void {
 export const engine = () => backend;
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${backend.url}${path}`, {
+  const res = await engineFetch(`${backend.url}${path}`, {
     ...init,
     headers: { "content-type": "application/json", authorization: `Bearer ${backend.token}`, ...(init.headers as Record<string, string> | undefined) },
   });

@@ -2,7 +2,7 @@
 // and transcription providers live in speech.ts, the local transcription
 // engine in whistle.ts; this adds the HTTP routes the window calls.
 
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { HostRequest, HostResponse } from "@vak/host";
 import { json, readJson } from "@vak/host";
 import type { ProviderEntry } from "@vak/providers";
 import { resolveByModel } from "./resolve.ts";
@@ -10,7 +10,7 @@ import { installVoicePack, MAX_RECORDING_BYTES, speak, SpeechError, transcribe, 
 
 export { VOICE_KEYS } from "./speech.ts";
 
-export type Route = (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
+export type Route = (req: HostRequest, res: HostResponse, url: URL) => Promise<boolean>;
 
 /** Voice: the providers, installing a listed local voice pack, one sentence-sized piece of audio, and dictation. */
 export function voiceRoutes(voiceDir: string, log: (line: string) => void, providers: () => ProviderEntry[] = () => []): Route {

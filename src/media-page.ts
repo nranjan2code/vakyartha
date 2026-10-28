@@ -1,3 +1,4 @@
+import { engineFetch } from "./backend.ts";
 import { basicCatalog, SurfaceStore, type SurfaceSnapshot } from "@vak/core";
 import type { VakSurfaceElement } from "@vak/web";
 import { MEDIA_OPERATIONS, mediaSelection, type MediaAsset, type MediaJob, type MediaKind, type MediaView } from "../shared/media.ts";
@@ -12,7 +13,7 @@ async function fileLink(a: MediaAsset, button: HTMLButtonElement, note: HTMLElem
   button.disabled = true;
   try {
     const { url, token } = engine();
-    const res = await fetch(`${url}/api/media/assets/${a.id}`, { headers: { authorization: `Bearer ${token}` } });
+    const res = await engineFetch(`${url}/api/media/assets/${a.id}`, { headers: { authorization: `Bearer ${token}` } });
     if (!res.ok) throw new Error("The file is no longer available");
     const blob = URL.createObjectURL(await res.blob());
     const link = el("a", { href: blob, download: a.name }); link.click();

@@ -1,3 +1,4 @@
+import { engineFetch } from "../backend.ts";
 // Read aloud: the chosen voice, and one player for the whole window. Pieces of
 // a reply are fetched one ahead of playback, so a long reply starts speaking
 // after its first sentence. Anything that reads aloud hears "vak:voice".
@@ -119,7 +120,7 @@ export function replyText(node: HTMLElement): string {
 let cachedProviders: Promise<VoiceProvider[]> | undefined;
 export function loadVoices(fresh = false): Promise<VoiceProvider[]> {
   if (fresh || !cachedProviders) {
-    cachedProviders = fetch(`${engine().url}/api/voice`, { headers: { authorization: `Bearer ${engine().token}` } }).then((r) => r.json() as Promise<VoiceProvider[]>);
+    cachedProviders = engineFetch(`${engine().url}/api/voice`, { headers: { authorization: `Bearer ${engine().token}` } }).then((r) => r.json() as Promise<VoiceProvider[]>);
     cachedProviders.catch(() => { cachedProviders = undefined; });
   }
   return cachedProviders;
@@ -133,7 +134,7 @@ function fetchPiece(c: VoiceChoice, text: string, language: string | undefined, 
 }
 
 async function requestPiece(c: VoiceChoice, text: string, language: string | undefined, signal: AbortSignal): Promise<Blob> {
-  const res = await fetch(`${engine().url}/api/speech`, {
+  const res = await engineFetch(`${engine().url}/api/speech`, {
     method: "POST",
     signal,
     headers: { "content-type": "application/json", authorization: `Bearer ${engine().token}` },

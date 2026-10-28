@@ -5,5 +5,5 @@ import { defineConfig } from "vite";
 export default defineConfig({
   clearScreen: false,
   server: { port: 1420, strictPort: true, host: "localhost" },
-  build: { outDir: "dist", emptyOutDir: true, target: ["es2023", "safari17", "chrome120"] },
+  build: { outDir: "dist", emptyOutDir: true, reportCompressedSize: false, target: ["es2023", "safari17", "chrome120"] },
 });

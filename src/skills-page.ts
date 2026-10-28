@@ -25,7 +25,7 @@ const isScript = (file: string) => /\.(?:py|js|mjs|cjs|ts|tsx|jsx|sh|bash|zsh|ps
 // Capability glyphs reuse the app's own integration tile system. Specific
 // names get a recognizable symbol; unfamiliar catalog skills stay cohesive.
 const SKILL_GLYPHS: Record<string, string> = {
-  assistant: "spark", "budget-helper": "chart", "code-review": "code",
+  sandbox: "shield", assistant: "spark", "budget-helper": "chart", "code-review": "code",
   "commit-message": "edit", "compare-options": "split", "create-skill": "book",
   "daily-news": "globe", dashboard: "chart", "data-review": "table",
   "debug-error": "tool", "explain-simply": "book", "finance-dashboard": "chart",
@@ -36,9 +36,19 @@ const SKILL_GLYPHS: Record<string, string> = {
   "task-tracker": "check", "trip-planner": "globe", "write-email": "send",
 };
 
-export async function skillsPage(): Promise<HTMLElement[]> {
+export async function skillsPage(initialSkill?: string, openSandbox?: () => void): Promise<HTMLElement[]> {
   const root = el("div", { className: "integrations-layout" });
-  const button = (label: string, action: () => void, className = "ghost small") => { const b = el("button", { type: "button", className, textContent: label }); b.addEventListener("click", action); return b; };
+  const feedback = el("p", { className: "settings-feedback", role: "status", "aria-live": "polite" });
+  const showError = (error: unknown) => { feedback.textContent = (error as Error).message; feedback.classList.add("bad"); root.prepend(feedback); };
+  const button = (label: string, action: () => void | Promise<void>, className = "ghost small") => {
+    const b = el("button", { type: "button", className, textContent: label });
+    b.addEventListener("click", async () => {
+      b.disabled = true; feedback.textContent = "";
+      try { await action(); } catch (error) { showError(error); }
+      finally { b.disabled = false; }
+    });
+    return b;
+  };
   let list: SkillView[] = [];
   let view: "installed" | "explore" = "installed";
 
@@ -48,12 +58,15 @@ export async function skillsPage(): Promise<HTMLElement[]> {
   const filters = segmented([["all", "All"], ["on", "On"], ["updates", "Updates"], ["builtin", "Built in"], ["catalog", "From catalogs"], ["yours", "Yours"]] as const, filter, v => { filter = v; paint(); });
   filters.classList.add("catalog-filters");
   const installed = el("div", {}, el("div", { className: "market-bar" }, search, button("New skill…", () => editor()), filters), grid);
+  const summary = el("p", { className: "skills-summary", role: "status" });
+  installed.prepend(summary);
   const catalog = el("div");
   const explore = el("section", { className: "external-catalogs", "aria-label": "Skill catalogs" });
 
   function paint(): void {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     const shown = list.filter(s => (filter === "all" || (filter === "on" ? s.enabled : filter === "updates" ? Boolean(s.update) : origin(s) === filter)) && words.every(w => `${s.name} ${s.description} ${s.files?.length ? "files" : ""} ${(s.files ?? []).map(f => f.path).join(" ")}`.toLowerCase().includes(w)));
+    summary.textContent = `${list.filter(s => s.enabled).length} enabled · ${list.length} installed${list.some(s => s.update) ? ` · ${list.filter(s => s.update).length} updates available` : ""} · Showing ${shown.length}`;
     grid.replaceChildren(...shown.map(s => {
       const mark = s.source ? skillPublisherIcon(s.source.repo, 40) : tile(SKILL_GLYPHS[s.name] ?? "spark", 40);
       const card = el("button", { type: "button", className: "market-card" }, mark, el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(originLabel(s)), pill(s.required ? "Always on" : s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.files?.length ? pill(`${s.files.length} files`) : null, s.update ? pill("Update") : null, el("span", { className: "market-card-action" }, "Manage", icon("arrow", 14))));
@@ -66,12 +79,13 @@ export async function skillsPage(): Promise<HTMLElement[]> {
   async function reload(): Promise<void> { list = await api<SkillView[]>("/api/skills"); paint(); }
 
   function home(): void {
+    root.classList.remove("skill-detail-layout");
     const tabs = segmented([["installed", `Installed · ${list.length}`], ["explore", "Explore catalogs"]] as const, view, v => { view = v; installed.hidden = v !== "installed"; explore.hidden = v !== "explore"; });
     tabs.classList.add("catalog-tabs"); tabs.setAttribute("role", "group"); tabs.setAttribute("aria-label", "Skill views");
     installed.hidden = view !== "installed"; explore.hidden = view !== "explore";
     root.replaceChildren(...title("Skills", "Reusable instructions the assistant loads when a request matches. Skills chain to other skills and use your MCP tools, which keep their own access and approvals."), tabs, installed, explore);
   }
-  const backHome = () => button("‹ Skills", () => { void reload().then(home); });
+  const backHome = () => button("‹ Skills", async () => { await reload(); home(); });
 
   function description(text: string): HTMLElement[] {
     const body = el("p", { className: "lead skill-description", textContent: text });
@@ -94,16 +108,31 @@ export async function skillsPage(): Promise<HTMLElement[]> {
         if (!details.open || content.dataset.loaded) return;
         content.dataset.loaded = "true"; content.textContent = "Loading…";
         try { const value = await load(file.path); content.replaceChildren(/\.md$/i.test(file.path) ? renderMarkdown(value) : el("pre", { className: "skill-body", textContent: value })); }
-        catch (err) { content.replaceChildren(el("p", { role: "alert", textContent: (err as Error).message })); }
+        catch (err) { delete content.dataset.loaded; content.replaceChildren(el("p", { role: "alert", textContent: `${(err as Error).message} Close and reopen to retry.` })); }
       });
       box.append(details);
     }
     return box;
   }
 
+  function skillToggle(skill: SkillView): HTMLElement {
+    const control = toggle(skill.enabled, async on => {
+      const input = control as HTMLInputElement;
+      input.disabled = true;
+      try {
+        list = await api<SkillView[]>(`/api/skills/${skill.name}`, { method: "PUT", body: JSON.stringify({ enabled: on }) });
+        paint(); detail(skill.name);
+      } catch (error) { input.checked = !on; showError(error); }
+      finally { input.disabled = false; }
+    });
+    control.setAttribute("aria-label", `Use ${skill.name}`);
+    return control;
+  }
+
   function detail(name: string): void {
     const s = list.find(x => x.name === name);
-    if (!s) { home(); return; }
+    if (!s) { home(); showError(new Error(`The skill “${name}” is not installed. Create or add it from Skills.`)); return; }
+    root.classList.add("skill-detail-layout");
     const remove = s.required ? null : button("Remove", async () => { if (await ask(`Remove the skill ${s.name}${s.files?.length ? ` and its ${s.files.length} files` : ""}?`, "Remove")) { await api(`/api/skills/${s.name}`, { method: "DELETE" }); await reload(); home(); } });
     const note = el("p", { className: "row-hint", role: "status" });
     const update = s.update;
@@ -119,7 +148,7 @@ export async function skillsPage(): Promise<HTMLElement[]> {
     const render = () => {
       section.replaceChildren();
       if (detailTab === "overview") section.append(group(null,
-        s.required ? row("Availability", "Required for canvas and surface authoring. Always on and applied by the runtime.", pill("Always on", "ok")) : row("Use this skill", "When on, the assistant sees its name and description, loads instructions when a request matches, and reads files on demand.", toggle(s.enabled, async on => { list = await api<SkillView[]>(`/api/skills/${s.name}`, { method: "PUT", body: JSON.stringify({ enabled: on }) }); paint(); detail(s.name); })),
+        s.required ? row("Availability", "Required for canvas and surface authoring. Always on and applied by the runtime.", pill("Always on", "ok")) : row("Use this skill", "When on, the assistant sees its name and description, loads instructions when a request matches, and reads files on demand.", skillToggle(s)),
         row("Package", `Instructions ${size(new TextEncoder().encode(s.body).length)} · ${s.files?.length ?? 0} files (${size((s.files ?? []).reduce((n, f) => n + f.bytes, 0))})`, pill(originLabel(s))),
         s.compatibility ? row("Compatibility stated by author", s.compatibility, pill("Check requirements")) : null,
         s.license ? row("License stated by author", s.license, pill("Author stated")) : null,
@@ -127,6 +156,7 @@ export async function skillsPage(): Promise<HTMLElement[]> {
         s.allowedTools ? row("Requested tools", `${s.allowedTools} · does not grant access`, pill("No authority")) : null),
         ...(s.omitted?.length ? [el("p", { className: "row-hint", textContent: `${s.omitted.length} bundled ${s.omitted.length === 1 ? "file was" : "files were"} not added. Instructions that use them may not work; see Source for the list.` })] : []),
         ...(update ? [group("Update available", el("p", { className: "row-hint", textContent: "Review the current and proposed instructions and files. Updating keeps the on/off choice." }), el("pre", { className: "skill-body", textContent: s.body }), el("pre", { className: "skill-body", textContent: update.body }), el("p", { className: "row-hint", textContent: `Current files: ${(s.files ?? []).map(f => f.path).join(", ") || "none"}. Proposed files: ${(update.files ?? []).map(f => f.path).join(", ") || "none"}.` }), ...(update.files?.length ? [fileRows(update.files, async file => (await api<{ text: string }>(`/api/skills/${s.name}/proposed-file?fingerprint=${encodeURIComponent(update.fingerprint)}&path=${encodeURIComponent(file)}`)).text)] : []), el("div", { className: "row-actions" }, apply), note)] : []),
+        ...(s.name === "sandbox" && openSandbox ? [group("Execution setup", row("Project and protection", "This skill guides execution. The sandbox integration, folder and tool policy control whether commands can run.", button("Open Sandbox settings", openSandbox)))] : []),
         el("div", { className: "row-actions" }, button("Edit", () => editor(s)), remove));
       else if (detailTab === "instructions") {
         const body = el("div", { className: "skill-formatted" }, renderMarkdown(s.body));
@@ -141,16 +171,24 @@ export async function skillsPage(): Promise<HTMLElement[]> {
   }
 
   function editor(skill?: SkillView): void {
+    root.classList.add("skill-detail-layout");
     const text = el("textarea", { className: "skill-editor", rows: 16, spellcheck: false, "aria-label": "Skill file", value: skill ? fileText(skill) : TEMPLATE });
     const note = el("p", { className: "row-hint", role: "status" });
     const save = button("Save", async () => {
+      text.disabled = true;
       try {
         await api(skill ? `/api/skills/${skill.name}` : "/api/skills", { method: skill ? "PUT" : "POST", body: JSON.stringify({ text: text.value }) });
         await reload();
         detail(/^name:\s*(\S+)/m.exec(text.value)?.[1] ?? skill?.name ?? "");
       } catch (err) { note.textContent = (err as Error).message; }
+      finally { text.disabled = false; }
     }, "primary small");
-    root.replaceChildren(skill ? button("‹ Back", () => detail(skill.name)) : backHome(), ...title(skill ? `Edit ${skill.name}` : "New skill", "A name, a description of when it applies, then the instructions. Only skills that are on reach the assistant."), ...(skill?.files?.length ? [el("p", { className: "row-hint", textContent: `${skill.files.length} supporting files are kept. Renaming the skill keeps them.` })] : []), text, el("div", { className: "row-actions" }, save), note);
+    const original = text.value;
+    const cancel = button("Cancel", async () => {
+      if (text.value !== original && !await ask("Discard your unsaved skill edits?", "Discard")) return;
+      if (skill) detail(skill.name); else home();
+    });
+    root.replaceChildren(cancel, ...title(skill ? `Edit ${skill.name}` : "New skill", "A name, a description of when it applies, then the instructions. Only skills that are on reach the assistant."), ...(skill?.files?.length ? [el("p", { className: "row-hint", textContent: `${skill.files.length} supporting files are kept. Renaming the skill keeps them.` })] : []), text, el("div", { className: "row-actions" }, save), note);
     text.focus();
   }
 
@@ -181,6 +219,7 @@ export async function skillsPage(): Promise<HTMLElement[]> {
 
   async function review(item: SkillListing): Promise<void> {
     const back = button("‹ Back to results", () => { home(); void browse(item.repo); });
+    root.classList.add("skill-detail-layout");
     root.replaceChildren(back, el("p", { className: "row-hint", role: "status", textContent: "Fetching the instructions…" }));
     try {
       const r = await api<SkillReview>("/api/skills/review", { method: "POST", body: JSON.stringify({ repo: item.repo, path: item.path }) });
@@ -224,6 +263,6 @@ export async function skillsPage(): Promise<HTMLElement[]> {
   explore.append(el("div", { className: "catalog-intro" }, el("div", {}, el("h2", { textContent: "Explore skills" }), el("p", { className: "row-hint", textContent: "Pick a publisher, search its skills, read the instructions, then add." })), pill("Optional")), sources, form, catalog);
 
   await reload();
-  home();
+  if (initialSkill) detail(initialSkill); else home();
   return [root];
 }

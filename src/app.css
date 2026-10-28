@@ -883,3 +883,69 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 .model-sep { border: 0; border-top: 1px solid var(--border); margin: 6px 4px; }
 .composer-foot { flex: none; display: flex; justify-content: flex-end; width: min(var(--column), calc(100% - 48px)); margin: 0 auto 10px; }
 .composer-actions { margin-left: auto; }
+
+/* Settings content has a reading measure and consistent insets, including prose
+   and skill previews that are not key/value rows. */
+.rows > p, .rows > a, .rows > pre, .rows > .skill-files,
+.rows > .skill-formatted, .rows > .seg, .rows > .row-actions { margin: 16px; }
+.rows > .skill-formatted { line-height: 1.65; }
+.rows > .skill-formatted > :first-child { margin-top: 0; }
+.rows > .skill-formatted > :last-child { margin-bottom: 0; }
+.rows > p { line-height: 1.6; }
+.rows > a { display: inline-block; }
+.settings-feedback { font-size: .84rem; line-height: 1.6; margin: 12px 0; color: var(--muted); overflow-wrap: anywhere; }
+.settings-feedback:empty { display: none; }
+.settings-feedback.bad { color: var(--danger); }
+.settings-content > .sandbox-layout { max-width: 860px; }
+.sandbox-layout > .lead { max-width: 640px; margin-left: 0; line-height: 1.6; }
+.sandbox-health { display: flex; align-items: flex-start; gap: 14px; padding: 20px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); margin: 24px 0; }
+.sandbox-health-icon { color: var(--accent); padding-top: 3px; }
+.sandbox-health > div:nth-child(2) { flex: 1; min-width: 0; }
+.sandbox-health h2 { font-size: 1rem; margin: 0 0 6px; font-weight: 600; }
+.sandbox-health .row-hint { line-height: 1.6; }
+.sandbox-health .pill { flex: none; }
+.sandbox-layout .row-hint { line-height: 1.55; }
+.sandbox-layout .row-text { overflow-wrap: anywhere; }
+.sandbox-workspace-form { display: grid; gap: 12px; border-top: 1px solid var(--border); padding: 20px 16px; }
+.sandbox-workspace-form input { width: 100%; min-width: 0 !important; box-sizing: border-box; }
+.sandbox-workspace-form input[aria-invalid="true"] { border-color: var(--danger); }
+.sandbox-workspace-form .row-hint { margin-top: -6px; max-width: 580px; }
+.sandbox-boundaries { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; padding: 20px 16px; }
+.sandbox-boundary { display: flex; align-items: flex-start; gap: 12px; }
+.sandbox-boundary > svg { flex: none; color: var(--muted); margin-top: 3px; }
+.sandbox-boundary strong { font-size: .86rem; font-weight: 550; }
+.sandbox-diagnostics { margin-top: 24px; font-size: .86rem; border-top: 1px solid var(--border); padding-top: 16px; }
+.sandbox-diagnostics summary { cursor: pointer; color: var(--muted); padding: 4px 0 12px; }
+.sandbox-diagnostics > .row-actions { padding: 12px 16px; flex-wrap: wrap; }
+.settings-content > .skill-detail-layout { max-width: 760px; }
+.skills-summary { font-size: .8rem; color: var(--muted); margin: 4px 0 18px; }
+.skill-detail-layout > .badges { margin: 16px 0; }
+.skill-detail-layout > .seg { margin: 20px 0; }
+.skill-detail-layout .skill-body { line-height: 1.65; overflow-wrap: anywhere; }
+.skill-detail-layout .skill-editor { min-height: 360px; margin: 16px 0; padding: 16px; }
+.skill-detail-layout > button:first-child { margin-bottom: 12px; }
+.skill-detail-layout .rows > .skill-body { background: var(--bg); }
+@media (max-width: 760px) {
+  .sandbox-boundaries { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .sandbox-health { flex-wrap: wrap; padding: 16px; }
+  .sandbox-health > .pill { margin-left: 38px; }
+  .sandbox-layout .row-control { flex-wrap: wrap; }
+}
+.settings-content button:disabled { opacity: .45; cursor: default; transform: none; }
+.settings-content input:disabled, .settings-content textarea:disabled { opacity: .7; }
+.sandbox-test-output.bad { color: var(--danger); }
+@media (max-width: 480px) {
+  .sandbox-health > div:nth-child(2) { flex-basis: calc(100% - 44px); }
+}
+.realm-manager { padding: 16px; display: grid; gap: 16px; min-width: 0; }
+.realm-manager > .row-hint { line-height: 1.6; }
+.realm-manager .row-actions { flex-wrap: wrap; }
+.realm-list { border-top: 1px solid var(--border); min-width: 0; }
+.realm-list .row { padding: 14px 0; }
+.realm-list .row-label, .realm-detail > code { font: .8rem/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
+.realm-empty { padding-top: 16px; }
+.realm-detail { border-top: 1px solid var(--border); padding-top: 20px; display: grid; gap: 12px; min-width: 0; }
+.realm-detail h3 { margin: 0; font-size: .95rem; }
+.realm-detail .row-hint { overflow-wrap: anywhere; line-height: 1.6; }
+.realm-changes { display: grid; gap: 10px; min-width: 0; }
+.realm-changes:empty { display: none; }

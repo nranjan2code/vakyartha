@@ -2,7 +2,7 @@
 
 This is the maintained implementation guide for people and coding agents creating Vakyartha skills, dashboards, forms and reports. Start here before adding workflow code. [SKILLS.md](SKILLS.md) owns the loader/import/update contract; [SPECS.md](SPECS.md) owns the app architecture; [SKILL-AUDIT.md](SKILL-AUDIT.md) records the audit and evidence, rather than defining a second runtime.
 
-Catalog skills may include reviewed supporting text files for reusable examples, layout guidance, form schemas, source code and reference material. Keep the procedure in `SKILL.md`; point to a specific relative file when its contents are needed so the assistant can load it with `read_skill_file`. Supporting text, including script source, is reference data and never an execution path or permission grant. Binary templates remain outside the current import tier. See [SKILLS.md](SKILLS.md) for supported types and limits.
+Catalog skills may include reviewed supporting text files for reusable examples, layout guidance, form schemas, source code and reference material. Keep the procedure in `SKILL.md`; point to a specific relative file when its contents are needed so the assistant can load it with `read_skill_file`. Supporting text, including script source, is reference data and never an execution path or permission grant. Isolated local command execution is a separate app-owned integration backed by `vak-sandbox`; skills can select and guide that existing tool but cannot create execution authority. Binary templates remain outside the current import tier. See [SKILLS.md](SKILLS.md) for supported types and limits.
 
 ## Choose the existing path first
 
@@ -12,8 +12,10 @@ Catalog skills may include reviewed supporting text files for reusable examples,
 | Record mappings, bound input and submitted action guidance | `interactive-ui` | Its built-in body; runtime enforcement stays in Projection |
 | Visual hierarchy, widths, chart choice and spoken readability | `surface-design` | Its built-in body; app theme in `src/app.css` |
 | Operational dashboard composition | `dashboard` plus the matching domain skill | Reuse the existing loader and canonical surfaces |
-| Rendering, catalog, generic binding or execution defect | Projection | Fix in `~/Projects/vakProjection`, push, then move the app pin; never edit the dependency checkout |
+| Rendering, framework catalog, generic binding or tool-dispatch defect | Projection | Fix in `~/Projects/vakProjection`, push, then move the app pin; never edit the dependency checkout |
+| OS process containment or realm/promotion mechanism | Separate `vak-sandbox` project | Fix its runtime and own docs; the app integrates its supported public/binary capabilities |
 | External source/tool or reusable memory | Existing integrations catalog/lifecycle | User-configured tools and existing approval rules; no parallel connector/store |
+| Isolated local command execution | App-owned `Sandboxed execution` integration backed by `vak-sandbox` | Disposable runs or durable Realms with review, promotion, recovery and rollback; normal approval/logging policy, strict bounds; no execution authority in skill files |
 | Task limits, review, checkpoints and export receipts | App task owners | Existing task/session path; no second workflow engine |
 | Spoken wording and playback | App voice modules | `speech-text.ts`, `read-aloud.ts`, decisions/approvals; no separate report database |
 
@@ -34,6 +36,8 @@ flowchart TD
 ```
 
 App chat/tasks with enabled optional skills first offer only selection. `use_skill` loads one or several enabled names; an empty list explicitly selects none. Further necessary optional skills can load through the same bounded loop. `surface-design` is the exception: it is required, always on, cannot be removed or disabled, and its guidance is injected by the app whenever surface authoring tools or a render response are offered. This avoids relying on model selection for a shared quality rule. Channel providers use the same injection wrapper. Other chaining remains a model decision, not a hard-coded router or general dependency resolver. Historical optional-skill loads do not stay active automatically in later runs.
+
+For command requests, the `sandbox` procedure chains to `shell-command`; when a run fails it chains to `debug-error` using the returned stderr, exit code and limit information. This guidance selects and explains an already enabled integration; only the integration's existing approval policy can authorize the call. Multi-step edits use a retained Realm; promotion requires a current complete path review and follows the integration policy. Snapshot means a review manifest, not a filesystem restore point. See the [sandbox lifecycle](sandbox/OVERVIEW.md) and [sandbox skill](../sidecar/builtin-skills/sandbox/SKILL.md) for its macOS, workspace, timeout and output bounds.
 
 The active framework protocol and tool schemas define the authoring envelope. Transactional replacements contain complete data and an inline root tree; later patches use canonical IDs. Progressive tools use their offered flat-node protocol. Follow the currently offered schema rather than copying an envelope from another mode. Runtime validation, approvals, revision checks, persistence and receipts execute outside skill text. Native schemas are not automatically constrained decoding.
 

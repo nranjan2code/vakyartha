@@ -1,8 +1,7 @@
-// Where the engine listens. Inside Tauri the shell knows (it started the
-// sidecar). Served by the app server (the playground) it is this page's own
-// origin, with no token. For UI work against `npm run sidecar` from the Vite
-// dev server, pass ?backend=http://127.0.0.1:<port>#token=<token>.
+// Desktop connects to the Tauri parent's private engine IPC. Browser
+// development uses the page origin, or an explicitly supplied HTTP backend.
 
+import { desktopFetch } from "./desktop-fetch.ts";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 
@@ -12,6 +11,9 @@ export interface Backend {
 }
 
 export const inTauri = isTauri();
+
+/** Desktop traffic uses private IPC; browser development retains same-origin fetch. */
+export const engineFetch: typeof fetch = (input, init) => inTauri ? desktopFetch(input, init) : fetch(input, init);
 
 export async function connect(): Promise<Backend> {
   if (inTauri) return await invoke<Backend>("backend");
