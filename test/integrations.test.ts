@@ -71,3 +71,23 @@ test("Databricks accepts workspace MCP URLs across clouds and refuses token dest
   const again = createIntegrations(deps(dataDir));
   assert.equal(again.view().find((v) => v.entry.id === "databricks")!.config.endpoint, endpoint);
 });
+
+test("Zerodha Kite MCP is registered as a vendor integration with hosted endpoint", async () => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), "vakyartha-zerodha-"));
+  const list = createIntegrations(deps(dataDir));
+  const view = () => list.view().find((v) => v.entry.id === "zerodha")!;
+
+  assert.ok(view(), "Zerodha integration should exist in catalog");
+  assert.equal(view().entry.trust, "vendor");
+  assert.equal(view().entry.publisher, "Zerodha");
+  assert.equal(view().entry.sourceKind, "http");
+  assert.equal(view().entry.url, "https://mcp.kite.trade/mcp");
+  assert.equal(view().entry.homepage, "https://github.com/zerodha/kite-mcp-server");
+  assert.equal(view().enabled, false);
+  assert.deepEqual(view().missing, []);
+  assert.equal(view().status, "off");
+
+  // Lifecycle configuration
+  await list.configure("zerodha", { enabled: false });
+  assert.equal(view().enabled, false);
+});

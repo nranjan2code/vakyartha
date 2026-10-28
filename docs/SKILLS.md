@@ -2,7 +2,7 @@
 
 Skills are reusable instructions the assistant follows when a request matches. Settings → Skills has two views: **Installed** (search, filters All/On/Built in/From catalogs/Yours, a page per skill with its availability, instructions, edit and remove) and **Explore catalogs**. `surface-design` is a required built-in: its card says **Always on**, its detail has no off/remove control, and runtime checks enforce that state.
 
-For new or revised workflows, start with [the authoring guide](SKILL-AUTHORING.md). It covers canonical data, layout, chart selection, both projections and the source map.
+For new or revised workflows, start with [the authoring guide](SKILL-AUTHORING.md) and [the Skill Studio specification](skill-studio/SKILL-STUDIO-ARCHITECTURE.md). It covers canonical data, layout, chart selection, both projections and the source map.
 
 ## Built in
 

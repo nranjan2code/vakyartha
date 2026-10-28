@@ -5,7 +5,7 @@ import { el, engine } from "./core.ts";
 import { tile } from "./icons.ts";
 import type { MarketplaceId, MarketplaceListing } from "../shared/marketplaces.ts";
 
-const BRANDS: Record<string, string> = { mcp: "mcp.svg", files: "mcp.svg", memory: "mcp.svg", github: "github.png", docker: "docker.png", "brave-search": "brave-search.png", tavily: "tavily.png", databricks: "databricks.png", notion: "notion.png", context7: "context7.png" };
+const BRANDS: Record<string, string> = { mcp: "mcp.svg", files: "mcp.svg", memory: "mcp.svg", github: "github.png", docker: "docker.png", "brave-search": "brave-search.png", tavily: "tavily.png", databricks: "databricks.png", notion: "notion.png", context7: "context7.png", zerodha: "zerodha.png" };
 export function brandTile(id: string, fallback = "plug", size = 40): HTMLElement {
   if (!BRANDS[id]) return tile(fallback, size);
   const box = el("span", { className: "brand-tile" }, el("img", { src: `/brand/integrations/${BRANDS[id]}`, alt: "", width: size - 12, height: size - 12 }));

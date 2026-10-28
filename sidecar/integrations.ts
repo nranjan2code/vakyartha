@@ -177,6 +177,23 @@ export const CATALOG: CatalogEntry[] = [
     source: { kind: "npm", package: "@upstash/context7-mcp", version: "4.3.0", bin: "dist/index.js" },
     config: [{ key: "apiKey", label: "Context7 API key (optional)", kind: "secret", env: "CONTEXT7_API_KEY", help: "Optional: higher rate limits." }],
   },
+  {
+    id: "zerodha",
+    name: "Zerodha",
+    publisher: "Zerodha",
+    trust: "vendor",
+    summary: "Live quotes, portfolio holdings, orders and trades with Kite.",
+    description: "Zerodha's hosted Kite MCP server: market data quotes, historical candles, portfolio holdings, positions, and order management. Login is handled securely in your browser via Zerodha; no API credentials need to be stored in the app.",
+    homepage: "https://github.com/zerodha/kite-mcp-server",
+    icon: "chart",
+    access: [
+      "Your Zerodha account, after signing in through your browser",
+      "Live quotes, holdings, positions, and order history",
+      "Asks before placing, modifying, or cancelling any order",
+    ],
+    source: { kind: "http", url: "https://mcp.kite.trade/mcp" },
+    config: [],
+  },
 ];
 
 /** Keep one live catalog array so reviewed imports reach the existing lifecycle. */
