@@ -1,19 +1,56 @@
 ---
 name: market-dashboard
 description: Create a source-backed market, index or watchlist review for an exact daily, weekly or monthly window, with optional interactive dashboard and comparable returns.
+license: MIT
+compatibility: Compatible with market data feeds, financial time-series snapshots, and Vakyartha canvas surfaces.
+metadata:
+  author: nranjan2code
+  version: "1.2"
+allowed-tools: read_skill_file use_skill vak_render vak_update vak_submit
 ---
 
-## Establish the evidence
-Resolve exchange, instrument identity, timezone, currency or index points, requested window and return basis. Identify the first and last comparable observations in that window, source URL or supplied file, observation time and retrieval time. Distinguish a completed session from a live or delayed quote. A single quote cannot establish a week or month return. If history or the comparison baseline is absent, leave that return unknown rather than using another window. Never invent prices, trading days, holidays, corporate-action adjustments, market causes or forecasts.
+# Financial Market & Index Reviews
 
-For a price return, calculate `(last comparable close / first comparable close - 1) × 100` from checked numbers. Do not add daily percentages. Label price return separately from a dividend-inclusive total return; use only the series matching the claimed basis. Keep point change, currency change, percent return and percentage-point change distinct. Never sum price levels or returns in a table total.
+Analytical methodology for authoring evidence-backed market, equity, index and commodity performance reviews with verified endpoints and interactive time-series dashboards.
 
-## Compose the requested result
-For an interactive dashboard, load enabled `dashboard` and `interactive-ui` when needed; the always-on `surface-design` guidance applies. Read `references/market-dashboard-layout.md` for the reusable layout and evidence checklist, then `references/market-dashboard-example.json` when a concrete Projection shape is useful. The example is fictional structure: replace every sample fact and date with verified data, and omit sections lacking evidence. A short text recap need not become a dashboard.
+## Overview & Reference Files
 
-Use one canonical dated record collection for the trend and its detail table. The first visible sentence names the instrument, exact window, observed move and material freshness or coverage limit so it also works when spoken. Follow with compact measures, a dated line chart only when history exists, exact rows and source/return-basis details. Use responsive semantic components rather than custom styling. Keep current-session values separate from completed-window performance. If several instruments use different calendars or currencies, give each its own basis and coverage; do not imply a common close.
+- **Purpose**: Use this skill when asked to review stock, index, currency, commodity or portfolio performance over an explicit daily, weekly, monthly or multi-period window.
+- **Skill chaining**:
+  - Load enabled `dashboard` and `interactive-ui` when creating an interactive canvas.
+  - The required `surface-design` skill governs layout, line charts, metric strips and spoken summaries.
+- **Reference files**:
+  - Read `references/market-dashboard-layout.md` via `read_skill_file` for the canonical layout patterns and evidence checklist.
+  - Read `references/market-dashboard-example.json` via `read_skill_file` for a concrete reference surface schema.
 
-Submit the complete `data.history` with every dated record in the same `vak_render` or `vak_submit` call that introduces mappings to `{/history}`. Do not submit empty `data` and assume mapped labels or text will populate it. A bound last-close metric uses the final zero-based row index (record count minus one), or a checked scalar summary. Validate the accepted result; if the tool reports missing paths, correct the data and bindings before finishing.
+## Establish the Evidence
 
-## Check before delivery
-Match every stated return to its exact endpoints and basis. Check plotted dates against the table and summary, source freshness against the claimed window, and every caveat against visible and spoken text. A cited headline is evidence of a reported event, not proof it caused a price move. Edits to submitted criteria must update measures, chart, rows and summary together. A refresh, recurring delivery, trade or export needs its offered capability, authorization and actual receipt. State missing capabilities plainly; do not turn a market review into personal buy/sell instructions.
+1. **Verify instrument & window metadata**:
+   - Resolve exchange, ticker/symbol identity, trading timezone, quoting currency or index points.
+   - Establish the requested evaluation window: identify the exact first and last comparable trading sessions.
+   - Distinguish closed trading sessions from delayed or live intraday quotes. A single spot quote cannot establish a multi-day return.
+   - Never fabricate market prices, trading volume, trading calendar dates or corporate-action adjustments.
+2. **Deterministic return calculations**:
+   - Compute price return as `((last close / first close) - 1) × 100` from verified numbers.
+   - Clearly separate price return from dividend-inclusive total return.
+   - Distinguish point change, currency change, percentage change and percentage-point change.
+   - Never sum price levels or percentages across instruments in a table total.
+
+## Compose the Requested Result
+
+1. **Interactive canvas structure**:
+   - Lead with a concise natural-language sentence naming the instrument, exact evaluation window, observed move, and data freshness so speech projection is immediate.
+   - Follow with a compact metric strip (`stat`) showing current level, absolute move and percentage change.
+   - Render a dated time-series chart (`line`) plotting the historical close values over the window.
+   - Provide a granular historical table below the chart showing trading dates, close prices and volume.
+2. **Canonical data submission**:
+   - Submit the complete `data.history` array containing all dated records in the same `vak_render` or `vak_submit` call that references `{/history}`.
+   - Bind the latest close metric using the final row index or a checked scalar value.
+   - Verify that all data paths resolve cleanly; fix any schema errors before final presentation.
+
+## Check Before Delivery
+
+- Match every stated return to its verified endpoints and underlying calculation basis.
+- Verify that plotted chart dates align perfectly with the detail table rows and text summary.
+- Clarify whether external news or headlines are correlated observations rather than proven causal drivers of a price move.
+- State clearly that market reviews constitute historical analysis, not personal financial advice or buy/sell recommendations.

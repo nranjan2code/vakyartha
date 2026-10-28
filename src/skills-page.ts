@@ -10,7 +10,20 @@ import { group, pill, row, segmented, title, toggle } from "./ui.ts";
 import { SKILL_SOURCES, type SkillListing, type SkillReview, type SkillView } from "../shared/skills.ts";
 import { renderMarkdown } from "@vak/web";
 
-const TEMPLATE = "---\nname: my-skill\ndescription: When to use this skill, in one sentence.\n---\n\nSteps the assistant follows when this skill applies.\n";
+const TEMPLATE = `---
+name: my-skill
+description: When to use this skill, in one sentence.
+# Optional standard specification fields:
+# license: MIT
+# compatibility: Requirements or target environment
+# metadata:
+#   author: Your Name
+#   version: "1.0"
+# allowed-tools: tool1 tool2
+---
+
+Steps the assistant follows when this skill applies.
+`;
 type Filter = "all" | "on" | "updates" | "builtin" | "catalog" | "yours";
 let filter: Filter = "all", query = "";
 let detailTab = "overview";

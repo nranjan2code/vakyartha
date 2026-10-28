@@ -6,6 +6,7 @@ compatibility: Execution requires macOS, the vak-sandbox helper, an enabled sand
 metadata:
   author: nranjan2code
   version: "1.2"
+allowed-tools: run_command create_realm run_in_realm snapshot_realm read_realm_file promote_realm rollback_realm recover_realm destroy_realm list_realms realm_status
 ---
 
 # Isolated project work
@@ -36,3 +37,8 @@ Network is denied. Commands receive a minimal PATH, HOME and TMPDIR, without app
 Each command has a 30-second wall limit and 32 KiB combined output. Copies are bounded to 512 MiB, 50,000 entries and an 8 MiB manifest. Up to 32 Realms are retained; one promotion supports at most 200 changed paths. Regular files and directories are supported; symlinks, special files and file/directory type replacement are refused. CPU, memory, process-count and disk-growth quotas are not enforced. Do not enlarge limits or quietly retry a failure.
 
 Report the command, exit code, relevant output and whether changes remain in a copy or reached the original project. An available tool or valid receipt does not establish semantic correctness of generated code.
+
+## Reference files
+
+See `references/sandbox-policy.md` for detailed policy configuration, bounds and locking.
+See `references/sandbox-examples.md` for command, multi-step Realm, promotion and recovery examples.

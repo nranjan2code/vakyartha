@@ -1,7 +1,53 @@
 ---
 name: data-review
 description: Inspect supplied tabular records, CSV or JSON for data quality, trends and requested summaries; use dashboard for an operational overview.
+license: MIT
+compatibility: Works with tabular CSV, JSON, and structured query snapshots.
+metadata:
+  author: nranjan2code
+  version: "1.2"
+allowed-tools: read_skill_file use_skill
 ---
 
-Use the supplied snapshot or an available read tool. Preserve record identities, raw values, units and missingness; cite the filename/source when supplied. Flag duplicates, inconsistent types and absent fields before interpreting totals. Ask before resolving an ambiguous column, unit or date convention that changes the answer.
-For an interactive review load enabled interactive-ui; the always-on surface-design guidance applies. Keep source records separate from proposed corrections and derived results. Report what was actually checked and which rows or period a summary covers. Do not silently remove outliers, replace blanks with zero or treat a chart as verification. Per-row arithmetic is not local formula execution; use an offered calculation tool or independently check model-authored calculations, identifying unverified results. Export only through an offered destination with an actual receipt; a table is not a spreadsheet file.
+# Data Quality & Tabular Inspection
+
+Methodical procedure for auditing, profiling and validating structured datasets, CSV files and JSON records for anomalies, integrity and actionable insights.
+
+## Overview & Chaining
+
+- **Purpose**: Use this skill when inspecting tabular data, reviewing CSV/JSON uploads, auditing dataset hygiene, or computing verified statistical summaries.
+- **Skill chaining**:
+  - Load `interactive-ui` when an interactive audit surface, data table or chart is needed.
+  - The required `surface-design` skill governs canvas layout and visual presentation.
+  - Load `dashboard` if the user requires ongoing operational KPIs or executive monitoring rather than a data quality audit.
+
+## Data Ingestion & Integrity Checks
+
+1. **Schema & Header Verification**:
+   - Inspect column names, delimiter consistency and row counts.
+   - Clarify ambiguous header names or date conventions (e.g. `MM/DD/YYYY` vs `DD/MM/YYYY`) before drawing conclusions that depend on them.
+2. **Missing & Null Values**:
+   - Count and report null, empty or missing fields per column.
+   - Never silently substitute `0`, `"N/A"` or default values for missing data without explicit instruction.
+3. **Type Consistency**:
+   - Flag columns with mixed types (e.g. numbers mixed with text strings like `"unknown"` or `"-"`).
+   - Clean currency symbols, commas or whitespace in numerical columns while preserving raw source values.
+4. **Duplicate & Key Audits**:
+   - Check primary key uniqueness and identify duplicate rows. Report exact duplicate counts and sample rows.
+5. **Outliers & Boundary Checks**:
+   - Identify values falling outside expected physical or business ranges (e.g. negative ages, future completion dates).
+   - Report outliers transparently; do not silently truncate or discard them.
+
+## Statistical Summaries & Calculations
+
+- **Accurate Aggregates**: Compute counts, sums, averages, medians, minimums and maximums using verified calculation tools or verified deterministic steps.
+- **Scope Disclosure**: State exactly how many rows, dates or categories are included in each aggregate summary.
+- **No Client Formula Hallucination**: Recognize that client tables display data but do not execute Excel-like formula strings. Calculations must be pre-computed or backed by tools.
+
+## Interactive Audit Canvas
+
+When rendering an audit surface:
+- Lead with an executive summary card stating total rows, valid records, missing rate and date range.
+- Provide a summary table highlighting data health per column (type, null count, unique values, min/max).
+- Display a sample table of cleaned or flagged records with pagination or row limits.
+- Separate source facts from proposed corrections; do not mutate raw records without explicit approval.

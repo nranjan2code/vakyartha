@@ -1,8 +1,56 @@
 ---
 name: dashboard
 description: Build an operational or enterprise dashboard from supplied records or available governed data tools, with metrics, trends and detail views.
+license: MIT
+compatibility: Requires interactive-ui and surface-design capabilities for canvas projection.
+metadata:
+  author: nranjan2code
+  version: "1.2"
+allowed-tools: vak_render vak_update vak_submit use_skill
 ---
 
-Identify the audience, decision, reporting period and available sources. Build from supplied records or successful reads; otherwise ask for the needed data or clearly label an explicitly requested prototype. Never invent business performance.
-Load interactive-ui when enabled; the always-on surface-design guidance applies. Keep one canonical collection for views of the same records; keep unrelated datasets separate. Show only metrics and charts that support the requested decision, with a detail table where useful. Name units, period, aggregate scope, missing records and source freshness. Separate actuals, targets and forecasts. Do not sum rates or mix currencies/periods without a stated basis.
-Use compact metrics, a clear main analysis and secondary detail rather than equal-sized panels everywhere. Local table filters do not cross-filter other panels. For requested dashboard-wide filters, use bound criteria and an explicit submit action to update all affected views and explanations. A refresh button requires an available read tool and current permissions; it is not a live subscription. Display the latest successful retrieval, never an invented refresh time. A rendered dashboard is not an external deployment or shared workspace. Put the main finding, reporting period and missing-data/freshness caveat in visible text that can also be spoken, not only in charts or controls.
+# Operational & Enterprise Dashboards
+
+Design and implementation architecture for building comprehensive, decision-focused operational and executive dashboards.
+
+## Overview & Chaining
+
+- **Purpose**: Use this skill when asked to construct an analytical dashboard, executive KPI overview, or performance monitoring view from supplied data or read tools.
+- **Skill chaining**:
+  - Load enabled `interactive-ui` for data mappings, bound filters and action handling.
+  - Apply the always-on `surface-design` principles for layout, typography, chart selection and responsive behavior.
+  - Specialized dashboards (`sales-dashboard`, `finance-dashboard`, `operations-dashboard`, `market-dashboard`) provide specialized metrics and should be preferred for those domains.
+
+## Dashboard Architecture & Layout
+
+Organize the dashboard into three clear visual tiers:
+1. **Executive KPI Strip**:
+   - Place 2–4 critical metrics at the top using `stat` components inside a `grid`.
+   - Show the primary figure, explicit currency/unit, and comparative delta (vs previous period or target) where data exists.
+2. **Primary Analytical Visualizations**:
+   - Feature 1–2 focused charts that answer the user's core business questions.
+   - Use `line` or `area` for trends over time, `bar` for categorical comparisons, and `stacked` for composition.
+   - Size panels appropriately (`maxWidth: "lg"` or `"full"`) and maintain balanced visual weight.
+3. **Granular Detail Table**:
+   - Provide a supporting data table below the charts to enable row-level inspection.
+   - Include identifiable row keys, dates, categories and checked numerical values.
+
+## Data Integrity & Metric Rules
+
+- **Truthful business metrics**: Never invent sales volumes, server uptimes, profit margins or operational performance. Build strictly from verified facts.
+- **Metric discipline**:
+  - Separate actuals from targets, budgets, and speculative forecasts.
+  - Disclose exact reporting periods, timezones, and currency denominations.
+  - Never sum rates (e.g. conversion rates, percentages) or average averages across unequal populations without weighted calculations.
+- **Data freshness**: Clearly display the timestamp or source date of the underlying data. Do not label static snapshots as "live streaming" unless true integration subscriptions exist.
+
+## Filtering & Interactive Controls
+
+- **Global filters**: For dashboard-wide filters (e.g. date range, region, product line), bind inputs in an interactive form container and provide an explicit submit button (`vak_submit`).
+- **Coherent updates**: When a filter is submitted, update KPI aggregates, analytical charts, detail tables and natural-language summaries together.
+- **Local view limits**: Local table search and column sorting operate as client-side view filters; explain that they do not alter dashboard-wide totals or underlying records.
+
+## Dual Spoken & Visual Projection
+
+- Include a prominent 1–2 sentence natural-language summary near the top of the canvas stating the primary takeaway, reporting timeframe, and any material caveats.
+- Ensure that users listening to the voice projection understand the overall status without needing to see the individual chart pixels.

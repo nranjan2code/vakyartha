@@ -10,6 +10,7 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "builtin-sk
 function supportingFiles(directory: string, prefix = ""): Map<string, Buffer> {
   const files = new Map<string, Buffer>();
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.name.startsWith(".")) continue;
     if (entry.isSymbolicLink()) throw new Error(`Built-in skills cannot contain links: ${entry.name}`);
     const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {

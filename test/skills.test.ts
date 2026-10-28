@@ -374,3 +374,139 @@ test("adding a catalog skill never removes an untracked folder with the same nam
   assert.throws(() => skills.add(review.fingerprint, true), /folder named/);
   assert.equal(readFileSync(path.join(folder, "note.txt"), "utf8"), "keep");
 });
+
+test("supports full Agent Skills specification frontmatter, comments and blocks", () => {
+  const fullSpec = `---
+name: full-spec-skill
+description: >-
+  A complete skill adhering to the Agent Skills
+  open standard format.
+license: "MIT" # permissive license
+compatibility: >
+  macOS 12+ or Linux with Python 3.10
+metadata:
+  author: 'Agent Developer' # primary author
+  version: "2.0"
+
+  # repository information
+  repo: https://github.com/example/skill
+allowed-tools: >-
+  Read
+  Write
+  Bash(python:*)
+---
+
+# Instructions
+Follow the procedure step by step.
+`;
+  const parsed = parseSkill(fullSpec);
+  assert.equal(parsed.name, "full-spec-skill");
+  assert.equal(parsed.description, "A complete skill adhering to the Agent Skills open standard format.");
+  assert.equal(parsed.license, "MIT");
+  assert.equal(parsed.compatibility, "macOS 12+ or Linux with Python 3.10");
+  assert.deepEqual(parsed.metadata, {
+    author: "Agent Developer",
+    version: "2.0",
+    repo: "https://github.com/example/skill",
+  });
+  assert.equal(parsed.allowedTools, "Read Write Bash(python:*)");
+  assert.equal(parsed.body, "# Instructions\nFollow the procedure step by step.");
+
+  // Underscore allowed_tools variant
+  assert.equal(parseSkill(fullSpec.replace("allowed-tools:", "allowed_tools:")).allowedTools, "Read Write Bash(python:*)");
+
+  // 4-space indented metadata
+  const fourSpaces = `---\nname: four-space\ndescription: Test\nmetadata:\n    author: Example\n    version: "1.0"\n---\nBody.\n`;
+  assert.deepEqual(parseSkill(fourSpaces).metadata, { author: "Example", version: "1.0" });
+});
+
+test("supports extended text extensions and template files", async () => {
+  const sha = "b".repeat(40), data = dir();
+  const tree = [
+    { path: "SKILL.md", type: "blob", size: 100 },
+    { path: "assets/template.jsonl", type: "blob", size: 50 },
+    { path: "assets/config.toml", type: "blob", size: 40 },
+    { path: "references/schema.sql", type: "blob", size: 80 },
+    { path: "assets/style.css", type: "blob", size: 30 },
+    { path: "assets/icon.svg", type: "blob", size: 60 },
+    { path: "Dockerfile", type: "blob", size: 45 },
+    { path: "scripts/calc.r", type: "blob", size: 25 },
+    { path: "binary.exe", type: "blob", size: 100 },
+  ];
+  const filesContent: Record<string, string> = {
+    "SKILL.md": "---\nname: multi-ext-skill\ndescription: Has diverse file types.\ncompatibility: Python 3\nallowed-tools: Read\n---\nInstructions.\n",
+    "assets/template.jsonl": '{"key":"value"}\n',
+    "assets/config.toml": 'title = "Skill"\n',
+    "references/schema.sql": "CREATE TABLE test (id INT);\n",
+    "assets/style.css": ".skill { color: red; }\n",
+    "assets/icon.svg": "<svg></svg>\n",
+    "Dockerfile": "FROM alpine\n",
+    "scripts/calc.r": "print(1 + 1)\n",
+  };
+  const fetcher = (async (url: string) => {
+    if (url.includes("/commits?")) return new Response(JSON.stringify([{ sha }]));
+    if (url.includes("/git/trees/")) return new Response(JSON.stringify({ tree }));
+    for (const [p, content] of Object.entries(filesContent)) {
+      if (url.endsWith(`/${p}`)) return new Response(content);
+    }
+    return new Response("binary data", { status: 200 });
+  }) as typeof fetch;
+
+  const skills = new Skills(data, fetcher);
+  const review = await skills.review("owner/repo", "");
+  const addedFiles = review.files.filter(f => f.status === "added").map(f => f.path);
+  assert.ok(addedFiles.includes("assets/template.jsonl"));
+  assert.ok(addedFiles.includes("assets/config.toml"));
+  assert.ok(addedFiles.includes("references/schema.sql"));
+  assert.ok(addedFiles.includes("assets/style.css"));
+  assert.ok(addedFiles.includes("assets/icon.svg"));
+  assert.ok(addedFiles.includes("Dockerfile"));
+  assert.ok(addedFiles.includes("scripts/calc.r"));
+  assert.equal(review.files.find(f => f.path === "binary.exe")?.status, "unsupported");
+
+  skills.add(review.fingerprint, true);
+  skills.setEnabled("multi-ext-skill", true);
+  assert.match(skills.fileText("multi-ext-skill", "references/schema.sql").text, /CREATE TABLE/);
+  assert.match(skills.fileText("multi-ext-skill", "assets/config.toml").text, /title =/);
+
+  // use_skill output includes compatibility and declared tools
+  const [use, read] = skills.tools();
+  assert.ok(use && read);
+  const loaded = String(await use.execute({ names: ["multi-ext-skill"] }, {}));
+  assert.match(loaded, /Compatibility: Python 3/);
+  assert.match(loaded, /Declared tools: Read/);
+
+  // use_skill accepts singular name
+  const singular = String(await use.execute({ name: "multi-ext-skill" }, {}));
+  assert.match(singular, /Skill multi-ext-skill instructions:/);
+
+  // read_skill_file handles leading slash, backslashes, basename fallback, and string offset
+  const readLeadingSlash = String(await read.execute({ skill: "multi-ext-skill", path: "/references/schema.sql" }, {}));
+  assert.match(readLeadingSlash, /CREATE TABLE/);
+
+  const readBackslash = String(await read.execute({ skill: "multi-ext-skill", path: "references\\schema.sql" }, {}));
+  assert.match(readBackslash, /CREATE TABLE/);
+
+  const readBasename = String(await read.execute({ skill: "multi-ext-skill", path: "schema.sql" }, {}));
+  assert.match(readBasename, /CREATE TABLE/);
+
+  const readStringOffset = String(await read.execute({ skill: "multi-ext-skill", path: "schema.sql", offset: "0" as any }, {}));
+  assert.match(readStringOffset, /CREATE TABLE/);
+});
+
+test("discovers skill folders and supporting files placed directly on disk", () => {
+  const d = dir();
+  const folder = path.join(d, "skills", "local-skill");
+  mkdirSync(path.join(folder, "files", "references"), { recursive: true });
+  writeFileSync(path.join(folder, "SKILL.md"), "---\nname: local-skill\ndescription: Created locally.\nlicense: MIT\n---\nLocal instructions.\n");
+  writeFileSync(path.join(folder, "files", "references", "guide.md"), "# Local Guide\nImportant details.\n");
+
+  const manager = new Skills(d);
+  const found = manager.view().find(s => s.name === "local-skill");
+  assert.ok(found);
+  assert.equal(found.enabled, false);
+  assert.equal(found.license, "MIT");
+  assert.equal(found.files?.length, 1);
+  assert.equal(found.files?.[0]?.path, "references/guide.md");
+  assert.match(manager.fileText("local-skill", "references/guide.md").text, /Local Guide/);
+});
