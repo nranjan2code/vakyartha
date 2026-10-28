@@ -169,7 +169,7 @@ export class AppsPage {
         el("header", { className: "artifacts-intro" },
           el("div", { className: "artifacts-mark" }, icon("cpu", 24)),
           el("h1", { id: "apps-title", tabIndex: -1, textContent: "Hosted Applications" }),
-          el("p", { textContent: "Sandboxed persistent applications running with dedicated state and sub-millisecond local execution." })
+          el("p", { textContent: "Persistent local apps with sandboxed actions, saved state and direct data refresh." })
         ),
         el("div", { className: "artifacts-search-row" },
           el("div", { className: "artifact-search" }, icon("search", 18), search),

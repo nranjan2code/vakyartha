@@ -20,7 +20,9 @@
   const projected=await request('/api/project','POST',{session:'ipc-check',args:{surface:'ipc-card',title:'Private transport check',nodes:[{id:'root',type:'card',props:{title:'Private transport check',body:'Ready'}}]}});
   check(projected.status===200&&projected.data.diagnostics.length===0,'canonical projection failed');
   window.dispatchEvent(new CustomEvent('vak:media-chat',{detail:'ipc-check'}));
-  await wait(()=>document.querySelector('vak-surface')?.shadowRoot?.textContent.includes('Ready'));
+  // Hidden WebKit pauses animation frames; use the public synchronous render
+  // hook, as the existing off-screen canvas checks do. Keep the content check.
+  await wait(()=>{document.querySelectorAll('vak-surface').forEach(surface=>surface.renderNow());return document.querySelector('vak-surface')?.shadowRoot?.textContent.includes('Ready')});
   document.getElementById('open-settings').click();
   await wait(()=>document.querySelector('#settings-nav-list button'));
   [...document.querySelectorAll('#settings-nav-list button')].find(b=>b.textContent==='FinOps').click();
