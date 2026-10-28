@@ -1,9 +1,13 @@
-// Sandboxed Dynamic Applications Library Page.
-// Displays installed hosted applications, volume footprints, and launch controls.
+// Sandboxed Dynamic Applications Workbench Page.
+// Manages application lifecycle in isolated child runtimes with dedicated full-view execution.
 
 import { $, api, el } from "./core.ts";
 import { icon } from "./icons.ts";
 import { openAdminConsole } from "./backend.ts";
+import { basicCatalog, type SurfaceSnapshot, SurfaceStore } from "@vak/core";
+import type { VakActionDetail, VakSurfaceElement } from "@vak/web";
+import { surfaceMode } from "./theme.ts";
+import { resolveMedia } from "./media.ts";
 import type { AppSummary, AppDetails } from "../sidecar/sandbox-pool/app-registry.ts";
 
 function formatBytes(bytes: number): string {
@@ -16,22 +20,21 @@ export class AppsPage {
   #page = $("apps-page");
   #query = "";
   #apps: AppSummary[] = [];
-  #openSurfaceInCanvas: (surface: Record<string, unknown>, title: string) => void;
+  #activeApp: AppDetails | null = null;
+  #activeStore: SurfaceStore | null = null;
   #toggleSidebar: () => void;
   #onClose?: () => void;
 
   constructor(
-    openSurfaceInCanvas: (surface: Record<string, unknown>, title: string) => void,
     toggleSidebar: () => void,
     onClose?: () => void
   ) {
-    this.#openSurfaceInCanvas = openSurfaceInCanvas;
     this.#toggleSidebar = toggleSidebar;
     this.#onClose = onClose;
 
     const navBtn = $("open-apps");
     if (navBtn) {
-      navBtn.append(icon("cpu", 17), "Apps");
+      navBtn.replaceChildren(icon("cpu", 17), document.createTextNode("Apps"));
       navBtn.addEventListener("click", () => void this.open());
     }
 
@@ -43,12 +46,16 @@ export class AppsPage {
         !document.querySelector("dialog[open]")
       ) {
         e.preventDefault();
-        this.close();
+        if (this.#activeApp) {
+          this.#closeActiveApp();
+        } else {
+          this.close();
+        }
       }
     });
 
     window.addEventListener("vak:app-installed", () => {
-      if (!this.#page.hidden) void this.refresh();
+      if (!this.#page.hidden && !this.#activeApp) void this.refresh();
     });
   }
 
@@ -58,6 +65,8 @@ export class AppsPage {
 
   close(): void {
     if (this.#page.hidden) return;
+    this.#activeApp = null;
+    this.#activeStore = null;
     this.#page.hidden = true;
     $("workspace").hidden = false;
     document.body.classList.remove("in-apps");
@@ -67,6 +76,8 @@ export class AppsPage {
   }
 
   async open(): Promise<void> {
+    this.#activeApp = null;
+    this.#activeStore = null;
     this.#page.hidden = false;
     $("workspace").hidden = true;
     $("artifacts-page").hidden = true;
@@ -75,7 +86,7 @@ export class AppsPage {
     $("open-apps")?.setAttribute("aria-current", "page");
     window.dispatchEvent(new Event("vak:apps-opened"));
 
-    this.#renderShell();
+    this.#renderCatalogShell();
     await this.refresh();
   }
 
@@ -90,19 +101,19 @@ export class AppsPage {
       this.#renderGrid();
     } catch (err) {
       if (grid) {
-        grid.innerHTML = `<div class="artifact-empty"><h2>Failed to load apps</h2><p>${(err as Error).message}</p></div>`;
+        grid.innerHTML = `<div class="artifact-empty"><h2>Could not load applications</h2><p>${(err as Error).message}</p></div>`;
       }
     }
   }
 
-  #renderShell(): void {
+  #renderCatalogShell(): void {
     const toggle = el("button", {
       type: "button",
       className: "icon-btn artifacts-sidebar",
       title: "Show sidebar",
       "aria-label": "Show sidebar",
       onclick: this.#toggleSidebar,
-    }, icon("sidebar"));
+    }, icon("sidebar", 18));
 
     const back = el("button", {
       type: "button",
@@ -128,14 +139,14 @@ export class AppsPage {
       className: "ghost small",
       onclick: () => void openAdminConsole(),
       title: "Open Mini-Cloud Admin & Observability Console (⌘⇧A)",
-    }, icon("sliders", 14), " Fleet Console");
+    }, icon("sliders", 14), document.createTextNode(" Fleet Console"));
 
     const addRefBtn = el("button", {
       type: "button",
       className: "ghost small",
       onclick: () => void this.#installDefaultApp(),
       title: "Install reference portfolio risk application",
-    }, icon("plus", 14), " Add Reference App");
+    }, icon("plus", 14), document.createTextNode(" Add Reference App"));
 
     this.#page.replaceChildren(
       el("div", { className: "artifacts-top", "data-tauri-drag-region": "" }, toggle, back),
@@ -143,7 +154,7 @@ export class AppsPage {
         el("header", { className: "artifacts-intro" },
           el("div", { className: "artifacts-mark" }, icon("cpu", 24)),
           el("h1", { id: "apps-title", tabIndex: -1, textContent: "Hosted Applications" }),
-          el("p", { textContent: "Persistent hosted applications executing in isolated sandboxes with zero LLM per-action overhead." })
+          el("p", { textContent: "Sandboxed persistent applications running with dedicated state and sub-millisecond local execution." })
         ),
         el("div", { className: "artifacts-search-row" },
           el("div", { className: "artifact-search" }, icon("search", 18), search),
@@ -193,7 +204,7 @@ export class AppsPage {
               el("span", { className: "artifact-kind", textContent: app.category.toUpperCase() }),
               el("span", {
                 className: `app-status ${isRunning ? "live" : ""}`,
-                textContent: isRunning ? "● RUNNING" : "IDLE",
+                textContent: isRunning ? "Running" : "Idle",
               }),
               el("span", { className: "artifact-symbol app-symbol" },
                 icon(app.category === "finance" ? "chart" : "cpu", 28)
@@ -206,8 +217,8 @@ export class AppsPage {
                 textContent: app.description,
               }),
               el("div", { className: "app-stats" },
-                el("span", { textContent: `📦 ${formatBytes(app.storageBytes)}` }),
-                el("span", { textContent: `⚡ ${app.triggerCount} trigger${app.triggerCount === 1 ? "" : "s"}` })
+                el("span", {}, icon("folder", 12), document.createTextNode(` ${formatBytes(app.storageBytes)}`)),
+                el("span", {}, icon("clock", 12), document.createTextNode(` ${app.triggerCount} trigger${app.triggerCount === 1 ? "" : "s"}`))
               )
             )
           ),
@@ -215,8 +226,8 @@ export class AppsPage {
             el("button", {
               type: "button",
               className: "ghost small app-btn-open",
-              onclick: () => void this.#launchApp(app.id),
-            }, "▶ Open"),
+              onclick: () => void this.runApp(app.id),
+            }, "Open"),
             app.triggerCount > 0
               ? el("button", {
                   type: "button",
@@ -235,17 +246,124 @@ export class AppsPage {
     );
   }
 
-  async #launchApp(appId: string): Promise<void> {
+  async runApp(appId: string): Promise<void> {
     try {
       const details = await api<AppDetails>(`/api/apps/${encodeURIComponent(appId)}`);
-      if (details.surface) {
-        this.close();
-        this.#openSurfaceInCanvas(details.surface, details.manifest.name);
-      } else {
-        alert(`App '${details.manifest.name}' is running in worker pool. No interactive surface declared.`);
-      }
+      this.#activeApp = details;
+      this.#renderRunnerView(details);
     } catch (err) {
-      alert(`Failed to launch app: ${(err as Error).message}`);
+      alert(`Could not launch app: ${(err as Error).message}`);
+    }
+  }
+
+  #closeActiveApp(): void {
+    this.#activeApp = null;
+    this.#activeStore = null;
+    this.#renderCatalogShell();
+    void this.refresh();
+  }
+
+  #renderRunnerView(app: AppDetails): void {
+    const isRunning = app.isRunning;
+
+    const back = el("button", {
+      type: "button",
+      className: "quiet back",
+      onclick: () => this.#closeActiveApp(),
+      title: "Back to applications catalog",
+    }, icon("arrow", 15), document.createTextNode(" Back to apps"));
+
+    const pollBtn = el("button", {
+      type: "button",
+      className: "ghost small",
+      onclick: () => void this.#runTrigger(app.manifest.id),
+      title: "Trigger scheduled background action",
+    }, icon("clock", 13), document.createTextNode(" Run Poll"));
+
+    const consoleBtn = el("button", {
+      type: "button",
+      className: "ghost small",
+      onclick: () => void openAdminConsole(),
+      title: "Open Fleet Console (⌘⇧A)",
+    }, icon("sliders", 13), document.createTextNode(" Fleet Console"));
+
+    const header = el("div", { className: "app-runner-top", "data-tauri-drag-region": "" },
+      back,
+      el("div", { className: "app-runner-head-info" },
+        el("span", { className: "app-runner-icon" }, icon(app.manifest.category === "finance" ? "chart" : "cpu", 20)),
+        el("h1", { className: "app-runner-name", textContent: app.manifest.name }),
+        el("span", { className: `app-status ${isRunning ? "live" : ""}`, textContent: isRunning ? "Running" : "Idle" })
+      ),
+      el("div", { className: "app-runner-actions" }, pollBtn, consoleBtn)
+    );
+
+    const surfaceMount = el("div", { className: "app-runner-content" });
+
+    this.#page.replaceChildren(header, surfaceMount);
+
+    if (app.surface) {
+      const store = new SurfaceStore(basicCatalog);
+      this.#activeStore = store;
+      const rawSnap = app.surface as unknown as SurfaceSnapshot;
+      const snapshot: SurfaceSnapshot = {
+        id: rawSnap.id || app.manifest.id,
+        title: rawSnap.title || app.manifest.name,
+        version: rawSnap.version ?? 1,
+        data: rawSnap.data ?? {},
+        nodes: Array.isArray(rawSnap.nodes) ? rawSnap.nodes : [],
+      };
+      store.load(snapshot);
+
+      const surfaceEl = document.createElement("vak-surface") as VakSurfaceElement;
+      surfaceEl.mediaResolver = resolveMedia;
+      surfaceMode(surfaceEl);
+      surfaceEl.attach(store, snapshot.id);
+
+      surfaceEl.addEventListener("vak-change", async (e: Event) => {
+        const detail = (e as CustomEvent<{ surface: string; path: string; value: unknown }>).detail;
+        try {
+          const res = await api<{ patches?: any[] }>(`/api/apps/${encodeURIComponent(app.manifest.id)}/action`, {
+            method: "POST",
+            body: JSON.stringify({
+              controlId: detail.path.replace(/^\//, ""),
+              value: detail.value,
+            }),
+          });
+          if (res && Array.isArray(res.patches)) {
+            store.update({ surface: snapshot.id, nodes: res.patches });
+            surfaceEl.refresh();
+          }
+        } catch (err) {
+          console.warn("App change dispatch failed:", err);
+        }
+      });
+
+      surfaceEl.addEventListener("vak-action", async (e: Event) => {
+        const detail = (e as CustomEvent<VakActionDetail>).detail;
+        try {
+          const res = await api<{ patches?: any[] }>(`/api/apps/${encodeURIComponent(app.manifest.id)}/action`, {
+            method: "POST",
+            body: JSON.stringify({
+              action: detail.action?.action ?? "click",
+              controlId: detail.action?.source,
+              value: detail.action?.data ?? detail.data,
+            }),
+          });
+          if (res && Array.isArray(res.patches)) {
+            store.update({ surface: snapshot.id, nodes: res.patches });
+            surfaceEl.refresh();
+          }
+        } catch (err) {
+          console.warn("App action dispatch failed:", err);
+        }
+      });
+
+      surfaceMount.append(surfaceEl);
+    } else {
+      surfaceMount.append(el("div", { className: "artifact-empty" },
+        el("h2", { textContent: "No interactive surface declared" }),
+        el("p", { textContent: "This application runs as a background process daemon without a visual canvas." })
+      ));
     }
   }
 
@@ -257,15 +375,20 @@ export class AppsPage {
         `/api/apps/${encodeURIComponent(appId)}/triggers/${encodeURIComponent(triggerId)}/run`,
         { method: "POST" }
       );
-      alert(`Trigger '${res.action}' executed successfully in ${res.durationMs}ms`);
-      await this.refresh();
+      alert(`Trigger '${res.action}' executed in ${res.durationMs}ms`);
+      if (this.#activeApp && this.#activeApp.manifest.id === appId) {
+        const updated = await api<AppDetails>(`/api/apps/${encodeURIComponent(appId)}`);
+        this.#activeApp = updated;
+      } else {
+        await this.refresh();
+      }
     } catch (err) {
-      alert(`Failed to run trigger: ${(err as Error).message}`);
+      alert(`Trigger failed: ${(err as Error).message}`);
     }
   }
 
   async #deleteApp(appId: string, appName: string): Promise<void> {
-    if (!confirm(`Are you sure you want to delete '${appName}' and its persistent data volume?`)) {
+    if (!confirm(`Are you sure you want to delete '${appName}'?`)) {
       return;
     }
     try {
@@ -306,46 +429,106 @@ export class AppsPage {
             },
             triggers: [
               {
-                id: "market-poll",
+                id: "recalculate-risk",
                 kind: "cron",
                 expression: "*/5 * * * *",
-                action: "pollMarket",
+                action: "recalculateMetrics",
                 maxDurationSec: 30,
               },
             ],
           },
           files: {
-            "server.ts": "// Application logic\nconsole.log('Portfolio Risk Monitor online');\n",
+            "server.ts": `export function computePortfolioVaR(portfolioValue: number, confidenceLevel: number, volatility: number, timeHorizonDays = 1): number {
+  const z = confidenceLevel >= 0.99 ? 2.326 : 1.645;
+  return portfolioValue * z * volatility * Math.sqrt(timeHorizonDays);
+}
+export function rebalanceWeights(riskTolerance: number): number[] {
+  const norm = Math.max(0, Math.min(100, riskTolerance)) / 100;
+  const equities = Math.round(20 + 60 * norm);
+  const bonds = Math.round(50 - 35 * norm);
+  const commodities = Math.round(15 - 5 * norm);
+  const cash = 100 - (equities + bonds + commodities);
+  return [equities, bonds, commodities, cash];
+}
+export function handleAction(controlId: string, value: unknown): Record<string, unknown> {
+  const riskTolerance = typeof value === "number" ? value : 65;
+  const weights = rebalanceWeights(riskTolerance);
+  const portfolioVal = 124500;
+  const annualizedVol = 0.08 + (weights[0] / 100) * 0.14;
+  const dailyVol = annualizedVol / Math.sqrt(252);
+  const var95 = computePortfolioVaR(portfolioVal, 0.95, dailyVol, 1);
+  const expectedReturn = (4.0 + (weights[0] / 100) * 12.0).toFixed(1);
+  const sharpe = ((Number(expectedReturn) - 4.5) / (annualizedVol * 100)).toFixed(2);
+  return {
+    op: "batch_update",
+    controlId,
+    value,
+    patches: [
+      { id: "card-var-95", props: { value: "$" + var95.toFixed(2) } },
+      { id: "card-expected-return", props: { value: expectedReturn + "%" } },
+      { id: "card-sharpe", props: { value: sharpe } },
+      { id: "chart-section", props: { series: [{ name: "Allocation %", values: weights }] } }
+    ]
+  };
+}
+`,
             "surface.json": JSON.stringify({
-              id: "portfolio-risk-surface",
+              id: "portfolio-risk-dashboard",
               version: 1,
-              title: "Portfolio Risk Monitor",
+              title: "Portfolio Risk & Quantitative Analysis",
+              data: { riskTolerance: 65 },
               nodes: [
                 {
-                  id: "exec-strip",
-                  type: "grid",
-                  props: { columns: 3 },
-                  children: [
-                    { id: "var95", type: "metric", props: { label: "1-Day VaR (95%)", value: "$41,122", tone: "caution" } },
-                    { id: "var99", type: "metric", props: { label: "1-Day VaR (99%)", value: "$58,157", tone: "critical" } },
-                    { id: "sharpe", type: "metric", props: { label: "Sharpe Ratio", value: "1.84", tone: "positive" } },
-                  ],
+                  id: "root",
+                  type: "stack",
+                  props: { direction: "vertical", gap: 16 },
+                  children: ["kpi-metrics", "controls-section", "chart-section"],
                 },
                 {
-                  id: "allocation-table",
-                  type: "table",
+                  id: "kpi-metrics",
+                  type: "grid",
+                  props: { columns: 4, gap: 12 },
+                  children: ["card-total-val", "card-var-95", "card-sharpe", "card-expected-return"],
+                },
+                {
+                  id: "card-total-val",
+                  type: "stat",
+                  props: { label: "Portfolio Value", value: "$124,500.00", delta: "+4.2%" },
+                },
+                {
+                  id: "card-var-95",
+                  type: "stat",
+                  props: { label: "Value-at-Risk (95% 1-Day)", value: "$2,850.00", tone: "warn" },
+                },
+                {
+                  id: "card-sharpe",
+                  type: "stat",
+                  props: { label: "Sharpe Ratio", value: "1.84", tone: "positive" },
+                },
+                {
+                  id: "card-expected-return",
+                  type: "stat",
+                  props: { label: "Expected Annual Return", value: "14.2%" },
+                },
+                {
+                  id: "controls-section",
+                  type: "card",
+                  props: { title: "Interactive Risk Sensitivity" },
+                  children: ["slider-risk-tolerance"],
+                },
+                {
+                  id: "slider-risk-tolerance",
+                  type: "slider",
+                  props: { label: "Risk Tolerance Level", min: 0, max: 100, value: 65, step: 5, bind: "/riskTolerance" },
+                },
+                {
+                  id: "chart-section",
+                  type: "chart",
                   props: {
-                    columns: [
-                      { key: "asset", label: "Asset Class" },
-                      { key: "weight", label: "Weight" },
-                      { key: "value", label: "Market Value" },
-                    ],
-                    data: [
-                      { asset: "US Equities (S&P 500)", weight: "45%", value: "$450,000" },
-                      { asset: "Global Equities (MSCI World)", weight: "25%", value: "$250,000" },
-                      { asset: "US Treasuries (7-10 Year)", weight: "20%", value: "$200,000" },
-                      { asset: "Alternative Assets / Cash", weight: "10%", value: "$100,000" },
-                    ],
+                    kind: "donut",
+                    title: "Asset Allocation Weights",
+                    labels: ["US Large Cap Equities", "Govt Bonds", "Gold / Commodities", "Cash Reserves"],
+                    series: [{ name: "Allocation %", values: [55, 25, 12, 8] }],
                   },
                 },
               ],

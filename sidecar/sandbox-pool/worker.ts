@@ -84,7 +84,7 @@ const rl = readline.createInterface({
   terminal: false,
 });
 
-rl.on("line", (line) => {
+rl.on("line", async (line) => {
   const msg = decodeIpcMessage(line);
   if (!msg) return;
 
@@ -159,17 +159,40 @@ rl.on("line", (line) => {
         stateData[controlId] = value;
         flushStateToDisk();
       }
-      // Emit reactive surface patch back to Canvas
+
+      let patchPayload: Record<string, unknown> = {
+        op: "update",
+        controlId,
+        value,
+        updatedAt: new Date().toISOString(),
+      };
+
+      // If the app workspace has a server entrypoint, dynamically invoke handleAction
+      if (workspaceDir) {
+        try {
+          const entryTs = path.join(workspaceDir, "server.ts");
+          const entryMjs = path.join(workspaceDir, "server.mjs");
+          const entryJs = path.join(workspaceDir, "server.js");
+          const targetEntry = existsSync(entryTs) ? entryTs : existsSync(entryMjs) ? entryMjs : existsSync(entryJs) ? entryJs : null;
+          if (targetEntry) {
+            const mod = await import(`file://${targetEntry}?t=${Date.now()}`);
+            if (typeof mod.handleAction === "function") {
+              const res = mod.handleAction(controlId, value);
+              if (res && typeof res === "object") {
+                patchPayload = res;
+              }
+            }
+          }
+        } catch (err) {
+          emitLog("warn", `Application handleAction error: ${(err as Error).message}`);
+        }
+      }
+
       send({
         id: msg.id,
         type: "surface_patch",
         tenantId: tenantId ?? undefined,
-        payload: {
-          op: "update",
-          controlId,
-          value,
-          updatedAt: new Date().toISOString(),
-        },
+        payload: patchPayload,
       });
       break;
     }

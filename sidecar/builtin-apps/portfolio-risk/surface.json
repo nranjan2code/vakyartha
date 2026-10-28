@@ -1,5 +1,14 @@
 {
+  "id": "portfolio-risk-dashboard",
   "title": "Portfolio Risk & Quantitative Analysis",
+  "version": 1,
+  "data": {
+    "riskTolerance": 65,
+    "portfolioValue": "$124,500.00",
+    "var95": "$2,850.00",
+    "sharpe": "1.84",
+    "expectedReturn": "14.2%"
+  },
   "nodes": [
     {
       "id": "root",
@@ -15,22 +24,22 @@
     },
     {
       "id": "card-total-val",
-      "type": "metric",
+      "type": "stat",
       "props": { "label": "Portfolio Value", "value": "$124,500.00", "delta": "+4.2%" }
     },
     {
       "id": "card-var-95",
-      "type": "metric",
-      "props": { "label": "Value-at-Risk (95% 1-Day)", "value": "$2,850.00", "status": "warn" }
+      "type": "stat",
+      "props": { "label": "Value-at-Risk (95% 1-Day)", "value": "$2,850.00", "tone": "warn" }
     },
     {
       "id": "card-sharpe",
-      "type": "metric",
-      "props": { "label": "Sharpe Ratio", "value": "1.84", "status": "ok" }
+      "type": "stat",
+      "props": { "label": "Sharpe Ratio", "value": "1.84", "tone": "positive" }
     },
     {
       "id": "card-expected-return",
-      "type": "metric",
+      "type": "stat",
       "props": { "label": "Expected Annual Return", "value": "14.2%" }
     },
     {
@@ -42,7 +51,7 @@
     {
       "id": "slider-risk-tolerance",
       "type": "slider",
-      "props": { "label": "Risk Tolerance Level", "min": 0, "max": 100, "value": 65, "step": 5 }
+      "props": { "label": "Risk Tolerance Level", "min": 0, "max": 100, "value": 65, "step": 5, "bind": "/riskTolerance" }
     },
     {
       "id": "chart-section",
@@ -56,4 +65,3 @@
     }
   ]
 }
-
