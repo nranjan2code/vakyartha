@@ -998,6 +998,15 @@ window.addEventListener("vak:apps-closed", () => {
     setTopNavActive("chats");
   }
 });
+window.addEventListener("vak:run-app", (e) => {
+  const appId = (e as CustomEvent<string>).detail;
+  if (typeof appId === "string") {
+    void (async () => {
+      await switchNavTab("apps");
+      await appsPage.runApp(appId);
+    })();
+  }
+});
 
 window.addEventListener("vak:schedule-opened", () => {
   artifacts.close(false, false);

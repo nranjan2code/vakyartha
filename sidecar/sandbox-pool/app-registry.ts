@@ -239,20 +239,69 @@ export class AppRegistry {
     return this.getApp(manifest.id)!;
   }
 
-  async deleteApp(id: string): Promise<boolean> {
-    const app = this.apps.get(id);
-    if (!app) return false;
+  async updateApp(id: string, manifestRaw: unknown, files: Record<string, string> = {}): Promise<AppDetails> {
+    const existing = this.apps.get(id);
+    if (!existing) throw new Error(`App '${id}' not found`);
 
-    // Hibernate and terminate slot if active
+    const merged = (typeof manifestRaw === "object" && manifestRaw !== null)
+      ? { ...existing, ...manifestRaw, id }
+      : existing;
+    const manifest = parseAppManifest(merged);
+    const appDir = this.appDirs.get(id) ?? path.join(this.appsDir, id);
+    mkdirSync(appDir, { recursive: true });
+
+    // Hibernate running worker slot so next action runs against updated code
     const snapshot = this.pool.getFleetSnapshot();
     const slot = snapshot.slots.find((s) => s.tenantId === id);
     if (slot) {
       await this.pool.hibernate(slot.slotId);
     }
 
+    // Write updated manifest
+    writeFileSync(path.join(appDir, "app.json"), JSON.stringify(manifest, null, 2), "utf8");
+
+    // Write updated files
+    for (const [relPath, content] of Object.entries(files)) {
+      const target = path.join(appDir, relPath);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, content, "utf8");
+    }
+
+    this.apps.set(id, manifest);
+    this.appDirs.set(id, appDir);
+    return this.getApp(id)!;
+  }
+
+  async deleteApp(id: string): Promise<boolean> {
+    // Hibernate and terminate slot if active
+    const snapshot = this.pool.getFleetSnapshot();
+    const slot = snapshot.slots.find((s) => s.tenantId === id);
+    if (slot) {
+      try {
+        await this.pool.hibernate(slot.slotId);
+      } catch (err) {
+        console.warn(`[AppRegistry] Hibernate failed during delete for slot ${slot.slotId}:`, err);
+      }
+    }
+
+    // Purge from pool hibernated tenants if present
+    if ("hibernatedTenants" in (this.pool as any)) {
+      (this.pool as any).hibernatedTenants.delete(id);
+    }
+
     const appDir = this.appDirs.get(id) ?? path.join(this.appsDir, id);
     if (existsSync(appDir)) {
-      rmSync(appDir, { recursive: true, force: true });
+      try {
+        rmSync(appDir, { recursive: true, force: true });
+      } catch (err) {
+        console.warn(`[AppRegistry] rmSync failed for ${appDir}:`, err);
+      }
+    }
+    const defaultDir = path.join(this.appsDir, id);
+    if (defaultDir !== appDir && existsSync(defaultDir)) {
+      try {
+        rmSync(defaultDir, { recursive: true, force: true });
+      } catch {}
     }
 
     this.apps.delete(id);

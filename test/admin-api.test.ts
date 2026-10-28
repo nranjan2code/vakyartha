@@ -176,6 +176,30 @@ test("admin and hosted apps HTTP APIs manage real sandboxed worker lifecycle end
   const wakeData = await wakeRes.json();
   assert.equal(wakeData.status, "reconciled");
 
+  // 9.5 PUT /api/apps/portfolio-risk - update app version & surface
+  const updateRes = await app.request(
+    new Request("http://localhost/api/apps/portfolio-risk", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        manifest: {
+          name: "Portfolio Risk Monitor (Updated)",
+          version: "1.0.1",
+        },
+        files: {
+          "surface.json": JSON.stringify({
+            title: "Portfolio Risk Updated",
+            nodes: [{ id: "root", type: "metric", props: { label: "VaR", value: "3.5%" } }],
+          }),
+        },
+      }),
+    })
+  );
+  assert.equal(updateRes.status, 200);
+  const updatedAppData = await updateRes.json();
+  assert.equal(updatedAppData.manifest.version, "1.0.1");
+  assert.equal(updatedAppData.manifest.name, "Portfolio Risk Monitor (Updated)");
+
   // 10. DELETE /api/apps/portfolio-risk - uninstall app
   const deleteRes = await app.request(
     new Request("http://localhost/api/apps/portfolio-risk", { method: "DELETE" })

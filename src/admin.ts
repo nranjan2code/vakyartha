@@ -29,6 +29,33 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<Respon
   return engineFetch(targetUrl, { ...options, headers });
 }
 
+function ask(text: string, ok = "Continue"): Promise<boolean> {
+  const dialog = document.getElementById("ask") as HTMLDialogElement | null;
+  if (!dialog) return Promise.resolve(true);
+  const textEl = document.getElementById("ask-text");
+  const okBtn = document.getElementById("ask-ok") as HTMLButtonElement | null;
+  if (textEl) textEl.textContent = text;
+  if (okBtn) okBtn.textContent = ok;
+  dialog.returnValue = "";
+  dialog.showModal();
+  return new Promise((resolve) =>
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "yes"), { once: true })
+  );
+}
+
+let notifyTimer: ReturnType<typeof setTimeout> | undefined;
+function notify(message: string, isError = false): void {
+  const status = document.getElementById("admin-connection-status");
+  if (!status) return;
+  clearTimeout(notifyTimer);
+  status.textContent = message;
+  status.className = `admin-badge ${isError ? "disconnected" : "live"}`;
+  notifyTimer = setTimeout(() => {
+    status.textContent = "Connected";
+    status.className = "admin-badge live";
+  }, 3500);
+}
+
 async function streamSse(
   path: string,
   onMessage: (data: string) => void,
@@ -185,7 +212,7 @@ function renderFleet(fleet: FleetSnapshot): void {
         });
         await refreshFleet();
       } catch (err) {
-        alert(`Failed to hibernate slot: ${(err as Error).message}`);
+        notify(`Failed to hibernate slot: ${(err as Error).message}`, true);
         btn.removeAttribute("disabled");
         btn.textContent = "Hibernate";
       }
@@ -257,11 +284,11 @@ function renderAppsTable(apps: AppSummary[]): void {
           method: "POST",
         });
         const out = await res.json();
-        alert(`Trigger '${out.action}' executed successfully in ${out.durationMs}ms`);
+        notify(`Trigger '${out.action}' executed in ${out.durationMs}ms`);
         await refreshApps();
         await refreshFleet();
       } catch (err) {
-        alert(`Failed to execute trigger: ${(err as Error).message}`);
+        notify(`Failed to execute trigger: ${(err as Error).message}`, true);
       } finally {
         btn.textContent = "Run Poll";
       }
@@ -271,15 +298,17 @@ function renderAppsTable(apps: AppSummary[]): void {
   tbody.querySelectorAll('button[data-action="uninstall-app"]').forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-id");
-      if (!id || !confirm(`Are you sure you want to delete application '${id}' and its persistent data volume?`)) {
-        return;
-      }
+      if (!id) return;
+      const ok = await ask(`Are you sure you want to delete application '${id}' and its persistent data volume?`, "Delete");
+      if (!ok) return;
       try {
+        notify(`Deleting application '${id}'…`);
         await apiFetch(`/api/apps/${encodeURIComponent(id)}`, { method: "DELETE" });
+        notify(`Application '${id}' deleted`);
         await refreshApps();
         await refreshFleet();
       } catch (err) {
-        alert(`Failed to delete application: ${(err as Error).message}`);
+        notify(`Failed to delete application: ${(err as Error).message}`, true);
       }
     });
   });
@@ -422,19 +451,20 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   document.getElementById("admin-restart-pool-btn")?.addEventListener("click", async () => {
-    if (!confirm("Are you sure you want to restart the sandbox worker pool? Active slots will be gracefully flushed.")) {
-      return;
-    }
+    const ok = await ask("Are you sure you want to restart the sandbox worker pool? Active slots will be gracefully flushed.", "Restart Pool");
+    if (!ok) return;
     try {
       await apiFetch("/api/admin/fleet/restart", { method: "POST" });
+      notify("Worker pool restarted successfully");
       await refreshFleet();
     } catch (err) {
-      alert(`Failed to restart worker pool: ${(err as Error).message}`);
+      notify(`Failed to restart worker pool: ${(err as Error).message}`, true);
     }
   });
 
   document.getElementById("install-app-btn")?.addEventListener("click", async () => {
     try {
+      notify("Installing Reference App…");
       const res = await apiFetch("/api/apps", {
         method: "POST",
         body: JSON.stringify({
@@ -481,15 +511,15 @@ window.addEventListener("DOMContentLoaded", async () => {
         }),
       });
       if (res.ok) {
-        alert("Portfolio Risk Monitor reference application installed successfully!");
+        notify("Portfolio Risk Monitor installed successfully!");
         await refreshApps();
         await refreshFleet();
       } else {
         const err = await res.json();
-        alert(`Failed to install app: ${err.error || res.status}`);
+        notify(`Failed to install app: ${err.error || res.status}`, true);
       }
     } catch (err) {
-      alert(`Installation error: ${(err as Error).message}`);
+      notify(`Installation error: ${(err as Error).message}`, true);
     }
   });
 

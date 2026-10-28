@@ -349,6 +349,20 @@ body.collapsed .canvas-expanded .canvas-head { padding-left: 84px; }
 .drag { display: none; }
 .icon-btn { display: grid; place-items: center; width: 30px; height: 28px; border: 0; border-radius: 7px; background: none; color: var(--muted); cursor: pointer; }
 .icon-btn:hover { background: var(--hover); color: var(--fg); }
+.icon-btn.deployed { color: var(--accent); }
+.icon-btn.deployed:hover { color: var(--accent); background: var(--hover); }
+.icon-btn.needs-update { position: relative; color: var(--accent); }
+.icon-btn.needs-update::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--panel);
+}
 /* The expand button sits right of the macOS traffic lights, only while the sidebar is hidden. */
 #expand { display: none; }
 body.collapsed #expand { display: grid; }
@@ -375,6 +389,7 @@ body.collapsed .artifacts-sidebar { display: grid; margin-left: 58px; }
 .artifact-filter:hover { background: var(--hover); }
 .artifact-filter[aria-pressed="true"] { border-color: var(--border); background: var(--panel); color: var(--fg); box-shadow: 0 1px 2px var(--shadow); }
 .artifacts-results { color: var(--muted); font-size: .76rem; margin-bottom: 12px; }
+.artifacts-results.error { color: var(--danger); }
 .artifacts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(225px, 100%), 1fr)); gap: 18px; }
 .artifact-card { min-width: 0; padding: 0; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--panel); text-align: left; cursor: pointer; transition: border-color 120ms, box-shadow 120ms; }
 .artifact-card:hover, .artifact-card:focus-visible { border-color: var(--accent); box-shadow: 0 5px 18px var(--shadow); }

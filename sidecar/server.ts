@@ -650,6 +650,18 @@ ${skills.index()}`;
           json(res, 200, app);
           return true;
         }
+        if (req.method === "PUT") {
+          const body = await readJson(req);
+          if (!body || typeof body !== "object") {
+            json(res, 400, { error: "Request body must be an object" });
+            return true;
+          }
+          const manifest = ("manifest" in body && typeof body.manifest === "object") ? body.manifest : body;
+          const files = ("files" in body && typeof body.files === "object" && body.files !== null) ? body.files as Record<string, string> : undefined;
+          const app = await apps.updateApp(id, manifest as any, files);
+          json(res, 200, app);
+          return true;
+        }
         if (req.method === "DELETE") {
           await apps.deleteApp(id);
           json(res, 200, { ok: true, id });

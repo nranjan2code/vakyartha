@@ -1,7 +1,7 @@
 // Sandboxed Dynamic Applications Workbench Page.
 // Manages application lifecycle in isolated child runtimes with dedicated full-view execution.
 
-import { $, api, el } from "./core.ts";
+import { $, api, ask, el } from "./core.ts";
 import { icon } from "./icons.ts";
 import { openAdminConsole } from "./backend.ts";
 import { basicCatalog, type SurfaceSnapshot, SurfaceStore } from "@vak/core";
@@ -24,6 +24,7 @@ export class AppsPage {
   #activeStore: SurfaceStore | null = null;
   #toggleSidebar: () => void;
   #onClose?: () => void;
+  #feedbackTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     toggleSidebar: () => void,
@@ -55,6 +56,12 @@ export class AppsPage {
     });
 
     window.addEventListener("vak:app-installed", () => {
+      if (!this.#page.hidden && !this.#activeApp) void this.refresh();
+    });
+    window.addEventListener("vak:app-updated", () => {
+      if (!this.#page.hidden && !this.#activeApp) void this.refresh();
+    });
+    window.addEventListener("vak:app-deleted", () => {
       if (!this.#page.hidden && !this.#activeApp) void this.refresh();
     });
   }
@@ -244,13 +251,25 @@ export class AppsPage {
     );
   }
 
+  #feedback(message: string, isError = false): void {
+    const resultsEl = document.getElementById("apps-results");
+    if (!resultsEl) return;
+    clearTimeout(this.#feedbackTimer);
+    resultsEl.textContent = message;
+    resultsEl.classList.toggle("error", isError);
+    this.#feedbackTimer = setTimeout(() => {
+      resultsEl.classList.remove("error");
+      this.#renderGrid();
+    }, 3500);
+  }
+
   async runApp(appId: string): Promise<void> {
     try {
       const details = await api<AppDetails>(`/api/apps/${encodeURIComponent(appId)}`);
       this.#activeApp = details;
       this.#renderRunnerView(details);
     } catch (err) {
-      alert(`Could not launch app: ${(err as Error).message}`);
+      this.#feedback(`Could not launch app: ${(err as Error).message}`, true);
     }
   }
 
@@ -368,13 +387,14 @@ export class AppsPage {
 
   async #runTrigger(appId: string): Promise<void> {
     try {
+      this.#feedback("Running background poll…");
       const details = await api<AppDetails>(`/api/apps/${encodeURIComponent(appId)}`);
       const triggerId = details.manifest.triggers[0]?.id ?? "market-poll";
       const res = await api<{ ok: boolean; action: string; durationMs: number }>(
         `/api/apps/${encodeURIComponent(appId)}/triggers/${encodeURIComponent(triggerId)}/run`,
         { method: "POST" }
       );
-      alert(`Trigger '${res.action}' executed in ${res.durationMs}ms`);
+      this.#feedback(`Trigger '${res.action}' executed in ${res.durationMs}ms`);
       if (this.#activeApp && this.#activeApp.manifest.id === appId) {
         const updated = await api<AppDetails>(`/api/apps/${encodeURIComponent(appId)}`);
         this.#activeApp = updated;
@@ -382,24 +402,28 @@ export class AppsPage {
         await this.refresh();
       }
     } catch (err) {
-      alert(`Trigger failed: ${(err as Error).message}`);
+      this.#feedback(`Trigger failed: ${(err as Error).message}`, true);
     }
   }
 
   async #deleteApp(appId: string, appName: string): Promise<void> {
-    if (!confirm(`Are you sure you want to delete '${appName}'?`)) {
-      return;
-    }
+    const ok = await ask(`Are you sure you want to delete application “${appName}” and its persistent data volume?`, "Delete");
+    if (!ok) return;
+
     try {
+      this.#feedback(`Deleting “${appName}”…`);
       await api(`/api/apps/${encodeURIComponent(appId)}`, { method: "DELETE" });
+      window.dispatchEvent(new CustomEvent("vak:app-deleted", { detail: appId }));
       await this.refresh();
+      this.#feedback(`Deleted “${appName}”`);
     } catch (err) {
-      alert(`Delete failed: ${(err as Error).message}`);
+      this.#feedback(`Delete failed: ${(err as Error).message}`, true);
     }
   }
 
   async #installDefaultApp(): Promise<void> {
     try {
+      this.#feedback("Installing Reference App…");
       await api("/api/apps", {
         method: "POST",
         body: JSON.stringify({
@@ -536,8 +560,9 @@ export function handleAction(controlId: string, value: unknown): Record<string, 
         }),
       });
       await this.refresh();
+      this.#feedback("Installed Reference App");
     } catch (err) {
-      alert(`Install failed: ${(err as Error).message}`);
+      this.#feedback(`Install failed: ${(err as Error).message}`, true);
     }
   }
 }
