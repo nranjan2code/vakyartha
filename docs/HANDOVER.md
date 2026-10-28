@@ -37,26 +37,37 @@ A complete, enterprise-grade **Multi-Tenant Pooled Sandbox Runtime** and **Dynam
   - Cargo tests pass (`cargo test --manifest-path src-tauri/Cargo.toml --lib`: 3 passed, 0 failed). Zero secret leaks.
   - Real WebKit smokes pass: `canvas-check.ts` (1100px, 620px). Zero mocks or stubs.
 
-## Skill Studio: Interactive Authoring, Draft Lifecycle & YOLO Co-Pilot — 2026-10-28
+## Unified Creator Studio: Hub, Flow DAG, Multi-Tab Multitasking & Draft Lifecycle — 2026-10-28
 
-A complete, production-grade **Skill Studio** workbench has been built and integrated into Vakyartha, fulfilling the full Agent Skills specification (`SKILL.md` + supporting schemas, references, scripts, tests) with deep native integration into Projection canvas staging, sandbox rehearsals, and smart co-pilot assistance:
-- **Persistent Draft vs. Publish Lifecycle**:
-  - Authors can craft, iterate, and refine skills across days without risking disruption to the live assistant.
-  - Drafts are quarantined in `<dataDir>/skills/.drafts/<name>/`. Because the runtime's skill discovery strictly ignores dot-prefixed directories, unpublished drafts never reach the live assistant.
-  - Dedicated toolbar status indicator (`Draft · Unpublished (time)` vs `Live / Published`), with explicit `Save Draft`, `Discard Draft` (reverts to published package), and `⚡ Publish Skill` (promotes draft to active runtime and refreshes installed lists).
-  - Unsaved-changes protection prompts before navigating away.
-- **Three-Column Adaptive Workbench**:
-  - *Left Column*: Complete package file explorer (`SKILL.md`, `references/`, `schemas/`, `scripts/`, `tests/`), file size calculation, Add/Delete files, Smart Co-Pilot Suggestions (trigger optimizer, chart recommendation, auto-binding, tool detector, voice gist proposer), and Test Scenarios runner with `use_skill` selection gate results.
-  - *Center Column*: Segmented modes for **Visual Spec** (form fields with frontmatter extraction, allowed-tools quick-select chips, liquid instructions editor), **Raw Code Editor** (plain text/source editor for any file in package), and **⚡ YOLO Co-Pilot** (natural language prompt generating complete multi-file packages).
-  - *Right Column*: Live interactive canvas staging with responsive viewport selectors (`320px Mobile`, `720px Medium`, `960px Grid`, `Full Width`), mounted `<vak-surface>` using `SurfaceStore(basicCatalog)`, Surface Design Linter (enforcing aspect ratio clamps, semantic color tokens, and standard chart kinds), Dual Spoken Projection preview (`lowerSurface` + `projectText` with audio playback), and disposable `vak-sandbox` script execution runner.
-- **Integration Points**:
-  - Settings → Skills includes a `Skill Studio…` action bar button, `Draft` status badge on card footers, and direct `Skill Studio` deep-link on installed skill detail views.
+A complete, production-grade **Creator Studio** workbench has been built and integrated into Vakyartha, fulfilling the full Agent Skills specification (`SKILL.md` + supporting schemas, references, scripts, tests) and Sandboxed Dynamic Applications (`app.json`, `server.ts`, `surface.json`):
+- **Studio Hub & Multitasking**:
+  - Direct entry from the sidebar (`✨ Studio`) and Settings → Skills opens the Creator Hub overview.
+  - Non-destructive context switching allows navigating between active studio packages and ongoing chat turns without losing state, open files, or cursor positions.
+  - Multi-package catalog lists skills, sandboxed apps, active drafts, and dedicated creators (`+ New Skill`, `+ New Sandboxed App`).
+- **Continuous Background Auto-Save & Quarantine Lifecycle**:
+  - Debounced auto-save (800ms) continuously persists drafts to `<dataDir>/skills/.drafts/<name>/` (`PUT /api/skills/:name/draft`).
+  - Navigating between app tabs immediately flushes pending auto-saves to disk.
+  - Toolbar status indicators show real-time draft state (`Draft auto-saved (time)` vs `Live / Published`), with explicit `Save Draft`, `Discard Draft` (reverts to published package), and `Publish Skill` (promotes draft to active runtime).
+- **Interactive Flow DAG (Directed Acyclic Graph)**:
+  - Visual node-based graph mapping execution flow:
+    - *For Skills*: `User Intent` ➔ `use_skill Gate` ➔ `Allowed Tools & Sandbox` ➔ `Chained Skills` ➔ `Canonical /records` ➔ `3-Tier Surface` ➔ `Dual Spoken TTS`.
+    - *For Sandboxed Apps*: `Cron / Action Triggers` ➔ `Isolated Worker (server.ts)` ➔ `App Storage (SQLite)` ➔ `Canvas Projection (surface.json)`.
+  - SVG cubic bezier curves, node status badges, and interactive inspector drawer on node selection.
+- **Spec & Code Editor**:
+  - Vertical stacked form fields (name, description with live 1024-character counter, allowed-tools tokens) and tab-indented monospace code editor.
+  - Full support for multi-file packages (`schemas/`, `references/`, `scripts/`, `assets/`, `tests/`) and sandboxed apps (`app.json`, `server.ts`, `surface.json`).
+- **Live Canvas Staging & Linter**:
+  - Live `<vak-surface>` mounting across responsive container viewports (`320px`, `720px`, `960px`, `100% Fluid`).
+  - Surface Design Linter checks single-chart full-width clamping, flags raw hex colors in favor of semantic tones, and validates the 8 standard chart kinds.
+  - Dual Spoken Voice TTS auditioning via `lowerSurface` and `projectText`.
+- **Sandbox Rehearsal**:
+  - Runs inert scripts and app daemons inside `vak-sandbox` with SHA-256 integrity verification.
+  - Selection gate test suite verifies prompt matching against the provider selection gate (`/api/skills/eval`).
 - **Verification**:
-  - 195 app tests pass (`npm test`).
-  - 398 framework tests pass (`npm run test:framework`).
+  - 211 app tests pass (`npm test`).
+  - 399 framework tests pass (`npm run test:framework`).
   - TypeScript typecheck (`npm run typecheck`) and Vite production bundle (`npm run build`) pass cleanly with 0 errors.
-  - Real WebKit smokes pass: `skills-check.ts` (1100px, 620px, 375px), `canvas-check.ts` (1100px, 620px), and `surface-design-check.ts` (1440px, 1100px, 620px). Zero mocks or stubs. Zero external dependencies added.
-  - Cargo tests pass (`cargo test --manifest-path src-tauri/Cargo.toml --lib`: 3 passed, 0 failed). Zero secret leaks.
+  - Real WebKit smokes pass: `skills-check.ts` (1100px, 620px, 375px), `canvas-check.ts` (1100px, 620px), and `surface-design-check.ts`. Zero mocks or stubs. Zero external dependencies added.
 
 ## Official NSE MCP Integrations & Built-in Skill Package — 2026-10-28
 

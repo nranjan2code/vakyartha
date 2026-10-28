@@ -446,23 +446,29 @@ Accepted. The separate sandbox project owns Realm copies, manifests, locks, comm
 
 Disposable commands and retained Realms have distinct lifetimes. Realm snapshots are durable review manifests, not workspace restore checkpoints. Promotion binds the complete reviewed path list and candidate fingerprint; rollback/recovery also name affected paths. Individual file replacement is atomic; a multi-file operation is journaled and recoverable, not globally atomic to external readers. Managed operations serialize within the canonical store; external editors require conflict checks and must not concurrently edit the same targets. Explicit recovery never replays a command. Exact bounds and remaining platform/resource limits are in [the sandbox contract](sandbox/OVERVIEW.md); evidence and open model gates remain in EVALUATION.md.
 
-## ADR-046: Skill Studio workbench, isolated draft lifecycle and Co-Pilot synthesis (2026-10-28)
+## ADR-046: Unified Studio Workbench, Creator Hub, Flow DAG, and Multi-Tab Draft Lifecycle (2026-10-28)
 
-Accepted. Authoring, inspecting, editing and testing multi-file Agent Skills packages (`SKILL.md`, `references/`, `schemas/`, `scripts/`, `tests/`) belong in a unified, dedicated desktop workbench (`src/skills-studio.ts`) within Settings → Skills.
+Accepted. Authoring, inspecting, editing, and testing multi-file Agent Skills packages (`SKILL.md`, `references/`, `schemas/`, `scripts/`, `tests/`) and Sandboxed Dynamic Applications (`app.json`, `server.ts`, `surface.json`) belong in a unified, dedicated desktop workbench (`src/skills-studio.ts`) accessible directly from the sidebar (`✨ Studio`) and Settings → Skills.
 
-### 1. Isolated Draft vs. Publish Lifecycle
-Authors require the freedom to iterate on, test and refine complex packages over days without risking disruption to live assistant chat turns or task runs. Working drafts are persisted under `<dataDir>/skills/.drafts/<name>/`. Because the runtime's local skill discovery strictly ignores dot-prefixed directories, unpublished drafts are physically quarantined and never reach the live assistant. Studio provides explicit `Save Draft` (`PUT /api/skills/:name/draft`), `Discard Draft` (`DELETE /api/skills/:name/draft`), and `⚡ Publish Skill` (`POST /api/skills/:name/publish`) operations. Navigating away with unsaved edits prompts the author before departure.
+### 1. Studio Hub & Multi-Tab Multitasking
+Clicking Studio opens the Creator Hub overview, presenting installed skills, sandboxed applications, search filtering, and quick creation paths (`+ New Skill`, `+ New Sandboxed App`). When working on an active package, switching away to an ongoing chat turn or New Chat hides the studio page non-destructively without wiping working state, unmounting the editor, or losing cursor position. Re-entering Studio restores the active session immediately.
 
-### 2. Live Canonical Projection Staging & Surface Linter
-The studio mounts a live `<vak-surface>` using `@vak/core`'s `SurfaceStore(basicCatalog)` and updates dynamically as schemas (`schemas/records.json`) or instructions change. Viewport container query toggles (`320px`, `720px`, `960px`, `Full Width`) enforce the 3-Tier liquid layout architecture. A built-in surface linter catches single-chart full-width distortion, hex color abuse, and unsupported chart types. Dual spoken projection simulation computes lowered text (`lowerSurface` + `projectText`) with in-browser TTS audio preview.
+### 2. Debounced Background Auto-Save & Quarantine Lifecycle
+Working drafts are continuously auto-saved in the background (800ms debounce) and physically quarantined under `<dataDir>/skills/.drafts/<name>/` (`PUT /api/skills/:name/draft`). Because runtime discovery ignores dot-prefixed directories, unpublished drafts never reach the live assistant during ordinary turns. Studio provides explicit `Save Draft`, `Discard Draft` (`DELETE /api/skills/:name/draft`), and `Publish Skill` (`POST /api/skills/:name/publish`) operations. Navigating away flushes any pending auto-save immediately.
 
-### 3. Co-Pilot Synthesis & Element Assistance
-An autonomous YOLO package generator (`/api/skills/generate`) synthesizes complete production-ready packages from natural language briefs. Context-aware element suggestions advise on trigger optimization, chart kinds, canonical JSON pointer bindings, MCP tool declarations, voice gists, skill chaining contracts, and domain research references.
+### 3. Interactive Flow DAG (Directed Acyclic Graph)
+Studio provides a visual, interactive DAG view mapping the complete execution and surface projection pipeline:
+- **For Skills**: `User Intent` ──► `use_skill Gate` ──► `Allowed Tools & Sandbox` ──► `Chained Skills` ──► `Canonical /records Store` ──► `3-Tier Canvas Surface` ──► `Dual Spoken Projection`.
+- **For Sandboxed Apps**: `Cron / Action Triggers` ──► `Isolated Worker (server.ts)` ──► `App Storage (SQLite)` ──► `Canvas Projection (surface.json)`.
+Rendered with clean SVG cubic bezier curves, node status badges, and an interactive node inspector drawer.
 
-### 4. Sandbox Rehearsal & Selection Gate Testing
-Inert scripts are tested in disposable, timeout-bounded sandboxes (`POST /api/skills/:name/sandbox-test`) powered by `vak-sandbox`. Test scenarios evaluate prompts against the provider's `use_skill` selection gate (`/api/skills/eval`).
+### 4. Live Canonical Projection Staging & Surface Linter
+The workbench mounts live `<vak-surface>` instances driven by package schemas and records. Viewport container query toggles (`320px`, `720px`, `960px`, `100% Fluid`) enforce the 3-Tier liquid layout architecture. A built-in surface linter validates single-chart full-width clamping, flags raw hex colors in favor of semantic tones (`positive`, `caution`, `critical`, `neutral`), and verifies the 8 standard chart kinds. Dual spoken projection simulation computes lowered text (`lowerSurface` + `projectText`) with in-browser TTS audio preview.
 
-No new runtime boundaries, storage dependencies, or framework modifications are introduced. All styling strictly adheres to Vakyartha CSS design tokens.
+### 5. Sandbox Rehearsal & Selection Gate Testing
+Inert scripts and app servers are rehearsed in disposable, timeout-bounded sandboxes (`POST /api/skills/:name/sandbox-test`) powered by `vak-sandbox` with SHA-256 integrity verification. Test scenarios evaluate prompt matching against the provider's `use_skill` selection gate (`/api/skills/eval`).
+
+No new runtime boundaries or external dependencies are introduced. All styling strictly adheres to Vakyartha CSS design tokens with monochrome SVG glyphs.
 
 
 ## ADR-047: Multi-Tenant Pooled Sandboxed Runtime, Dynamic Hosted Apps & Admin Console (2026-10-28)

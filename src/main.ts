@@ -274,6 +274,7 @@ function clearThread(): void {
 }
 
 function newChat(): void {
+  if (isSkillStudioOpen()) void closeSkillStudio();
   tasksPanel.page.close();
   artifacts.close();
   appsPage.close();
@@ -293,6 +294,7 @@ function newChat(): void {
 
 /** Redraw a saved conversation from its timeline and final surfaces. */
 async function openChat(id: string, keepLibrary = false, redraw = false): Promise<void> {
+  if (isSkillStudioOpen()) void closeSkillStudio();
   tasksPanel.page.close();
   if (!keepLibrary) {
     artifacts.close();
@@ -883,17 +885,8 @@ async function switchNavTab(target: NavTab): Promise<void> {
     $("schedule-page").hidden = true;
     setTopNavActive("studio");
 
-    let skillToOpen: string | undefined = undefined;
-    try {
-      const skills = await api<SkillView[]>("/api/skills");
-      if (skills && skills.length > 0) {
-        const assistant = skills.find((s) => s.name === "assistant");
-        skillToOpen = assistant ? assistant.name : skills[0]?.name;
-      }
-    } catch {}
-
     await openSkillStudio(
-      skillToOpen,
+      undefined,
       async () => {
         setTopNavActive("chats");
         $("workspace").hidden = false;
