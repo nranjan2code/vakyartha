@@ -1,5 +1,24 @@
 # RELEASING.md: Vakyartha
 
+## Canvas liquid layout & multi-surface local install — 2026-10-28
+
+Pushed app `8051560` on `main` pins pushed Projection `479323e`. Following the deep audit of `interactive-ui`, `surface-design`, the 18 built-in canvas skills and multi-surface projection documentation (`docs/SURFACES.md`), a fresh local release build (`npm run desktop:build`) was compiled and installed at `/Applications/Vakyartha.app`.
+
+The build verified clean runtime provenance:
+- App commit: `805156080360f6b13a5eebb98908038a4ef08b1b` (`dirty: false`).
+- Framework pin: `479323e8c7777997cee998e357ec7c59a3aa08fc`.
+- Sandbox binary: `vaksb` commit `89f4d429068f8f571c619b342bb91473cdc10802` (`dirty: false`).
+- Shipped runtime: Node `v24.22.1` (Krypton LTS, Node.js Foundation signed), npm `11.19.1`.
+- Built-in skills: All 32 skill and reference files match `sidecar/builtin-skills` byte-for-byte.
+
+Artifact SHA-256:
+- Native executable: `965b971b68e02e26f35a89b52522b82730da06da20116bef4b687eb76f495a2d`
+- Bundled DMG: `5aca58ac797b1273f3c194113170aca701a131abc771c141fc045fe51c88d716`
+
+The prior application bundle is backed up and recoverable at `/tmp/vakyartha-backup-pre-8051560/Vakyartha.previous.app`. Launch verification confirms both native UI and engine child processes started without errors, and the Telegram bot listener resumed cleanly with local Ollama model `qwen3.5:4b-mlx`. This is a local installation with no new tag or public GitHub release.
+
+
+
 Current work (2026-10-28): the user requested all changes committed/pushed, a fresh build and local installation of the private desktop runtime, live FinOps and functional Sandbox/Realm settings. The new source uses Projection `479323e`; the separate sandbox source must also be pushed and clean before packaging. The final executable-source commits, runtime manifest, full installed bundle comparison and recoverable backup will be recorded below after verification. Older installation records are historical. Failed primary-local model/source/value/interaction outcomes remain open.
 
 
