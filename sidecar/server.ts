@@ -28,6 +28,10 @@ import { voiceRoutes } from "./voice/index.ts";
 import { Media } from "./media/index.ts";
 import { isMediaKind } from "../shared/media.ts";
 import { sandboxHelper, validateSandboxWorkspace } from "./sandbox-status.ts";
+import { generateSkillPackage, suggestSkillElement } from "./skills-copilot.ts";
+import { evaluateSkillPrompts } from "./skills-eval.ts";
+import { runSkillScript } from "./skills-sandbox.ts";
+import type { SkillGenerateRequest, SkillSuggestRequest } from "../shared/skills.ts";
 
 export interface AppServerOptions {
   /** Conversations, settings, channels, logs (and profiles/transcripts unless given). */
@@ -337,7 +341,7 @@ ${skills.index()}`;
     const p = url.pathname;
     if (!p.startsWith("/api/skills")) return false;
     try {
-      const m = /^\/api\/skills(?:\/(catalog|review|review-file|describe|add|icon)|\/([a-z0-9-]+)(?:\/(file|proposed-file))?)?$/.exec(p);
+      const m = /^\/api\/skills(?:\/(catalog|review|review-file|describe|add|icon|generate|suggest|eval)|\/([a-z0-9-]+)(?:\/(file|proposed-file|package|draft|publish|sandbox-test))?)?$/.exec(p);
       if (!m) json(res, 404, { error: "Unknown skill route" });
       else if (m[1] === "catalog" && req.method === "GET") json(res, 200, await skills.search(url.searchParams.get("repo") ?? ""));
       else if (m[1] === "icon" && req.method === "GET") {
@@ -349,6 +353,44 @@ ${skills.index()}`;
       else if (m[1] === "review-file" && req.method === "POST") { const b = await readJson(req); json(res, 200, { text: skills.reviewFile(String(b.fingerprint ?? ""), String(b.path ?? "")) }); }
       else if (m[1] === "describe" && req.method === "POST") { const b = await readJson(req); json(res, 200, await skills.describe(String(b.repo ?? ""), b.paths)); }
       else if (m[1] === "add" && req.method === "POST") { const b = await readJson(req); json(res, 200, { name: skills.add(String(b.fingerprint ?? ""), b.acknowledged === true) }); }
+      else if (m[1] === "generate" && req.method === "POST") {
+        const b = await readJson(req) as unknown as SkillGenerateRequest;
+        const toolsList = integrations ? integrations.view().filter(i => i.enabled).map(i => i.entry.id) : [];
+        json(res, 200, await generateSkillPackage(b, toolsList));
+      }
+      else if (m[1] === "suggest" && req.method === "POST") {
+        const b = await readJson(req) as unknown as SkillSuggestRequest;
+        const toolsList = integrations ? integrations.view().filter(i => i.enabled).map(i => i.entry.id) : [];
+        json(res, 200, suggestSkillElement(b, skills.view(), toolsList));
+      }
+      else if (m[1] === "eval" && req.method === "POST") {
+        const b = await readJson(req);
+        const provs = modelProviders();
+        const activeProv = provs[0]?.make({});
+        json(res, 200, await evaluateSkillPrompts(skills, String(b.name ?? ""), Array.isArray(b.prompts) ? b.prompts : [], activeProv));
+      }
+      else if (m[2] && m[3] === "package" && req.method === "GET") json(res, 200, skills.getPackage(m[2]));
+      else if (m[2] && m[3] === "package" && req.method === "PUT") {
+        const b = await readJson(req);
+        json(res, 200, skills.savePackage(m[2], b, typeof b.previous === "string" ? b.previous : undefined));
+      }
+      else if (m[2] && m[3] === "draft" && req.method === "GET") json(res, 200, skills.getDraft(m[2]));
+      else if (m[2] && m[3] === "draft" && req.method === "PUT") {
+        const b = await readJson(req);
+        json(res, 200, skills.saveDraft(m[2], b));
+      }
+      else if (m[2] && m[3] === "draft" && req.method === "DELETE") {
+        skills.discardDraft(m[2]);
+        json(res, 200, { ok: true });
+      }
+      else if (m[2] && m[3] === "publish" && req.method === "POST") {
+        const b = await readJson(req).catch(() => ({}));
+        json(res, 200, skills.publishDraft(m[2], b));
+      }
+      else if (m[2] && m[3] === "sandbox-test" && req.method === "POST") {
+        const b = await readJson(req);
+        json(res, 200, await runSkillScript(skills, m[2], String(b.scriptPath ?? ""), Array.isArray(b.args) ? b.args : []));
+      }
       else if (m[2] && m[3] === "file" && req.method === "GET") json(res, 200, skills.fileText(m[2], url.searchParams.get("path") ?? ""));
       else if (m[2] && m[3] === "proposed-file" && req.method === "GET") json(res, 200, { text: skills.proposedBuiltinFile(m[2], url.searchParams.get("fingerprint") ?? "", url.searchParams.get("path") ?? "") });
       else if (!m[1] && !m[2] && req.method === "GET") json(res, 200, skills.view());

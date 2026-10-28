@@ -9,6 +9,7 @@ import { icon, tile } from "./icons.ts";
 import { group, pill, row, segmented, title, toggle } from "./ui.ts";
 import { SKILL_SOURCES, type SkillListing, type SkillReview, type SkillView } from "../shared/skills.ts";
 import { renderMarkdown } from "@vak/web";
+import { openSkillStudio } from "./skills-studio.ts";
 
 const TEMPLATE = `---
 name: my-skill
@@ -65,12 +66,22 @@ export async function skillsPage(initialSkill?: string, openSandbox?: () => void
   let list: SkillView[] = [];
   let view: "installed" | "explore" = "installed";
 
+  async function openStudio(name?: string): Promise<void> {
+    root.classList.add("skill-detail-layout");
+    const studioEl = await openSkillStudio(name, async () => {
+      await reload();
+      if (name) detail(name);
+      else home();
+    }, reload);
+    root.replaceChildren(studioEl);
+  }
+
   const grid = el("div", { className: "market skills-market" });
   const search = el("input", { type: "search", className: "market-search", placeholder: "Search skills", value: query, "aria-label": "Search skills" });
   search.addEventListener("input", () => { query = search.value; paint(); });
   const filters = segmented([["all", "All"], ["on", "On"], ["updates", "Updates"], ["builtin", "Built in"], ["catalog", "From catalogs"], ["yours", "Yours"]] as const, filter, v => { filter = v; paint(); });
   filters.classList.add("catalog-filters");
-  const installed = el("div", {}, el("div", { className: "market-bar" }, search, button("New skill…", () => editor()), filters), grid);
+  const installed = el("div", {}, el("div", { className: "market-bar" }, search, button("Skill Studio…", () => void openStudio(), "primary small"), button("New skill…", () => editor()), filters), grid);
   const summary = el("p", { className: "skills-summary", role: "status" });
   installed.prepend(summary);
   const catalog = el("div");
@@ -82,7 +93,7 @@ export async function skillsPage(initialSkill?: string, openSandbox?: () => void
     summary.textContent = `${list.filter(s => s.enabled).length} enabled · ${list.length} installed${list.some(s => s.update) ? ` · ${list.filter(s => s.update).length} updates available` : ""} · Showing ${shown.length}`;
     grid.replaceChildren(...shown.map(s => {
       const mark = s.source ? skillPublisherIcon(s.source.repo, 40) : tile(SKILL_GLYPHS[s.name] ?? "spark", 40);
-      const card = el("button", { type: "button", className: "market-card" }, mark, el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(originLabel(s)), pill(s.required ? "Always on" : s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.files?.length ? pill(`${s.files.length} files`) : null, s.update ? pill("Update") : null, el("span", { className: "market-card-action" }, "Manage", icon("arrow", 14))));
+      const card = el("button", { type: "button", className: "market-card" }, mark, el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(originLabel(s)), pill(s.required ? "Always on" : s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.hasDraft ? pill("Draft", "caution") : null, s.files?.length ? pill(`${s.files.length} files`) : null, s.update ? pill("Update") : null, el("span", { className: "market-card-action" }, "Manage", icon("arrow", 14))));
       card.addEventListener("click", () => detail(s.name));
       return card;
     }));
@@ -162,6 +173,7 @@ export async function skillsPage(initialSkill?: string, openSandbox?: () => void
       section.replaceChildren();
       if (detailTab === "overview") section.append(group(null,
         s.required ? row("Availability", "Required for canvas and surface authoring. Always on and applied by the runtime.", pill("Always on", "ok")) : row("Use this skill", "When on, the assistant sees its name and description, loads instructions when a request matches, and reads files on demand.", skillToggle(s)),
+        s.hasDraft ? row("Working draft", "This skill has an unpublished working draft in Skill Studio. The assistant runs the published version until you publish.", button("Resume Draft in Studio", () => void openStudio(s.name), "small")) : null,
         row("Package", `Instructions ${size(new TextEncoder().encode(s.body).length)} · ${s.files?.length ?? 0} files (${size((s.files ?? []).reduce((n, f) => n + f.bytes, 0))})`, pill(originLabel(s))),
         s.compatibility ? row("Compatibility stated by author", s.compatibility, pill("Check requirements")) : null,
         s.license ? row("License stated by author", s.license, pill("Author stated")) : null,
@@ -170,7 +182,7 @@ export async function skillsPage(initialSkill?: string, openSandbox?: () => void
         ...(s.omitted?.length ? [el("p", { className: "row-hint", textContent: `${s.omitted.length} bundled ${s.omitted.length === 1 ? "file was" : "files were"} not added. Instructions that use them may not work; see Source for the list.` })] : []),
         ...(update ? [group("Update available", el("p", { className: "row-hint", textContent: "Review the current and proposed instructions and files. Updating keeps the on/off choice." }), el("pre", { className: "skill-body", textContent: s.body }), el("pre", { className: "skill-body", textContent: update.body }), el("p", { className: "row-hint", textContent: `Current files: ${(s.files ?? []).map(f => f.path).join(", ") || "none"}. Proposed files: ${(update.files ?? []).map(f => f.path).join(", ") || "none"}.` }), ...(update.files?.length ? [fileRows(update.files, async file => (await api<{ text: string }>(`/api/skills/${s.name}/proposed-file?fingerprint=${encodeURIComponent(update.fingerprint)}&path=${encodeURIComponent(file)}`)).text)] : []), el("div", { className: "row-actions" }, apply), note)] : []),
         ...(s.name === "sandbox" && openSandbox ? [group("Execution setup", row("Project and protection", "This skill guides execution. The sandbox integration, folder and tool policy control whether commands can run.", button("Open Sandbox settings", openSandbox)))] : []),
-        el("div", { className: "row-actions" }, button("Edit", () => editor(s)), remove));
+        el("div", { className: "row-actions" }, button("Skill Studio", () => void openStudio(s.name), "primary small"), button("Edit", () => editor(s)), remove));
       else if (detailTab === "instructions") {
         const body = el("div", { className: "skill-formatted" }, renderMarkdown(s.body));
         section.append(group("Current instructions", segmented([["formatted", "Formatted"], ["plain", "Plain text"]] as const, "formatted", mode => body.replaceChildren(mode === "plain" ? el("pre", { className: "skill-body", textContent: s.body }) : renderMarkdown(s.body))), body));
@@ -179,7 +191,7 @@ export async function skillsPage(initialSkill?: string, openSandbox?: () => void
       else if (s.source) section.append(group("Source", row("Repository", s.source.repo, el("a", { href: `https://github.com/${s.source.repo}/tree/${s.source.sha}/${s.source.path}`, target: "_blank", rel: "noopener noreferrer", textContent: "View source ↗" })), row("Path and commit", `${s.source.path || "/"} · ${s.source.sha}`, pill(new Date(s.source.addedAt).toLocaleDateString())), s.omitted?.length ? el("details", { className: "skill-file" }, el("summary", { textContent: `${s.omitted.length} bundled files not added` }), el("ul", {}, ...s.omitted.map(f => el("li", {}, el("code", { textContent: f.path }), ` · ${statusLabel(f.status)}`)))) : null));
     };
     const navigation = segmented(tabs, detailTab, tab => { detailTab = tab; render(); });
-    root.replaceChildren(backHome(), ...title(s.name), ...description(s.description), el("div", { className: "badges" }, pill(originLabel(s)), pill(s.required ? "Always on" : s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.files?.length ? pill(`${s.files.length} files`) : null, update ? pill("Update available") : null), navigation, section);
+    root.replaceChildren(backHome(), ...title(s.name), ...description(s.description), el("div", { className: "badges" }, pill(originLabel(s)), pill(s.required ? "Always on" : s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.hasDraft ? pill("Draft in progress", "caution") : null, s.files?.length ? pill(`${s.files.length} files`) : null, update ? pill("Update available") : null), navigation, section);
     render();
   }
 

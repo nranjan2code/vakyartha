@@ -4,12 +4,12 @@
 // enabled skill's name and description; `use_skill` loads the instructions when
 // a request matches, so skills chain without filling every turn's context.
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { validate } from "@vak/core";
 import type { AgentTool, Provider, ProviderEvent, ChatRequest } from "@vak/providers";
 import { BUILTIN_PACKAGES, type BuiltinPackage } from "./skills-builtin.ts";
-import type { SkillFile, SkillListing, SkillReview, SkillView } from "../shared/skills.ts";
+import type { SkillDraftResponse, SkillDraftSaveResponse, SkillFile, SkillFileStatus, SkillListing, SkillPackageFile, SkillPackageView, SkillReview, SkillView } from "../shared/skills.ts";
 
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const REPO = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/;
@@ -227,7 +227,8 @@ export class Skills {
       const proposedFiles = pkg ? this.builtinManifest(pkg) : [];
       const currentFingerprint = packageFingerprint(skill.text, s.files ?? []);
       const update = pkg && next && packageFingerprint(pkg.text, proposedFiles) !== currentFingerprint ? { description: next.description, body: next.body, compatibility: next.compatibility, license: next.license, metadata: next.metadata, allowedTools: next.allowedTools, files: proposedFiles.map(f => ({ ...f, status: "added" as const })), fingerprint: packageFingerprint(pkg.text, proposedFiles), currentFingerprint } : undefined;
-      return [{ name, description: skill.description, body: skill.body, text: skill.text, compatibility: skill.compatibility, license: skill.license, metadata: skill.metadata, allowedTools: skill.allowedTools, enabled: s.enabled, builtin: s.builtin, required: name === REQUIRED_SKILL, source: s.source, files: s.files?.map(f => ({ ...f, status: "added" as const })), omitted: s.omitted, ...(update ? { update } : {}) }];
+      const hasDraft = existsSync(path.join(this.dir, ".drafts", name, "SKILL.md"));
+      return [{ name, description: skill.description, body: skill.body, text: skill.text, compatibility: skill.compatibility, license: skill.license, metadata: skill.metadata, allowedTools: skill.allowedTools, enabled: s.enabled, builtin: s.builtin, required: name === REQUIRED_SKILL, source: s.source, files: s.files?.map(f => ({ ...f, status: "added" as const })), omitted: s.omitted, hasDraft, ...(update ? { update } : {}) }];
     }).sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -301,6 +302,231 @@ export class Skills {
     }
     this.write(skill.name, text, { enabled: this.isRequired(skill.name) || (prior?.enabled ?? false), builtin: prior?.builtin, files: prior?.files, omitted: prior?.omitted });
     return this.view().find(s => s.name === skill.name)!;
+  }
+
+  /** Retrieve the complete package, including instructions and all supporting files. */
+  getPackage(name: string): SkillPackageView {
+    const skill = this.view().find(s => s.name === name);
+    if (!skill) throw new Error(`Unknown skill ${name}`);
+    const files: SkillPackageFile[] = [];
+    const pkg = BUILTIN_PACKAGES.find(p => p.name === name);
+    for (const f of skill.files ?? []) {
+      try {
+        const textInfo = this.fileText(name, f.path);
+        files.push({ path: f.path, text: textInfo.text, bytes: textInfo.bytes, sha256: f.sha256, status: f.status });
+      } catch {
+        if (pkg && pkg.files.has(f.path)) {
+          const content = pkg.files.get(f.path)!.toString("utf8");
+          files.push({ path: f.path, text: content, bytes: Buffer.byteLength(content), sha256: f.sha256, status: f.status });
+        } else {
+          files.push({ path: f.path, text: "", bytes: f.bytes, sha256: f.sha256, status: f.status });
+        }
+      }
+    }
+    return { skill, files };
+  }
+
+  /** Atomically save a full skill package (SKILL.md + supporting files). */
+  savePackage(name: string, payload: { text?: string; files?: { path: string; text: string }[] }, previous?: string): SkillView {
+    const prev = previous ?? (this.saved[name] ? name : undefined);
+    const rawText = payload.text ?? "";
+    const parsed = parseSkill(rawText);
+    const targetName = parsed.name;
+    if (prev !== targetName && this.saved[targetName]) throw new Error(`A skill named ${targetName} already exists`);
+    const prior = prev ? this.saved[prev] : this.saved[targetName];
+    if (prev && prev !== targetName) {
+      if (!prior || this.isRequired(prev)) throw new Error("Unknown skill");
+      renameSync(path.join(this.dir, prev), path.join(this.dir, targetName));
+      delete this.saved[prev];
+    }
+
+    const skillDir = path.join(this.dir, targetName);
+    const filesDir = path.join(skillDir, "files");
+    mkdirSync(skillDir, { recursive: true, mode: 0o700 });
+    mkdirSync(filesDir, { recursive: true, mode: 0o700 });
+    writeFileSync(path.join(skillDir, "SKILL.md"), rawText, { mode: 0o600 });
+
+    const newFiles: { path: string; bytes: number; sha256: string; status: SkillFileStatus }[] = [];
+    let totalBytes = 0;
+
+    if (payload.files && Array.isArray(payload.files)) {
+      if (payload.files.length > MAX_FILES) throw new Error(`Exceeded maximum limit of ${MAX_FILES} files`);
+      const existingFileNames = new Set<string>();
+
+      for (const item of payload.files) {
+        const cleanPath = item.path.replaceAll("\\", "/").replace(/^\.?\//, "");
+        if (!safeRelative(cleanPath)) throw new Error(`Unsafe relative path: ${item.path}`);
+        if (item.text.includes("\0")) throw new Error(`File ${item.path} contains NUL characters`);
+        const buf = Buffer.from(item.text, "utf8");
+        if (buf.length > MAX_FILE) throw new Error(`File ${item.path} exceeds ${MAX_FILE / 1024} KiB limit`);
+        totalBytes += buf.length;
+        if (totalBytes > MAX_TOTAL) throw new Error(`Package exceeds ${MAX_TOTAL / (1024 * 1024)} MiB total limit`);
+
+        const dest = path.join(filesDir, cleanPath);
+        mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 });
+        writeFileSync(dest, buf, { mode: 0o600 });
+        existingFileNames.add(cleanPath);
+        newFiles.push({ path: cleanPath, bytes: buf.length, sha256: hash(buf), status: "added" });
+      }
+
+      // Clean up deleted files from disk
+      const prune = (dir: string, prefix = "") => {
+        if (!existsSync(dir)) return;
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            prune(full, rel);
+            try { rmdirSync(full); } catch {}
+          } else if (entry.isFile() && !existingFileNames.has(rel)) {
+            rmSync(full, { force: true });
+          }
+        }
+      };
+      prune(filesDir);
+    } else if (prior?.files) {
+      newFiles.push(...prior.files.map(f => ({ ...f, status: "added" as const })));
+    }
+
+    this.saved[targetName] = {
+      enabled: this.isRequired(targetName) || (prior?.enabled ?? false),
+      builtin: prior?.builtin,
+      files: newFiles,
+      omitted: prior?.omitted,
+    };
+    this.persist();
+    return this.view().find(s => s.name === targetName)!;
+  }
+
+  /** Retrieve the working draft package, or fallback to the live published package. */
+  getDraft(name: string): SkillDraftResponse {
+    const draftDir = path.join(this.dir, ".drafts", name);
+    const draftSkillMd = path.join(draftDir, "SKILL.md");
+    if (existsSync(draftSkillMd)) {
+      const text = readFileSync(draftSkillMd, "utf8");
+      const parsed = parseSkill(text);
+      const metaFile = path.join(draftDir, "draft-meta.json");
+      let draftSavedAt: string | undefined;
+      if (existsSync(metaFile)) {
+        try { draftSavedAt = JSON.parse(readFileSync(metaFile, "utf8")).savedAt; } catch {}
+      }
+      const files: SkillPackageFile[] = [];
+      const filesDir = path.join(draftDir, "files");
+      if (existsSync(filesDir)) {
+        const scan = (dir: string, prefix = "") => {
+          for (const item of readdirSync(dir, { withFileTypes: true })) {
+            if (item.name.startsWith(".")) continue;
+            const rel = prefix ? `${prefix}/${item.name}` : item.name;
+            const full = path.join(dir, item.name);
+            if (item.isDirectory()) scan(full, rel);
+            else if (item.isFile() && safeRelative(rel)) {
+              try {
+                const content = readFileSync(full, "utf8");
+                files.push({ path: rel, text: content, bytes: Buffer.byteLength(content), status: "added" });
+              } catch {}
+            }
+          }
+        };
+        scan(filesDir);
+      }
+      return {
+        package: {
+          skill: {
+            name: parsed.name,
+            description: parsed.description,
+            body: parsed.body,
+            text,
+            enabled: this.saved[name]?.enabled ?? false,
+            builtin: this.saved[name]?.builtin,
+            required: name === REQUIRED_SKILL,
+            allowedTools: parsed.allowedTools,
+            compatibility: parsed.compatibility,
+            license: parsed.license,
+            metadata: parsed.metadata,
+            files: files.map(f => ({ path: f.path, bytes: f.bytes, status: f.status })),
+          },
+          files
+        },
+        hasDraft: true,
+        draftSavedAt
+      };
+    }
+
+    // No draft on disk: return published package
+    const pkg = this.getPackage(name);
+    return { package: pkg, hasDraft: false };
+  }
+
+  /** Save a draft without altering the live installed skill. */
+  saveDraft(name: string, payload: { text?: string; files?: { path: string; text: string }[] }): SkillDraftSaveResponse {
+    const draftDir = path.join(this.dir, ".drafts", name);
+    const filesDir = path.join(draftDir, "files");
+    mkdirSync(draftDir, { recursive: true, mode: 0o700 });
+    mkdirSync(filesDir, { recursive: true, mode: 0o700 });
+
+    const rawText = payload.text ?? "";
+    writeFileSync(path.join(draftDir, "SKILL.md"), rawText, { mode: 0o600 });
+
+    const existingFileNames = new Set<string>();
+    if (payload.files && Array.isArray(payload.files)) {
+      for (const item of payload.files) {
+        const cleanPath = item.path.replaceAll("\\", "/").replace(/^\.?\//, "");
+        if (!safeRelative(cleanPath)) continue;
+        const dest = path.join(filesDir, cleanPath);
+        mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 });
+        writeFileSync(dest, item.text, { mode: 0o600 });
+        existingFileNames.add(cleanPath);
+      }
+
+      // Prune deleted draft files
+      const prune = (dir: string, prefix = "") => {
+        if (!existsSync(dir)) return;
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            prune(full, rel);
+            try { rmdirSync(full); } catch {}
+          } else if (entry.isFile() && !existingFileNames.has(rel)) {
+            rmSync(full, { force: true });
+          }
+        }
+      };
+      prune(filesDir);
+    }
+
+    const savedAt = new Date().toISOString();
+    writeFileSync(path.join(draftDir, "draft-meta.json"), JSON.stringify({ savedAt }), { mode: 0o600 });
+    return { hasDraft: true, draftSavedAt: savedAt };
+  }
+
+  /** Discard a draft, reverting back to the published package. */
+  discardDraft(name: string): void {
+    const draftDir = path.join(this.dir, ".drafts", name);
+    if (existsSync(draftDir)) {
+      rmSync(draftDir, { recursive: true, force: true });
+    }
+  }
+
+  /** Publish a draft to become the live active skill package. */
+  publishDraft(name: string, payload?: { text?: string; files?: { path: string; text: string }[] }): SkillView {
+    let rawText = payload?.text;
+    let files = payload?.files;
+    if (!rawText) {
+      const draft = this.getDraft(name);
+      if (draft.hasDraft) {
+        rawText = draft.package.skill.text;
+        files = draft.package.files.map(f => ({ path: f.path, text: f.text }));
+      }
+    }
+    if (!rawText) {
+      const existing = this.view().find(s => s.name === name);
+      if (!existing) throw new Error(`No draft or published skill named ${name}`);
+      return existing;
+    }
+    const published = this.savePackage(name, { text: rawText, files }, name);
+    this.discardDraft(name);
+    return published;
   }
   fileText(name: string, file: string): { text: string; bytes: number } {
     const cleanPath = file.replaceAll("\\", "/").replace(/^\.?\//, "");

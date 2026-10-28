@@ -7,6 +7,8 @@ export interface SkillView {
   /** Files present upstream but outside the current text-only import tier. */
   omitted?: SkillFile[];
   compatibility?: string; license?: string; metadata?: Record<string, string>; allowedTools?: string;
+  /** Whether uncommitted working draft edits exist in the studio. */
+  hasDraft?: boolean;
 }
 export type SkillFileStatus = "added" | "script" | "unsupported" | "too-large" | "over-limit" | "not-text";
 export interface SkillFile { path: string; bytes: number; status: SkillFileStatus; sha256?: string }
@@ -22,4 +24,89 @@ export const SKILL_SOURCES = [
 export interface SkillListing { repo: string; path: string; name: string; sha: string }
 export interface SkillReview extends SkillListing {
   description: string; body: string; compatibility?: string; license?: string; metadata?: Record<string, string>; allowedTools?: string; files: SkillFile[]; fingerprint: string; existing: boolean; blocked?: string;
+}
+
+export interface SkillPackageFile {
+  path: string;
+  text: string;
+  bytes: number;
+  sha256?: string;
+  status: SkillFileStatus;
+}
+
+export interface SkillPackageView {
+  skill: SkillView;
+  files: SkillPackageFile[];
+}
+
+export interface SkillDraftResponse {
+  package: SkillPackageView;
+  hasDraft: boolean;
+  draftSavedAt?: string;
+}
+
+export interface SkillDraftSaveResponse {
+  hasDraft: boolean;
+  draftSavedAt: string;
+}
+
+export interface SkillGenerateRequest {
+  prompt: string;
+  provider?: string;
+  model?: string;
+}
+
+export interface SkillGenerateResponse {
+  name: string;
+  description: string;
+  body: string;
+  allowedTools?: string;
+  compatibility?: string;
+  license?: string;
+  metadata?: Record<string, string>;
+  files: { path: string; text: string }[];
+  rationale?: string;
+}
+
+export interface SkillSuggestRequest {
+  type: "trigger" | "chart" | "binding" | "tools" | "gist";
+  name?: string;
+  description?: string;
+  body?: string;
+  field?: string;
+}
+
+export interface SkillSuggestResponse {
+  suggestion: string;
+  rationale: string;
+  options?: string[];
+}
+
+export interface SkillEvalRequest {
+  name: string;
+  prompts: string[];
+  provider?: string;
+  model?: string;
+}
+
+export interface SkillEvalResult {
+  prompt: string;
+  passed: boolean;
+  selectedSkills: string[];
+  durationMs: number;
+  error?: string;
+}
+
+export interface SkillSandboxRunRequest {
+  name: string;
+  scriptPath: string;
+  args?: string[];
+}
+
+export interface SkillSandboxRunResponse {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  error?: string;
 }

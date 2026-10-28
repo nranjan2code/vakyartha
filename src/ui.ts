@@ -42,8 +42,8 @@ export function select(options: (readonly [string, string])[], value: string, on
   return s;
 }
 
-export function pill(text: string, tone: "" | "ok" | "bad" = ""): HTMLElement {
-  return el("span", { className: `pill ${tone}`, textContent: text });
+export function pill(text: string, tone: "" | "ok" | "bad" | "caution" | "info" = ""): HTMLElement {
+  return el("span", { className: tone ? `pill ${tone}` : "pill", textContent: text });
 }
 
 /** A key field: Save appears once something is typed; Remove when one is saved. Never shows a saved value. */

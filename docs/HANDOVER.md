@@ -1,6 +1,25 @@
 # Vakyartha handover — 2026-10-28
 
-## Canvas liquid layout audit & multi-surface projection — 2026-10-28
+## Skill Studio: Interactive Authoring, Draft Lifecycle & YOLO Co-Pilot — 2026-10-28
+
+A complete, production-grade **Skill Studio** workbench has been built and integrated into Vakyartha, fulfilling the full Agent Skills specification (`SKILL.md` + supporting schemas, references, scripts, tests) with deep native integration into Projection canvas staging, sandbox rehearsals, and smart co-pilot assistance:
+- **Persistent Draft vs. Publish Lifecycle**:
+  - Authors can craft, iterate, and refine skills across days without risking disruption to the live assistant.
+  - Drafts are quarantined in `<dataDir>/skills/.drafts/<name>/`. Because the runtime's skill discovery strictly ignores dot-prefixed directories, unpublished drafts never reach the live assistant.
+  - Dedicated toolbar status indicator (`Draft · Unpublished (time)` vs `Live / Published`), with explicit `Save Draft`, `Discard Draft` (reverts to published package), and `⚡ Publish Skill` (promotes draft to active runtime and refreshes installed lists).
+  - Unsaved-changes protection prompts before navigating away.
+- **Three-Column Adaptive Workbench**:
+  - *Left Column*: Complete package file explorer (`SKILL.md`, `references/`, `schemas/`, `scripts/`, `tests/`), file size calculation, Add/Delete files, Smart Co-Pilot Suggestions (trigger optimizer, chart recommendation, auto-binding, tool detector, voice gist proposer), and Test Scenarios runner with `use_skill` selection gate results.
+  - *Center Column*: Segmented modes for **Visual Spec** (form fields with frontmatter extraction, allowed-tools quick-select chips, liquid instructions editor), **Raw Code Editor** (plain text/source editor for any file in package), and **⚡ YOLO Co-Pilot** (natural language prompt generating complete multi-file packages).
+  - *Right Column*: Live interactive canvas staging with responsive viewport selectors (`320px Mobile`, `720px Medium`, `960px Grid`, `Full Width`), mounted `<vak-surface>` using `SurfaceStore(basicCatalog)`, Surface Design Linter (enforcing aspect ratio clamps, semantic color tokens, and standard chart kinds), Dual Spoken Projection preview (`lowerSurface` + `projectText` with audio playback), and disposable `vak-sandbox` script execution runner.
+- **Integration Points**:
+  - Settings → Skills includes a `Skill Studio…` action bar button, `Draft` status badge on card footers, and direct `Skill Studio` deep-link on installed skill detail views.
+- **Verification**:
+  - 192 app tests pass (`npm test`).
+  - 398 framework tests pass (`npm run test:framework`).
+  - TypeScript typecheck (`npm run typecheck`) and Vite production bundle (`npm run build`) pass cleanly with 0 errors.
+  - Real WebKit smokes pass: `skills-check.ts` (1100px, 620px, 375px) and `canvas-check.ts` (1100px, 620px). Zero mocks or stubs. Zero external dependencies added.
+
 
 A comprehensive audit was performed on `interactive-ui`, `surface-design`, and all 18 canvas-authoring built-in skills to eliminate LLM confusion, align with Vakyartha's runtime, enforce minimalist design and theming, implement responsive **Liquid & Adaptive Layout** architecture, and audit multi-surface projection across conversational channels:
 - **Interactive-UI & Surface-Design Fixes**:
