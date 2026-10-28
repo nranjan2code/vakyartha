@@ -25,7 +25,7 @@
     "mcpTools": [],
     "storage": {
       "sqlite": true,
-      "duckdb": true
+      "duckdb": false
     }
   },
   "triggers": [

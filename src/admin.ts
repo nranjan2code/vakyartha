@@ -459,7 +459,7 @@ window.addEventListener("DOMContentLoaded", async () => {
             entitlements: {
               network: { mode: "airgap", allowedDomains: [] },
               mcpTools: [],
-              storage: { sqlite: true, duckdb: true },
+              storage: { sqlite: true, duckdb: false },
             },
             triggers: [
               {

@@ -10,6 +10,7 @@ import { type AgentEvent, getAt, projectText, readSse, type SurfaceSnapshot, tit
 import type { SessionSummary, SessionView } from "@vak/host";
 import { defineVakElements, renderMarkdown, type VakActionDetail, VakClient, type VakSurfaceElement } from "@vak/web";
 import { ArtifactsPage } from "./artifacts-page.ts";
+import { AppsPage } from "./apps-page.ts";
 import { Canvas } from "./canvas.ts";
 import { connect, openExternal, setKeepRunning } from "./backend.ts";
 import { $, api, ask, engine, prefs, setBackend } from "./core.ts";
@@ -52,6 +53,24 @@ const artifacts = new ArtifactsPage(async (id, surface) => {
   artifacts.close();
   canvas.open(surface, true);
 }, newChat, toggleSidebar);
+const appsPage = new AppsPage(
+  (surface, _title) => {
+    if (isSkillStudioOpen()) void closeSkillStudio();
+    if (settingsOpen()) closeSettings();
+    if (tasksPanel.page.visible()) tasksPanel.page.close();
+    if (document.body.classList.contains("in-artifacts")) artifacts.close();
+    appsPage.close();
+    setTopNavActive("chats");
+    $("workspace").hidden = false;
+    canvas.openStandalone(surface as any, true);
+  },
+  toggleSidebar,
+  () => {
+    if (!isSkillStudioOpen() && !settingsOpen() && !tasksPanel.page.visible() && !document.body.classList.contains("in-artifacts")) {
+      setTopNavActive("chats");
+    }
+  }
+);
 // One turn per chat, several chats at once. The window's stream of a turn is
 // `streams`; leaving a chat only detaches it (the engine keeps the turn going and
 // the chat's event stream shows it on return). `busy` also holds chats the
@@ -778,10 +797,10 @@ $<HTMLButtonElement>("collapse").addEventListener("click", toggleSidebar);
 $<HTMLButtonElement>("expand").addEventListener("click", toggleSidebar);
 
 // --- Persistent App Top Navigation Bar ---
-type NavTab = "chats" | "artifacts" | "schedule" | "studio" | "settings";
+type NavTab = "chats" | "artifacts" | "apps" | "schedule" | "studio" | "settings";
 
 function setTopNavActive(active: NavTab): void {
-  const tabs: NavTab[] = ["chats", "artifacts", "schedule", "studio", "settings"];
+  const tabs: NavTab[] = ["chats", "artifacts", "apps", "schedule", "studio", "settings"];
   for (const t of tabs) {
     const btn = document.getElementById(`topbar-tab-${t}`);
     if (btn) {
@@ -812,6 +831,7 @@ if (topbarSidebarToggle) {
 
 document.getElementById("topbar-icon-chats")?.append(icon("bubble", 15));
 document.getElementById("topbar-icon-artifacts")?.append(icon("canvas", 15));
+document.getElementById("topbar-icon-apps")?.append(icon("cpu", 15));
 document.getElementById("topbar-icon-schedule")?.append(icon("calendar", 15));
 document.getElementById("topbar-icon-studio")?.append(icon("spark", 15));
 document.getElementById("topbar-icon-settings")?.append(icon("sliders", 15));
@@ -820,6 +840,7 @@ document.getElementById("topbar-model-badge")?.addEventListener("click", () => {
   void (async () => {
     if (isSkillStudioOpen()) await closeSkillStudio();
     artifacts.close();
+    appsPage.close();
     tasksPanel.page.close();
     setTopNavActive("settings");
     await openSettings("models");
@@ -835,6 +856,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
     if (settingsOpen()) closeSettings();
     if (tasksPanel.page.visible()) tasksPanel.page.close();
     if (document.body.classList.contains("in-artifacts")) artifacts.close();
+    if (appsPage.visible()) appsPage.close();
     $("workspace").hidden = false;
     setTopNavActive("chats");
     input.focus();
@@ -845,8 +867,19 @@ async function switchNavTab(target: NavTab): Promise<void> {
     if (isSkillStudioOpen()) await closeSkillStudio();
     if (settingsOpen()) closeSettings();
     if (tasksPanel.page.visible()) tasksPanel.page.close();
+    if (appsPage.visible()) appsPage.close();
     setTopNavActive("artifacts");
     await artifacts.open();
+    return;
+  }
+
+  if (target === "apps") {
+    if (isSkillStudioOpen()) await closeSkillStudio();
+    if (settingsOpen()) closeSettings();
+    if (tasksPanel.page.visible()) tasksPanel.page.close();
+    if (document.body.classList.contains("in-artifacts")) artifacts.close();
+    setTopNavActive("apps");
+    await appsPage.open();
     return;
   }
 
@@ -854,6 +887,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
     if (isSkillStudioOpen()) await closeSkillStudio();
     if (settingsOpen()) closeSettings();
     if (document.body.classList.contains("in-artifacts")) artifacts.close();
+    if (appsPage.visible()) appsPage.close();
     setTopNavActive("schedule");
     await tasksPanel.page.openPage();
     return;
@@ -864,6 +898,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
     if (settingsOpen()) closeSettings();
     if (tasksPanel.page.visible()) tasksPanel.page.close();
     if (document.body.classList.contains("in-artifacts")) artifacts.close();
+    if (appsPage.visible()) appsPage.close();
     setTopNavActive("studio");
 
     let skillToOpen: string | undefined = undefined;
@@ -889,6 +924,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
     if (isSkillStudioOpen()) await closeSkillStudio();
     if (tasksPanel.page.visible()) tasksPanel.page.close();
     if (document.body.classList.contains("in-artifacts")) artifacts.close();
+    if (appsPage.visible()) appsPage.close();
     setTopNavActive("settings");
     await openSettings();
     return;
@@ -897,18 +933,31 @@ async function switchNavTab(target: NavTab): Promise<void> {
 
 document.getElementById("topbar-tab-chats")?.addEventListener("click", () => void switchNavTab("chats"));
 document.getElementById("topbar-tab-artifacts")?.addEventListener("click", () => void switchNavTab("artifacts"));
+document.getElementById("topbar-tab-apps")?.addEventListener("click", () => void switchNavTab("apps"));
 document.getElementById("topbar-tab-schedule")?.addEventListener("click", () => void switchNavTab("schedule"));
 document.getElementById("topbar-tab-studio")?.addEventListener("click", () => void switchNavTab("studio"));
 document.getElementById("topbar-tab-settings")?.addEventListener("click", () => void switchNavTab("settings"));
 
 window.addEventListener("vak:settings-opened", () => setTopNavActive("settings"));
 window.addEventListener("vak:settings-closed", () => {
-  if (!isSkillStudioOpen() && !tasksPanel.page.visible() && !document.body.classList.contains("in-artifacts")) {
+  if (!isSkillStudioOpen() && !tasksPanel.page.visible() && !document.body.classList.contains("in-artifacts") && !appsPage.visible()) {
     setTopNavActive("chats");
   }
 });
 
 window.addEventListener("vak:artifacts-opened", () => setTopNavActive("artifacts"));
+window.addEventListener("vak:artifacts-closed", () => {
+  if (!isSkillStudioOpen() && !settingsOpen() && !tasksPanel.page.visible() && !appsPage.visible()) {
+    setTopNavActive("chats");
+  }
+});
+
+window.addEventListener("vak:apps-opened", () => setTopNavActive("apps"));
+window.addEventListener("vak:apps-closed", () => {
+  if (!isSkillStudioOpen() && !settingsOpen() && !tasksPanel.page.visible() && !document.body.classList.contains("in-artifacts")) {
+    setTopNavActive("chats");
+  }
+});
 window.addEventListener("vak:artifacts-closed", () => {
   if (!isSkillStudioOpen() && !settingsOpen() && !tasksPanel.page.visible()) {
     setTopNavActive("chats");

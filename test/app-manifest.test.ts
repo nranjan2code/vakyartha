@@ -7,7 +7,7 @@ test("app manifest parses valid configuration with bounded runtime defaults", ()
     id: "portfolio-tracker",
     version: "1.0.0",
     name: "Portfolio Tracker",
-    description: "Live stock analytics with DuckDB",
+    description: "Live stock analytics calculation engine",
     author: "Nisheeth",
     category: "finance",
     entrypoints: {
@@ -26,7 +26,7 @@ test("app manifest parses valid configuration with bounded runtime defaults", ()
         allowedDomains: ["api.coingecko.com", "finance.yahoo.com"],
       },
       mcpTools: ["nse-market-data"],
-      storage: { sqlite: true, duckdb: true },
+      storage: { sqlite: true, duckdb: false },
     },
     triggers: [
       {

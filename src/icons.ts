@@ -44,6 +44,7 @@ const GLYPHS: Record<string, string> = {
   palette: '<path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.8 1.8-1.7 0-1.2-1-1.6-1-2.6 0-.9.7-1.5 1.7-1.5h2.2a3.8 3.8 0 0 0 3.8-3.8c0-4.2-3.8-7.4-8.5-7.4z"/><circle cx="7.8" cy="11" r="1"/><circle cx="10.5" cy="7.3" r="1"/><circle cx="15" cy="7.8" r="1"/>',
   sliders: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
   info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.6v.4"/>',
+  rocket: '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09zM12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6.05 11a22.35 22.35 0 0 1-3.95 2zM9 9l3 3M15 9l-3-3"/>',
 };
 
 /** Tile colours: light and dark pairs (CSS light-dark), one hue per icon. */
@@ -58,6 +59,7 @@ const TINT: Record<string, [string, string]> = {
   book: ["#15803d", "#4ade80"],
   plug: ["#4b5563", "#9ca3af"],
   voice: ["#c2410c", "#fdba74"],
+  rocket: ["#6366f1", "#818cf8"],
 };
 
 export function icon(name: string, size = 18): SVGSVGElement {

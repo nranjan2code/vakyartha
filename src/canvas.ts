@@ -4,7 +4,7 @@
 // reference card there and open in the canvas. Any can be opened in the canvas.
 import { basicCatalog, projectMarkdown, projectText, type SurfaceSnapshot, SurfaceStore } from "@vak/core";
 import type { VakSurfaceElement } from "@vak/web";
-import { $, prefs } from "./core.ts";
+import { $, api, prefs } from "./core.ts";
 import { icon } from "./icons.ts";
 import { downloadMarkdown } from "./backend.ts";
 import { canvasReason } from "./placement.ts";
@@ -80,13 +80,16 @@ export class Canvas {
     $("canvas-version-label").textContent = at === older.length ? `Latest · ${older.length + 1} versions` : `Version ${at + 1} of ${older.length + 1}`;
     $<HTMLButtonElement>("canvas-older").disabled = at <= 0;
     $<HTMLButtonElement>("canvas-newer").disabled = at >= older.length;
-    for (const id of ["canvas-copy", "canvas-download", "canvas-preview", "canvas-text"]) $<HTMLButtonElement>(id).disabled = !this.#active;
+    for (const id of ["canvas-copy", "canvas-download", "canvas-deploy", "canvas-preview", "canvas-text"]) {
+      const btn = document.getElementById(id);
+      if (btn instanceof HTMLButtonElement) btn.disabled = !this.#active;
+    }
   }
 
   constructor(session: () => string, store: () => SurfaceStore) {
     this.#session = session;
     this.#store = store;
-    for (const [id, name] of [["canvas-close", "close"], ["canvas-expand", "maximize"], ["canvas-copy", "copy"], ["canvas-download", "download"]] as const) $(id).append(icon(name, 16));
+    for (const [id, name] of [["canvas-close", "close"], ["canvas-expand", "maximize"], ["canvas-copy", "copy"], ["canvas-download", "download"], ["canvas-deploy", "rocket"]] as const) $(id)?.append(icon(name, 16));
     this.#picker.addEventListener("change", () => this.open(this.#picker.value));
     for (const [id, by] of [["canvas-older", -1], ["canvas-newer", 1]] as const) {
       $(id).addEventListener("click", () => {
@@ -106,6 +109,7 @@ export class Canvas {
     $("canvas-text").addEventListener("click", () => this.#view(true));
     $("canvas-copy").addEventListener("click", () => void this.#copy());
     $("canvas-download").addEventListener("click", () => void this.#download());
+    $("canvas-deploy")?.addEventListener("click", () => void this.#deployAsApp());
     document.addEventListener("vak-change", () => this.#updateText());
     $("canvas-close").addEventListener("click", () => this.close(true));
     this.#expand.addEventListener("click", () => this.#setExpanded(!this.#workspace.classList.contains("canvas-expanded")));
@@ -287,6 +291,104 @@ export class Canvas {
     } catch {
       this.#feedback("Download failed. Try Copy.");
     }
+  }
+
+  async #deployAsApp(): Promise<void> {
+    if (!this.#active) return;
+    const snap = this.#store().snapshot(this.#active);
+    if (!snap) return;
+
+    const baseTitle = (snap.title || "custom-app").trim();
+    const slug = baseTitle
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 36) || `app-${Date.now().toString(36)}`;
+    const appId = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
+
+    try {
+      this.#feedback("Deploying to Apps…");
+      const manifest = {
+        id: appId,
+        version: "1.0.0",
+        name: snap.title || "Hosted Application",
+        description: `Dynamic hosted application deployed from Canvas surface`,
+        author: "User",
+        icon: "chart",
+        category: "finance",
+        entrypoints: {
+          surface: "surface.json",
+          backend: "server.ts",
+        },
+        runtime: {
+          engine: "node24",
+          memoryLimitMb: 256,
+          cpuTimeLimitSec: 60,
+          maxStorageMb: 512,
+        },
+        entitlements: {
+          network: { mode: "airgap", allowedDomains: [] },
+          mcpTools: [],
+          storage: { sqlite: true, duckdb: false },
+        },
+        triggers: [
+          {
+            id: "refresh-poll",
+            kind: "cron",
+            expression: "*/5 * * * *",
+            action: "refreshData",
+            maxDurationSec: 30,
+          },
+        ],
+      };
+
+      const files = {
+        "surface.json": JSON.stringify(snap, null, 2),
+        "server.ts": `// Sandboxed app daemon for ${snap.title || appId}\nconsole.log("Hosted app runtime active");\n`,
+      };
+
+      await api("/api/apps", {
+        method: "POST",
+        body: JSON.stringify({ manifest, files }),
+      });
+
+      this.#feedback("Deployed to Apps!");
+      window.dispatchEvent(new CustomEvent("vak:app-installed", { detail: appId }));
+    } catch (err) {
+      this.#feedback("Deploy failed");
+    }
+  }
+
+  openStandalone(snap: SurfaceSnapshot, focus = true): void {
+    this.#store().load(structuredClone(snap));
+    let entry = this.#entries.get(snap.id);
+    if (!entry) {
+      const surface = document.createElement("vak-surface") as VakSurfaceElement;
+      surface.mediaResolver = resolveMedia;
+      surfaceMode(surface);
+      surface.attach(this.#store(), snap.id);
+
+      const home = document.createElement("section");
+      home.className = "surface-home";
+      home.dataset.surface = snap.id;
+      const head = document.createElement("div");
+      head.className = "surface-head";
+      const title = document.createElement("span");
+      title.textContent = snap.title || "Interface";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "ghost small";
+      button.textContent = "Open in canvas";
+      button.addEventListener("click", () => this.open(snap.id, true));
+      head.append(title, button);
+      home.append(head, surface);
+
+      const option = new Option(snap.title || "App", snap.id);
+      this.#picker.add(option);
+      entry = { surface, home, button, title, option, large: true };
+      this.#entries.set(snap.id, entry);
+    }
+    this.open(snap.id, focus);
   }
 
   register(surface: VakSurfaceElement, snap: SurfaceSnapshot, parent: HTMLElement, auto: boolean): void {

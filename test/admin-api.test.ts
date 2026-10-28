@@ -54,7 +54,7 @@ test("admin and hosted apps HTTP APIs manage real sandboxed worker lifecycle end
         allowedDomains: [],
       },
       mcpTools: [],
-      storage: { sqlite: true, duckdb: true },
+      storage: { sqlite: true, duckdb: false },
     },
     triggers: [
       {

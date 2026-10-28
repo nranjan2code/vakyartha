@@ -27,6 +27,10 @@
           <span class="tab-icon" id="topbar-icon-artifacts"></span>
           <span class="tab-label">Artifacts</span>
         </button>
+        <button type="button" class="topbar-tab" id="topbar-tab-apps" aria-current="false" title="Apps">
+          <span class="tab-icon" id="topbar-icon-apps"></span>
+          <span class="tab-label">Apps</span>
+        </button>
         <button type="button" class="topbar-tab" id="topbar-tab-schedule" aria-current="false" title="Schedule">
           <span class="tab-icon" id="topbar-icon-schedule"></span>
           <span class="tab-label">Schedule</span>
@@ -60,7 +64,7 @@
             New chat
           </button>
         </div>
-        <div class="side-pages"><button type="button" class="quiet" id="open-artifacts" aria-current="false"></button><button type="button" class="quiet" id="open-schedule" aria-current="false"></button></div>
+        <div class="side-pages"><button type="button" class="quiet" id="open-artifacts" aria-current="false"></button><button type="button" class="quiet" id="open-apps" aria-current="false"></button><button type="button" class="quiet" id="open-schedule" aria-current="false"></button></div>
         <nav id="chats" class="chats" aria-label="Recent chats"></nav>
         <div class="side-foot">
           <button type="button" class="quiet" id="open-settings" title="Settings (⌘,)">
@@ -114,6 +118,7 @@
           </div>
           <span class="canvas-versions" id="canvas-versions" hidden><button type="button" class="icon-btn canvas-step" id="canvas-older" aria-label="Earlier version" title="Earlier version">‹</button><span id="canvas-version-label"></span><button type="button" class="icon-btn canvas-step" id="canvas-newer" aria-label="Later version" title="Later version">›</button></span>
           <span class="canvas-feedback" id="canvas-feedback" role="status"></span>
+          <button type="button" class="icon-btn" id="canvas-deploy" aria-label="Deploy as hosted app" title="Deploy as hosted app"></button>
           <button type="button" class="icon-btn" id="canvas-copy" aria-label="Copy as text" title="Copy as text"></button>
           <button type="button" class="icon-btn" id="canvas-download" aria-label="Download Markdown" title="Download Markdown"></button>
         </div>
@@ -125,6 +130,7 @@
       </div>
       <section id="schedule-page" class="schedule-page" aria-label="Schedule" hidden></section>
       <section id="artifacts-page" class="artifacts-page" aria-label="Artifacts" hidden></section>
+      <section id="apps-page" class="apps-page" aria-label="Apps" hidden></section>
     </div>
 
     <div id="settings" class="settings-page" hidden>

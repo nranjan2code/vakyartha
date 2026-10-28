@@ -20,7 +20,7 @@ test("builtin portfolio risk app manifest is strictly valid", () => {
   assert.equal(parsed.category, "finance");
   assert.equal(parsed.runtime.engine, "node24");
   assert.equal(parsed.entitlements.storage.sqlite, true);
-  assert.equal(parsed.entitlements.storage.duckdb, true);
+  assert.equal(parsed.entitlements.storage.duckdb, false);
   assert.equal(parsed.triggers.length, 1);
   assert.equal(parsed.triggers[0]?.kind, "cron");
 });
