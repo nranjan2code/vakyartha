@@ -2,6 +2,8 @@
 
 This document details the multi-surface projection architecture in Vakyartha and the underlying Projection framework. In Vakyartha, an agent or workflow authors a single canonical surface (stored in `SurfaceStore` with typed data and nodes). That canonical surface is then projected into target-specific presentation layers across desktop/web, conversational channels, and voice audio.
 
+For the full end-to-end rendering pipeline, liquid layout mechanics, Web Component lifecycle, token penetration, and Shadow DOM styles, see [End-to-End Architecture: Surfaces, Canvas, and Projections](rendering/END-TO-END-ARCHITECTURE.md).
+
 ---
 
 ## 1. Multi-Surface Overview & Degradation Matrix

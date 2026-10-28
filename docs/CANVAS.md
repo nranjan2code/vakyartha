@@ -3,7 +3,7 @@
 The desktop app and playground own the canvas and the Artifacts library. The
 framework continues to own surfaces, rendering, bindings, validation and actions.
 
-For composition rather than canvas mechanics, read [SKILL-AUTHORING.md](SKILL-AUTHORING.md): shared surface-design guidance, liquid layout architecture, content measures, chart selection and the visual/spoken contract. See [SURFACES.md](SURFACES.md) for how the same resolved surfaces project to external channels (Telegram, Slack, Discord) and voice audio. The app's spoken projection uses the same resolved surface, not a second report payload. Keep findings, reporting periods, units and important caveats in readable content; controls and visual position alone do not carry them into TTS.
+For composition rather than canvas mechanics, read [SKILL-AUTHORING.md](SKILL-AUTHORING.md): shared surface-design guidance, liquid layout architecture, content measures, chart selection and the visual/spoken contract. See [SURFACES.md](SURFACES.md) for how the same resolved surfaces project to external channels (Telegram, Slack, Discord) and voice audio. For the end-to-end rendering pipeline, placement lifecycle, Shadow DOM styling, and container queries, see [End-to-End Architecture: Surfaces, Canvas, and Projections](rendering/END-TO-END-ARCHITECTURE.md). The app's spoken projection uses the same resolved surface, not a second report payload. Keep findings, reporting periods, units and important caveats in readable content; controls and visual position alone do not carry them into TTS.
 
 ## Liquid & Adaptive Layouts on Canvas
 
