@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cpSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { cpSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isBuiltin } from "node:module";
 import path from "node:path";
 import { build } from "vite";
@@ -35,7 +35,45 @@ export async function buildSidecar(app: string, outDir: string): Promise<void> {
       },
     }],
   });
-  cpSync(path.join(app, "sidecar/builtin-skills"), path.join(outDir, "builtin-skills"), { recursive: true });
+
+  const workerSrc = path.join(app, "sidecar/sandbox-pool/worker.ts");
+  if (existsSync(workerSrc)) {
+    await build({
+      configFile: false,
+      root: app,
+      publicDir: false,
+      logLevel: "warn",
+      build: {
+        ssr: workerSrc,
+        outDir,
+        emptyOutDir: false,
+        target: "node24",
+        minify: false,
+        reportCompressedSize: false,
+        rolldownOptions: { output: { entryFileNames: "worker.mjs", format: "es", codeSplitting: false } },
+      },
+      ssr: { noExternal: true, target: "node" },
+      plugins: [{
+        name: "worker-runtime-boundary",
+        generateBundle(_options, bundle) {
+          const outputs = Object.values(bundle);
+          if (outputs.length !== 1 || outputs[0]?.type !== "chunk" || outputs[0].fileName !== "worker.mjs") {
+            throw new Error("The worker must be one self-contained module");
+          }
+          for (const id of [...outputs[0].imports, ...outputs[0].dynamicImports]) {
+            if (!isBuiltin(id)) throw new Error(`Unexpected worker runtime dependency: ${id}`);
+          }
+        },
+      }],
+    });
+  }
+
+  if (existsSync(path.join(app, "sidecar/builtin-skills"))) {
+    cpSync(path.join(app, "sidecar/builtin-skills"), path.join(outDir, "builtin-skills"), { recursive: true });
+  }
+  if (existsSync(path.join(app, "sidecar/builtin-apps"))) {
+    cpSync(path.join(app, "sidecar/builtin-apps"), path.join(outDir, "builtin-apps"), { recursive: true });
+  }
 }
 
 /** Keep npm and its dependencies intact; omit only its top-level documentation. */

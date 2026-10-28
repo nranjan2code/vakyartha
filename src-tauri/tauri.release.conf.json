@@ -7,9 +7,11 @@
     ],
     "resources": [
       "resources/sidecar.mjs",
+      "resources/worker.mjs",
       "resources/runtime-manifest.json",
       "resources/npm/**/*",
-      "resources/builtin-skills/**/*"
+      "resources/builtin-skills/**/*",
+      "resources/builtin-apps/**/*"
     ]
   }
 }

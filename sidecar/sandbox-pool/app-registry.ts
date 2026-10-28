@@ -2,8 +2,9 @@
 // Manages application lifecycle in <dataDir>/apps/, embedded storage volumes,
 // Canvas UI action dispatch, and autonomous background cron scheduling.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseAppManifest, type AppManifest, type AppTrigger } from "../../shared/app-manifest.ts";
 import type { SandboxPoolManager } from "./pool-manager.ts";
 
@@ -82,18 +83,23 @@ export class AppRegistry {
   private readonly dataDir: string;
   private readonly appsDir: string;
   private readonly pool: SandboxPoolManager;
+  private readonly seedBuiltins: boolean;
   private readonly apps = new Map<string, AppManifest>();
   private readonly lastExecuted = new Map<string, string>();
   private schedulerTimer?: NodeJS.Timeout;
 
-  constructor(options: { dataDir: string; pool: SandboxPoolManager }) {
+  constructor(options: { dataDir: string; pool: SandboxPoolManager; seedBuiltins?: boolean }) {
     this.dataDir = options.dataDir;
     this.appsDir = path.join(this.dataDir, "apps");
     this.pool = options.pool;
+    this.seedBuiltins = options.seedBuiltins ?? false;
   }
 
   async init(): Promise<void> {
     mkdirSync(this.appsDir, { recursive: true });
+    if (this.seedBuiltins) {
+      this.seedBuiltinApps();
+    }
     this.reloadApps();
 
     // Start background cron scheduler checking every 30 seconds
@@ -101,6 +107,27 @@ export class AppRegistry {
       this.checkSchedules().catch(() => {});
     }, 30_000);
     this.schedulerTimer.unref();
+  }
+
+  private seedBuiltinApps(): void {
+    const candidateDirs = [
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "builtin-apps"),
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "builtin-apps"),
+      path.join(process.cwd(), "sidecar", "builtin-apps"),
+      path.join(process.cwd(), "resources", "builtin-apps"),
+    ];
+    const sourceDir = candidateDirs.find((d) => existsSync(d));
+    if (!sourceDir) return;
+
+    try {
+      for (const item of readdirSync(sourceDir, { withFileTypes: true })) {
+        if (!item.isDirectory()) continue;
+        const target = path.join(this.appsDir, item.name);
+        if (!existsSync(target)) {
+          cpSync(path.join(sourceDir, item.name), target, { recursive: true });
+        }
+      }
+    } catch {}
   }
 
   reloadApps(): void {

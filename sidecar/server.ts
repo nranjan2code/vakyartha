@@ -266,7 +266,7 @@ ${skills.index()}`;
   });
 
   const pool = new SandboxPoolManager();
-  const apps = new AppRegistry({ dataDir, pool });
+  const apps = new AppRegistry({ dataDir, pool, seedBuiltins: true });
   await apps.init();
 
   const sandboxBin = opts.sandboxBin || "vaksb";

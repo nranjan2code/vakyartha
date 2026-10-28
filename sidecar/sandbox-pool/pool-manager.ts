@@ -43,6 +43,14 @@ export class SandboxPoolManager extends EventEmitter {
 
   constructor(config: Partial<PoolConfig> = {}) {
     super();
+    const candidateWorker = [
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "worker.mjs"),
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "worker.ts"),
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "sandbox-pool", "worker.ts"),
+      path.join(process.cwd(), "sidecar", "sandbox-pool", "worker.ts"),
+      path.join(process.cwd(), "resources", "worker.mjs"),
+    ].find((p) => existsSync(p));
+
     this.config = {
       maxActiveWorkers: config.maxActiveWorkers ?? 3,
       standbyWorkers: config.standbyWorkers ?? 1,
@@ -50,7 +58,7 @@ export class SandboxPoolManager extends EventEmitter {
       hibernationTimeoutMs: config.hibernationTimeoutMs ?? 15 * 60_000,
       maxWorkerRssBytes: config.maxWorkerRssBytes ?? 256 * 1024 * 1024,
       nodeBin: config.nodeBin ?? process.execPath,
-      workerScript: config.workerScript ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "worker.ts"),
+      workerScript: config.workerScript ?? candidateWorker ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "worker.ts"),
     };
   }
 
