@@ -23,8 +23,9 @@
 11. [Desktop Observability, Telemetry & FinOps Governance](#11-desktop-observability-telemetry--finops-governance)
 12. [The Mini-Cloud Admin & Observability Console (Tray-Launched Control Plane)](#12-the-mini-cloud-admin--observability-console-tray-launched-control-plane)
 13. [High-Impact Enterprise Scenarios & Reference Deployments](#13-high-impact-enterprise-scenarios--reference-deployments)
-14. [Failure Modes, Circuit Breakers & Non-Functional Requirements (NFRs)](#14-failure-modes-circuit-breakers--non-functional-requirements-nfrs)
-15. [Phased Implementation Roadmap & Evaluation Gates](#15-phased-implementation-roadmap--evaluation-gates)
+14. [Workstation Physical Lifecycle: Sleep, Wakeup, Abrupt Crash & Managed Startup](#14-workstation-physical-lifecycle-sleep-wakeup-abrupt-crash--managed-startup)
+15. [Failure Modes, Circuit Breakers & Non-Functional Requirements (NFRs)](#15-failure-modes-circuit-breakers--non-functional-requirements-nfrs)
+16. [Phased Implementation Roadmap & Evaluation Gates](#16-phased-implementation-roadmap--evaluation-gates)
 
 ---
 
@@ -639,9 +640,116 @@ The Supervisor exposes private streaming endpoints for the Admin Console:
 
 ---
 
-## 14. Failure Modes, Circuit Breakers & Non-Functional Requirements (NFRs)
+## 14. Workstation Physical Lifecycle: Sleep, Wakeup, Abrupt Crash & Managed Startup
 
-### 14.1 Failure Mode & Effects Analysis (FMEA)
+### 14.1 The Desktop & Laptop Reality (Physical Operating Context)
+Unlike cloud containers that run in climate-controlled datacenters with guaranteed power and uninterrupted NTP clocks, client edge software runs on laptops and workstations subject to chaotic real-world physical events:
+* **Sudden Lid-Close / System Sleep:** macOS drops into low-power states without application consent.
+* **Clock Jumps on Wake:** A laptop sleeping for 8 hours wakes up with wall-clock time leaping forward instantly.
+* **Network Roaming & Broken Sockets:** Wi-Fi disconnects or IP changes during sleep leave TCP sockets half-open.
+* **Abrupt Power Loss:** Battery depletion (0% cutoff), forced hard resets (`SIGKILL`), or kernel panics occur without warning.
+
+An enterprise architecture must treat these physical events as routine operational cycles with deterministic recovery guarantees.
+
+### 14.2 Native macOS Power Event Integration (Tauri / Rust Layer)
+Vakyartha's desktop shell (`src-tauri/src/lib.rs`) hooks directly into native macOS Cocoa power notifications:
+* `NSWorkspaceWillSleepNotification`: Broadcast when macOS is about to suspend hardware.
+* `NSWorkspaceDidWakeNotification`: Broadcast when hardware resumes from sleep.
+* `NSWorkspaceSessionDidResignActiveNotification`: Broadcast on fast user switching or screen lock.
+
+```mermaid
+graph TD
+    Wake["macOS DidWake Event Detected"] --> CheckTime["Calculate Wall-Clock Delta (wake - sleep)"]
+    
+    CheckTime --> Decision{"Did Scheduled Crons Miss Windows?"}
+    Decision -->|"No Skew (under 60s)"| ResumeLoop["Resume Normal Worker Loop"]
+    Decision -->|"Time Skew (over 60s)"| Coalesce["Apply Coalesced Catch-up Policy<br/>- Fire at most ONE missed run<br/>- Advance schedule pointer to next window"]
+    
+    Coalesce --> ProbeWorkers["Send IPC Heartbeat Ping to Leased Workers"]
+    ResumeLoop --> ProbeWorkers
+    
+    ProbeWorkers --> WorkerStatus{"Worker Responsive?"}
+    WorkerStatus -->|"Responsive (Pong in 50ms)"| ActiveOk["Re-establish Live Telemetry SSE"]
+    WorkerStatus -->|"Stalled / Stale Socket"| Recycle["SIGKILL Stalled Worker<br/>Rehydrate Tenant from state.json"]
+    
+    Recycle --> ActiveOk
+```
+
+### 14.3 The Sleep / Lid-Close Sequence (Pre-Sleep Suspend Protocol)
+macOS provides a brief pre-sleep window (typically 1 to 2 seconds) between `NSWorkspaceWillSleepNotification` and system halt. The Supervisor initiates an emergency suspend sweep:
+1. **Broadcast `worker.suspend`:** Pool workers immediately pause event loops and background timers.
+2. **Proactive Database WAL Flush:** Every active SQLite database executes `PRAGMA wal_checkpoint(TRUNCATE)` so pending transactions are durably synced to physical storage before hardware cuts power.
+3. **Freeze Schedulers:** In-flight cron timers are frozen; the current timestamp is recorded to `last_sleep_timestamp`.
+4. **State Snapshot:** Active Canvas DOM trees are serialized to `state.json`.
+
+### 14.4 The Wakeup & Recovery Protocol
+When the laptop lid is opened (`NSWorkspaceDidWakeNotification`):
+1. **Clock Skew Reconciliation:** The Supervisor calculates `time_delta = Date.now() - last_sleep_timestamp`.
+2. **Anti-Thundering-Herd (Cron Coalescing):** If a laptop slept for 12 hours, an hourly cron could theoretically trigger 12 executions simultaneously upon wakeup, spiking CPU and token budgets. Vakyartha enforces **Coalesced Catch-up**:
+   * If `time_delta` exceeds the schedule window, fire **at most one** catch-up execution (if within `SCHEDULE_GRACE_MS`).
+   * Advance the cron pointer to the next upcoming natural wall-clock interval.
+3. **Worker Socket Probes:** The Supervisor sends a lightweight `worker.ping` over the IPC pipe to all leased workers. If a worker child process wedged during the power transition, it is terminated (`SIGKILL`) and rehydrated from `state.json` in `< 150 ms`.
+4. **Network Re-establishment:** Half-open brokered fetch sockets are flushed and reset, avoiding hanging requests.
+
+### 14.5 Abrupt Termination & Crash Durability (Zero-Corruption Guarantee)
+If the laptop abruptly loses power (battery cutoff) or the OS force-terminates the app (`kill -9`):
+1. **Atomic State Writes:** All JSON metadata (`state.json`, `index.json`) is written using the **Atomic Write-Rename Pattern**:
+   * Data is written to `state.json.tmp`.
+   * `fs.renameSync("state.json.tmp", "state.json")` atomically replaces the destination. A sudden power loss mid-write can never corrupt the canonical file.
+2. **SQLite Crash Durability:** SQLite Write-Ahead Logging (`WAL`) guarantees ACID durability. On restart, SQLite automatically recovers and replays valid WAL frames; uncommitted transactions are cleanly rolled back.
+3. **Transaction-Bound Realm Recovery (ADR-045):** Incomplete multi-file promotions or interrupted command snapshots are detected via transaction journals. The engine rolls back to the pre-promotion snapshot without replaying commands.
+4. **Stale Lock Clearance:** Locks (`.lock`) record the PID and boot UUID. On boot, if a lock belongs to an extinct process, it is safely cleared without human intervention.
+
+### 14.6 Coordinated 4-Second Graceful Shutdown Waterfall
+When the user deliberately quits (`Cmd+Q` or Tray → Quit), Vakyartha executes a coordinated 4-second shutdown waterfall enforced by Tauri (`src-tauri/src/lib.rs`):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User
+    participant Shell as Tauri Native Shell (Rust)
+    participant Supervisor as Host Supervisor (Node)
+    participant Workers as Sandboxed Pool Workers
+    participant Disk as Storage Volume
+
+    User->>Shell: Triggers Quit (Cmd+Q or Tray)
+    Note over Shell: T0.00s: Intercepts Quit; 4-Second Watchdog Starts
+    Shell->>Supervisor: Close Anonymous Stdin Pipe
+    
+    Supervisor->>Supervisor: Drain In-Flight Turns; Refuse New UI Events
+    Supervisor->>Workers: IPC: prepare_shutdown()
+    
+    Workers->>Disk: Flush SQLite WAL Checkpoint (TRUNCATE)
+    Workers->>Disk: Atomic Write-Rename state.json
+    Workers-->>Supervisor: IPC: flushed(ready: true)
+    
+    Note over Supervisor: T1.50s: All Workers Acknowledged
+    Supervisor->>Workers: SIGTERM Child Processes
+    Supervisor->>Disk: Commit Global App and FinOps Index
+    Supervisor-->>Shell: Supervisor Exits (Code 0)
+    
+    Note over Shell: T2.40s: Clean Native Teardown (Well within 4s limit)
+```
+
+1. **`T + 0.00s`:** Shell intercepts quit request; starts native 4-second deadline watchdog; closes stdin to the Supervisor.
+2. **`T + 0.20s`:** Supervisor detects EOF on stdin; stops accepting new user prompts; broadcasts `worker.prepare_shutdown`.
+3. **`T + 0.60s`:** Pool workers checkpoint SQLite databases, serialize active Canvas state, close file handles, and acknowledge `worker.flushed`.
+4. **`T + 1.50s`:** Supervisor terminates worker child processes (`SIGTERM`) and flushes the global FinOps and App registry.
+5. **`T + 2.40s`:** Supervisor exits cleanly with code 0.
+6. **`T + 4.00s`:** Hard watchdog fallback: if any hung process is still alive after 4 seconds, Tauri's native monitor issues `child.kill()` (`SIGKILL`) to guarantee the app never hangs indefinitely on quit.
+
+### 14.7 Cold Boot & Orphan Cleanup Protocol
+Every time Vakyartha launches from cold boot:
+1. **Orphan Workspace Sweep:** Scan `/tmp/` and purge any leftover disposable snapshot directories (`vakyartha-sandbox-*`) abandoned by previous abrupt shutdowns.
+2. **Database Integrity Sweep:** Check SQLite headers and execute fast `PRAGMA quick_check` across active app volumes.
+3. **Stale Lock Eviction:** Clear abandoned lock files whose PIDs no longer exist.
+4. **Lazy Pool Initialization:** Spawn **1 pre-warmed standby runner only**. Do not boot inactive chats or background apps until requested by the user or triggered by an upcoming scheduled cron.
+
+---
+
+## 15. Failure Modes, Circuit Breakers & Non-Functional Requirements (NFRs)
+
+### 15.1 Failure Mode & Effects Analysis (FMEA)
 
 | Failure Mode | Root Cause | Impact | Automated Recovery Action |
 | :--- | :--- | :--- | :--- |
@@ -650,7 +758,7 @@ The Supervisor exposes private streaming endpoints for the Admin Console:
 | **Corrupt SQLite WAL** | Abrupt power loss during write | Database unreadable | SQLite auto-recovers from WAL on next boot; if unrecoverable, Realm journal rolls back to last valid transaction snapshot. |
 | **API Key Exfiltration Attempt** | Prompt injection attacks try to read keys | Critical security threat | **Zero Impact:** Environment contains no keys; outbound network requests without whitelisted broker authorization are dropped by OS kernel. |
 
-### 14.2 Non-Functional Requirements (NFRs)
+### 15.2 Non-Functional Requirements (NFRs)
 * **NFR-1 (UI Latency):** Canvas action-to-DOM patch latency must remain **< 16 ms** for 95% of local interactions.
 * **NFR-2 (Startup Time):** Waking a hibernated app must complete in **< 150 ms**.
 * **NFR-3 (Memory Footprint):** Total idle memory consumption of the Pool Manager (including standby worker) must not exceed **120 MiB**.
@@ -658,7 +766,7 @@ The Supervisor exposes private streaming endpoints for the Admin Console:
 
 ---
 
-## 15. Phased Implementation Roadmap & Evaluation Gates
+## 16. Phased Implementation Roadmap & Evaluation Gates
 
 ```mermaid
 gantt
