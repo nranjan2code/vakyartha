@@ -6,6 +6,7 @@ Start with the [runtime contract](RUNTIME-CONTRACT.md), which defines the suppor
 
 | Document | Purpose |
 | --- | --- |
+| [Reference applications](../REFERENCE-APPS.md) | Four executable packages, documentation method and verification |
 | [Architecture](ARCHITECTURE.md) | Intent, ownership, execution and data flow |
 | [Operations and lifecycle](OPERATIONS-AND-LIFECYCLE.md) | Create, rehearse, publish, run, schedule, recover and remove |
 | [Original review](REVIEW-2026-10-28.md) | Baseline defects and reproduced failures; historical evidence |

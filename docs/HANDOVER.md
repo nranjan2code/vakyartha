@@ -1,5 +1,13 @@
 # Vakyartha handover — 2026-10-28
 
+## Reference suite acceptance follow-up — 2026-10-29
+
+Committed the reference/runtime/method checkpoint as `94a15c4`, then completed the three new references' targeted live and native UI acceptance. [Reference suite guide](REFERENCE-APPS.md) maps all four packages, sources, data owners, views, supported layouts and extension boundaries. Add Reference App now discovers actual manifests and offers a chooser in both app entry points. Each package contains the four required documents; Studio source and draft saving preserve generated documentation.
+
+229 app tests, typecheck and UI/self-contained sidecar build pass. Final live `vak-reference-suite-javjnv` verifies publisher and repository source facts, exact synthetic finance arithmetic and rollback, persistence, scheduler due-minute/deduplication and all nine new views at 1440/620/375. Native `vak-app-authoring-QZX1Qx` verifies chooser installation with scheduling off plus all four Studio documents and saved draft at 1100/375. Screenshot review caught a paise/INR budget-unit mismatch after the earlier geometry pass; corrected the app's projection and added visible-unit assertions. Original clipped-source checker failure and overturned unit acceptance are retained alongside final evidence in `.vak/evaluations/reference-apps-2026-10-29/`; see [Evaluation](EVALUATION.md#documented-reference-suite-and-authoring-method--2026-10-29).
+
+These results supersede the open suite-acceptance note immediately below. General model app-authoring, sustained unattended refresh, source streaming and exhaustive accessibility/voice parity remain open. No installed replacement, public release or paid model run. Source packages and reviewed skill updates are distinct from the installed executable and existing user-owned packages; do not silently overwrite either.
+
 ## Executable app documentation method — 2026-10-29
 
 The bundled app-authoring skill now explicitly requires README.md, AGENTS.md, SKILLS.md and ARCHITECTURE.md and loads its file-specific package template. Maintenance loads a change checklist; authoring, maintenance, operation, administration and the new app-debugger all reference these documents. Studio uses one shared scaffold to generate the documents with an honest executable local counter. This is procedural guidance and starter generation, not a new publication rejection rule or proof of general model compliance. Existing reviewed skill-update preferences remain preserved; no installed application replacement is claimed.

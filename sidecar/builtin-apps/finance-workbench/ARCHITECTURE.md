@@ -6,6 +6,8 @@ server.ts owns decimal validation, import transaction/rollback, parameterized SQ
 ## Canonical data and projections
 DuckDB ledger is the canonical transaction owner. Amounts are signed integer paise. context.state owns only month/budget/import draft and import receipt; chart/table data is derived from the same selected ledger population.
 
+Ledger arithmetic stays in integer paise; currency-formatted text, numeric chart series and budget progress convert to INR only when projecting. Budget progress value/max use the same INR unit.
+
 ## Runtime flow
 Visible control → current-revision serialized app dispatch → disposable supervised sandbox → validated domain inputs and permitted integration/SQL → independent canonical Projection updates → atomic app record commit → visible/spoken projections. This uses the existing app host and integration lifecycle; there is no domain renderer, native relay or separate connector.
 

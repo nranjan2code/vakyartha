@@ -19,3 +19,5 @@ Schema v1: ledger(id VARCHAR PRIMARY KEY, date VARCHAR, description VARCHAR, cat
 Use explicitly labelled synthetic transactions for arithmetic tests, never seeded personal financial values. Independently check exact paise totals, month boundaries, category population, budget denominator, duplicate batch rollback and persistence/reopening. Test malformed amounts/dates/IDs, zero values, negative budget and oversized imports. Confirm no external calls occur.
 
 Run the reference-app tests/typecheck/build and authorized live/native-WebKit checker described in README.md. Never silently reset user data, run a paid model, install a new dependency or publish a release. Record verification/current state in the host project's HANDOVER.md/EVALUATION.md.
+
+Keep ledger arithmetic in integer paise. Project numeric charts and budget value/max in INR with explicit units; formatted currency and progress must agree. Verify the known 12.50 expense / 20.00 budget display as 12.5 of 20 INR, never 1,250 of 2,000 without a paise label.

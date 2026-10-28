@@ -142,7 +142,7 @@
         "id": "budget-progress",
         "type": "progress",
         "props": {
-          "label": "Monthly expense budget",
+          "label": "Monthly expense budget · INR",
           "value": "{/budgetUsed}",
           "max": "{/budgetMax}",
           "note": "{/budgetNote}",
