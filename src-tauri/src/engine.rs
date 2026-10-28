@@ -128,7 +128,7 @@ fn main_window(window: &tauri::WebviewWindow) -> Result<(), String> {
     let url = window.url().map_err(|e| e.to_string())?;
     let local = (url.scheme() == "tauri" && url.host_str() == Some("localhost")) || (["http", "https"].contains(&url.scheme()) && url.host_str() == Some("tauri.localhost"));
     let dev = cfg!(debug_assertions) && url.scheme() == "http" && [Some("localhost"), Some("127.0.0.1")].contains(&url.host_str()) && url.port() == Some(1420);
-    if window.label() != "main" || !(local || dev) { return Err("Engine IPC is restricted to the main app window".into()); }
+    if (window.label() != "main" && window.label() != "admin") || !(local || dev) { return Err("Engine IPC is restricted to app windows".into()); }
     Ok(())
 }
 

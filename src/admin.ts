@@ -3,11 +3,12 @@
 
 import type { FleetSnapshot, WorkerSlotSummary } from "../shared/sandbox-pool.ts";
 import type { AppSummary } from "../sidecar/sandbox-pool/app-registry.ts";
+import { connect, engineFetch, inTauri, type Backend } from "./backend.ts";
 
 let activeTab = "fleet";
 let token: string | null = null;
-let eventSourceLogs: EventSource | null = null;
-let eventSourceTelemetry: EventSource | null = null;
+let backend: Backend = { url: "", token: "" };
+let abortController = new AbortController();
 let cachedApps: AppSummary[] = [];
 
 // Determine base API headers and auth token
@@ -15,15 +16,58 @@ function getApiHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  if (token) {
-    headers["authorization"] = `Bearer ${token}`;
+  const activeToken = token || backend.token;
+  if (activeToken) {
+    headers["authorization"] = `Bearer ${activeToken}`;
   }
   return headers;
 }
 
 async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  const targetUrl = inTauri ? `${backend.url}${path}` : path;
   const headers = { ...getApiHeaders(), ...(options.headers as Record<string, string>) };
-  return fetch(path, { ...options, headers });
+  return engineFetch(targetUrl, { ...options, headers });
+}
+
+async function streamSse(
+  path: string,
+  onMessage: (data: string) => void,
+  onState: (connected: boolean) => void
+): Promise<void> {
+  while (!abortController.signal.aborted) {
+    try {
+      const targetUrl = inTauri ? `${backend.url}${path}` : path;
+      const res = await engineFetch(targetUrl, {
+        signal: abortController.signal,
+        headers: getApiHeaders(),
+      });
+      if (!res.ok || !res.body) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      onState(true);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (!abortController.signal.aborted) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+        for (const evt of events) {
+          for (const line of evt.split("\n")) {
+            if (line.startsWith("data: ")) {
+              onMessage(line.slice(6));
+            }
+          }
+        }
+      }
+    } catch {
+      if (abortController.signal.aborted) return;
+      onState(false);
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
 }
 
 function formatBytes(bytes: number): string {
@@ -194,6 +238,7 @@ function renderAppsTable(apps: AppSummary[]): void {
       </td>
       <td>
         <div style="display: flex; gap: 6px;">
+          ${app.triggerCount > 0 ? `<button type="button" class="admin-action-btn small" data-action="run-trigger" data-id="${app.id}">Run Poll</button>` : ""}
           <button type="button" class="admin-action-btn small danger" data-action="uninstall-app" data-id="${app.id}">Delete</button>
         </div>
       </td>
@@ -201,6 +246,27 @@ function renderAppsTable(apps: AppSummary[]): void {
   `
     )
     .join("");
+
+  tbody.querySelectorAll('button[data-action="run-trigger"]').forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      if (!id) return;
+      btn.textContent = "Running...";
+      try {
+        const res = await apiFetch(`/api/apps/${encodeURIComponent(id)}/triggers/market-poll/run`, {
+          method: "POST",
+        });
+        const out = await res.json();
+        alert(`Trigger '${out.action}' executed successfully in ${out.durationMs}ms`);
+        await refreshApps();
+        await refreshFleet();
+      } catch (err) {
+        alert(`Failed to execute trigger: ${(err as Error).message}`);
+      } finally {
+        btn.textContent = "Run Poll";
+      }
+    });
+  });
 
   tbody.querySelectorAll('button[data-action="uninstall-app"]').forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -227,50 +293,35 @@ function setupStreams(): void {
   const connStatus = document.getElementById("admin-connection-status");
 
   // Telemetry SSE Stream
-  try {
-    const sseUrl = token ? `/api/admin/telemetry/stream?token=${encodeURIComponent(token)}` : `/api/admin/telemetry/stream`;
-    eventSourceTelemetry = new EventSource(sseUrl);
-
-    eventSourceTelemetry.onopen = () => {
-      if (connStatus) {
-        connStatus.textContent = "Live Connected";
-        connStatus.className = "admin-badge live";
-      }
-    };
-
-    eventSourceTelemetry.onmessage = (event) => {
+  void streamSse(
+    "/api/admin/telemetry/stream",
+    (data) => {
       try {
-        const parsed = JSON.parse(event.data);
+        const parsed = JSON.parse(data);
         if (parsed.type === "snapshot" || parsed.type === "heartbeat") {
           renderFleet(parsed.data || parsed.fleet);
         }
       } catch {}
-    };
-
-    eventSourceTelemetry.onerror = () => {
+    },
+    (connected) => {
       if (connStatus) {
-        connStatus.textContent = "Reconnecting...";
-        connStatus.className = "admin-badge disconnected";
+        connStatus.textContent = connected ? "Live Connected" : "Reconnecting...";
+        connStatus.className = connected ? "admin-badge live" : "admin-badge disconnected";
       }
-    };
-  } catch (err) {
-    console.error("Telemetry stream setup error:", err);
-  }
+    }
+  );
 
   // Logs SSE Stream
-  try {
-    const sseLogsUrl = token ? `/api/admin/logs/stream?token=${encodeURIComponent(token)}` : `/api/admin/logs/stream`;
-    eventSourceLogs = new EventSource(sseLogsUrl);
-
-    eventSourceLogs.onmessage = (event) => {
+  void streamSse(
+    "/api/admin/logs/stream",
+    (data) => {
       try {
-        const logData = JSON.parse(event.data);
+        const logData = JSON.parse(data);
         appendTerminalLog(logData);
       } catch {}
-    };
-  } catch (err) {
-    console.error("Logs stream setup error:", err);
-  }
+    },
+    () => {}
+  );
 }
 
 function appendTerminalLog(entry: {
@@ -342,6 +393,12 @@ function escapeHtml(str: string): string {
 // -----------------------------------------------------------------------------
 
 window.addEventListener("DOMContentLoaded", async () => {
+  try {
+    backend = await connect();
+  } catch (err) {
+    console.error("Backend connect failed:", err);
+  }
+
   // Read token from URL query params if present
   const params = new URLSearchParams(window.location.search);
   const qToken = params.get("token");
@@ -373,6 +430,66 @@ window.addEventListener("DOMContentLoaded", async () => {
       await refreshFleet();
     } catch (err) {
       alert(`Failed to restart worker pool: ${(err as Error).message}`);
+    }
+  });
+
+  document.getElementById("install-app-btn")?.addEventListener("click", async () => {
+    try {
+      const res = await apiFetch("/api/apps", {
+        method: "POST",
+        body: JSON.stringify({
+          manifest: {
+            id: "portfolio-risk",
+            name: "Portfolio Risk Monitor",
+            version: "1.0.0",
+            description: "Real-time VaR and sensitivity calculator",
+            author: "Nisheeth",
+            category: "finance",
+            icon: "chart-line",
+            entrypoints: {
+              backend: "server.ts",
+              surface: "surface.json",
+            },
+            runtime: {
+              engine: "node24",
+              memoryLimitMb: 256,
+              maxStorageMb: 512,
+              cpuTimeLimitSec: 60,
+            },
+            entitlements: {
+              network: { mode: "airgap", allowedDomains: [] },
+              mcpTools: [],
+              storage: { sqlite: true, duckdb: true },
+            },
+            triggers: [
+              {
+                id: "market-poll",
+                kind: "cron",
+                expression: "*/5 * * * *",
+                action: "pollMarket",
+                maxDurationSec: 30,
+              },
+            ],
+          },
+          files: {
+            "server.ts": "// Application logic",
+            "surface.json": JSON.stringify({
+              title: "Portfolio Risk",
+              nodes: [{ id: "root", type: "metric", props: { label: "VaR", value: "3.2%" } }],
+            }),
+          },
+        }),
+      });
+      if (res.ok) {
+        alert("Portfolio Risk Monitor reference application installed successfully!");
+        await refreshApps();
+        await refreshFleet();
+      } else {
+        const err = await res.json();
+        alert(`Failed to install app: ${err.error || res.status}`);
+      }
+    } catch (err) {
+      alert(`Installation error: ${(err as Error).message}`);
     }
   });
 
