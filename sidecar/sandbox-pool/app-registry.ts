@@ -85,6 +85,7 @@ export class AppRegistry {
   private readonly pool: SandboxPoolManager;
   private readonly seedBuiltins: boolean;
   private readonly apps = new Map<string, AppManifest>();
+  private readonly appDirs = new Map<string, string>();
   private readonly lastExecuted = new Map<string, string>();
   private schedulerTimer?: NodeJS.Timeout;
 
@@ -132,6 +133,7 @@ export class AppRegistry {
 
   reloadApps(): void {
     this.apps.clear();
+    this.appDirs.clear();
     if (!existsSync(this.appsDir)) return;
 
     for (const item of readdirSync(this.appsDir, { withFileTypes: true })) {
@@ -143,6 +145,7 @@ export class AppRegistry {
         const raw = JSON.parse(readFileSync(manifestPath, "utf8"));
         const manifest = parseAppManifest(raw);
         this.apps.set(manifest.id, manifest);
+        this.appDirs.set(manifest.id, path.join(this.appsDir, item.name));
       } catch (err) {
         /* skipped invalid manifest */
       }
@@ -157,7 +160,7 @@ export class AppRegistry {
     );
 
     for (const app of this.apps.values()) {
-      const appFolder = path.join(this.appsDir, app.id);
+      const appFolder = this.appDirs.get(app.id) ?? path.join(this.appsDir, app.id);
       out.push({
         id: app.id,
         name: app.name,
@@ -179,7 +182,7 @@ export class AppRegistry {
     const manifest = this.apps.get(id);
     if (!manifest) return null;
 
-    const workspaceDir = path.join(this.appsDir, id);
+    const workspaceDir = this.appDirs.get(id) ?? path.join(this.appsDir, id);
     const snapshot = this.pool.getFleetSnapshot();
     const isRunning = snapshot.slots.some(
       (s) => s.tenantId === id && (s.state === "active" || s.state === "leased")
@@ -232,6 +235,7 @@ export class AppRegistry {
     }
 
     this.apps.set(manifest.id, manifest);
+    this.appDirs.set(manifest.id, appDir);
     return this.getApp(manifest.id)!;
   }
 
@@ -246,12 +250,13 @@ export class AppRegistry {
       await this.pool.hibernate(slot.slotId);
     }
 
-    const appDir = path.join(this.appsDir, id);
+    const appDir = this.appDirs.get(id) ?? path.join(this.appsDir, id);
     if (existsSync(appDir)) {
       rmSync(appDir, { recursive: true, force: true });
     }
 
     this.apps.delete(id);
+    this.appDirs.delete(id);
     this.lastExecuted.delete(id);
     return true;
   }
@@ -260,7 +265,7 @@ export class AppRegistry {
     const app = this.apps.get(appId);
     if (!app) throw new Error(`App '${appId}' is not installed.`);
 
-    const appDir = path.join(this.appsDir, appId);
+    const appDir = this.appDirs.get(appId) ?? path.join(this.appsDir, appId);
     // Ensure worker slot is leased for this app
     await this.pool.lease(appId, "app", appDir);
 
@@ -277,7 +282,7 @@ export class AppRegistry {
     if (!trigger) throw new Error(`Trigger '${triggerId}' not declared in app '${appId}'.`);
 
     const start = Date.now();
-    const appDir = path.join(this.appsDir, appId);
+    const appDir = this.appDirs.get(appId) ?? path.join(this.appsDir, appId);
     await this.pool.lease(appId, "app", appDir);
 
     await this.pool.dispatchAction(appId, `trigger:${trigger.id}`, { triggerId, kind: trigger.kind }, trigger.action);

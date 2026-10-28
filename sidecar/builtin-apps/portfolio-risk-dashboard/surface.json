@@ -45,13 +45,21 @@
     {
       "id": "controls-section",
       "type": "card",
-      "props": { "title": "Interactive Risk Sensitivity" },
-      "children": ["slider-risk-tolerance"]
+      "props": { "title": "Portfolio Risk Allocation Model" },
+      "children": ["select-risk-profile"]
     },
     {
-      "id": "slider-risk-tolerance",
-      "type": "slider",
-      "props": { "label": "Risk Tolerance Level", "min": 0, "max": 100, "value": 65, "step": 5, "bind": "/riskTolerance" }
+      "id": "select-risk-profile",
+      "type": "select",
+      "props": {
+        "label": "Asset Allocation Strategy",
+        "bind": "/riskProfile",
+        "options": [
+          { "label": "Conservative (Capital Preservation · 25% Equity)", "value": "conservative" },
+          { "label": "Balanced Growth (Default · 65% Equity)", "value": "balanced" },
+          { "label": "Aggressive High-Yield (85% Equity)", "value": "aggressive" }
+        ]
+      }
     },
     {
       "id": "chart-section",

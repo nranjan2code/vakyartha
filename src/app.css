@@ -250,7 +250,7 @@ body.collapsed .app { grid-template-columns: 0 minmax(0, 1fr); }
 body.collapsed .sidebar { visibility: hidden; }
 
 /* A canvas is app chrome around the same live surface used in the thread. */
-.workspace { display: flex; min-width: 0; min-height: 0; container: workspace / inline-size; }
+.workspace { grid-column: 2; grid-row: 1; display: flex; min-width: 0; min-height: 0; container: workspace / inline-size; }
 .workspace[hidden] { display: none !important; }
 .workspace > .main { flex: 1; }
 .canvas { flex: none; width: var(--canvas-width, 56%); min-width: 0; display: flex; flex-direction: column; background: var(--panel); }

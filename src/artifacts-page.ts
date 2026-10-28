@@ -71,10 +71,10 @@ export class ArtifactsPage {
     if (request === this.#request && !this.#page.hidden) $("artifacts-title")?.focus();
   }
 
-  close(focus = false): void {
+  close(focus = false, showWorkspace = true): void {
     ++this.#request;
     this.#page.hidden = true;
-    $("workspace").hidden = false;
+    if (showWorkspace) $("workspace").hidden = false;
     document.body.classList.remove("in-artifacts", "artifacts-show-sidebar");
     $("open-artifacts").setAttribute("aria-current", "false");
     window.dispatchEvent(new Event("vak:artifacts-closed"));

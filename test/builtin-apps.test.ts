@@ -9,10 +9,10 @@ import {
   computePortfolioVaR,
   rebalanceWeights,
   handleAction,
-} from "../sidecar/builtin-apps/portfolio-risk/server.ts";
+} from "../sidecar/builtin-apps/portfolio-risk-dashboard/server.ts";
 
 test("builtin portfolio risk app manifest is strictly valid", () => {
-  const manifestPath = path.join(process.cwd(), "sidecar/builtin-apps/portfolio-risk/app.json");
+  const manifestPath = path.join(process.cwd(), "sidecar/builtin-apps/portfolio-risk-dashboard/app.json");
   const raw = JSON.parse(readFileSync(manifestPath, "utf8"));
   const parsed = parseAppManifest(raw);
 
@@ -40,25 +40,25 @@ test("portfolio risk sensitivity rebalances asset allocation weights dynamically
   const conservative = rebalanceWeights(0);
   assert.equal(conservative[0], 20); // 20% equities
   assert.equal(conservative[1], 50); // 50% bonds
-  assert.equal(conservative.reduce((a, b) => a + b, 0), 100);
+  assert.equal(conservative.reduce((a: number, b: number) => a + b, 0), 100);
 
   // Aggressive (100% risk tolerance): heavy equities, low bonds
   const aggressive = rebalanceWeights(100);
   assert.equal(aggressive[0], 80); // 80% equities
   assert.equal(aggressive[1], 15); // 15% bonds
-  assert.equal(aggressive.reduce((a, b) => a + b, 0), 100);
+  assert.equal(aggressive.reduce((a: number, b: number) => a + b, 0), 100);
 
   // Moderate (50% risk tolerance)
   const moderate = rebalanceWeights(50);
   assert.equal(moderate[0], 50); // 50% equities
-  assert.equal(moderate.reduce((a, b) => a + b, 0), 100);
+  assert.equal(moderate.reduce((a: number, b: number) => a + b, 0), 100);
 });
 
 test("handleAction yields valid Canvas reactive surface patches in sub-millisecond time", () => {
-  const result = handleAction("slider-risk-tolerance", 75);
+  const result = handleAction("select-risk-profile", "conservative");
   assert.equal(result.op, "batch_update");
-  assert.equal(result.controlId, "slider-risk-tolerance");
-  assert.equal(result.value, 75);
+  assert.equal(result.controlId, "select-risk-profile");
+  assert.equal(result.value, "conservative");
 
   const patches = result.patches as Array<{ id: string; props: Record<string, unknown> }>;
   assert.ok(Array.isArray(patches));

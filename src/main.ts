@@ -75,9 +75,9 @@ function stopRun(id: string): void {
   void api(`/api/sessions/${encodeURIComponent(id)}/stop`, { method: "POST", body: "{}" }).then(() => setTimeout(() => void loadChats(), 600)).catch(() => {});
   streams.get(id)?.abort();
 }
-const tasksPanel = new TasksPanel(() => session, (id) => openChat(id), () => { artifacts.close(); appsPage.close(); }, toggleSidebar);
-document.getElementById("open-artifacts")!.addEventListener("click", () => { tasksPanel.page.close(); appsPage.close(); }, { capture: true });
-document.getElementById("open-apps")?.addEventListener("click", () => { artifacts.close(); tasksPanel.page.close(); }, { capture: true });
+const tasksPanel = new TasksPanel(() => session, (id) => openChat(id), () => { artifacts.close(false, false); appsPage.close(false); }, toggleSidebar);
+document.getElementById("open-artifacts")!.addEventListener("click", () => { tasksPanel.page.close(false, false); appsPage.close(false); }, { capture: true });
+document.getElementById("open-apps")?.addEventListener("click", () => { artifacts.close(false, false); tasksPanel.page.close(false, false); }, { capture: true });
 const drafts = new Drafts(localStorage, (message) => tasksPanel.error(message));
 document.addEventListener("vak-change", (e) => {
   const detail = (e as CustomEvent<{ surface: string; path: string; value: unknown }>).detail;
@@ -851,10 +851,13 @@ async function switchNavTab(target: NavTab): Promise<void> {
   if (target === "chats") {
     if (isSkillStudioOpen()) await closeSkillStudio();
     if (settingsOpen()) closeSettings();
-    if (tasksPanel.page.visible()) tasksPanel.page.close();
-    if (document.body.classList.contains("in-artifacts")) artifacts.close();
-    if (appsPage.visible()) appsPage.close();
+    if (tasksPanel.page.visible()) tasksPanel.page.close(false, false);
+    if (document.body.classList.contains("in-artifacts")) artifacts.close(false, false);
+    if (appsPage.visible()) appsPage.close(false);
     $("workspace").hidden = false;
+    $("artifacts-page").hidden = true;
+    $("apps-page").hidden = true;
+    $("schedule-page").hidden = true;
     setTopNavActive("chats");
     input.focus();
     return;
@@ -863,8 +866,11 @@ async function switchNavTab(target: NavTab): Promise<void> {
   if (target === "artifacts") {
     if (isSkillStudioOpen()) await closeSkillStudio();
     if (settingsOpen()) closeSettings();
-    if (tasksPanel.page.visible()) tasksPanel.page.close();
-    if (appsPage.visible()) appsPage.close();
+    if (tasksPanel.page.visible()) tasksPanel.page.close(false, false);
+    if (appsPage.visible()) appsPage.close(false);
+    $("workspace").hidden = true;
+    $("apps-page").hidden = true;
+    $("schedule-page").hidden = true;
     setTopNavActive("artifacts");
     await artifacts.open();
     return;
@@ -873,8 +879,11 @@ async function switchNavTab(target: NavTab): Promise<void> {
   if (target === "apps") {
     if (isSkillStudioOpen()) await closeSkillStudio();
     if (settingsOpen()) closeSettings();
-    if (tasksPanel.page.visible()) tasksPanel.page.close();
-    if (document.body.classList.contains("in-artifacts")) artifacts.close();
+    if (tasksPanel.page.visible()) tasksPanel.page.close(false, false);
+    if (document.body.classList.contains("in-artifacts")) artifacts.close(false, false);
+    $("workspace").hidden = true;
+    $("artifacts-page").hidden = true;
+    $("schedule-page").hidden = true;
     setTopNavActive("apps");
     await appsPage.open();
     return;
@@ -883,8 +892,11 @@ async function switchNavTab(target: NavTab): Promise<void> {
   if (target === "schedule") {
     if (isSkillStudioOpen()) await closeSkillStudio();
     if (settingsOpen()) closeSettings();
-    if (document.body.classList.contains("in-artifacts")) artifacts.close();
-    if (appsPage.visible()) appsPage.close();
+    if (document.body.classList.contains("in-artifacts")) artifacts.close(false, false);
+    if (appsPage.visible()) appsPage.close(false);
+    $("workspace").hidden = true;
+    $("artifacts-page").hidden = true;
+    $("apps-page").hidden = true;
     setTopNavActive("schedule");
     await tasksPanel.page.openPage();
     return;
@@ -893,9 +905,13 @@ async function switchNavTab(target: NavTab): Promise<void> {
   if (target === "studio") {
     if (isSkillStudioOpen()) return;
     if (settingsOpen()) closeSettings();
-    if (tasksPanel.page.visible()) tasksPanel.page.close();
-    if (document.body.classList.contains("in-artifacts")) artifacts.close();
-    if (appsPage.visible()) appsPage.close();
+    if (tasksPanel.page.visible()) tasksPanel.page.close(false, false);
+    if (document.body.classList.contains("in-artifacts")) artifacts.close(false, false);
+    if (appsPage.visible()) appsPage.close(false);
+    $("workspace").hidden = true;
+    $("artifacts-page").hidden = true;
+    $("apps-page").hidden = true;
+    $("schedule-page").hidden = true;
     setTopNavActive("studio");
 
     let skillToOpen: string | undefined = undefined;
@@ -919,9 +935,13 @@ async function switchNavTab(target: NavTab): Promise<void> {
 
   if (target === "settings") {
     if (isSkillStudioOpen()) await closeSkillStudio();
-    if (tasksPanel.page.visible()) tasksPanel.page.close();
-    if (document.body.classList.contains("in-artifacts")) artifacts.close();
-    if (appsPage.visible()) appsPage.close();
+    if (tasksPanel.page.visible()) tasksPanel.page.close(false, false);
+    if (document.body.classList.contains("in-artifacts")) artifacts.close(false, false);
+    if (appsPage.visible()) appsPage.close(false);
+    $("workspace").hidden = true;
+    $("artifacts-page").hidden = true;
+    $("apps-page").hidden = true;
+    $("schedule-page").hidden = true;
     setTopNavActive("settings");
     await openSettings();
     return;
@@ -936,9 +956,13 @@ document.getElementById("topbar-tab-studio")?.addEventListener("click", () => vo
 document.getElementById("topbar-tab-settings")?.addEventListener("click", () => void switchNavTab("settings"));
 
 window.addEventListener("vak:settings-opened", () => {
-  artifacts.close();
-  appsPage.close();
-  tasksPanel.page.close();
+  artifacts.close(false, false);
+  appsPage.close(false);
+  tasksPanel.page.close(false, false);
+  $("workspace").hidden = true;
+  $("artifacts-page").hidden = true;
+  $("apps-page").hidden = true;
+  $("schedule-page").hidden = true;
   setTopNavActive("settings");
 });
 window.addEventListener("vak:settings-closed", () => {
@@ -948,8 +972,11 @@ window.addEventListener("vak:settings-closed", () => {
 });
 
 window.addEventListener("vak:artifacts-opened", () => {
-  appsPage.close();
-  tasksPanel.page.close();
+  appsPage.close(false);
+  tasksPanel.page.close(false, false);
+  $("workspace").hidden = true;
+  $("apps-page").hidden = true;
+  $("schedule-page").hidden = true;
   setTopNavActive("artifacts");
 });
 window.addEventListener("vak:artifacts-closed", () => {
@@ -959,8 +986,11 @@ window.addEventListener("vak:artifacts-closed", () => {
 });
 
 window.addEventListener("vak:apps-opened", () => {
-  artifacts.close();
-  tasksPanel.page.close();
+  artifacts.close(false, false);
+  tasksPanel.page.close(false, false);
+  $("workspace").hidden = true;
+  $("artifacts-page").hidden = true;
+  $("schedule-page").hidden = true;
   setTopNavActive("apps");
 });
 window.addEventListener("vak:apps-closed", () => {
@@ -970,8 +1000,11 @@ window.addEventListener("vak:apps-closed", () => {
 });
 
 window.addEventListener("vak:schedule-opened", () => {
-  artifacts.close();
-  appsPage.close();
+  artifacts.close(false, false);
+  appsPage.close(false);
+  $("workspace").hidden = true;
+  $("artifacts-page").hidden = true;
+  $("apps-page").hidden = true;
   setTopNavActive("schedule");
 });
 window.addEventListener("vak:schedule-closed", () => {

@@ -342,9 +342,59 @@ export class Canvas {
         ],
       };
 
-      const files = {
+      const files: Record<string, string> = {
         "surface.json": JSON.stringify(snap, null, 2),
-        "server.ts": `// Sandboxed app daemon for ${snap.title || appId}\nconsole.log("Hosted app runtime active");\n`,
+        "server.ts": `// Sandboxed app daemon for ${snap.title || appId}
+export function handleAction(controlId: string, value: unknown): Record<string, unknown> {
+  console.log("[${appId}] handleAction:", controlId, value);
+  return {
+    op: "batch_update",
+    controlId,
+    value,
+    patches: []
+  };
+}
+
+export function refreshData(): Record<string, unknown> {
+  console.log("[${appId}] background poll executed");
+  return { ok: true, timestamp: new Date().toISOString() };
+}
+`,
+        "AGENTS.md": `# AGENTS.md — ${snap.title || appId}
+
+Self-documenting architectural contract for agents and humans operating this application.
+
+## Identity & Purpose
+- **Application ID:** \`${appId}\`
+- **Name:** ${snap.title || "Hosted Application"}
+- **Category:** finance
+- **Runtime:** Node.js 24 airgapped worker runtime with local persistent volume.
+
+## Interactive Surfaces
+Declared in \`surface.json\` (version ${snap.version ?? 1}):
+- **Surface ID:** \`${snap.id || appId}\`
+- **Nodes Count:** ${Array.isArray(snap.nodes) ? snap.nodes.length : 0}
+
+## Action Dispatch
+UI events and form changes call \`handleAction(controlId, value)\` in \`server.ts\`.
+Background polls invoke \`refreshData()\`.
+
+## Guidelines for Agents
+1. All changes must be self-contained in this directory.
+2. Read \`surface.json\` before modifying actions to ensure control IDs align.
+3. No external network requests without declaring explicit allowed domains in \`app.json\`.
+`,
+        "SKILL.md": `---
+name: ${appId}
+description: Operational instructions for managing and updating ${snap.title || appId}.
+---
+
+# Operating ${snap.title || appId}
+
+- To run background actions: call \`POST /api/apps/${appId}/triggers/refresh-poll/run\`.
+- To dispatch UI changes: call \`POST /api/apps/${appId}/action\`.
+- To update visual layout: edit \`surface.json\` and restart the app runner.
+`
       };
 
       await api("/api/apps", {

@@ -82,9 +82,10 @@ export class SchedulePage {
     window.dispatchEvent(new Event("vak:schedule-opened"));
     this.list(); await this.refresh();
   }
-  close(focus = false): void {
+  close(focus = false, showWorkspace = true): void {
     if (this.page.hidden) return;
-    this.request++; this.page.hidden = true; $("workspace").hidden = false;
+    this.request++; this.page.hidden = true;
+    if (showWorkspace) $("workspace").hidden = false;
     document.body.classList.remove("in-schedule", "schedule-show-sidebar");
     $("open-schedule").setAttribute("aria-current", "false");
     window.dispatchEvent(new Event("vak:schedule-closed"));

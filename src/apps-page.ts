@@ -63,12 +63,12 @@ export class AppsPage {
     return !this.#page.hidden;
   }
 
-  close(): void {
+  close(showWorkspace = true): void {
     if (this.#page.hidden) return;
     this.#activeApp = null;
     this.#activeStore = null;
     this.#page.hidden = true;
-    $("workspace").hidden = false;
+    if (showWorkspace) $("workspace").hidden = false;
     document.body.classList.remove("in-apps");
     $("open-apps")?.setAttribute("aria-current", "false");
     window.dispatchEvent(new Event("vak:apps-closed"));
@@ -199,27 +199,25 @@ export class AppsPage {
       ...filtered.map((app) => {
         const isRunning = app.isRunning;
         return el("div", { className: "artifact-card app-card" },
-          el("div", {},
-            el("div", { className: "artifact-cover app-cover" },
-              el("span", { className: "artifact-kind", textContent: app.category.toUpperCase() }),
-              el("span", {
-                className: `app-status ${isRunning ? "live" : ""}`,
-                textContent: isRunning ? "Running" : "Idle",
-              }),
-              el("span", { className: "artifact-symbol app-symbol" },
-                icon(app.category === "finance" ? "chart" : "cpu", 28)
-              )
-            ),
-            el("div", { className: "artifact-card-body" },
-              el("strong", { textContent: app.name }),
-              el("p", {
-                className: "app-desc",
-                textContent: app.description,
-              }),
-              el("div", { className: "app-stats" },
-                el("span", {}, icon("folder", 12), document.createTextNode(` ${formatBytes(app.storageBytes)}`)),
-                el("span", {}, icon("clock", 12), document.createTextNode(` ${app.triggerCount} trigger${app.triggerCount === 1 ? "" : "s"}`))
-              )
+          el("div", { className: "artifact-cover app-cover" },
+            el("span", { className: "artifact-kind", textContent: app.category.toUpperCase() }),
+            el("span", {
+              className: `app-status ${isRunning ? "live" : ""}`,
+              textContent: isRunning ? "Running" : "Idle",
+            }),
+            el("span", { className: "artifact-symbol app-symbol" },
+              icon(app.category === "finance" ? "chart" : "cpu", 28)
+            )
+          ),
+          el("div", { className: "artifact-card-body" },
+            el("strong", { textContent: app.name }),
+            el("p", {
+              className: "app-desc",
+              textContent: app.description,
+            }),
+            el("div", { className: "app-stats" },
+              el("span", {}, icon("folder", 12), document.createTextNode(` ${formatBytes(app.storageBytes)}`)),
+              el("span", {}, icon("clock", 12), document.createTextNode(` ${app.triggerCount} trigger${app.triggerCount === 1 ? "" : "s"}`))
             )
           ),
           el("div", { className: "app-card-foot" },
@@ -268,6 +266,7 @@ export class AppsPage {
 
     const back = el("button", {
       type: "button",
+      id: "app-runner-back",
       className: "quiet back",
       onclick: () => this.#closeActiveApp(),
       title: "Back to applications catalog",

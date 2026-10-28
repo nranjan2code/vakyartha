@@ -31,7 +31,18 @@ export function rebalanceWeights(riskTolerance: number): number[] {
 }
 
 export function handleAction(controlId: string, value: unknown): Record<string, unknown> {
-  const riskTolerance = typeof value === "number" ? value : 65;
+  let riskTolerance = 65;
+  if (typeof value === "number") {
+    riskTolerance = value;
+  } else if (typeof value === "string") {
+    if (value === "conservative") riskTolerance = 25;
+    else if (value === "aggressive") riskTolerance = 85;
+    else if (value === "balanced") riskTolerance = 65;
+    else {
+      const parsed = parseFloat(value);
+      if (!Number.isNaN(parsed)) riskTolerance = parsed;
+    }
+  }
   const weights = rebalanceWeights(riskTolerance);
   const portfolioVal = 124_500;
   // Blended annualized volatility based on equity weight
