@@ -152,7 +152,7 @@ function key(a: VoiceAdapter, env: Env): string {
   return k;
 }
 
-// --- Ollama (Phonon) ------------------------------------------------------------
+// --- Ollama --------------------------------------------------------------------
 
 export function ollamaBase(env: Env): string {
   const host = (env.OLLAMA_HOST || "http://127.0.0.1:11434").replace(/\/+$/, "");
@@ -160,6 +160,20 @@ export function ollamaBase(env: Env): string {
 }
 
 const NC = "CC BY-NC 4.0 (non-commercial)";
+// The publisher's speech language list, shared by the audio and omni families.
+// Identify the architecture from /api/show so local aliases keep the same limits.
+const LFM3_SPEECH_LANGUAGES = ["ar", "da", "de", "el", "en", "fi", "fr", "he", "it", "ja", "ko", "nl", "pl", "pt", "es", "sv", "tr", "zh"];
+type OllamaVoiceTag = { name: string; capabilities?: string[] };
+async function ollamaVoiceTags(ctx: Ctx): Promise<OllamaVoiceTag[]> {
+  const res = await ctx.f(`${ollamaBase(ctx.env)}/api/tags`, { signal: ctx.signal ?? AbortSignal.timeout(3000) });
+  if (!res.ok) throw await failure("Ollama", res);
+  return ((await res.json()) as { models?: OllamaVoiceTag[] }).models ?? [];
+}
+async function ollamaVoiceInfo(model: string, ctx: Ctx): Promise<{ voices?: string[]; details?: { family?: string }; remote_host?: string; remote_model?: string }> {
+  const res = await ctx.f(`${ollamaBase(ctx.env)}/api/show`, { method: "POST", signal: ctx.signal ?? AbortSignal.timeout(3000), headers: { "content-type": "application/json" }, body: JSON.stringify({ model }) });
+  if (!res.ok) throw await failure("Ollama", res);
+  return res.json();
+}
 /** The Phonon tags offered for one-click install; sizes from the Ollama library. */
 export const OLLAMA_PACKS: Omit<VoicePack, "installed">[] = [
   { id: "phonon:latest", label: "Phonon · English", size: "113 MB", license: "Apache 2.0", languages: ["en"] },
@@ -173,42 +187,50 @@ export const OLLAMA_PACKS: Omit<VoicePack, "installed">[] = [
 const ollama: VoiceAdapter = {
   id: "ollama",
   label: "Ollama",
-  publisher: "Ollama · Phonon by Gradium",
+  publisher: "Ollama · local voice models",
   summary: "Speech that runs on this Mac. Free and private.",
-  description: "Phonon text-to-speech models run in Ollama on Apple Silicon (Ollama 0.40.9 or later). Text never leaves this computer. Install a voice pack below; English includes 38 voices.",
+  description: "Choose installed models for read aloud and dictation. Refresh after installing a model in Ollama. Local requests stay on this computer.",
   local: true,
   cost: "Free · runs on this Mac",
-  async list({ env, f }) {
-    let tags: { models?: { name: string; capabilities?: string[] }[] };
+  async list(ctx) {
+    let tags: OllamaVoiceTag[];
     try {
-      tags = (await (await f(`${ollamaBase(env)}/api/tags`, { signal: AbortSignal.timeout(3000) })).json()) as typeof tags;
+      tags = await ollamaVoiceTags(ctx);
     } catch {
-      return { models: [], packs: OLLAMA_PACKS.map((p) => ({ ...p, installed: false })), reason: "Ollama is not running. Start Ollama, then refresh." };
+      return { models: [], stt: [], packs: OLLAMA_PACKS.map((p) => ({ ...p, installed: false })), reason: "Ollama is not running. Start Ollama, then refresh." };
     }
-    const speech = (tags.models ?? []).filter((m) => m.capabilities?.includes("speech"));
-    const installed = new Set(speech.map((m) => m.name));
+    const relevant = tags.filter((m) => m.capabilities?.some((c) => c === "speech" || c === "audio"));
+    const installed = new Set(tags.filter((m) => m.capabilities?.includes("speech")).map((m) => m.name));
     const packs = OLLAMA_PACKS.map((p) => ({ ...p, installed: installed.has(p.id) }));
-    if (!speech.length) return { models: [], packs, reason: "No speech model is installed yet. Install a voice pack below." };
-    const models = await Promise.all(speech.map(async (m): Promise<VoiceModel> => {
+    if (!relevant.length) return { models: [], stt: [], packs, reason: "No voice model is installed yet. Install a voice pack below, or an Ollama model with audio input." };
+    const entries = await Promise.all(relevant.map(async (m) => {
       let voices: string[] = [];
+      let family: string | undefined;
+      let localAudio = false;
       try {
-        const res = await f(`${ollamaBase(env)}/api/show`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: m.name }) });
-        voices = ((await res.json()) as { voices?: string[] }).voices ?? [];
+        const info = await ollamaVoiceInfo(m.name, ctx);
+        voices = info.voices ?? [];
+        family = info.details?.family;
+        localAudio = !info.remote_host && !info.remote_model;
       } catch {
         /* listed without voices: "default" still works */
       }
       const pack = OLLAMA_PACKS.find((p) => p.id === m.name);
-      return {
+      const languages = pack?.languages ?? (family === "lfm3_audio" || family === "lfm3_omni" ? LFM3_SPEECH_LANGUAGES : undefined);
+      const model: VoiceModel = {
         id: m.name,
         label: pack ? pack.label : m.name.replace(/:latest$/, ""),
         // "default" first: it is what the model uses when none is named.
         voices: [{ id: "default", name: "Default" }, ...named(voices.filter((v) => v !== "default"))],
         note: pack?.license === NC ? "Non-commercial licence" : undefined,
-        // A pack speaks its own languages; a tag pulled some other way is not assumed to.
-        languages: pack?.languages,
+        languages,
       };
+      return { model, speech: m.capabilities?.includes("speech"), audio: localAudio && m.capabilities?.includes("audio") };
     }));
-    return { models, packs };
+    return {
+      models: entries.filter((e) => e.speech).map((e) => e.model), packs,
+      stt: entries.filter((e) => e.audio).map(({ model: m }) => ({ id: m.id, label: m.label, languages: m.languages })),
+    };
   },
   async synth(req, ctx) {
     // Phonon refuses speed and instructions; playback speed is the player's.
@@ -217,6 +239,26 @@ const ollama: VoiceAdapter = {
   },
   install(pack, ctx) {
     return pullOllamaPack(pack, ctx.env, ctx.f);
+  },
+  transcribe: {
+    models: [],
+    async run(audio, model, language, ctx) {
+      // Require a locally installed audio model; never let this path proxy a
+      // cloud model or turn a mistyped selection into an implicit download.
+      let tags: OllamaVoiceTag[];
+      try { tags = await ollamaVoiceTags(ctx); }
+      catch (err) {
+        if (ctx.signal?.aborted) throw err;
+        throw new SpeechError("Ollama is not reachable", 502);
+      }
+      const installed = tags.find((m) => m.name === model || m.name === `${model}:latest`);
+      if (!installed?.capabilities?.includes("audio")) throw new SpeechError("Choose an installed Ollama model with audio input for dictation.");
+      const info = await ollamaVoiceInfo(installed.name, ctx);
+      if (info.remote_host || info.remote_model) throw new SpeechError("Ollama dictation requires a local model; cloud-proxied models are not supported.");
+      return upload("Ollama", ctx, `${ollamaBase(ctx.env)}/v1/audio/transcriptions`, {}, audio, {
+        model: installed.name, response_format: "json", ...(language ? { language } : {}),
+      });
+    },
   },
 };
 
@@ -456,8 +498,8 @@ export async function voiceProviders(env: Env, f: Fetch = fetch, dir = ""): Prom
     const listed = await a.list({ env, f, dir });
     const missingKey = a.keyVar && !env[a.keyVar];
     const reason = missingKey ? `Add your ${a.keyLabel ?? a.label} API key below.` : listed.reason;
-    // Ready when it can read aloud or, for a listener only, transcribe.
-    const available = !reason && (listed.models.some((m) => m.voices.length > 0) || (!a.synth && Boolean(listed.stt?.length)));
+    // A provider can be ready for dictation even without a speech-output model.
+    const available = !reason && (listed.models.some((m) => m.voices.length > 0) || Boolean(listed.stt?.length));
     return { ...info, icon: "voice", available, reason, models: listed.models, packs: listed.packs, stt: listed.stt ?? transcribe?.models, transcribes: Boolean(transcribe) };
   }));
 }

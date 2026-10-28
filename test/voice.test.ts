@@ -256,7 +256,7 @@ test("Gemini's speech and transcription models come from its API, newest first",
   assert.deepEqual(g.stt!.map((m) => m.id), ["gemini-3.5-transcribe", "gemini-flash-latest"]);
   const keyless = (await voiceProviders({}, f)).find((p) => p.id === "gemini")!;
   assert.ok(keyless.stt!.length > 0);
-  assert.equal((await voiceProviders({}, f)).find((p) => p.id === "ollama")!.stt, undefined);
+  assert.deepEqual((await voiceProviders({}, f)).find((p) => p.id === "ollama")!.stt, []);
 });
 
 test("dictation reaches each provider in its own form", async () => {
@@ -337,12 +337,69 @@ test("Whistle refuses a language it was not trained on, and a missing pack, befo
 test("dictation input is checked before anything is sent", async () => {
   const { f, calls } = fake({});
   const ok = Buffer.from(wav16k(new Int16Array(10))).toString("base64");
-  await assert.rejects(transcribe({ provider: "ollama", model: "phonon", audio: ok }, {}, f), /does not transcribe/);
   await assert.rejects(transcribe({ provider: "openai", model: "a b", audio: ok }, {}, f), /invalid transcription model/);
   await assert.rejects(transcribe({ provider: "openai", model: "whisper-1", language: "english!", audio: ok }, {}, f), /invalid language/);
   await assert.rejects(transcribe({ provider: "openai", model: "whisper-1", audio: Buffer.from("not audio at all, really").toString("base64") }, {}, f), /not a WAV/);
   await assert.rejects(transcribe({ provider: "openai", model: "whisper-1", audio: ok }, {}, f), /API key/);
   assert.equal(calls.length, 0);
+});
+
+test("Ollama discovers audio input independently of speech output and uses architecture language limits", async () => {
+  const { f } = fake({
+    "/api/tags": () => Response.json({ models: [
+      { name: "my-omni:latest", capabilities: ["completion", "audio", "speech"] },
+      { name: "listener:latest", capabilities: ["audio"] },
+      { name: "text:latest", capabilities: ["completion"] },
+    ] }),
+    "/api/show": () => Response.json({ details: { family: "lfm3_omni" }, voices: ["default", "female-american-english"] }),
+  });
+  const p = (await voiceProviders({}, f))[0]!;
+  assert.equal(p.available, true);
+  assert.equal(p.transcribes, true);
+  assert.deepEqual(p.models.map((m) => m.id), ["my-omni:latest"]);
+  assert.deepEqual(p.stt!.map((m) => m.id), ["my-omni:latest", "listener:latest"]);
+  assert.equal(p.stt![0]!.languages!.length, 18);
+  assert.ok(!p.stt![0]!.languages!.includes("hi"));
+  assert.deepEqual(p.models[0]!.voices.map((v) => v.id), ["default", "female-american-english"]);
+  const onlyListener = (await voiceProviders({}, fake({
+    "/api/tags": () => Response.json({ models: [{ name: "listener:latest", capabilities: ["audio"] }] }),
+    "/api/show": () => Response.json({}),
+  }).f))[0]!;
+  assert.equal(onlyListener.available, true);
+  assert.deepEqual(onlyListener.models, []);
+  assert.deepEqual(onlyListener.stt, [{ id: "listener:latest", label: "listener", languages: undefined }]);
+});
+
+test("Ollama dictation uploads WAV to the selected installed audio model and preserves literal output", async () => {
+  const { f, calls } = fake({
+    "/api/tags": () => Response.json({ models: [{ name: "lfm3-omni:latest", capabilities: ["audio", "speech"] }] }),
+    "/api/show": () => Response.json({ details: { family: "lfm3_omni" } }),
+    "/v1/audio/transcriptions": () => Response.json({ text: " Do not delete any files. " }),
+  });
+  const audio = Buffer.from(wav16k(new Int16Array(16000))).toString("base64");
+  assert.equal(await transcribe({ provider: "ollama", model: "lfm3-omni", language: "en-GB", audio }, {}, f), "Do not delete any files.");
+  const call = calls.find((c) => c.url.endsWith("/v1/audio/transcriptions"))!;
+  const form = call.init!.body as FormData;
+  assert.equal(form.get("model"), "lfm3-omni:latest");
+  assert.equal(form.get("language"), "en-GB");
+  assert.equal(form.get("response_format"), "json");
+  assert.equal((form.get("file") as File).size, Buffer.from(audio, "base64").length);
+  assert.equal((call.init!.headers as Record<string, string>).authorization, undefined);
+  const denied = fake({ "/api/tags": () => Response.json({ models: [{ name: "phonon:latest", capabilities: ["speech"] }] }) });
+  for (const model of ["phonon", "missing:cloud"]) {
+    await assert.rejects(transcribe({ provider: "ollama", model, audio }, {}, denied.f), /installed Ollama model with audio input/);
+  }
+  assert.ok(denied.calls.every((c) => c.url.endsWith("/api/tags")));
+  const remote = fake({
+    "/api/tags": () => Response.json({ models: [{ name: "remote-alias:latest", capabilities: ["audio"] }] }),
+    "/api/show": () => Response.json({ remote_host: "https://example.invalid", remote_model: "remote" }),
+  });
+  await assert.rejects(transcribe({ provider: "ollama", model: "remote-alias", audio }, {}, remote.f), /cloud-proxied/);
+  assert.ok(!remote.calls.some((c) => c.url.endsWith("/v1/audio/transcriptions")));
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(transcribe({ provider: "ollama", model: "lfm3-omni", audio }, {}, (async (_url, init) => {
+    init!.signal!.throwIfAborted(); throw new Error("unexpected request");
+  }) as typeof fetch, controller.signal), { name: "AbortError" });
 });
 
 test("recordings are downsampled to 16 kHz mono WAV", () => {

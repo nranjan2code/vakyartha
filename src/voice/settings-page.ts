@@ -10,7 +10,9 @@ import { voiceMaster } from "./master.ts";
 import { conversationPrefs, stopConversation } from "./conversation.ts";
 import { type VoiceOption, lastError, loadVoices, readAloud, resolveChoice, SPEEDS, stopReading, voicePrefs, voiceState, type VoiceChoice, type VoiceProvider } from "./read-aloud.ts";
 
-const inUse = (p: VoiceProvider) => voicePrefs.choice?.provider === p.id && resolveChoice([p]) !== undefined;
+const inUse = (p: VoiceProvider) =>
+  (voicePrefs.choice?.provider === p.id && p.models.some((m) => m.id === voicePrefs.choice?.model && m.voices.some((v) => v.id === voicePrefs.choice?.voice))) ||
+  (dictationPrefs.choice?.provider === p.id && Boolean(p.stt?.some((m) => m.id === dictationPrefs.choice?.model)));
 
 function status(p: VoiceProvider): HTMLElement {
   if (inUse(p)) return pill("In use", "ok");
@@ -18,6 +20,7 @@ function status(p: VoiceProvider): HTMLElement {
 }
 
 const sample = (voice: string) => `Hello, this is ${voice}. This is how replies will sound when Vakyartha reads them aloud.`;
+const voiceName = (name: string) => /^[a-z]+(?:-[a-z]+)+$/.test(name) ? name.split("-").map((word) => word[0]!.toUpperCase() + word.slice(1)).join(" ") : name;
 
 /** A play button that turns into stop while its own sample is reading. */
 function previewButton(text: () => string, choice: () => VoiceChoice | undefined, note: HTMLElement): HTMLButtonElement {
@@ -67,7 +70,7 @@ export async function voiceSection(open: (id: string) => void): Promise<HTMLElem
   return [el("h2", { className: "market-heading", textContent: "Voice" }), el("p", { className: "row-hint market-sub", textContent: "Read replies aloud and dictate messages. Pick a provider and set it up once." }), grid];
 }
 
-/** One voice provider: setup, voice packs, model and voice, and making it the one that reads. */
+/** Discovered capabilities come first; optional downloads are secondary setup. */
 export async function voicePage(id: string, settings: Setting[], back: () => void, reload: () => void): Promise<HTMLElement[]> {
   const list = await loadVoices(true);
   const p = list.find((x) => x.id === id);
@@ -81,6 +84,17 @@ export async function voicePage(id: string, settings: Setting[], back: () => voi
   const setup: HTMLElement[] = [];
   const keySetting = p.keyVar ? settings.find((s) => s.name === p.keyVar) : undefined;
   if (keySetting) setup.push(row(keySetting.label, keySetting.group === "voice" ? "Kept in the macOS Keychain." : "Shared with this provider's chat models in Providers.", secretField(keySetting, reload)));
+  if (p.reason) setup.unshift(el("div", { className: "row stack" }, el("p", { className: "row-hint", textContent: p.reason })));
+  if (setup.length) parts.push(group("Setup", ...setup));
+
+  if (p.local) {
+    const refresh = el("button", { type: "button", className: "ghost small", textContent: "Refresh models" });
+    refresh.addEventListener("click", () => { stopReading(); reload(); });
+    const count = new Set([...p.models.map((m) => m.id), ...(p.stt ?? []).map((m) => m.id)]).size;
+    parts.push(el("div", { className: "voice-discovery" }, el("p", { className: "row-hint", textContent: `${count} model${count === 1 ? "" : "s"} available · ${p.models.length} read aloud · ${p.stt?.length ?? 0} dictation` }), refresh));
+  }
+
+  const packRows: HTMLElement[] = [];
   for (const pack of p.packs ?? []) {
     let control: HTMLElement;
     if (pack.installed) control = pill("Installed", "ok");
@@ -98,18 +112,16 @@ export async function voicePage(id: string, settings: Setting[], back: () => voi
       });
       control = b;
     }
-    setup.push(row(pack.label, `${pack.id} · ${pack.license}`, control));
+    packRows.push(row(pack.label, `${pack.id} · ${pack.license}`, control));
   }
-  if (p.reason) setup.unshift(el("div", { className: "row stack" }, el("p", { className: "row-hint", textContent: p.reason })));
-  if (setup.length) parts.push(group(p.packs ? "Voice packs" : "Setup", ...setup));
 
   // A provider that only listens (Whistle) has nothing to read aloud with.
   if (p.available && p.models.some((m) => m.voices.length)) {
     const saved = voicePrefs.choice?.provider === p.id ? voicePrefs.choice : undefined;
     let c = resolveChoice([p], saved ?? { provider: p.id, model: "", voice: "" })!;
     const model = () => p.models.find((m) => m.id === c.model)!;
-    const voiceBox = el("span");
-    const optionRows = el("div", { className: "rows" });
+    const voiceBox = el("span", { className: "voice-choice" });
+    const optionRows = el("div", { className: "voice-options" });
     const modelHint = el("span", { className: "row-hint" });
     const use = el("button", { type: "button", className: "primary small" });
     const paintUse = () => {
@@ -118,8 +130,14 @@ export async function voicePage(id: string, settings: Setting[], back: () => voi
       use.disabled = Boolean(same);
     };
     const paintVoices = () => {
-      voiceBox.replaceChildren(select(model().voices.map((v) => [v.id, v.name] as const), c.voice, (v) => { c = { ...c, voice: v }; paintUse(); }));
-      modelHint.textContent = model().note ?? "";
+      const voiceSelect = select(model().voices.map((v) => [v.id, voiceName(v.name)] as const), c.voice, (v) => { stopReading(); c = { ...c, voice: v }; paintUse(); });
+      voiceSelect.setAttribute("aria-label", "Read-aloud voice");
+      voiceBox.replaceChildren(voiceSelect);
+      modelHint.textContent = [
+        `${model().voices.length} voice${model().voices.length === 1 ? "" : "s"}`,
+        model().languages ? `${model().languages!.length} language${model().languages!.length === 1 ? "" : "s"}` : "Language coverage not reported",
+        model().note,
+      ].filter(Boolean).join(" · ");
       const opts = model().options ?? [];
       // Keep only values this model declares, of the kind it declares (OpenAI's style is text, ElevenLabs' a number).
       const kept = Object.fromEntries(opts.flatMap((o) => { const v = c.options?.[o.id]; return v !== undefined && typeof v === (o.kind === "text" ? "string" : "number") ? [[o.id, v]] : []; }));
@@ -131,31 +149,60 @@ export async function voicePage(id: string, settings: Setting[], back: () => voi
         c = { ...c, options: next };
         paintUse();
       }))));
-      if (!opts.length) optionRows.replaceChildren(el("div", { className: "row stack" }, el("p", { className: "row-hint", textContent: p.local ? "Phonon has no style controls: each voice has its own character. Speed is set in Settings → Voice." : "This model has no style controls. Speed is set in Settings → Voice." })));
+      if (!opts.length) optionRows.replaceChildren(el("div", { className: "row stack" }, el("p", { className: "row-hint", textContent: "Adjust playback speed in Settings → Voice." })));
     };
     use.addEventListener("click", () => { voicePrefs.choice = c; reload(); });
     paintVoices();
     paintUse();
-    const preview = previewButton(() => sample(model().voices.find((v) => v.id === c.voice)?.name ?? "your voice"), () => c, note);
+    const preview = previewButton(() => sample(voiceName(model().voices.find((v) => v.id === c.voice)?.name ?? "your voice")), () => c, note);
+    const modelSelect = select(p.models.filter((m) => m.voices.length).map((m) => [m.id, m.label] as const), c.model, (m) => {
+      stopReading();
+      const next = p.models.find((x) => x.id === m)!;
+      c = { provider: p.id, model: m, voice: next.voices.find((v) => v.id === c.voice)?.id ?? next.voices[0]!.id };
+      paintVoices();
+      paintUse();
+    });
+    modelSelect.setAttribute("aria-label", "Read-aloud model");
     parts.push(group(
-      "Voice",
-      row("Model", null, el("span", {}, select(p.models.filter((m) => m.voices.length).map((m) => [m.id, m.label] as const), c.model, (m) => {
-        c = { provider: p.id, model: m, voice: p.models.find((x) => x.id === m)!.voices[0]!.id, options: c.options };
-        paintVoices();
-        paintUse();
-      }), modelHint)),
-      row("Voice", p.cost, el("span", { className: "row-actions" }, voiceBox, preview)),
+      "Read aloud",
+      row("Model", "Reads replies and interface content aloud.", el("span", { className: "voice-model-control" }, modelSelect, modelHint)),
+      row("Voice", p.cost, el("span", { className: "row-actions voice-preview" }, voiceBox, preview)),
+      optionRows,
+      el("div", { className: "row voice-apply" }, use),
     ));
-    parts.push(el("section", { className: "group" }, el("h2", { textContent: "Sound" }), optionRows));
-    parts.push(el("div", { className: "row-actions voice-use" }, use));
   }
-  parts.push(group("Speech to text", el("div", { className: "row stack" }, el("p", {
-    className: "row-hint",
-    textContent: p.stt?.length
-      ? `Dictation can use ${p.stt.map((m) => m.label).join(", ")}. Choose it in Settings → Voice. ${p.local ? "Recordings stay on this Mac." : "Recordings are sent to " + p.publisher + " and billed."}`
-      : p.transcribes ? "Set it up above, then choose it for dictation in Settings → Voice."
-      : `${p.label} has no transcription model yet. Dictation uses this Mac's speech recognition or a hosted provider.`,
+  if (p.stt?.length && !(p.keyVar && p.reason?.includes("API key"))) {
+    const saved = dictationPrefs.choice;
+    let chosen = p.stt.find((m) => m.id === (saved?.provider === p.id ? saved.model : undefined)) ?? p.stt[0]!;
+    const hint = el("span", { className: "row-hint" });
+    const use = el("button", { type: "button", className: "primary small" });
+    const paint = () => {
+      const same = dictationPrefs.choice?.provider === p.id && dictationPrefs.choice?.model === chosen.id;
+      use.textContent = same ? "In use for dictation" : "Use for dictation";
+      use.disabled = same;
+      hint.textContent = chosen.languages ? `${chosen.languages.length} supported languages` : "Language coverage not reported";
+    };
+    const pick = select(p.stt.map((m) => [m.id, m.label] as const), chosen.id, (id) => { chosen = p.stt!.find((m) => m.id === id)!; paint(); });
+    pick.setAttribute("aria-label", "Dictation model");
+    use.addEventListener("click", () => { cancelDictation(); stopConversation(); dictationPrefs.choice = { provider: p.id, model: chosen.id }; reload(); });
+    paint();
+    parts.push(group("Dictation",
+      row("Model", "Turns microphone recordings into text. Conversation mode uses this choice too.", el("span", { className: "voice-model-control" }, pick, hint)),
+      el("div", { className: "row stack" }, el("p", { className: "row-hint", textContent: p.local ? "Free · recordings stay on this Mac. Language and microphone options are in Settings → Voice." : `Recordings are sent to ${p.publisher} and billed. Language and microphone options are in Settings → Voice.` })),
+      el("div", { className: "row voice-apply" }, use),
+    ));
+  } else parts.push(group("Dictation", el("div", { className: "row stack" }, el("p", {
+    className: "row-hint", textContent: p.transcribes ? "Set up a transcription model, then choose it here or in Settings → Voice."
+      : `${p.label} has no transcription model available. Choose another provider in Settings → Voice.`,
   }))));
+  if (packRows.length) {
+    const ready = p.models.length > 0 || Boolean(p.stt?.length);
+    parts.push(el("details", { className: "voice-downloads", open: !ready },
+      el("summary", {}, el("span", { textContent: "Download voice packs" }), el("span", { className: "row-hint", textContent: "Optional · additional models and languages" })),
+      el("p", { className: "row-hint", textContent: p.id === "ollama" ? "These packs are optional. Models installed separately in Ollama are discovered above when you refresh." : "Install a pack to make its models available above." }),
+      group(null, ...packRows),
+    ));
+  }
   parts.push(note);
   return parts;
 }
@@ -180,9 +227,9 @@ export async function voiceSettingsPage(openProvider: (id: string) => void): Pro
   const note = el("p", { className: "row-hint bad" });
   const change = el("button", { type: "button", className: "ghost small", textContent: c ? "Change…" : "Set up a voice" });
   change.addEventListener("click", () => openProvider(c?.provider ?? list[0]?.id ?? "ollama"));
-  const current = c && p && m ? `${v?.name ?? c.voice} · ${m.label} · ${p.label}` : "No voice is ready yet.";
+  const current = c && p && m ? `${voiceName(v?.name ?? c.voice)} · ${m.label} · ${p.label}` : "No voice is ready yet.";
   const controls = el("span", { className: "row-actions" }, change);
-  if (c) controls.prepend(previewButton(() => sample(v?.name ?? "your voice"), () => c, note));
+  if (c) controls.prepend(previewButton(() => sample(voiceName(v?.name ?? "your voice")), () => c, note));
   const rest = el("div", { hidden: !voiceMaster.on });
   rest.append(
     group(
