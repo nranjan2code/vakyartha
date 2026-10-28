@@ -38,3 +38,4 @@ This directory contains the comprehensive technical architecture specification f
 - [`scripts/canvas-check.ts`](../../scripts/canvas-check.ts): WebKit smoke check validating 14 interactive canvas steps across desktop (1100px) and mobile (620px) viewports.
 - [`scripts/surface-design-check.ts`](../../scripts/surface-design-check.ts): Multi-viewport validation of mixed 3-tier liquid layouts and all 8 SVG chart types.
 - [`scripts/skills-check.ts`](../../scripts/skills-check.ts): Verification of reviewed built-in skills, theme consistency, and responsive layouts.
+
