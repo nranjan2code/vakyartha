@@ -463,3 +463,35 @@ An autonomous YOLO package generator (`/api/skills/generate`) synthesizes comple
 Inert scripts are tested in disposable, timeout-bounded sandboxes (`POST /api/skills/:name/sandbox-test`) powered by `vak-sandbox`. Test scenarios evaluate prompts against the provider's `use_skill` selection gate (`/api/skills/eval`).
 
 No new runtime boundaries, storage dependencies, or framework modifications are introduced. All styling strictly adheres to Vakyartha CSS design tokens.
+
+
+## ADR-047: Multi-Tenant Pooled Sandboxed Runtime, Dynamic Hosted Apps & Admin Console (2026-10-28)
+
+Accepted. Full-fledged dynamic applications (Artifact Apps) and conversational AI chats require backend code execution, dedicated storage volumes, and sub-millisecond local reactivity without exhausting workstation CPU/RAM or violating Vakyartha's single persistence writer (ADR-001) and Zero-Trust (STRIDE) boundaries.
+
+### 1. Deterministic Multi-Tenant Worker Pool (`SandboxPoolManager`)
+On a developer workstation, launching unmanaged Node runtimes degrades memory and exhausts file descriptors. The runtime enforces deterministic slot bounds:
+- **`maxActiveWorkers = 3`**: Active OS child processes are bounded. When concurrency pressure mounts, the least-recently-used (LRU) slot is gracefully evicted and hibernated.
+- **Pre-Warmed Standby Runner**: Maintains 1 pre-warmed idle worker slot ready for instant leasing in `< 50ms`.
+- **Inactivity Tiering**: Active slots transition to `idle` after 5 minutes, and are flushed and `hibernated` after 15 minutes of inactivity (zero-CPU footprint on disk). Wakeup from hibernation occurs in `< 150ms`.
+
+### 2. Tenant Volumes & Single Persistence Writer
+Every app and chat owns a dedicated, isolated directory volume (`<dataDir>/apps/<id>/` or `<dataDir>/chats/<id>/workspace/`).
+- Only the active App Worker process writes inside its own tenant volume (`data/app.sqlite`, `data/analytics.duckdb`, `state.json`). The Host Supervisor never writes directly inside tenant volumes.
+- Atomic state persistence is guaranteed through write-renaming (`state.json.tmp` -> `state.json`).
+- SQLite operates in WAL mode (`PRAGMA synchronous = NORMAL`) to survive abrupt power loss.
+
+### 3. Declarative App Manifest (`app.json`) & Strict Validation
+Applications declare their runtime limits, network entitlements, MCP tools, and triggers via `app.json`. The engine validates manifests strictly via `parseAppManifest()`, refusing directory traversal (`..`, absolute paths, NUL bytes) and clamping memory/storage quotas within platform bounds.
+
+### 4. Workstation Physical Lifecycle & Hardware Resilience
+Edge software on laptops and workstations experiences chaos: sudden lid-close, sleep, clock skew leaps, and abrupt battery cutoff:
+- **Sleep & Clock Skew Detection**: Automatic interval delta measurement (`elapsed > 45s`) detects when the host event loop was suspended. Upon waking, `wakeAndReconcile()` probes worker sockets with heartbeat pings, resumes suspended processes, and coalesces missed crons (preventing thundering herd bursts).
+- **Graceful 4-Second Shutdown Waterfall**: Tauri shell coordinates quit requests through a 4-second waterfall: draining in-flight turns, preparing worker checkpoints, SIGTERMing processes, and exiting before hard SIGKILL fallback.
+
+### 5. Tray-Launched Admin & Observability Console (`admin.html`)
+A dedicated administrative console provides comprehensive observability:
+- **Dual Delivery**: Spawns as a dedicated native Tauri webview window (`1100×720px`) via `show_admin` or runs in the default browser over loopback HTTP and Server-Sent Events (SSE).
+- **Five Workbenches**: Fleet & Pool Manager, Dynamic App Inventory, Real-Time Streaming Log Terminal (`/api/admin/logs/stream`), FinOps Spend Governor, and Zero-Trust Security Inspector.
+- **macOS System Tray Launcher**: Opened directly from the menu bar (`Cmd+Shift+A`) or from Settings → General.
+

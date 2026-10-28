@@ -2,6 +2,13 @@
 
 Vakyartha uses the separate [`vak-sandbox`](https://github.com/nranjan2code/sandbox) project for macOS Seatbelt containment and the durable Realm lifecycle. The app owns settings, the integration adapter, skill guidance, approvals and Settings UI. Projection's existing integration lifecycle owns tool discovery, policy, approval delivery and call logging; no framework dependency files are edited.
 
+## Execution Tiers: Ephemeral Commands vs. Stateful Pooled Mini-Cloud Runtime
+
+Vakyartha operates two distinct execution tiers for untrusted code execution:
+
+1. **Tier 1 (Ephemeral Command & Realm Sandbox):** Documented here, powered by `vak-sandbox` (`vaksb`). Designed for tool-driven CLI commands (`run_command`), Skill Studio rehearsals (`POST /api/skills/:name/rehearsal`), and multi-step file manipulation within project Realms. Stateless, bounded to 30 seconds, fail-closed, and destroyed or snapshot-promoted on demand.
+2. **Tier 2 (Multi-Tenant Sandboxed Application Pool):** Designed for full-lifecycle persistent Dynamic Artifact Applications and long-running daemons. Governed by `SandboxPoolManager` (`sidecar/sandbox-pool/pool-manager.ts`) and `AppRegistry` (`sidecar/sandbox-pool/app-registry.ts`) with bounded concurrency (`maxActiveWorkers = 3`), pre-warmed standby runners, LRU slot eviction/hibernation, sub-16ms Canvas reactive diffing, autonomous background crons, workstation sleep/wake clock reconciliation, and dedicated Admin Console (`admin.html`). Detailed in [Sandboxed Applications & Runtime Pool Architecture](../sandboxed-apps/ARCHITECTURE.md) and [Operations Guide](../sandboxed-apps/OPERATIONS-AND-LIFECYCLE.md).
+
 ## Workspace lifetimes
 
 - `run_command` runs once in a bounded temporary project copy and removes it after the call.

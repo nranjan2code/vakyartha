@@ -188,4 +188,24 @@ test("admin and hosted apps HTTP APIs manage real sandboxed worker lifecycle end
   // 11. GET /api/apps/portfolio-risk should now return 404
   const notFoundRes = await app.request(new Request("http://localhost/api/apps/portfolio-risk"));
   assert.equal(notFoundRes.status, 404);
+
+  // 12. GET /api/admin/telemetry/stream - SSE connection and initial snapshot test
+  const sseRes = await app.request(new Request("http://localhost/api/admin/telemetry/stream"));
+  assert.equal(sseRes.status, 200);
+  assert.equal(sseRes.headers.get("content-type"), "text/event-stream");
+  const reader = sseRes.body?.getReader();
+  assert.ok(reader);
+  const chunk = await reader.read();
+  assert.ok(!chunk.done);
+  const text = new TextDecoder().decode(chunk.value);
+  assert.match(text, /data: .*"snapshot"/);
+  await reader.cancel();
+
+  // 13. GET /api/admin/logs/stream - SSE log stream connection test
+  const logsRes = await app.request(new Request("http://localhost/api/admin/logs/stream"));
+  assert.equal(logsRes.status, 200);
+  assert.equal(logsRes.headers.get("content-type"), "text/event-stream");
+  const logsReader = logsRes.body?.getReader();
+  assert.ok(logsReader);
+  await logsReader.cancel();
 });

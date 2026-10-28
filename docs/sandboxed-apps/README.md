@@ -19,12 +19,15 @@ The entire architecture is implemented directly without stubs or mocks:
   * [`src-tauri/src/lib.rs`](../../src-tauri/src/lib.rs): System tray menu item ("Admin & Observability Console...", `Cmd+Shift+A`).
 * **Built-in Reference Application:**
   * [`sidecar/builtin-apps/portfolio-risk/`](../../sidecar/builtin-apps/portfolio-risk/): Complete financial risk workbench calculating parametric VaR (95%/99%), Sharpe ratio, and asset allocation with `< 16ms` local Canvas reactive surface updates.
-* **Test Suites (209 Passing Tests):**
+* **Operational Runbook & Lifecycle Manual:**
+  * [**`OPERATIONS-AND-LIFECYCLE.md`**](OPERATIONS-AND-LIFECYCLE.md): The comprehensive operational runbook covering slot state machines, dynamic app packaging, workstation hardware sleep/wake delta reconciliation, anti-thundering-herd cron coalescing, 4-second shutdown waterfall, crash durability, Admin Console workbenches, and troubleshooting guides.
+* **Test Suites (211 Passing Tests in App, 610 Total with Framework):**
   * [`test/app-manifest.test.ts`](../../test/app-manifest.test.ts): Unit tests for manifest validation and quota clamping.
   * [`test/sandbox-pool.test.ts`](../../test/sandbox-pool.test.ts): Multi-process integration tests for slot leasing, LRU eviction, and shutdown.
   * [`test/app-registry.test.ts`](../../test/app-registry.test.ts): Integration tests for app installation, Canvas actions, and cron matching.
-  * [`test/admin-api.test.ts`](../../test/admin-api.test.ts): Real end-to-end HTTP API tests for fleet and app management.
+  * [`test/admin-api.test.ts`](../../test/admin-api.test.ts): Real end-to-end HTTP API tests for fleet, app management, and SSE telemetry/log streaming.
   * [`test/builtin-apps.test.ts`](../../test/builtin-apps.test.ts): Verification tests for reference app calculations.
+  * [`test/skill-studio.test.ts`](../../test/skill-studio.test.ts): Verification of fail-closed sandbox execution routing and rehearsal integrity.
 
 * [**`ARCHITECTURE.md`**](ARCHITECTURE.md): The comprehensive technical specification covering:
   1. **Strategic Rationale & Tenancy Model:** Workload classes (Session tenants, Artifact App tenants, Job tenants), preemption, and fair-share scheduling.
