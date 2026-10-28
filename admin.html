@@ -19,36 +19,42 @@
         <span class="admin-badge live" id="admin-connection-status">Connected</span>
       </div>
 
-      <nav class="topbar-nav" id="admin-topbar-nav" aria-label="Workbenches">
-        <button type="button" class="topbar-tab" data-tab="fleet" aria-current="page" title="Fleet &amp; Pool">
-          <span class="tab-icon" id="admin-icon-fleet"></span>
-          <span class="tab-label">Fleet &amp; Pool</span>
-        </button>
-        <button type="button" class="topbar-tab" data-tab="apps" aria-current="false" title="Hosted Apps">
-          <span class="tab-icon" id="admin-icon-apps"></span>
-          <span class="tab-label">Hosted Apps</span>
-        </button>
-        <button type="button" class="topbar-tab" data-tab="logs" aria-current="false" title="Live Logs">
-          <span class="tab-icon" id="admin-icon-logs"></span>
-          <span class="tab-label">Live Logs</span>
-        </button>
-        <button type="button" class="topbar-tab" data-tab="finops" aria-current="false" title="FinOps">
-          <span class="tab-icon" id="admin-icon-finops"></span>
-          <span class="tab-label">FinOps</span>
-        </button>
-        <button type="button" class="topbar-tab" data-tab="security" aria-current="false" title="Security">
-          <span class="tab-icon" id="admin-icon-security"></span>
-          <span class="tab-label">Security</span>
-        </button>
-      </nav>
-
       <div class="topbar-right" data-tauri-drag-region>
         <button type="button" class="ghost small" id="admin-refresh-btn" title="Refresh state">Refresh</button>
-        <button type="button" class="ghost small danger" id="admin-restart-pool-btn" title="Restart sandbox worker pool">Restart Pool</button>
+        <button type="button" class="ghost small app-btn-danger" id="admin-restart-pool-btn" title="Restart sandbox worker pool">Restart Pool</button>
       </div>
     </header>
 
-    <main class="admin-content">
+    <div class="admin-app">
+      <aside class="admin-sidebar" aria-label="Workbenches">
+        <div class="admin-sidebar-section">
+          <span class="admin-sidebar-heading">Workbenches</span>
+          <nav class="admin-sidebar-nav" id="admin-sidebar-nav">
+            <button type="button" class="admin-nav-item" data-tab="fleet" aria-current="page" title="Fleet &amp; Pool">
+              <span class="nav-icon" id="admin-icon-fleet"></span>
+              <span class="nav-label">Fleet &amp; Pool</span>
+            </button>
+            <button type="button" class="admin-nav-item" data-tab="apps" aria-current="false" title="Hosted Apps">
+              <span class="nav-icon" id="admin-icon-apps"></span>
+              <span class="nav-label">Hosted Apps</span>
+            </button>
+            <button type="button" class="admin-nav-item" data-tab="logs" aria-current="false" title="Live Logs">
+              <span class="nav-icon" id="admin-icon-logs"></span>
+              <span class="nav-label">Live Logs</span>
+            </button>
+            <button type="button" class="admin-nav-item" data-tab="finops" aria-current="false" title="FinOps">
+              <span class="nav-icon" id="admin-icon-finops"></span>
+              <span class="nav-label">FinOps</span>
+            </button>
+            <button type="button" class="admin-nav-item" data-tab="security" aria-current="false" title="Security">
+              <span class="nav-icon" id="admin-icon-security"></span>
+              <span class="nav-label">Security</span>
+            </button>
+          </nav>
+        </div>
+      </aside>
+
+      <main class="admin-content">
       <!-- 1. Fleet & Pool Workbench -->
       <section class="admin-workbench active" id="workbench-fleet">
         <div class="metrics-row">
@@ -219,7 +225,8 @@
         </div>
       </section>
     </main>
-    <dialog id="ask" class="sheet small" aria-labelledby="ask-text">
+  </div>
+  <dialog id="ask" class="sheet small" aria-labelledby="ask-text">
       <form method="dialog">
         <p id="ask-text"></p>
         <div class="actions">

@@ -120,7 +120,7 @@ function formatBytes(bytes: number): string {
 
 function switchTab(tabName: string): void {
   activeTab = tabName;
-  document.querySelectorAll("#admin-topbar-nav .topbar-tab").forEach((btn) => {
+  document.querySelectorAll("#admin-sidebar-nav .admin-nav-item").forEach((btn) => {
     btn.setAttribute("aria-current", btn.getAttribute("data-tab") === tabName ? "page" : "false");
   });
   document.querySelectorAll(".admin-workbench").forEach((wb) => {
@@ -132,7 +132,7 @@ function switchTab(tabName: string): void {
   if (tabName === "finops") void refreshFinops();
 }
 
-function setupTopbarIcons(): void {
+function setupSidebarIcons(): void {
   const iconMap: Record<string, string> = {
     "admin-icon-fleet": "cpu",
     "admin-icon-apps": "form",
@@ -142,7 +142,7 @@ function setupTopbarIcons(): void {
   };
   for (const [id, glyph] of Object.entries(iconMap)) {
     const el = document.getElementById(id);
-    if (el) el.replaceChildren(icon(glyph, 14));
+    if (el) el.replaceChildren(icon(glyph, 16));
   }
   const refreshBtn = document.getElementById("admin-refresh-btn");
   if (refreshBtn && !refreshBtn.querySelector("svg")) {
@@ -223,7 +223,7 @@ function renderFleet(fleet: FleetSnapshot): void {
         <div class="slot-actions">
           ${
             isActive
-              ? `<button type="button" class="ghost small danger" data-action="hibernate" data-slot="${slot.slotId}">Hibernate</button>`
+              ? `<button type="button" class="ghost small app-btn-danger" data-action="hibernate" data-slot="${slot.slotId}">Hibernate</button>`
               : ""
           }
         </div>
@@ -299,7 +299,7 @@ function renderAppsTable(apps: AppSummary[]): void {
       <td>
         <div style="display: flex; gap: 6px;">
           ${app.triggerCount > 0 ? `<button type="button" class="ghost small" data-action="run-trigger" data-id="${app.id}">Run Poll</button>` : ""}
-          <button type="button" class="ghost small danger" data-action="uninstall-app" data-id="${app.id}">Delete</button>
+          <button type="button" class="ghost small app-btn-danger" data-action="uninstall-app" data-id="${app.id}">Delete</button>
         </div>
       </td>
     </tr>
@@ -468,10 +468,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     token = qToken;
   }
 
-  setupTopbarIcons();
+  setupSidebarIcons();
 
   // Setup tab listeners
-  document.querySelectorAll("#admin-topbar-nav .topbar-tab").forEach((btn) => {
+  document.querySelectorAll("#admin-sidebar-nav .admin-nav-item").forEach((btn) => {
     btn.addEventListener("click", () => {
       const tab = btn.getAttribute("data-tab");
       if (tab) switchTab(tab);

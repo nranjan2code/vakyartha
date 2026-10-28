@@ -793,17 +793,21 @@ $<HTMLButtonElement>("expand").append(icon("sidebar", 18));
 $<HTMLButtonElement>("collapse").addEventListener("click", toggleSidebar);
 $<HTMLButtonElement>("expand").addEventListener("click", toggleSidebar);
 
-// --- Persistent App Top Navigation Bar ---
+// --- Persistent App Navigation State ---
 type NavTab = "chats" | "artifacts" | "apps" | "schedule" | "studio" | "settings";
 
 function setTopNavActive(active: NavTab): void {
-  const tabs: NavTab[] = ["chats", "artifacts", "apps", "schedule", "studio", "settings"];
-  for (const t of tabs) {
-    const btn = document.getElementById(`topbar-tab-${t}`);
-    if (btn) {
-      btn.setAttribute("aria-current", t === active ? "page" : "false");
-    }
-  }
+  $("open-artifacts")?.setAttribute("aria-current", active === "artifacts" ? "page" : "false");
+  $("open-apps")?.setAttribute("aria-current", active === "apps" ? "page" : "false");
+  $("open-schedule")?.setAttribute("aria-current", active === "schedule" ? "page" : "false");
+  $("open-studio")?.setAttribute("aria-current", active === "studio" ? "page" : "false");
+  $("open-settings")?.setAttribute("aria-current", active === "settings" ? "page" : "false");
+}
+
+const openStudio = document.getElementById("open-studio");
+if (openStudio) {
+  openStudio.append(icon("spark", 17), "Studio");
+  openStudio.addEventListener("click", () => void switchNavTab("studio"));
 }
 
 function updateTopbarModel(): void {
@@ -825,13 +829,6 @@ if (topbarSidebarToggle) {
   topbarSidebarToggle.append(icon("sidebar", 18));
   topbarSidebarToggle.addEventListener("click", toggleSidebar);
 }
-
-document.getElementById("topbar-icon-chats")?.append(icon("bubble", 15));
-document.getElementById("topbar-icon-artifacts")?.append(icon("canvas", 15));
-document.getElementById("topbar-icon-apps")?.append(icon("cpu", 15));
-document.getElementById("topbar-icon-schedule")?.append(icon("calendar", 15));
-document.getElementById("topbar-icon-studio")?.append(icon("spark", 15));
-document.getElementById("topbar-icon-settings")?.append(icon("sliders", 15));
 
 document.getElementById("topbar-model-badge")?.addEventListener("click", () => {
   void (async () => {
@@ -927,6 +924,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
       skillToOpen,
       async () => {
         setTopNavActive("chats");
+        $("workspace").hidden = false;
       },
       async () => {}
     );
@@ -947,13 +945,6 @@ async function switchNavTab(target: NavTab): Promise<void> {
     return;
   }
 }
-
-document.getElementById("topbar-tab-chats")?.addEventListener("click", () => void switchNavTab("chats"));
-document.getElementById("topbar-tab-artifacts")?.addEventListener("click", () => void switchNavTab("artifacts"));
-document.getElementById("topbar-tab-apps")?.addEventListener("click", () => void switchNavTab("apps"));
-document.getElementById("topbar-tab-schedule")?.addEventListener("click", () => void switchNavTab("schedule"));
-document.getElementById("topbar-tab-studio")?.addEventListener("click", () => void switchNavTab("studio"));
-document.getElementById("topbar-tab-settings")?.addEventListener("click", () => void switchNavTab("settings"));
 
 window.addEventListener("vak:settings-opened", () => {
   artifacts.close(false, false);

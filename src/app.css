@@ -319,7 +319,16 @@ body.collapsed .canvas-expanded .canvas-head { padding-left: 84px; }
 .empty-mark { display: block; margin: 0 auto 14px; border-radius: 10px; opacity: 0.92; }
 .side-head { padding: 12px 10px 8px; }
 .side-pages { padding: 0 10px 8px; }
-#open-artifacts[aria-current="page"], #open-schedule[aria-current="page"] { color: var(--fg); background: var(--hover); }
+.side-pages button[aria-current="page"],
+#open-artifacts[aria-current="page"],
+#open-apps[aria-current="page"],
+#open-schedule[aria-current="page"],
+#open-studio[aria-current="page"],
+#open-settings[aria-current="page"] {
+  color: var(--fg);
+  background: var(--hover);
+  font-weight: 550;
+}
 .new, .quiet {
   display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
   background: none; border: 0; border-radius: 8px; padding: 7px 10px; cursor: pointer; font-size: 0.9rem;
@@ -536,8 +545,8 @@ body:not(.notes) details.diag { display: none; }
 .ghost { font-weight: 600; font-size: 0.85rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; color: var(--fg); }
 .ghost:hover { border-color: var(--faint); }
 .ghost.small { padding: 3px 10px; font-size: 0.8rem; }
-.ghost.danger { color: var(--danger); }
-.ghost.danger:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--panel)); }
+.ghost.danger, .app-btn-danger { color: var(--danger) !important; background: var(--panel) !important; border: 1px solid var(--border) !important; }
+.ghost.danger:hover, .app-btn-danger:hover { border-color: var(--danger) !important; color: var(--danger) !important; background: color-mix(in srgb, var(--danger) 8%, var(--panel)) !important; }
 .primary { font-weight: 600; font-size: 0.88rem; color: var(--accent-fg); background: var(--accent); border: 0; border-radius: 8px; padding: 7px 16px; cursor: pointer; }
 
 /* dialogs */
@@ -634,7 +643,7 @@ body:not(.notes) details.diag { display: none; }
 .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.3); transition: transform 120ms; }
 .switch:checked { background: var(--accent); }
 .switch:checked::after { transform: translateX(14px); }
-.danger { font-weight: 600; font-size: 0.85rem; color: #fff; background: var(--danger); border: 0; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.danger { font-weight: 600; font-size: 0.85rem; color: #fff !important; background: var(--danger) !important; border: 0; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
 .primary.small, .danger.small { padding: 5px 12px; font-size: 0.82rem; }
 .shortcuts { display: grid; gap: 6px; }
 .shortcuts div { display: flex; gap: 12px; align-items: center; font-size: 0.88rem; }
