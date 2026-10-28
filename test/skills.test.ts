@@ -510,3 +510,38 @@ test("discovers skill folders and supporting files placed directly on disk", () 
   assert.equal(found.files?.[0]?.path, "references/guide.md");
   assert.match(manager.fileText("local-skill", "references/guide.md").text, /Local Guide/);
 });
+
+test("NSE MCP vendor skill package is seeded with tools guide and query pattern references", async () => {
+  const d = dir();
+  const manager = new Skills(d);
+  const nseSkill = manager.view().find((s) => s.name === "nse-mcp");
+
+  assert.ok(nseSkill, "nse-mcp builtin skill should exist");
+  assert.equal(nseSkill.builtin, true);
+  assert.equal(nseSkill.enabled, true);
+  assert.equal(nseSkill.license, "MIT");
+  assert.match(nseSkill.description, /National Stock Exchange of India/);
+  assert.match(nseSkill.description, /bhavcopy/);
+
+  // References check
+  const files = nseSkill.files?.map((f) => f.path).sort();
+  assert.deepEqual(files, ["references/nse-query-patterns.md", "references/nse-tools-guide.md"]);
+
+  const guide = manager.fileText("nse-mcp", "references/nse-tools-guide.md").text;
+  assert.match(guide, /nse__get_market_breadth/);
+  assert.match(guide, /nse_cmmkt__cm_get_stock_quote/);
+  assert.match(guide, /https:\/\/mcp\.nseindia\.in\/bhavcopy\/cm\/mcp/);
+  assert.match(guide, /https:\/\/mcp\.nseindia\.in\/cmmkt\/mcp/);
+
+  // use_skill and read_skill_file tool execution
+  const [use, read] = manager.tools();
+  assert.ok(use && read);
+  const loaded = String(await use.execute({ names: ["nse-mcp"] }, {}));
+  assert.match(loaded, /National Stock Exchange of India/);
+  assert.match(loaded, /nse__<tool_name>/);
+  assert.match(loaded, /nse_cmmkt__<tool_name>/);
+
+  const readGuide = String(await read.execute({ skill: "nse-mcp", path: "references/nse-tools-guide.md" }, {}));
+  assert.match(readGuide, /Official NSE MCP Tools & Schema Guide/);
+  assert.match(readGuide, /moving_average/);
+});

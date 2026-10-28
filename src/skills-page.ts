@@ -45,7 +45,7 @@ const SKILL_GLYPHS: Record<string, string> = {
   "debug-error": "tool", "explain-simply": "book", "finance-dashboard": "chart",
   "interactive-ui": "form", "meeting-actions": "check", "periodic-report": "calendar",
   "market-dashboard": "chart", "meal-plan": "calendar", "operations-dashboard": "chart",
-  "plan-my-day": "calendar", "research-brief": "search", "sales-dashboard": "chart",
+  "nse-mcp": "chart", "plan-my-day": "calendar", "research-brief": "search", "sales-dashboard": "chart",
   "shell-command": "code", "summarize": "page", "surface-design": "canvas",
   "task-tracker": "check", "trip-planner": "globe", "write-email": "send",
 };

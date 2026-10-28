@@ -445,3 +445,21 @@ Accepted at the user's explicit choice. Tauri owns a Node child, communicates th
 Accepted. The separate sandbox project owns Realm copies, manifests, locks, command containment, immutable promotion candidates, backups, journals, recovery and rollback. Its public CLI has a bounded JSON contract and an explicit private store. The app adds typed tool adapters and Settings controls through the existing integration/policy/approval/logging lifecycle. Skills guide selection and review, without authority. No new dependency, native relay, persistence writer or framework engine change is needed.
 
 Disposable commands and retained Realms have distinct lifetimes. Realm snapshots are durable review manifests, not workspace restore checkpoints. Promotion binds the complete reviewed path list and candidate fingerprint; rollback/recovery also name affected paths. Individual file replacement is atomic; a multi-file operation is journaled and recoverable, not globally atomic to external readers. Managed operations serialize within the canonical store; external editors require conflict checks and must not concurrently edit the same targets. Explicit recovery never replays a command. Exact bounds and remaining platform/resource limits are in [the sandbox contract](sandbox/OVERVIEW.md); evidence and open model gates remain in EVALUATION.md.
+
+## ADR-046: Skill Studio workbench, isolated draft lifecycle and Co-Pilot synthesis (2026-10-28)
+
+Accepted. Authoring, inspecting, editing and testing multi-file Agent Skills packages (`SKILL.md`, `references/`, `schemas/`, `scripts/`, `tests/`) belong in a unified, dedicated desktop workbench (`src/skills-studio.ts`) within Settings → Skills.
+
+### 1. Isolated Draft vs. Publish Lifecycle
+Authors require the freedom to iterate on, test and refine complex packages over days without risking disruption to live assistant chat turns or task runs. Working drafts are persisted under `<dataDir>/skills/.drafts/<name>/`. Because the runtime's local skill discovery strictly ignores dot-prefixed directories, unpublished drafts are physically quarantined and never reach the live assistant. Studio provides explicit `Save Draft` (`PUT /api/skills/:name/draft`), `Discard Draft` (`DELETE /api/skills/:name/draft`), and `⚡ Publish Skill` (`POST /api/skills/:name/publish`) operations. Navigating away with unsaved edits prompts the author before departure.
+
+### 2. Live Canonical Projection Staging & Surface Linter
+The studio mounts a live `<vak-surface>` using `@vak/core`'s `SurfaceStore(basicCatalog)` and updates dynamically as schemas (`schemas/records.json`) or instructions change. Viewport container query toggles (`320px`, `720px`, `960px`, `Full Width`) enforce the 3-Tier liquid layout architecture. A built-in surface linter catches single-chart full-width distortion, hex color abuse, and unsupported chart types. Dual spoken projection simulation computes lowered text (`lowerSurface` + `projectText`) with in-browser TTS audio preview.
+
+### 3. Co-Pilot Synthesis & Element Assistance
+An autonomous YOLO package generator (`/api/skills/generate`) synthesizes complete production-ready packages from natural language briefs. Context-aware element suggestions advise on trigger optimization, chart kinds, canonical JSON pointer bindings, MCP tool declarations, voice gists, skill chaining contracts, and domain research references.
+
+### 4. Sandbox Rehearsal & Selection Gate Testing
+Inert scripts are tested in disposable, timeout-bounded sandboxes (`POST /api/skills/:name/sandbox-test`) powered by `vak-sandbox`. Test scenarios evaluate prompts against the provider's `use_skill` selection gate (`/api/skills/eval`).
+
+No new runtime boundaries, storage dependencies, or framework modifications are introduced. All styling strictly adheres to Vakyartha CSS design tokens.

@@ -194,6 +194,40 @@ export const CATALOG: CatalogEntry[] = [
     source: { kind: "http", url: "https://mcp.kite.trade/mcp" },
     config: [],
   },
+  {
+    id: "nse",
+    name: "NSE",
+    publisher: "NSE",
+    trust: "vendor",
+    summary: "Historical bhavcopy, stock prices and market breadth from the National Stock Exchange of India.",
+    description: "National Stock Exchange of India's official hosted Bhavcopy MCP server: up to 5 years of historical end-of-day cash market data, daily bhavcopy, advances/declines, delivery volumes and 52-week highs/lows. Public and authentication-free.",
+    homepage: "https://www.nseindia.com/nse-mcp",
+    icon: "chart",
+    access: [
+      "Public market data from the National Stock Exchange of India",
+      "Historical cash market data and daily bhavcopy records for the last 5 years",
+      "No credentials or API keys required",
+    ],
+    source: { kind: "http", url: "https://mcp.nseindia.in/bhavcopy/cm/mcp" },
+    config: [],
+  },
+  {
+    id: "nse-cmmkt",
+    name: "NSE Market Live",
+    publisher: "NSE",
+    trust: "vendor",
+    summary: "Near-real-time equity quotes, indices and market snapshots from the National Stock Exchange of India.",
+    description: "National Stock Exchange of India's official hosted CM Market Live MCP server: near-real-time snapshots of the current trading day, stock quotes, top gainers/losers, indices and active securities. Public and authentication-free.",
+    homepage: "https://www.nseindia.com/nse-mcp",
+    icon: "chart",
+    access: [
+      "Public market data from the National Stock Exchange of India",
+      "Near-real-time trading day snapshots, live quotes and index performance",
+      "No credentials or API keys required",
+    ],
+    source: { kind: "http", url: "https://mcp.nseindia.in/cmmkt/mcp" },
+    config: [],
+  },
 ];
 
 /** Keep one live catalog array so reviewed imports reach the existing lifecycle. */

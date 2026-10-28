@@ -91,3 +91,43 @@ test("Zerodha Kite MCP is registered as a vendor integration with hosted endpoin
   await list.configure("zerodha", { enabled: false });
   assert.equal(view().enabled, false);
 });
+
+test("NSE MCP is registered as a vendor integration with official hosted endpoint", async () => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), "vakyartha-nse-"));
+  const list = createIntegrations(deps(dataDir));
+  const view = () => list.view().find((v) => v.entry.id === "nse")!;
+
+  assert.ok(view(), "NSE integration should exist in catalog");
+  assert.equal(view().entry.trust, "vendor");
+  assert.equal(view().entry.publisher, "NSE");
+  assert.equal(view().entry.sourceKind, "http");
+  assert.equal(view().entry.url, "https://mcp.nseindia.in/bhavcopy/cm/mcp");
+  assert.equal(view().entry.homepage, "https://www.nseindia.com/nse-mcp");
+  assert.equal(view().enabled, false);
+  assert.deepEqual(view().missing, []);
+  assert.equal(view().status, "off");
+
+  // Lifecycle configuration
+  await list.configure("nse", { enabled: false });
+  assert.equal(view().enabled, false);
+});
+
+test("NSE Market Live MCP is registered as a vendor integration with official hosted endpoint", async () => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), "vakyartha-nse-live-"));
+  const list = createIntegrations(deps(dataDir));
+  const view = () => list.view().find((v) => v.entry.id === "nse-cmmkt")!;
+
+  assert.ok(view(), "NSE Market Live integration should exist in catalog");
+  assert.equal(view().entry.trust, "vendor");
+  assert.equal(view().entry.publisher, "NSE");
+  assert.equal(view().entry.sourceKind, "http");
+  assert.equal(view().entry.url, "https://mcp.nseindia.in/cmmkt/mcp");
+  assert.equal(view().entry.homepage, "https://www.nseindia.com/nse-mcp");
+  assert.equal(view().enabled, false);
+  assert.deepEqual(view().missing, []);
+  assert.equal(view().status, "off");
+
+  // Lifecycle configuration
+  await list.configure("nse-cmmkt", { enabled: false });
+  assert.equal(view().enabled, false);
+});
