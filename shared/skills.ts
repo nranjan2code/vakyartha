@@ -69,11 +69,12 @@ export interface SkillGenerateResponse {
 }
 
 export interface SkillSuggestRequest {
-  type: "trigger" | "chart" | "binding" | "tools" | "gist";
+  type: "trigger" | "chart" | "binding" | "tools" | "gist" | "research" | "chaining";
   name?: string;
   description?: string;
   body?: string;
   field?: string;
+  query?: string;
 }
 
 export interface SkillSuggestResponse {

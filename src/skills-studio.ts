@@ -41,6 +41,7 @@ export async function openSkillStudio(
   let isRunningTests = false;
   let isRunningSandbox = false;
   let activeTools: { id: string; name: string }[] = [];
+  let installedSkills: SkillView[] = [];
 
   // Feedback banner
   const feedback = el("p", { className: "settings-feedback", role: "status", "aria-live": "polite" });
@@ -57,6 +58,7 @@ export async function openSkillStudio(
   try {
     const integrations = await api<{ entry: { id: string; name: string }; enabled: boolean }[]>("/api/integrations").catch(() => []);
     activeTools = integrations.map(i => ({ id: i.entry.id, name: i.entry.name }));
+    installedSkills = await api<SkillView[]>("/api/skills").catch(() => []);
 
     if (skillName) {
       const draftResp = await api<SkillDraftResponse>(`/api/skills/${encodeURIComponent(skillName)}/draft`);
@@ -356,6 +358,44 @@ Analyze domain records from supplied inputs and project structured findings acro
     }
   }
 
+  function inspectSkillModal(s: SkillView): void {
+    const overlay = el("div", { className: "studio-inspect-overlay" });
+    const modal = el("div", { className: "studio-inspect-modal" });
+    const closeBtn = el("button", {
+      type: "button",
+      className: "ghost small",
+      textContent: "✕ Close",
+      onclick: () => overlay.remove()
+    });
+    const chainBtn = el("button", {
+      type: "button",
+      className: "primary small",
+      textContent: "+ Insert Chain into Procedure",
+      onclick: () => {
+        const clause = `\n- Chain to \`${s.name}\` when ${s.description.toLowerCase().replace(/\.$/, "")}.\n`;
+        pkg.skill.body += clause;
+        rebuildSkillMdFromVisual(pkg.skill.name, pkg.skill.description, pkg.skill.allowedTools ?? "", pkg.skill.body);
+        overlay.remove();
+        showNotice(`Inserted chaining clause for “${s.name}” into instructions.`);
+        render();
+      }
+    });
+
+    const header = el("div", { className: "linter-head" },
+      el("div", { className: "studio-title-box" }, el("h3", { className: "studio-skill-title", textContent: s.name }), pill(s.builtin ? "Built in" : "Yours")),
+      el("div", { className: "studio-toolbar-right" }, chainBtn, closeBtn)
+    );
+
+    const desc = el("p", { className: "lead", textContent: s.description });
+    const toolsRow = s.allowedTools ? row("Allowed Tools", s.allowedTools, pill("Guarded")) : null;
+    const instructions = el("div", { className: "skill-formatted" }, renderMarkdown(s.body));
+
+    modal.append(header, desc, ...(toolsRow ? [toolsRow] : []), instructions);
+    overlay.append(modal);
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    document.body.append(overlay);
+  }
+
   // --- Main Render Function ---
   function render(): void {
     root.replaceChildren();
@@ -587,9 +627,138 @@ Analyze domain records from supplied inputs and project structured findings acro
               showNotice(`Spoken summary proposal: “${res.suggestion}”`);
             } catch (err) { showError(err); }
           }
+        }),
+        el("button", {
+          type: "button",
+          className: "ghost tiny studio-suggest-chip",
+          textContent: "Recommend Chaining",
+          onclick: async () => {
+            try {
+              const res = await api<SkillSuggestResponse>("/api/skills/suggest", {
+                method: "POST",
+                body: JSON.stringify({ type: "chaining", body: pkg.skill.body, description: pkg.skill.description })
+              });
+              const ok = await ask(`${res.rationale}\n\nAppend recommended chaining clause into procedure?`, "Insert Chaining");
+              if (ok) {
+                pkg.skill.body += `\n${res.suggestion}\n`;
+                rebuildSkillMdFromVisual(pkg.skill.name, pkg.skill.description, pkg.skill.allowedTools ?? "", pkg.skill.body);
+                showNotice("Appended chaining contract to procedure.");
+                render();
+              }
+            } catch (err) { showError(err); }
+          }
+        }),
+        el("button", {
+          type: "button",
+          className: "ghost tiny studio-suggest-chip",
+          textContent: "Research Topic",
+          onclick: async () => {
+            const topic = window.prompt("Enter technical topic, API, or domain rules to research:", pkg.skill.name.replace(/-/g, " "));
+            if (!topic || !topic.trim()) return;
+            try {
+              feedback.textContent = `Researching technical specifications for ${topic}…`;
+              feedback.className = "settings-feedback";
+              const res = await api<SkillSuggestResponse>("/api/skills/suggest", {
+                method: "POST",
+                body: JSON.stringify({ type: "research", query: topic.trim() })
+              });
+              const targetPath = "references/domain_reference.md";
+              let f = pkg.files.find(item => item.path === targetPath);
+              if (!f) {
+                f = { path: targetPath, text: res.suggestion, bytes: new TextEncoder().encode(res.suggestion).length, status: "added" };
+                pkg.files.push(f);
+              } else {
+                f.text = res.suggestion;
+                f.bytes = new TextEncoder().encode(res.suggestion).length;
+              }
+              activeFileName = targetPath;
+              isDirty = true;
+              showNotice(`Created grounded research guide in ${targetPath}.`);
+              render();
+            } catch (err) { showError(err); }
+          }
         })
       )
     );
+
+    // Chained Skills Drawer
+    const chainingDrawer = el("div", { className: "studio-chaining-drawer" },
+      el("div", { className: "studio-section-label", textContent: "🔗 Skills Ecosystem & Chaining" })
+    );
+
+    const otherSkills = installedSkills.filter(s => s.name !== pkg.skill.name);
+    if (otherSkills.length) {
+      for (const s of otherSkills.slice(0, 10)) {
+        const isChained = pkg.skill.body.includes(s.name);
+        const item = el("div", { className: "studio-chain-item" },
+          el("div", { className: "studio-chain-info" },
+            el("div", { className: "row-actions" },
+              el("span", { className: "studio-chain-name", textContent: s.name }),
+              isChained ? pill("Chained", "ok") : null,
+              s.hasDraft ? pill("Draft", "caution") : null
+            ),
+            el("span", { className: "studio-chain-desc", textContent: s.description })
+          ),
+          el("div", { className: "studio-chain-actions" },
+            el("button", {
+              type: "button",
+              className: "ghost tiny",
+              textContent: "Inspect",
+              title: "Step into and inspect this skill's instructions and contract",
+              onclick: () => inspectSkillModal(s)
+            }),
+            el("button", {
+              type: "button",
+              className: "ghost tiny",
+              textContent: "+ Chain",
+              title: "Insert chaining clause into procedure",
+              onclick: () => {
+                const clause = `\n- Chain to \`${s.name}\` when ${s.description.toLowerCase().replace(/\.$/, "")}.\n`;
+                pkg.skill.body += clause;
+                rebuildSkillMdFromVisual(pkg.skill.name, pkg.skill.description, pkg.skill.allowedTools ?? "", pkg.skill.body);
+                showNotice(`Inserted chaining clause for “${s.name}”.`);
+                render();
+              }
+            })
+          )
+        );
+        chainingDrawer.append(item);
+      }
+    } else {
+      chainingDrawer.append(el("p", { className: "row-hint", textContent: "No other skills installed." }));
+    }
+
+    // Active MCP Tools Drawer
+    const toolsDrawer = el("div", { className: "studio-tools-drawer" },
+      el("div", { className: "studio-section-label", textContent: "🛠️ Active MCP Tools" })
+    );
+
+    if (activeTools.length) {
+      for (const t of activeTools) {
+        const isAllowed = (pkg.skill.allowedTools ?? "").includes(t.id);
+        const item = el("div", { className: "studio-tool-item" },
+          el("div", { className: "studio-tool-info" },
+            el("span", { className: "studio-tool-name", textContent: t.name }),
+            el("span", { className: "studio-tool-desc", textContent: t.id })
+          ),
+          el("button", {
+            type: "button",
+            className: `tiny ghost${isAllowed ? " chip active" : ""}`,
+            textContent: isAllowed ? "✓ Allowed" : "+ Add",
+            onclick: () => {
+              const current = (pkg.skill.allowedTools ?? "").split(/\s+/).filter(Boolean);
+              const next = current.includes(t.id) ? current.filter(x => x !== t.id) : [...current, t.id];
+              pkg.skill.allowedTools = next.join(" ");
+              rebuildSkillMdFromVisual(pkg.skill.name, pkg.skill.description, pkg.skill.allowedTools, pkg.skill.body);
+              render();
+            }
+          })
+        );
+        toolsDrawer.append(item);
+      }
+    } else {
+      toolsDrawer.append(el("p", { className: "row-hint", textContent: "No external MCP tools enabled in Settings." }));
+    }
 
     // Test Scenarios Drawer
     const testsDrawer = el("div", { className: "studio-tests-drawer" },
@@ -611,7 +780,7 @@ Analyze domain records from supplied inputs and project structured findings acro
       testsDrawer.append(el("p", { className: "row-hint", textContent: "Run test suite to verify use_skill selection gate on active provider." }));
     }
 
-    leftCol.append(treeHeader, fileList, suggestionsBox, testsDrawer);
+    leftCol.append(treeHeader, fileList, suggestionsBox, chainingDrawer, toolsDrawer, testsDrawer);
 
     // --- CENTER COLUMN: Workspace & Editors ---
     const centerCol = el("div", { className: "studio-col studio-center-col" });

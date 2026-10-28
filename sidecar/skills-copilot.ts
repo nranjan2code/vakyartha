@@ -274,6 +274,68 @@ export function suggestSkillElement(req: SkillSuggestRequest, activeSkills: Skil
     };
   }
 
+  if (type === "chaining") {
+    const text = (body + " " + (description || "")).toLowerCase();
+    const chains: string[] = [];
+    if (text.includes("canvas") || text.includes("chart") || text.includes("table") || text.includes("dashboard") || text.includes("metric")) {
+      chains.push("interactive-ui", "surface-design");
+    }
+    if (text.includes("script") || text.includes("python") || text.includes("command") || text.includes("shell") || text.includes("parse")) {
+      chains.push("sandbox", "shell-command");
+    }
+    if (text.includes("compare") || text.includes("versus") || text.includes("evaluation") || text.includes("trade-off")) {
+      chains.push("compare-options");
+    }
+    if (text.includes("error") || text.includes("fix") || text.includes("debug") || text.includes("failure")) {
+      chains.push("debug-error");
+    }
+    if (chains.length === 0) {
+      chains.push("interactive-ui", "surface-design");
+    }
+
+    const uniqueChains = [...new Set(chains)];
+    const snippet = `### Chaining Contract\n- Chain to \`${uniqueChains[0]}\` when assembling views and binding canonical collections.\n${uniqueChains.includes("surface-design") ? "- The shared `surface-design` liquid layout guidelines apply automatically.\n" : ""}${uniqueChains.includes("sandbox") ? "- Route isolated script parsing through `sandbox` and `shell-command`.\n" : ""}`;
+
+    return {
+      suggestion: snippet,
+      rationale: `Recommended chaining to [${uniqueChains.join(", ")}] based on declared procedures. Enables modular multi-skill choreography without bloating individual instructions.`,
+      options: uniqueChains
+    };
+  }
+
+  if (type === "research") {
+    const topic = (req.query || name.replace(/-/g, " ")).trim();
+    const researchDoc = `# Domain Technical Reference: ${topic}
+
+## 1. Domain Background & Core Concepts
+- **Operational Scope**: Standards, metrics, and criteria governing ${topic}.
+- **Verification Invariant**: All primary values must tie to verified, timestamped records without fabricated aggregates.
+
+## 2. Standard Industry Formulas
+- **Primary Metric**: Measured as the canonical sum or mean of observed entities.
+- **Normalized Variance**: \\((V_\\text{observed} - V_\\text{target}) / V_\\text{target} \\times 100\\).
+- **Threshold Tones**: Flag negative variance > 15% as \`caution\`, and > 30% as \`critical\`.
+
+## 3. Recommended Canonical Data Schema
+\`\`\`json
+{
+  "records": [
+    { "id": "entity-01", "label": "Sample Unit", "value": 100, "status": "normal" }
+  ]
+}
+\`\`\`
+
+## 4. Operational Boundaries & Disclosure
+- Supporting scripts are inert references and must only be executed through \`vak-sandbox\`.
+- TTS narrative must explicitly voice the primary metric, timeframe, and highest severity variance.
+`;
+    return {
+      suggestion: researchDoc,
+      rationale: `Synthesized grounded domain technical reference for “${topic}” with standard formulas, metric definitions, and canonical record schema.`,
+      options: [researchDoc]
+    };
+  }
+
   return {
     suggestion: "",
     rationale: "Unknown suggestion type."
