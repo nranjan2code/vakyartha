@@ -1,230 +1,42 @@
-// Vakyartha Sandboxed Worker Process Entrypoint.
-// Runs as an independent child process (jailed via Seatbelt when spawned with vaksb).
-// Communicates with Host Supervisor over framed line-delimited JSON-RPC on stdio.
-
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+// One invocation in the existing supervised sandbox. No host credentials or stdin.
+import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import path from "node:path";
-import readline from "node:readline";
-import { decodeIpcMessage, encodeIpcMessage, type IpcMessage } from "../../shared/sandbox-pool.ts";
+import { setTimeout as delay } from "node:timers/promises";
 
-let slotId = "uninitialized";
-let tenantId: string | null = null;
-let workloadClass: string | null = null;
-let workspaceDir: string | null = null;
-let isSuspended = false;
-let stateData: Record<string, unknown> = {};
-
-function send(msg: Omit<IpcMessage, "v">): void {
-  try {
-    process.stdout.write(encodeIpcMessage({ v: 1, ...msg }));
-  } catch {
-    /* parent pipe closed */
+async function main(): Promise<void> {
+  const request = JSON.parse(readFileSync(".vak-request.json", "utf8"));
+  const context = { state: request.state, surfaces: request.surfaces, surface: request.surface, callTool };
+  let sequence = 0;
+  let bridge = Promise.resolve();
+  async function callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+    // One mailbox exchange at a time; no repeated/replayed effects.
+    const previous = bridge;
+    let release!: () => void;
+    bridge = new Promise<void>(r => { release = r; });
+    await previous;
+    try {
+      const id = sequence++;
+      if (id >= 16) throw new Error("App tool-call allowance exceeded");
+      const body = JSON.stringify({ id, name, args });
+      if (Buffer.byteLength(body) > 16384) throw new Error("Tool request too large");
+      writeFileSync(".vak-tool.tmp", body); renameSync(".vak-tool.tmp", ".vak-tool.json");
+      const reply = `.vak-reply-${id}.json`;
+      while (!existsSync(reply)) await delay(20);
+      const result = JSON.parse(readFileSync(reply, "utf8"));
+      if (result.error) throw new Error(result.error);
+      return result.value;
+    } finally { release(); }
   }
+  const mod = await import(pathToFileURL(path.resolve(request.backend)).href);
+  const handler = request.trigger ? mod[request.action] : mod.handleAction;
+  if (typeof handler !== "function") throw new Error(`Missing app handler: ${request.trigger ? request.action : "handleAction"}`);
+  const result = request.trigger
+    ? await handler(context)
+    : await handler(request.controlId, request.value, context, request.action);
+  if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("App handler must return an object");
+  const body = JSON.stringify({ result, state: context.state });
+  if (Buffer.byteLength(body) > 4 * 1024 * 1024) throw new Error("App result exceeds 4 MiB");
+  writeFileSync(".vak-result.json", body);
 }
-
-function emitLog(level: "info" | "warn" | "error" | "debug", message: string): void {
-  send({
-    id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    type: "emit_log",
-    tenantId: tenantId ?? undefined,
-    payload: { level, message, at: new Date().toISOString() },
-  });
-}
-
-function flushStateToDisk(): boolean {
-  if (!workspaceDir) return false;
-  try {
-    mkdirSync(workspaceDir, { recursive: true });
-    const target = path.join(workspaceDir, "state.json");
-    const tmp = `${target}.tmp`;
-    const payload = {
-      tenantId,
-      workloadClass,
-      savedAt: new Date().toISOString(),
-      state: stateData,
-    };
-    writeFileSync(tmp, JSON.stringify(payload, null, 2), "utf8");
-    renameSync(tmp, target);
-    return true;
-  } catch (err) {
-    emitLog("error", `Failed to flush state to disk: ${(err as Error).message}`);
-    return false;
-  }
-}
-
-function loadStateFromDisk(): void {
-  if (!workspaceDir) return;
-  const target = path.join(workspaceDir, "state.json");
-  if (!existsSync(target)) return;
-  try {
-    const raw = readFileSync(target, "utf8");
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed.state === "object") {
-      stateData = parsed.state ?? {};
-    }
-  } catch (err) {
-    emitLog("warn", `Could not rehydrate state: ${(err as Error).message}`);
-  }
-}
-
-// Intercept unhandled errors so process emits structured log before exiting
-process.on("uncaughtException", (err) => {
-  emitLog("error", `Uncaught exception in worker [${slotId}]: ${err.stack || err.message}`);
-  flushStateToDisk();
-  process.exit(1);
-});
-
-process.on("unhandledRejection", (reason) => {
-  emitLog("error", `Unhandled rejection in worker [${slotId}]: ${String(reason)}`);
-});
-
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-  terminal: false,
-});
-
-rl.on("line", async (line) => {
-  const msg = decodeIpcMessage(line);
-  if (!msg) return;
-
-  switch (msg.type) {
-    case "init": {
-      slotId = String(msg.payload?.slotId ?? "slot-0");
-      emitLog("info", `Worker initialized in slot ${slotId} (PID: ${process.pid})`);
-      send({ id: msg.id, type: "init_ack", payload: { slotId, pid: process.pid } });
-      break;
-    }
-
-    case "lease": {
-      tenantId = String(msg.payload?.tenantId ?? "");
-      workloadClass = String(msg.payload?.workloadClass ?? "chat");
-      workspaceDir = String(msg.payload?.workspaceDir ?? "");
-      if (workspaceDir) {
-        mkdirSync(workspaceDir, { recursive: true });
-        loadStateFromDisk();
-      }
-      emitLog("info", `Leased slot ${slotId} to tenant ${tenantId} (${workloadClass})`);
-      send({ id: msg.id, type: "lease_ack", tenantId, payload: { leased: true } });
-      break;
-    }
-
-    case "ping": {
-      const mem = process.memoryUsage();
-      send({
-        id: msg.id,
-        type: "pong",
-        tenantId: tenantId ?? undefined,
-        payload: {
-          slotId,
-          pid: process.pid,
-          rssBytes: mem.rss,
-          heapUsed: mem.heapUsed,
-          isSuspended,
-        },
-      });
-      break;
-    }
-
-    case "prepare_hibernate": {
-      emitLog("info", `Hibernating slot ${slotId} for tenant ${tenantId}...`);
-      const ok = flushStateToDisk();
-      send({
-        id: msg.id,
-        type: "flushed",
-        tenantId: tenantId ?? undefined,
-        payload: { ready: true, statePersisted: ok },
-      });
-      break;
-    }
-
-    case "suspend": {
-      isSuspended = true;
-      flushStateToDisk();
-      send({ id: msg.id, type: "suspend_ack", payload: { suspended: true } });
-      break;
-    }
-
-    case "resume": {
-      isSuspended = false;
-      send({ id: msg.id, type: "resume_ack", payload: { resumed: true } });
-      break;
-    }
-
-    case "dispatch_action": {
-      const { controlId, value, action } = msg.payload ?? {};
-      emitLog("info", `Action dispatched on ${controlId}: ${action ?? value}`);
-      // Update in-memory state and persist atomically
-      if (controlId) {
-        stateData[controlId] = value;
-        flushStateToDisk();
-      }
-
-      let patchPayload: Record<string, unknown> = {
-        op: "update",
-        controlId,
-        value,
-        updatedAt: new Date().toISOString(),
-      };
-
-      // If the app workspace has a server entrypoint, dynamically invoke handleAction
-      if (workspaceDir) {
-        try {
-          const entryTs = path.join(workspaceDir, "server.ts");
-          const entryMjs = path.join(workspaceDir, "server.mjs");
-          const entryJs = path.join(workspaceDir, "server.js");
-          const targetEntry = existsSync(entryTs) ? entryTs : existsSync(entryMjs) ? entryMjs : existsSync(entryJs) ? entryJs : null;
-          if (targetEntry) {
-            const mod = await import(`file://${targetEntry}?t=${Date.now()}`);
-            if (typeof mod.handleAction === "function") {
-              const res = mod.handleAction(controlId, value);
-              if (res && typeof res === "object") {
-                patchPayload = res;
-              }
-            }
-          }
-        } catch (err) {
-          emitLog("warn", `Application handleAction error: ${(err as Error).message}`);
-        }
-      }
-
-      send({
-        id: msg.id,
-        type: "surface_patch",
-        tenantId: tenantId ?? undefined,
-        payload: patchPayload,
-      });
-      break;
-    }
-
-    case "teardown": {
-      emitLog("info", `Worker ${slotId} teardown initiated.`);
-      flushStateToDisk();
-      process.exit(0);
-      break;
-    }
-
-    default:
-      break;
-  }
-});
-
-// Periodic heartbeat metric (every 10s if not suspended)
-setInterval(() => {
-  if (isSuspended) return;
-  const mem = process.memoryUsage();
-  send({
-    id: `metric-${Date.now()}`,
-    type: "emit_metric",
-    tenantId: tenantId ?? undefined,
-    payload: {
-      slotId,
-      pid: process.pid,
-      rssBytes: mem.rss,
-      heapTotal: mem.heapTotal,
-      heapUsed: mem.heapUsed,
-      external: mem.external,
-    },
-  });
-}, 10_000).unref();
-
+try { await main(); } catch (error) { console.error((error as Error).message); process.exitCode = 1; }

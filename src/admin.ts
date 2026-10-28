@@ -6,6 +6,7 @@ import type { AppSummary } from "../sidecar/sandbox-pool/app-registry.ts";
 import { connect, engineFetch, inTauri, type Backend } from "./backend.ts";
 import { applyAppearance } from "./theme.ts";
 import { icon } from "./icons.ts";
+import { estimateCost } from "../shared/finops.ts";
 
 // Apply Vakyartha theme & tokens immediately
 applyAppearance();
@@ -178,7 +179,7 @@ function renderFleet(fleet: FleetSnapshot): void {
   if (activeEl) activeEl.textContent = `${fleet.activeCount} / ${fleet.maxActiveWorkers}`;
   if (standbyEl) standbyEl.textContent = `${fleet.standbyCount}`;
   if (hibernatedEl) hibernatedEl.textContent = `${fleet.hibernatedCount}`;
-  if (rssEl) rssEl.textContent = formatBytes(fleet.totalRssBytes);
+  if (rssEl) rssEl.textContent = "Not measured";
 
   const container = document.getElementById("slots-grid-container");
   if (!container) return;
@@ -217,7 +218,7 @@ function renderFleet(fleet: FleetSnapshot): void {
           </div>
           <div class="slot-item">
             <span class="slot-item-label">Memory RSS:</span>
-            <span class="slot-item-value">${formatBytes(slot.rssBytes)}</span>
+            <span class="slot-item-value">${slot.rssBytes === null ? "Not measured" : formatBytes(slot.rssBytes)}</span>
           </div>
         </div>
         <div class="slot-actions">
@@ -410,12 +411,13 @@ function appendTerminalLog(entry: {
   const timeStr = entry.at ? new Date(entry.at).toLocaleTimeString() : new Date().toLocaleTimeString();
   line.innerHTML = `
     <span class="log-timestamp">[${timeStr}]</span>
-    <span class="log-level ${level}">[${level.toUpperCase()}]</span>
-    ${entry.slotId ? `<span class="log-slot">[${entry.slotId}${entry.tenantId ? ` · ${entry.tenantId}` : ""}]</span>` : ""}
+    <span class="log-level ${escapeHtml(level)}">[${escapeHtml(level.toUpperCase())}]</span>
+    ${entry.slotId ? `<span class="log-slot">[${escapeHtml(String(entry.slotId))}${entry.tenantId ? ` · ${escapeHtml(String(entry.tenantId))}` : ""}]</span>` : ""}
     <span class="log-message">${escapeHtml(msg)}</span>
   `;
 
   terminal.appendChild(line);
+  while (terminal.children.length > 1000) terminal.firstElementChild?.remove();
 
   const autoscroll = (document.getElementById("logs-autoscroll") as HTMLInputElement)?.checked ?? true;
   if (autoscroll) {
@@ -433,8 +435,11 @@ async function refreshFinops(): Promise<void> {
     if (!res.ok) return;
     const data = await res.json();
     const totalCostEl = document.getElementById("finops-total-cost");
-    if (totalCostEl && typeof data.totalSpend === "number") {
-      totalCostEl.textContent = `$${data.totalSpend.toFixed(4)}`;
+    if (totalCostEl) {
+      const costs = data.turns.map((turn: Parameters<typeof estimateCost>[0]) => estimateCost(turn, data.rates));
+      totalCostEl.textContent = costs.length && costs.every((value: number | undefined) => value !== undefined)
+        ? `$${costs.reduce((sum: number, value: number) => sum + value, 0).toFixed(4)} estimated`
+        : "Unknown";
     }
   } catch (err) {
     console.error("Failed to fetch FinOps data:", err);
@@ -500,51 +505,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("install-app-btn")?.addEventListener("click", async () => {
     try {
       notify("Installing Reference App…");
-      const res = await apiFetch("/api/apps", {
-        method: "POST",
-        body: JSON.stringify({
-          manifest: {
-            id: "portfolio-risk",
-            name: "Portfolio Risk Monitor",
-            version: "1.0.0",
-            description: "Real-time VaR and sensitivity calculator",
-            author: "Nisheeth",
-            category: "finance",
-            icon: "chart-line",
-            entrypoints: {
-              backend: "server.ts",
-              surface: "surface.json",
-            },
-            runtime: {
-              engine: "node24",
-              memoryLimitMb: 256,
-              maxStorageMb: 512,
-              cpuTimeLimitSec: 60,
-            },
-            entitlements: {
-              network: { mode: "airgap", allowedDomains: [] },
-              mcpTools: [],
-              storage: { sqlite: true, duckdb: false },
-            },
-            triggers: [
-              {
-                id: "market-poll",
-                kind: "cron",
-                expression: "*/5 * * * *",
-                action: "pollMarket",
-                maxDurationSec: 30,
-              },
-            ],
-          },
-          files: {
-            "server.ts": "// Application logic",
-            "surface.json": JSON.stringify({
-              title: "Portfolio Risk",
-              nodes: [{ id: "root", type: "metric", props: { label: "VaR", value: "3.2%" } }],
-            }),
-          },
-        }),
-      });
+      const res = await apiFetch("/api/apps/builtin/portfolio-risk-dashboard", { method: "POST", body: "{}" });
       if (res.ok) {
         notify("Portfolio Risk Monitor installed successfully!");
         await refreshApps();

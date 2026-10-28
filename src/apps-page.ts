@@ -22,6 +22,9 @@ export class AppsPage {
   #apps: AppSummary[] = [];
   #activeApp: AppDetails | null = null;
   #activeStore: SurfaceStore | null = null;
+  #poll?: ReturnType<typeof setInterval>;
+  #dirty = false;
+  #pending = Promise.resolve();
   #toggleSidebar: () => void;
   #onClose?: () => void;
   #feedbackTimer?: ReturnType<typeof setTimeout>;
@@ -71,6 +74,7 @@ export class AppsPage {
   }
 
   close(showWorkspace = true): void {
+    clearInterval(this.#poll);
     if (this.#page.hidden) return;
     this.#activeApp = null;
     this.#activeStore = null;
@@ -83,6 +87,7 @@ export class AppsPage {
   }
 
   async open(): Promise<void> {
+    clearInterval(this.#poll);
     const studioEl = document.getElementById("skills-studio-page");
     if (studioEl) studioEl.hidden = true;
     document.body.classList.remove("in-skill-studio");
@@ -111,7 +116,7 @@ export class AppsPage {
       this.#renderGrid();
     } catch (err) {
       if (grid) {
-        grid.innerHTML = `<div class="artifact-empty"><h2>Could not load applications</h2><p>${(err as Error).message}</p></div>`;
+        grid.replaceChildren(el("p", { textContent: `Could not load applications: ${(err as Error).message}` }));
       }
     }
   }
@@ -197,7 +202,7 @@ export class AppsPage {
       grid.innerHTML = `
         <div class="artifact-empty">
           <h2>No applications installed</h2>
-          <p>Deploy an application from any Canvas dashboard or click below to install the reference app.</p>
+          <p>Build and publish an app in Studio, or create a draft from Canvas.</p>
           <button type="button" class="ghost" id="empty-install-app-btn">Install Reference App</button>
         </div>
       `;
@@ -269,14 +274,17 @@ export class AppsPage {
   async runApp(appId: string): Promise<void> {
     try {
       const details = await api<AppDetails>(`/api/apps/${encodeURIComponent(appId)}`);
-      this.#activeApp = details;
+      this.#activeApp = details; this.#dirty = false;
       this.#renderRunnerView(details);
+      clearInterval(this.#poll);
+      this.#poll = setInterval(() => { void this.#refreshActive(); }, 2000);
     } catch (err) {
       this.#feedback(`Could not launch app: ${(err as Error).message}`, true);
     }
   }
 
   #closeActiveApp(): void {
+    clearInterval(this.#poll);
     this.#activeApp = null;
     this.#activeStore = null;
     this.#renderCatalogShell();
@@ -319,8 +327,34 @@ export class AppsPage {
     );
 
     const surfaceMount = el("div", { className: "app-runner-content" });
+    surfaceMount.addEventListener("input", () => { this.#dirty = true; });
+    const status = el("p", { id: "app-run-status", role: "status", "aria-live": "polite" });
+    const actions = header.querySelector(".app-runner-actions")!;
+    if (app.run?.status === "failed" || app.run?.status === "uncertain") status.textContent = app.run.error || app.run.status;
+    if (app.run?.status === "uncertain") actions.append(el("button", { type: "button", className: "ghost small", textContent: "Review uncertain run", onclick: async () => {
+      if (!await ask(`Run ${app.run!.id} has uncertain external effects. Inspect the integration call log and external target before continuing. Acknowledging will leave schedules paused and will not replay the operation.`, "Acknowledge reviewed effects")) return;
+      try {
+        const next = await api<AppDetails>(`/api/apps/${encodeURIComponent(app.manifest.id)}/recover`, { method: "POST", body: JSON.stringify({ runId: app.run!.id }) });
+        this.#activeApp = next; this.#renderRunnerView(next);
+      } catch (error) { status.textContent = (error as Error).message; }
+    } }));
+    const schedule = el("button", { type: "button", className: "ghost small", textContent: app.scheduling ? "Pause schedule" : "Enable schedule", onclick: async () => {
+      try {
+        if (!app.scheduling && !await ask("Enable this app's declared schedules? Runs use its declared tools only when their integration policy permits unattended access.", "Enable")) return;
+        const updated = await api<AppDetails>(`/api/apps/${encodeURIComponent(app.manifest.id)}/schedule`, { method: "POST", body: JSON.stringify({ enabled: !app.scheduling }) });
+        this.#activeApp = updated; this.#renderRunnerView(updated);
+      } catch (error) { status.textContent = (error as Error).message; }
+    } });
+    if (app.manifest.triggers.length) actions.append(schedule);
+    if (Object.keys(app.surfaces ?? {}).length > 1) {
+      const select = el("select", { "aria-label": "App surface" });
+      for (const [id, snap] of Object.entries(app.surfaces!)) select.append(el("option", { value: id, textContent: snap.title || id }));
+      select.value = String(app.surface?.id ?? "");
+      select.onchange = () => { app.surface = app.surfaces![select.value] as unknown as Record<string, unknown>; this.#renderRunnerView(app); };
+      actions.append(select);
+    }
 
-    this.#page.replaceChildren(header, surfaceMount);
+    this.#page.replaceChildren(header, status, surfaceMount);
 
     if (app.surface) {
       const store = new SurfaceStore(basicCatalog);
@@ -340,43 +374,30 @@ export class AppsPage {
       surfaceMode(surfaceEl);
       surfaceEl.attach(store, snapshot.id);
 
-      surfaceEl.addEventListener("vak-change", async (e: Event) => {
-        const detail = (e as CustomEvent<{ surface: string; path: string; value: unknown }>).detail;
-        try {
-          const res = await api<{ patches?: any[] }>(`/api/apps/${encodeURIComponent(app.manifest.id)}/action`, {
-            method: "POST",
-            body: JSON.stringify({
-              controlId: detail.path.replace(/^\//, ""),
-              value: detail.value,
-            }),
-          });
-          if (res && Array.isArray(res.patches)) {
-            store.update({ surface: snapshot.id, nodes: res.patches });
-            surfaceEl.refresh();
-          }
-        } catch (err) {
-          console.warn("App change dispatch failed:", err);
-        }
+      const dispatch = (body: Record<string, unknown>) => {
+        this.#dirty = true;
+        this.#pending = this.#pending.then(async () => {
+          this.#dirty = true;
+          status.textContent = "Running…";
+          try {
+            const res = await api<{ revision: number; surfaces: Record<string, SurfaceSnapshot> }>(`/api/apps/${encodeURIComponent(app.manifest.id)}/action`, {
+              method: "POST", body: JSON.stringify({ ...body, surface: snapshot.id, revision: this.#activeApp?.revision })
+            });
+            if (this.#activeApp?.manifest.id !== app.manifest.id) return;
+            this.#activeApp.revision = res.revision; this.#activeApp.surfaces = res.surfaces;
+            const next = res.surfaces[snapshot.id];
+            if (next) { store.load(next); this.#activeApp.surface = next as unknown as Record<string, unknown>; surfaceEl.refresh(); }
+            this.#dirty = false; status.textContent = "Saved";
+          } catch (error) { status.textContent = `${(error as Error).message}. Your local edits are retained; reopen to load saved state.`; }
+        });
+      };
+      surfaceEl.addEventListener("vak-change", (event: Event) => {
+        const detail = (event as CustomEvent<{ path: string; value: unknown }>).detail;
+        dispatch({ controlId: detail.path, value: detail.value });
       });
-
-      surfaceEl.addEventListener("vak-action", async (e: Event) => {
-        const detail = (e as CustomEvent<VakActionDetail>).detail;
-        try {
-          const res = await api<{ patches?: any[] }>(`/api/apps/${encodeURIComponent(app.manifest.id)}/action`, {
-            method: "POST",
-            body: JSON.stringify({
-              action: detail.action?.action ?? "click",
-              controlId: detail.action?.source,
-              value: detail.action?.data ?? detail.data,
-            }),
-          });
-          if (res && Array.isArray(res.patches)) {
-            store.update({ surface: snapshot.id, nodes: res.patches });
-            surfaceEl.refresh();
-          }
-        } catch (err) {
-          console.warn("App action dispatch failed:", err);
-        }
+      surfaceEl.addEventListener("vak-action", (event: Event) => {
+        const detail = (event as CustomEvent<VakActionDetail>).detail;
+        dispatch({ controlId: detail.action.source, value: detail.action.data ?? detail.data, action: detail.action.action });
       });
 
       surfaceMount.append(surfaceEl);
@@ -388,7 +409,22 @@ export class AppsPage {
     }
   }
 
+  async #refreshActive(): Promise<void> {
+    const active = this.#activeApp;
+    if (!active || this.#page.hidden || this.#dirty) return;
+    try {
+      const next = await api<AppDetails>(`/api/apps/${encodeURIComponent(active.manifest.id)}`);
+      if (this.#activeApp !== active || this.#dirty || next.revision === active.revision) return;
+      const selected = String(active.surface?.id ?? "");
+      const snap = next.surfaces?.[selected];
+      if (snap && this.#activeStore) { this.#activeStore.load(snap); this.#page.querySelector<VakSurfaceElement>("vak-surface")?.refresh(); next.surface = snap as unknown as Record<string, unknown>; }
+      this.#activeApp = next;
+    } catch { /* A later refresh retries without overwriting local input. */ }
+  }
+
   async #runTrigger(appId: string): Promise<void> {
+    const status = document.getElementById("app-run-status");
+    if (status) status.textContent = "Refreshing…";
     try {
       this.#feedback("Running background poll…");
       const details = await api<AppDetails>(`/api/apps/${encodeURIComponent(appId)}`);
@@ -398,14 +434,15 @@ export class AppsPage {
         { method: "POST" }
       );
       this.#feedback(`Trigger '${res.action}' executed in ${res.durationMs}ms`);
+      if (status) status.textContent = `Refreshed (${res.durationMs} ms)`;
       if (this.#activeApp && this.#activeApp.manifest.id === appId) {
-        const updated = await api<AppDetails>(`/api/apps/${encodeURIComponent(appId)}`);
-        this.#activeApp = updated;
+        await this.#refreshActive();
       } else {
         await this.refresh();
       }
     } catch (err) {
       this.#feedback(`Trigger failed: ${(err as Error).message}`, true);
+      if (status) status.textContent = (err as Error).message;
     }
   }
 
@@ -427,141 +464,7 @@ export class AppsPage {
   async #installDefaultApp(): Promise<void> {
     try {
       this.#feedback("Installing Reference App…");
-      await api("/api/apps", {
-        method: "POST",
-        body: JSON.stringify({
-          manifest: {
-            id: "portfolio-risk-dashboard",
-            name: "Portfolio Risk Monitor",
-            version: "1.0.0",
-            description: "Real-time VaR and sensitivity calculator with dynamic asset rebalancing",
-            author: "Vakyartha Team",
-            category: "finance",
-            icon: "chart",
-            entrypoints: {
-              backend: "server.ts",
-              surface: "surface.json",
-            },
-            runtime: {
-              engine: "node24",
-              memoryLimitMb: 256,
-              maxStorageMb: 512,
-              cpuTimeLimitSec: 60,
-            },
-            entitlements: {
-              network: { mode: "airgap", allowedDomains: [] },
-              mcpTools: [],
-              storage: { sqlite: true, duckdb: false },
-            },
-            triggers: [
-              {
-                id: "recalculate-risk",
-                kind: "cron",
-                expression: "*/5 * * * *",
-                action: "recalculateMetrics",
-                maxDurationSec: 30,
-              },
-            ],
-          },
-          files: {
-            "server.ts": `export function computePortfolioVaR(portfolioValue: number, confidenceLevel: number, volatility: number, timeHorizonDays = 1): number {
-  const z = confidenceLevel >= 0.99 ? 2.326 : 1.645;
-  return portfolioValue * z * volatility * Math.sqrt(timeHorizonDays);
-}
-export function rebalanceWeights(riskTolerance: number): number[] {
-  const norm = Math.max(0, Math.min(100, riskTolerance)) / 100;
-  const equities = Math.round(20 + 60 * norm);
-  const bonds = Math.round(50 - 35 * norm);
-  const commodities = Math.round(15 - 5 * norm);
-  const cash = 100 - (equities + bonds + commodities);
-  return [equities, bonds, commodities, cash];
-}
-export function handleAction(controlId: string, value: unknown): Record<string, unknown> {
-  const riskTolerance = typeof value === "number" ? value : 65;
-  const weights = rebalanceWeights(riskTolerance);
-  const portfolioVal = 124500;
-  const annualizedVol = 0.08 + (weights[0] / 100) * 0.14;
-  const dailyVol = annualizedVol / Math.sqrt(252);
-  const var95 = computePortfolioVaR(portfolioVal, 0.95, dailyVol, 1);
-  const expectedReturn = (4.0 + (weights[0] / 100) * 12.0).toFixed(1);
-  const sharpe = ((Number(expectedReturn) - 4.5) / (annualizedVol * 100)).toFixed(2);
-  return {
-    op: "batch_update",
-    controlId,
-    value,
-    patches: [
-      { id: "card-var-95", props: { value: "$" + var95.toFixed(2) } },
-      { id: "card-expected-return", props: { value: expectedReturn + "%" } },
-      { id: "card-sharpe", props: { value: sharpe } },
-      { id: "chart-section", props: { series: [{ name: "Allocation %", values: weights }] } }
-    ]
-  };
-}
-`,
-            "surface.json": JSON.stringify({
-              id: "portfolio-risk-dashboard",
-              version: 1,
-              title: "Portfolio Risk & Quantitative Analysis",
-              data: { riskTolerance: 65 },
-              nodes: [
-                {
-                  id: "root",
-                  type: "stack",
-                  props: { direction: "vertical", gap: 16 },
-                  children: ["kpi-metrics", "controls-section", "chart-section"],
-                },
-                {
-                  id: "kpi-metrics",
-                  type: "grid",
-                  props: { columns: 4, gap: 12 },
-                  children: ["card-total-val", "card-var-95", "card-sharpe", "card-expected-return"],
-                },
-                {
-                  id: "card-total-val",
-                  type: "stat",
-                  props: { label: "Portfolio Value", value: "$124,500.00", delta: "+4.2%" },
-                },
-                {
-                  id: "card-var-95",
-                  type: "stat",
-                  props: { label: "Value-at-Risk (95% 1-Day)", value: "$2,850.00", tone: "warn" },
-                },
-                {
-                  id: "card-sharpe",
-                  type: "stat",
-                  props: { label: "Sharpe Ratio", value: "1.84", tone: "positive" },
-                },
-                {
-                  id: "card-expected-return",
-                  type: "stat",
-                  props: { label: "Expected Annual Return", value: "14.2%" },
-                },
-                {
-                  id: "controls-section",
-                  type: "card",
-                  props: { title: "Interactive Risk Sensitivity" },
-                  children: ["slider-risk-tolerance"],
-                },
-                {
-                  id: "slider-risk-tolerance",
-                  type: "slider",
-                  props: { label: "Risk Tolerance Level", min: 0, max: 100, value: 65, step: 5, bind: "/riskTolerance" },
-                },
-                {
-                  id: "chart-section",
-                  type: "chart",
-                  props: {
-                    kind: "donut",
-                    title: "Asset Allocation Weights",
-                    labels: ["US Large Cap Equities", "Govt Bonds", "Gold / Commodities", "Cash Reserves"],
-                    series: [{ name: "Allocation %", values: [55, 25, 12, 8] }],
-                  },
-                },
-              ],
-            }),
-          },
-        }),
-      });
+      await api("/api/apps/builtin/portfolio-risk-dashboard", { method: "POST", body: "{}" });
       await this.refresh();
       this.#feedback("Installed Reference App");
     } catch (err) {

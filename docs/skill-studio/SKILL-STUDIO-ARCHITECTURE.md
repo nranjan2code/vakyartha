@@ -6,7 +6,7 @@ The **Creator Studio** (`src/skills-studio.ts`) is Vakyartha's integrated develo
 
 ## 1. System Overview & Core Pillars
 
-In Vakyartha, skills and sandboxed apps are self-contained packages of instructions, schemas, daemons, and references that govern how the assistant understands domain procedures, chains capabilities, executes in Seatbelt sandboxes, binds canonical data, and projects reactive visual Canvas interfaces and spoken voice audio.
+In Vakyartha, skills and sandboxed apps are self-contained packages of instructions, schemas, executable handlers, and references that govern how the assistant understands domain procedures, chains capabilities, executes in Seatbelt sandboxes, binds canonical data, and projects reactive visual Canvas interfaces and spoken voice audio.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -18,10 +18,10 @@ In Vakyartha, skills and sandboxed apps are self-contained packages of instructi
 ```
 
 1. **Unified Creator Hub & App Support**: Directly accessible from the sidebar (`✨ Studio`) and Settings. Manages both multi-file Agent Skills packages and Sandboxed Dynamic Applications with filter tabs (`All`, `Skills`, `Sandboxed Apps`, `Drafts`), search, and dedicated creation actions (`+ New Skill`, `+ New Sandboxed App`).
-2. **Non-Destructive Multitasking & Continuous Auto-Save**: Seamlessly switch between active package editing and ongoing chat turns or New Chat without losing uncommitted state, open files, active tabs, or cursor position. Edits auto-save continuously to quarantined draft directories (`<dataDir>/skills/.drafts/<name>/`).
+2. **Non-Destructive Multitasking & Continuous Auto-Save**: Seamlessly switch between active package editing and ongoing chat turns or New Chat without losing uncommitted state, open files, active tabs, or cursor position. Skill edits auto-save under `<dataDir>/skills/.drafts/<name>/`; app edits use inert `<dataDir>/app-drafts/<id>.json` records.
 3. **Interactive Flow DAG (Directed Acyclic Graph)**: A native SVG-rendered visual dependency and execution graph illustrating the end-to-end pipeline from user intent through selection gates, capability boundaries, canonical stores, canvas surfaces, and voice projections.
 4. **Responsive Canvas Staging & Linter**: Fluid container query testing (`320px`, `720px`, `960px`, `100% Fluid`) mounting live `<vak-surface>` Web Components with real package fixtures, layout compliance linting, and Dual Spoken Voice TTS auditioning.
-5. **Governed Sandbox (`vak-sandbox`) Rehearsal**: Direct execution rehearsal of scripts and app daemons inside isolated macOS Seatbelt sandboxes with SHA-256 integrity verification, live stdout/stderr console streaming, and prompt selection gate evaluation (`/api/skills/eval`).
+5. **Governed Sandbox (`vak-sandbox`) Rehearsal**: Skill scripts use saved-source SHA-256 verification; app drafts use their exact package fingerprint. Both use bounded supervised execution. App rehearsal has no external-tool authority and does not commit live app state. Skill selection evaluation remains a separate `/api/skills/eval` operation.
 
 ---
 
@@ -36,11 +36,11 @@ Clicking `✨ Studio` in the sidebar lands on the Studio Hub. It displays instal
 
 ### 2.2 The 2-Pane Editor Workbench
 Opening any skill or application presents a clean, focused workbench:
-- **Header Bar**: `← Studio Hub` button, item identifier, type pill (`Skill` / `Sandboxed App`), draft status pill, view switcher segmented control (`Spec & Code`, `Flow DAG`, `Live Preview`, `Sandbox & Tests`), and actions (`Discard Draft`, `Save Draft`, `Publish Skill` / `Save App`).
+- **Header Bar**: `← Studio Hub` button, item identifier, type pill (`Skill` / `Sandboxed App`), draft status pill, view switcher segmented control (`Spec & Code`, `Flow DAG`, `Live Preview`, `Sandbox & Tests`), and actions (`Discard Draft`, `Save Draft`, `Publish Skill` / `Publish App`, plus `Build with chat` for apps).
 - **Left Rail (Package Explorer & Capabilities)**:
   - Multi-file package tree (`SKILL.md` or `app.json`, `surface.json`, `server.ts`, schemas, scripts, references).
   - Add File (`+`) and Delete File (`×`) controls with safe relative path enforcement.
-  - Active capabilities card: allowed MCP tools for skills, and runtime quotas (engine, memory limit, CPU timeout, airgap mode) for apps.
+  - Active capabilities card: allowed MCP tools for skills, and declared runtime settings and tool requirements for apps. CPU/RSS/storage fields are not enforced quotas; consult the app runtime contract.
 - **Center Canvas**: Switches dynamically based on the active tab:
   1. **Spec & Code**: Vertical stacked form fields (name, description with live 1024-character counter, allowed tools tokens) and tab-indented monospace code editor.
   2. **Flow DAG**: Interactive visual SVG graph showing the complete pipeline.
@@ -70,7 +70,7 @@ flowchart LR
 flowchart LR
   subgraph AppFlow["Sandboxed Dynamic App DAG"]
     Trigger["Cron / Action Trigger\n(Scheduled / Click)"] --> Worker["Sandboxed Worker\n(server.ts / Node 24)"]
-    Worker --> Storage["Airgapped Storage\n(SQLite / State)"]
+    Worker --> Storage["Host-owned canonical JSON state"]
     Storage --> Canvas["Canvas Mount\n(surface.json)"]
   end
 ```
@@ -84,17 +84,17 @@ flowchart LR
   - `+ Add Tool`: Prompts for a tool name, validates it, appends it to `allowed-tools` in frontmatter, and updates DAG/Spec.
   - `+ Add Chained Skill`: Prompts for a target skill, embeds procedure linkage in `SKILL.md`, and redraws chained edges.
   - `+ Add Procedural Step`: Appends a structured operational stage (`## Step N: ...`) to the instructions.
-  - All DAG mutations auto-save to `<dataDir>/skills/.drafts/<name>/` immediately.
+  - Edits follow the selected package owner: skill draft directories or inert app draft records. Neither save publishes executable app code.
 
 ---
 
 ## 4. Multi-Tab Multitasking & Continuous Auto-Save
 
 Authors frequently switch between authoring capabilities and running live chat turns:
-1. **Debounced Background Auto-Save**: Any modification in the form or code editor triggers an 800ms debounced auto-save directly to `<dataDir>/skills/.drafts/<name>/` (`PUT /api/skills/:name/draft`).
+1. **Debounced Background Auto-Save**: Editor changes trigger debounced saves to the selected package owner: `PUT /api/skills/:name/draft` for skills, `PUT /api/apps/:id/draft` for apps. App saves carry current draft/base fingerprints and retain incomplete source.
 2. **Instant Tab Switching**: Switching to **New chat** or an existing conversation hides the Studio view non-destructively. All in-memory state, open files, active tabs, and breakpoints remain preserved.
 3. **Seamless Resumption**: Clicking `✨ Studio` restores the active working stage instantly with zero reload latency or cursor reset.
-4. **Draft Quarantine Invariant**: Unpublished drafts are strictly ignored by the runtime's local skill discovery during chat turns until explicitly promoted via `Publish Skill`.
+4. **Draft Quarantine Invariant**: Skill discovery uses published instructions. App execution uses published packages; model writes request approval to stage inert app drafts, and Studio publication checks exact fingerprints. Canvas drafts retain source-chat lineage; Build with chat prepares an editable composer request there.
 
 ---
 
@@ -124,10 +124,12 @@ Real-time linting catches design violations:
 
 ## 6. Governed Sandbox (`vak-sandbox`) Rehearsal
 
-Scripts and app daemons coordinate external tools and isolated execution without ever bypassing security policies:
-- **Disposable Runs**: One-off script execution in an ephemeral macOS Seatbelt sandbox with SHA-256 verification.
-- **No Direct Authority**: Skills declare tool requirements as hints; the app's native sandbox policy holds ultimate authority.
-- **Terminal Console**: Live output streaming displaying exit codes, execution duration in milliseconds, and stdout/stderr channels.
+Skill scripts and app packages have separate rehearsal contracts:
+
+- Skill scripts use bounded disposable helper execution with saved-source SHA-256 verification and report captured stdout/stderr and exit status.
+- Apps rehearse the exact saved draft fingerprint, await the declared handler, and return its result without committing live app data. External-tool calls are unavailable in rehearsal.
+- Published app actions/refreshes execute ordinary code without an LLM per action. Declared real-data tools use existing integration authority; credentials remain in the host, and Ask/off do not run unattended.
+- A package diagram, declaration or successful rehearsal does not grant permissions or prove live source/calculation correctness. [Current app architecture](../sandboxed-apps/ARCHITECTURE.md), [contract](../sandboxed-apps/RUNTIME-CONTRACT.md) and [runbook](../sandboxed-apps/OPERATIONS-AND-LIFECYCLE.md) own those boundaries.
 
 ---
 

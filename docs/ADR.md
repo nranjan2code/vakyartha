@@ -459,7 +459,7 @@ Working drafts are continuously auto-saved in the background (800ms debounce) an
 ### 3. Interactive Flow DAG (Directed Acyclic Graph)
 Studio provides a visual, interactive DAG view mapping the complete execution and surface projection pipeline:
 - **For Skills**: `User Intent` ──► `use_skill Gate` ──► `Allowed Tools & Sandbox` ──► `Chained Skills` ──► `Canonical /records Store` ──► `3-Tier Canvas Surface` ──► `Dual Spoken Projection`.
-- **For Sandboxed Apps**: `Cron / Action Triggers` ──► `Isolated Worker (server.ts)` ──► `App Storage (SQLite)` ──► `Canvas Projection (surface.json)`.
+- **For Sandboxed Apps**: the original diagram proposed embedded storage. ADR-048 replaces its runtime assumptions with bounded supervised execution, canonical host-owned JSON state and validated surface updates.
 Rendered with clean SVG cubic bezier curves, node status badges, and an interactive node inspector drawer.
 
 ### 4. Live Canonical Projection Staging & Surface Linter
@@ -472,6 +472,8 @@ No new runtime boundaries or external dependencies are introduced. All styling s
 
 
 ## ADR-047: Multi-Tenant Pooled Sandboxed Runtime, Dynamic Hosted Apps & Admin Console (2026-10-28)
+
+**Status: superseded by ADR-048.** The following records the original proposal, not implemented guarantees. Warm processes, filesystem databases, latency thresholds and physical lifecycle claims below do not describe the current app runtime. See [current architecture](sandboxed-apps/ARCHITECTURE.md).
 
 Accepted. Full-fledged dynamic applications (Artifact Apps) and conversational AI chats require backend code execution, dedicated storage volumes, and sub-millisecond local reactivity without exhausting workstation CPU/RAM or violating Vakyartha's single persistence writer (ADR-001) and Zero-Trust (STRIDE) boundaries.
 
@@ -501,3 +503,7 @@ A dedicated administrative console provides comprehensive observability:
 - **Five Workbenches**: Fleet & Pool Manager, Dynamic App Inventory, Real-Time Streaming Log Terminal (`/api/admin/logs/stream`), FinOps Spend Governor, and Zero-Trust Security Inspector.
 - **macOS System Tray Launcher**: Opened directly from the menu bar (`Cmd+Shift+A`) or from Settings → General.
 
+
+## ADR-048: Bounded executable app invocations and reviewed publication (2026-10-28)
+
+Supersedes ADR-047 implementation assumptions. Pool execution capacity, not uncontained warm processes. Reuse existing `vaksb run` without weakening its closed stdin or cleanup contract. Bounded file mailboxes adapt app inputs, output and declared integration calls; there is no additional native relay or network listener. Private host-owned app records are the single canonical writer for package, domain state and projections. Drafts remain inert and publication checks reviewed fingerprints. Direct code handles actions/refreshes without a model; external tools retain existing integration authority and must permit unattended access. Schedules start off; uncertain effects are never automatically replayed. [Contract and deliberate limits](sandboxed-apps/RUNTIME-CONTRACT.md).

@@ -42,6 +42,7 @@ export interface AppTrigger {
 }
 
 export interface AppManifest {
+  sourceSession?: string;
   $schema?: string;
   id: string;
   version: string;
@@ -68,7 +69,7 @@ function cleanString(val: unknown, maxLen = 256): string {
 function assertSafeRelativePath(relPath: unknown, fieldName: string): string {
   const p = cleanString(relPath, 256);
   if (!p) throw new Error(`${fieldName} cannot be empty`);
-  if (p.startsWith("/") || p.startsWith("\\") || p.includes("..") || p.includes("\0")) {
+  if (p.startsWith("/") || p.startsWith("\\") || p.includes("..") || p.includes("\\") || p.includes("\0")) {
     throw new Error(`${fieldName} must be a safe relative path without directory traversal: ${p}`);
   }
   return p;
@@ -121,6 +122,7 @@ export function parseAppManifest(raw: unknown): AppManifest {
 
   const rawEngine = cleanString(rawRuntime.engine, 32).toLowerCase();
   const validEngines = ["node24", "python3", "shell"] as const;
+  if (rawEngine && !validEngines.includes(rawEngine as any)) throw new Error("Unsupported app engine");
   const engine = (validEngines.includes(rawEngine as any) ? rawEngine : "node24") as AppRuntimeLimits["engine"];
 
   const memoryLimitMb = Math.max(32, Math.min(Number(rawRuntime.memoryLimitMb) || 256, 1024));
@@ -138,7 +140,7 @@ export function parseAppManifest(raw: unknown): AppManifest {
     ? (rawEnt.network as Record<string, unknown>)
     : {};
 
-  const netMode = rawNet.mode === "airgap" ? "airgap" : "brokered";
+  const netMode = rawNet.mode === "brokered" ? "brokered" : "airgap";
   const allowedDomains: string[] = [];
   if (Array.isArray(rawNet.allowedDomains)) {
     for (const d of rawNet.allowedDomains) {
@@ -165,7 +167,7 @@ export function parseAppManifest(raw: unknown): AppManifest {
     network: { mode: netMode, allowedDomains },
     mcpTools,
     storage: {
-      sqlite: Boolean(rawStorage.sqlite ?? true),
+      sqlite: Boolean(rawStorage.sqlite ?? false),
       duckdb: Boolean(rawStorage.duckdb ?? false),
     },
   };
@@ -178,7 +180,8 @@ export function parseAppManifest(raw: unknown): AppManifest {
       const trig = item as Record<string, unknown>;
       const trigId = cleanString(trig.id, 64);
       if (!IDENTIFIER_RE.test(trigId)) continue;
-      const kind = trig.kind === "file-watcher" ? "file-watcher" : "cron";
+      if (trig.kind !== "cron" && trig.kind !== "file-watcher") throw new Error("Unsupported app trigger kind");
+      const kind = trig.kind;
       const action = cleanString(trig.action, 64);
       if (!action) continue;
       const maxDurationSec = Math.max(1, Math.min(Number(trig.maxDurationSec) || 30, 300));
@@ -200,6 +203,7 @@ export function parseAppManifest(raw: unknown): AppManifest {
   }
 
   return {
+    sourceSession: typeof obj.sourceSession === "string" && /^[\w-]{1,120}$/.test(obj.sourceSession) ? obj.sourceSession : undefined,
     $schema: cleanString(obj.$schema, 256) || undefined,
     id,
     version,

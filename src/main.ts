@@ -1702,3 +1702,18 @@ async function start(): Promise<void> {
 }
 
 void start();
+
+window.addEventListener("vak:edit-app", (event) => {
+  void openSkillStudio(String((event as CustomEvent).detail), async () => { $("workspace").hidden = false; }, async () => {}, "app");
+});
+
+window.addEventListener("vak:build-app", (event) => {
+  const { id, sourceSession } = (event as CustomEvent<{ id: string; sourceSession?: string }>).detail;
+  void (async () => {
+    await switchNavTab("chats");
+    if (sourceSession && sourceSession !== session) await openChat(sourceSession, true);
+    const request = `Build the executable application for draft ${id} from the intent, sources and logic in this conversation. Read it with read_app_package. Preserve its independent surfaces and canonical data. Implement real async actions and refresh handlers; use declared, governed integration tools for real data. Save complete source with save_app_draft and the current review fingerprints. Do not publish or enable schedules; leave the package ready for Studio rehearsal and review. Identify any missing source, permission or behavior instead of inventing it.`;
+    input.value = input.value.trim() ? `${input.value}\n\n${request}` : request;
+    input.dispatchEvent(new Event("input", { bubbles: true })); input.focus();
+  })();
+});

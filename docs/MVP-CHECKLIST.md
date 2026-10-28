@@ -284,12 +284,16 @@ ADR-046 implemented: complete Creator Studio accessible directly from the sideba
 - **Disposable Sandbox Rehearsal & Gate Testing:** Runs inert scripts in `vak-sandbox` with SHA-256 integrity verification, provides prompt-guided procedural testing with helper script creation for scriptless skills, and verifies prompt matching against the provider selection gate (`/api/skills/eval`).
 - **Verification:** 211 app tests, 399 framework tests, typechecks, UI build, and WebKit checks (`skills-check.ts` at 1100/620/375px and `canvas-check.ts` at 1100/620px) pass cleanly. Zero mocks or stubs.
 
-## Mini-Cloud Pooled Sandboxed Runtime, Dynamic Hosted Apps & Observability Console checkpoint — 2026-10-28
+## Earlier app-pool checkpoint — superseded (2026-10-28)
 
-ADR-047 implemented: multi-tenant pooled sandboxed runtime (`SandboxPoolManager`, `AppRegistry`, `sidecar/sandbox-pool/`), dynamic hosted applications (`<dataDir>/apps/<id>/`), and tray-launched Admin Console (`admin.html`, `src/admin.ts`).
-- **Deterministic Worker Pool:** bounds OS concurrency to `maxActiveWorkers = 3` with 1 pre-warmed idle standby runner (`< 50ms` lease time), LRU slot eviction/hibernation, and sub-150ms state rehydration.
-- **Dynamic Artifact Applications:** turns code artifacts into hosted desktop apps (`app.json`, `server.ts`, `surface.json`, `state.json`) with embedded SQLite (WAL) and DuckDB volumes. Dispatches Canvas control actions directly to worker daemons over private stdio IPC with sub-16ms DOM patching and zero LLM token costs.
-- **Workstation Physical Lifecycle:** automatic hardware sleep / lid-close detection via event loop delta measurement (`elapsed > 45s`), pre-sleep SQLite WAL flushing (`PRAGMA wal_checkpoint(TRUNCATE)`), wakeup clock skew reconciliation, anti-thundering-herd cron coalescing, atomic write-renaming (`state.json.tmp` -> `state.json`), and coordinated 4-second graceful shutdown waterfall.
-- **Admin & Observability Console:** 5 workbenches (Fleet Manager, App Inventory, Real-Time Streaming Log Terminal, FinOps Governor, Zero-Trust Security Inspector) with dual delivery (Tauri native window via `Cmd+Shift+A` or loopback browser web app) and live SSE streaming (`/api/admin/telemetry/stream`, `/api/admin/logs/stream`).
-- **Built-in Reference Application:** `portfolio-risk` parametric VaR (95%/99%), Sharpe ratio, and dynamic asset allocation rebalancing.
-- **Verification:** 211 app tests (`npm test`), 399 framework tests (`npm run test:framework`), clean typecheck (`npm run typecheck`), multi-page Vite bundle (`npm run build`), Rust tests (`cargo test --manifest-path src-tauri/Cargo.toml --lib`), and real WebKit checks (`canvas-check.ts`). Zero mocks or stubs.
+The original ADR-047 checkpoint overstated worker prewarming, persistent databases, resource protection and latency. These are not accepted completion evidence. [Original review](sandboxed-apps/REVIEW-2026-10-28.md), [current contract](sandboxed-apps/RUNTIME-CONTRACT.md) and the executable app repair checkpoint below define the supported scope. Primary-provider app authoring remains open.
+
+## Executable app repair checkpoint — 2026-10-28
+
+Supersedes the earlier mini-cloud completion claims: [current bounded runtime contract](sandboxed-apps/RUNTIME-CONTRACT.md).
+
+- [x] Actual supervised Node app actions/declared refresh functions, canonical persistent state and multiple surfaces; direct execution without per-action model calls.
+- [x] Inert app drafts, source loading, reviewed publication, bounded tool bridge with existing integration authority, opt-in schedules and uncertain-effect refusal.
+- [x] Real-helper/API mechanism checks and WebKit arithmetic/refresh/reopen journeys at 1100/620/375; no installed-app claim.
+- [ ] Reliable primary-provider chat-to-executable-app authoring: graph gate remains 2/3; no broader model workflow trial followed.
+- [ ] Permanent daemons, filesystem databases, watchers and stronger resource/platform isolation remain later capabilities.

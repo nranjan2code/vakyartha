@@ -14,15 +14,6 @@ import { resolveMedia } from "./media.ts";
 /** large: placed in the canvas; once large it stays so, and nothing jumps back into the chat. */
 interface Entry { surface: VakSurfaceElement; home: HTMLElement; button: HTMLButtonElement; title: HTMLElement; option: HTMLOptionElement; large: boolean }
 
-interface DeployedAppRef {
-  appId: string;
-  appName: string;
-  version: string;
-  deployedSurfaceVersion?: number;
-  snapshotFingerprint: string;
-  deployedAt: string;
-}
-
 export class Canvas {
   #entries = new Map<string, Entry>();
   #active?: string;
@@ -97,54 +88,10 @@ export class Canvas {
     const deployBtn = document.getElementById("canvas-deploy") as HTMLButtonElement | null;
     if (deployBtn) {
       deployBtn.disabled = !this.#active;
-      if (this.#active) {
-        const snap = this.#old?.id === this.#active ? this.#old.store.snapshot(this.#active) : this.#store().snapshot(this.#active);
-        const ref = snap ? this.#getDeployedApp(snap.id) : null;
-        if (ref && snap) {
-          const currentFingerprint = this.#fingerprint(snap);
-          const currentVersion = snap.version ?? 1;
-          const isChanged = ref.snapshotFingerprint !== currentFingerprint || (ref.deployedSurfaceVersion !== undefined && currentVersion > ref.deployedSurfaceVersion);
-          if (isChanged) {
-            deployBtn.className = "icon-btn deployed needs-update";
-            deployBtn.setAttribute("aria-label", `Update hosted application “${ref.appName}” (New version available)`);
-            deployBtn.title = `Update hosted application “${ref.appName}” (New version available)`;
-            deployBtn.replaceChildren(icon("spark", 16));
-          } else {
-            deployBtn.className = "icon-btn deployed";
-            deployBtn.setAttribute("aria-label", `Application “${ref.appName}” deployed · Click to open in Apps`);
-            deployBtn.title = `Application “${ref.appName}” deployed · Click to open in Apps`;
-            deployBtn.replaceChildren(icon("cpu", 16));
-          }
-        } else {
-          deployBtn.className = "icon-btn";
-          deployBtn.setAttribute("aria-label", "Deploy as hosted application");
-          deployBtn.title = "Deploy as hosted application";
-          deployBtn.replaceChildren(icon("rocket", 16));
-        }
-      }
-    }
-  }
-
-  #fingerprint(snap: SurfaceSnapshot): string {
-    return `${JSON.stringify(snap.nodes)}:${snap.version ?? 1}`;
-  }
-
-  #getDeployedApp(surfaceId: string): DeployedAppRef | null {
-    try {
-      const raw = prefs.get(`app:surface:${surfaceId}`);
-      if (!raw) return null;
-      return JSON.parse(raw) as DeployedAppRef;
-    } catch {
-      return null;
-    }
-  }
-
-  #setDeployedApp(surfaceId: string, ref: DeployedAppRef | null): void {
-    if (ref) prefs.set(`app:surface:${surfaceId}`, JSON.stringify(ref));
-    else {
-      try {
-        localStorage.removeItem(`vak:app:surface:${surfaceId}`);
-      } catch {}
+      deployBtn.className = "icon-btn";
+      deployBtn.setAttribute("aria-label", "Create app draft");
+      deployBtn.title = "Create app draft";
+      deployBtn.replaceChildren(icon("rocket", 16));
     }
   }
 
@@ -377,226 +324,16 @@ export class Canvas {
     const snap = this.#old?.id === this.#active ? this.#old.store.snapshot(this.#active) : this.#store().snapshot(this.#active);
     if (!snap) return;
 
-    const existingRef = this.#getDeployedApp(snap.id);
-    if (existingRef) {
-      const currentFingerprint = this.#fingerprint(snap);
-      const currentVersion = snap.version ?? 1;
-      const isChanged = existingRef.snapshotFingerprint !== currentFingerprint || (existingRef.deployedSurfaceVersion !== undefined && currentVersion > existingRef.deployedSurfaceVersion);
-
-      if (!isChanged) {
-        // App is already deployed and up to date
-        const openNow = await ask(
-          `“${existingRef.appName}” is already deployed as a hosted application and is up to date.\n\nOpen it now in the Apps workbench?`,
-          "Open in Apps"
-        );
-        if (openNow) {
-          window.dispatchEvent(new CustomEvent("vak:run-app", { detail: existingRef.appId }));
-        }
-        return;
-      }
-
-      // App has newer changes in Canvas: ask user to confirm update
-      const doUpdate = await ask(
-        `Update hosted application “${existingRef.appName}”?\n\nA newer version of this interface is available in Canvas. Updating will refresh the app's visual surface and state with your latest canvas changes while preserving its isolated storage volume and background triggers.`,
-        "Update App"
-      );
-      if (!doUpdate) return;
-
-      try {
-        this.#feedback("Updating app…");
-        const parts = (existingRef.version || "1.0.0").split(".").map(Number);
-        const nextVersion = `${parts[0] || 1}.${parts[1] || 0}.${(parts[2] ?? 0) + 1}`;
-
-        const manifestUpdate = {
-          name: snap.title || existingRef.appName,
-          version: nextVersion,
-        };
-
-        const files: Record<string, string> = {
-          "surface.json": JSON.stringify(snap, null, 2),
-          "AGENTS.md": `# AGENTS.md — ${snap.title || existingRef.appId}
-
-Self-documenting architectural contract for agents and humans operating this application.
-
-## Identity & Purpose
-- **Application ID:** \`${existingRef.appId}\`
-- **Name:** ${snap.title || existingRef.appName}
-- **Version:** ${nextVersion}
-- **Category:** finance
-- **Runtime:** Node.js 24 airgapped worker runtime with local persistent volume.
-
-## Interactive Surfaces
-Declared in \`surface.json\` (version ${snap.version ?? 1}):
-- **Surface ID:** \`${snap.id || existingRef.appId}\`
-- **Nodes Count:** ${Array.isArray(snap.nodes) ? snap.nodes.length : 0}
-
-## Action Dispatch
-UI events and form changes call \`handleAction(controlId, value)\` in \`server.ts\`.
-Background polls invoke \`refreshData()\`.
-
-## Guidelines for Agents
-1. All changes must be self-contained in this directory.
-2. Read \`surface.json\` before modifying actions to ensure control IDs align.
-3. No external network requests without declaring explicit allowed domains in \`app.json\`.
-`,
-          "SKILL.md": `---
-name: ${existingRef.appId}
-description: Operational instructions for managing and updating ${snap.title || existingRef.appName}.
----
-
-# Operating ${snap.title || existingRef.appName}
-
-- App Version: ${nextVersion}
-- To run background actions: call \`POST /api/apps/${existingRef.appId}/triggers/refresh-poll/run\`.
-- To dispatch UI changes: call \`POST /api/apps/${existingRef.appId}/action\`.
-- To update visual layout: edit \`surface.json\` and restart the app runner.
-`
-        };
-
-        await api(`/api/apps/${encodeURIComponent(existingRef.appId)}`, {
-          method: "PUT",
-          body: JSON.stringify({ manifest: manifestUpdate, files }),
-        });
-
-        existingRef.version = nextVersion;
-        existingRef.appName = snap.title || existingRef.appName;
-        existingRef.deployedSurfaceVersion = snap.version ?? 1;
-        existingRef.snapshotFingerprint = currentFingerprint;
-        existingRef.deployedAt = new Date().toISOString();
-        this.#setDeployedApp(snap.id, existingRef);
-
-        this.#feedback(`Updated to v${nextVersion}!`);
-        window.dispatchEvent(new CustomEvent("vak:app-updated", { detail: existingRef.appId }));
-        this.#controls();
-      } catch (err) {
-        this.#feedback("Update failed");
-      }
-      return;
-    }
-
-    // Initial deployment
-    const baseTitle = (snap.title || "custom-app").trim();
-    const slug = baseTitle
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "")
-      .slice(0, 36) || `app-${Date.now().toString(36)}`;
-    const appId = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
-
+    const appId = `app-${crypto.randomUUID().slice(0, 8)}`;
+    if (!await ask("Create an app draft from this interface? Its visual state will be retained. Add and test executable behavior in Studio or ask the chat to build the app; saving an interface alone does not create data refresh logic.", "Create App Draft")) return;
     try {
-      this.#feedback("Deploying to Apps…");
-      const manifest = {
-        id: appId,
-        version: "1.0.0",
-        name: snap.title || "Hosted Application",
-        description: `Dynamic hosted application deployed from Canvas surface`,
-        author: "User",
-        icon: "chart",
-        category: "finance",
-        entrypoints: {
-          surface: "surface.json",
-          backend: "server.ts",
-        },
-        runtime: {
-          engine: "node24",
-          memoryLimitMb: 256,
-          cpuTimeLimitSec: 60,
-          maxStorageMb: 512,
-        },
-        entitlements: {
-          network: { mode: "airgap", allowedDomains: [] },
-          mcpTools: [],
-          storage: { sqlite: true, duckdb: false },
-        },
-        triggers: [
-          {
-            id: "refresh-poll",
-            kind: "cron",
-            expression: "*/5 * * * *",
-            action: "refreshData",
-            maxDurationSec: 30,
-          },
-        ],
-      };
-
-      const files: Record<string, string> = {
-        "surface.json": JSON.stringify(snap, null, 2),
-        "server.ts": `// Sandboxed app daemon for ${snap.title || appId}
-export function handleAction(controlId: string, value: unknown): Record<string, unknown> {
-  console.log("[${appId}] handleAction:", controlId, value);
-  return {
-    op: "batch_update",
-    controlId,
-    value,
-    patches: []
-  };
-}
-
-export function refreshData(): Record<string, unknown> {
-  console.log("[${appId}] background poll executed");
-  return { ok: true, timestamp: new Date().toISOString() };
-}
-`,
-        "AGENTS.md": `# AGENTS.md — ${snap.title || appId}
-
-Self-documenting architectural contract for agents and humans operating this application.
-
-## Identity & Purpose
-- **Application ID:** \`${appId}\`
-- **Name:** ${snap.title || "Hosted Application"}
-- **Version:** 1.0.0
-- **Category:** finance
-- **Runtime:** Node.js 24 airgapped worker runtime with local persistent volume.
-
-## Interactive Surfaces
-Declared in \`surface.json\` (version ${snap.version ?? 1}):
-- **Surface ID:** \`${snap.id || appId}\`
-- **Nodes Count:** ${Array.isArray(snap.nodes) ? snap.nodes.length : 0}
-
-## Action Dispatch
-UI events and form changes call \`handleAction(controlId, value)\` in \`server.ts\`.
-Background polls invoke \`refreshData()\`.
-
-## Guidelines for Agents
-1. All changes must be self-contained in this directory.
-2. Read \`surface.json\` before modifying actions to ensure control IDs align.
-3. No external network requests without declaring explicit allowed domains in \`app.json\`.
-`,
-        "SKILL.md": `---
-name: ${appId}
-description: Operational instructions for managing and updating ${snap.title || appId}.
----
-
-# Operating ${snap.title || appId}
-
-- App Version: 1.0.0
-- To run background actions: call \`POST /api/apps/${appId}/triggers/refresh-poll/run\`.
-- To dispatch UI changes: call \`POST /api/apps/${appId}/action\`.
-- To update visual layout: edit \`surface.json\` and restart the app runner.
-`
-      };
-
-      await api("/api/apps", {
-        method: "POST",
-        body: JSON.stringify({ manifest, files }),
-      });
-
-      const ref: DeployedAppRef = {
-        appId,
-        appName: snap.title || "Hosted Application",
-        version: "1.0.0",
-        deployedSurfaceVersion: snap.version ?? 1,
-        snapshotFingerprint: this.#fingerprint(snap),
-        deployedAt: new Date().toISOString(),
-      };
-      this.#setDeployedApp(snap.id, ref);
-
-      this.#feedback("Deployed to Apps!");
-      window.dispatchEvent(new CustomEvent("vak:app-installed", { detail: appId }));
-      this.#controls();
-    } catch (err) {
-      this.#feedback("Deploy failed");
-    }
+      await api(`/api/apps/${appId}/draft`, { method: "PUT", body: JSON.stringify({ manifest: {
+        id: appId, sourceSession: this.#session(), name: snap.title || "New app", version: "1.0.0", entrypoints: { surface: "surface.json" },
+        runtime: { engine: "node24" }, entitlements: { network: { mode: "airgap" }, mcpTools: [] }, triggers: []
+      }, files: { "surface.json": JSON.stringify(snap) } }) });
+      this.#feedback("App draft created. Add executable behavior in Studio.");
+      window.dispatchEvent(new CustomEvent("vak:edit-app", { detail: appId }));
+    } catch (error) { this.#feedback((error as Error).message); }
   }
 
   openStandalone(snap: SurfaceSnapshot, focus = true): void {

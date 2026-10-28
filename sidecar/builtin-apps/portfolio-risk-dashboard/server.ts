@@ -30,7 +30,7 @@ export function rebalanceWeights(riskTolerance: number): number[] {
   return [equities, bonds, commodities, cash];
 }
 
-export function handleAction(controlId: string, value: unknown): Record<string, unknown> {
+export function handleAction(controlId: string, value: unknown, context?: { state: Record<string, unknown> }): Record<string, unknown> {
   let riskTolerance = 65;
   if (typeof value === "number") {
     riskTolerance = value;
@@ -43,6 +43,7 @@ export function handleAction(controlId: string, value: unknown): Record<string, 
       if (!Number.isNaN(parsed)) riskTolerance = parsed;
     }
   }
+  if (context) context.state.riskTolerance = riskTolerance;
   const weights = rebalanceWeights(riskTolerance);
   const portfolioVal = 124_500;
   // Blended annualized volatility based on equity weight
@@ -52,21 +53,33 @@ export function handleAction(controlId: string, value: unknown): Record<string, 
   const expectedReturn = (4.0 + (weights[0]! / 100) * 12.0).toFixed(1);
   const sharpe = ((Number(expectedReturn) - 4.5) / (annualizedVol * 100)).toFixed(2);
 
+  const data = {
+    riskTolerance,
+    riskProfile: typeof value === "string" && ["conservative", "balanced", "aggressive"].includes(value) ? value : String(context?.state.riskProfile ?? "balanced"),
+    var95: `$${var95.toFixed(2)}`, expectedReturn: `${expectedReturn}%`, sharpe,
+    allocation: [{ name: "Allocation %", values: weights }],
+  };
+  if (context) Object.assign(context.state, data);
   return {
+    data,
     op: "batch_update",
     controlId,
     value,
     patches: [
-      { id: "card-var-95", props: { value: `$${var95.toFixed(2)}` } },
-      { id: "card-expected-return", props: { value: `${expectedReturn}%` } },
-      { id: "card-sharpe", props: { value: sharpe } },
+      { id: "card-var-95", props: { value: "{/var95}" } },
+      { id: "card-expected-return", props: { value: "{/expectedReturn}" } },
+      { id: "card-sharpe", props: { value: "{/sharpe}" } },
       {
         id: "chart-section",
         props: {
-          series: [{ name: "Allocation %", values: weights }],
+          series: "{/allocation}",
         },
       },
     ],
   };
 }
 
+
+export function recalculateMetrics(context: { state: Record<string, unknown> }): Record<string, unknown> {
+  return handleAction("riskTolerance", context.state.riskProfile ?? "balanced", context);
+}

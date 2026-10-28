@@ -4,6 +4,10 @@ What changed in the app, newest first. Each release names the [Projection](https
 
 ## Unreleased
 
+- Execute published app actions and named refresh handlers directly through the existing supervised sandbox, with bounded invocation capacity and host-owned persistent JSON state. Real-data calls reuse declared integration tools and current permissions; credentials stay outside app code.
+- Separate inert app drafts from reviewed publication; retain actual source, source-chat lineage, multiple surface snapshots, revisions, opt-in schedules and uncertain-effect receipts. Fix path escapes, tenant races, missing/async handler receipts and stale update handling. Replace placeholder Canvas deployment with an app draft and an editable Build with chat flow.
+- Align app architecture/runbooks with implemented scope. Warm daemons, persistent filesystem databases, raw network/model brokers, strict resource quotas and latency guarantees remain unsupported. The primary-local authoring gate remains 2/3; runtime/build/installation checks do not close earlier semantic/source/interaction failures. Built on Projection `701f87c`.
+
 - Make Sandbox settings functional: live helper compatibility/startup state, validated folder saving, real execution checks, linked tool/skill pages and responsive Realm management. Improve Skills feedback, toggle rollback, edit cancellation, file-preview retry and detail spacing; surface failed Settings loads with retry.
 - Expose durable Realm creation, repeated isolated commands, paged change/file review, fingerprint-bound promotion, recovery, latest-promotion rollback and discard through the existing approval/logging lifecycle. The helper owns private locked state and recoverable promotion; no new dependency or IPC. Existing MCP fallback and resource/platform limits remain explicit. [Contract](docs/sandbox/OVERVIEW.md).
 - Keep the integration catalog array live so new reviewed imports remain visible; refresh sandbox tool metadata at startup. Strengthen the Skills checker to wait for completed installation before reading stored files.

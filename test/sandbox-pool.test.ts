@@ -1,122 +1,73 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { createServer } from "node:http";
 import { SandboxPoolManager } from "../sidecar/sandbox-pool/pool-manager.ts";
 
-test("sandbox worker pool boots with pre-warmed standby runner and leases slots", async (t) => {
-  const tmp = mkdtempSync(path.join(tmpdir(), "vak-pool-test-"));
-  const pool = new SandboxPoolManager({
-    maxActiveWorkers: 2,
-    standbyWorkers: 1,
-    idleTimeoutMs: 1000,
-    hibernationTimeoutMs: 2000,
-  });
+export const helper = process.env.VAK_TEST_SANDBOX_BIN ?? path.resolve("../sandbox/target/debug/vaksb");
+const native = process.platform === "darwin";
+const invocation = (source: string, value: unknown = 42) => ({ backend: "main.ts", files: { "main.ts": source }, state: {}, surfaces: {}, controlId: "value", value });
 
-  t.after(async () => {
-    await pool.shutdown(2000);
-    rmSync(tmp, { recursive: true, force: true });
-  });
-
-  await pool.start();
-
-  // 1. Verify pre-warmed standby runner exists
-  const initialSnap = pool.getFleetSnapshot();
-  assert.equal(initialSnap.standbyCount, 1, "Expected 1 standby worker in pool");
-  assert.equal(initialSnap.activeCount, 0, "Expected 0 active workers initially");
-
-  // 2. Lease slot to tenant-1
-  const ws1 = path.join(tmp, "chats", "chat-1", "workspace");
-  const slot1 = await pool.lease("chat-1", "chat", ws1);
-  assert.equal(slot1.tenantId, "chat-1");
-  assert.equal(slot1.state, "active");
-
-  const leasedSnap = pool.getFleetSnapshot();
-  assert.equal(leasedSnap.activeCount, 1);
-
-  // 3. Dispatch an interactive action to tenant-1
-  const patch = await pool.dispatchAction("chat-1", "slider-risk", 75, "change");
-  assert.equal(patch.controlId, "slider-risk");
-  assert.equal(patch.value, 75);
-
-  // 4. Verify state persistence on hibernation
-  await pool.hibernate(slot1.slotId);
-  const statePath = path.join(ws1, "state.json");
-  assert.ok(existsSync(statePath), "Expected state.json to be flushed to disk upon hibernation");
-  const savedState = JSON.parse(readFileSync(statePath, "utf8"));
-  assert.equal(savedState.state["slider-risk"], 75);
-
-  // 5. Wake tenant-1 and verify state rehydration
-  const rehydratedSlot = await pool.wake("chat-1");
-  assert.equal(rehydratedSlot.tenantId, "chat-1");
-  assert.equal(rehydratedSlot.state, "active");
+test("app runtime fails closed with missing helper or disabled sandbox", async () => {
+  const p = new SandboxPoolManager({ sandboxBin: "/nonexistent/vaksb" });
+  await assert.rejects(p.execute("missing-app", invocation("export function handleAction(){return {ok:true}}")), /helper|macOS/);
+  const disabled = new SandboxPoolManager({ enabled: () => false });
+  await assert.rejects(disabled.execute("disabled-app", invocation("")), /disabled/);
+  await p.shutdown(); await disabled.shutdown();
 });
 
-test("sandbox worker pool enforces LRU slot eviction under concurrency pressure", async (t) => {
-  const tmp = mkdtempSync(path.join(tmpdir(), "vak-pool-lru-"));
-  const pool = new SandboxPoolManager({
-    maxActiveWorkers: 2, // Maximum 2 active slots
-    standbyWorkers: 1,
-  });
-
-  t.after(async () => {
-    await pool.shutdown(2000);
-    rmSync(tmp, { recursive: true, force: true });
-  });
-
-  await pool.start();
-
-  // Lease 2 active slots (fills capacity)
-  const wsA = path.join(tmp, "apps", "app-a", "workspace");
-  const wsB = path.join(tmp, "apps", "app-b", "workspace");
-  const wsC = path.join(tmp, "apps", "app-c", "workspace");
-
-  await pool.lease("app-a", "app", wsA);
-  await new Promise((r) => setTimeout(r, 50));
-  await pool.lease("app-b", "app", wsB);
-
-  const snapBefore = pool.getFleetSnapshot();
-  assert.equal(snapBefore.activeCount, 2);
-
-  // Lease a 3rd tenant: exceeds maxActiveWorkers (2) -> App A (LRU) must be evicted & hibernated
-  await pool.lease("app-c", "app", wsC);
-
-  const snapAfter = pool.getFleetSnapshot();
-  assert.equal(snapAfter.activeCount, 2, "Active count must remain bounded at maxActiveWorkers");
-  assert.equal(snapAfter.hibernatedCount, 1, "App A must be recorded as hibernated");
-
-  // State of App A must be written to disk
-  assert.ok(existsSync(path.join(wsA, "state.json")), "App A state must be written to disk upon LRU eviction");
+test("real helper executes declared async entrypoint with no ambient environment or outside authority", { skip: !native }, async () => {
+  assert.ok(existsSync(helper), "Build the existing sandbox helper before native acceptance");
+  const tmp = mkdtempSync(path.join(tmpdir(), "vak-app-canary-"));
+  const p = new SandboxPoolManager({ sandboxBin: helper });
+  writeFileSync(path.join(tmp, "outside"), "canary");
+  const listener = createServer((_req, res) => res.end("reachable"));
+  await new Promise<void>(resolve => listener.listen(0, "127.0.0.1", resolve));
+  const port = (listener.address() as { port: number }).port;
+  process.env.VAK_REVIEW_SENTINEL = "synthetic-only";
+  try {
+    const result = await p.execute("contained-app", invocation(`import {readFileSync,writeFileSync} from 'node:fs';
+      export async function handleAction(id,value,ctx){
+        let readDenied=false,writeDenied=false,networkDenied=false;
+        try{readFileSync(${JSON.stringify(path.join(tmp, "outside"))})}catch{readDenied=true}
+        try{writeFileSync(${JSON.stringify(path.join(tmp, "outside"))},'changed')}catch{writeDenied=true}
+        try{await fetch('http://127.0.0.1:${port}',{signal:AbortSignal.timeout(1000)})}catch{networkDenied=true}
+        await new Promise(r=>setTimeout(r,20));ctx.state.value=value;
+        return {value,readDenied,writeDenied,networkDenied,envAbsent:process.env.VAK_REVIEW_SENTINEL===undefined};
+      }`));
+    assert.deepEqual(result, { result: { value: 42, readDenied: true, writeDenied: true, networkDenied: true, envAbsent: true }, state: { value: 42 } });
+    assert.equal(readFileSync(path.join(tmp, "outside"), "utf8"), "canary");
+  } finally { delete process.env.VAK_REVIEW_SENTINEL; listener.close(); await p.shutdown(); rmSync(tmp, { recursive: true, force: true }); }
 });
 
-test("sandbox worker pool coordinates workstation suspend, wake, and graceful shutdown", async (t) => {
-  const tmp = mkdtempSync(path.join(tmpdir(), "vak-pool-lifecycle-"));
-  const pool = new SandboxPoolManager({
-    maxActiveWorkers: 2,
-    standbyWorkers: 1,
-  });
-
-  await pool.start();
-
-  const ws = path.join(tmp, "chats", "chat-life", "workspace");
-  await pool.lease("chat-life", "chat", ws);
-
-  // 1. Test Suspend (Lid Close / Sleep)
-  await pool.suspendAll();
-  const suspendedSnap = pool.getFleetSnapshot();
-  assert.ok(suspendedSnap.slots.some((s) => s.state === "suspended"));
-
-  // 2. Test Wake and Reconcile (Lid Open)
-  await pool.wakeAndReconcile();
-  const wakeSnap = pool.getFleetSnapshot();
-  assert.ok(wakeSnap.slots.some((s) => s.state === "active" && s.tenantId === "chat-life"));
-
-  // 3. Test Graceful Shutdown Waterfall
-  await pool.shutdown(2000);
-  const finalSnap = pool.getFleetSnapshot();
-  assert.equal(finalSnap.slots.length, 0, "All slots must be cleaned up after shutdown");
-
-  rmSync(tmp, { recursive: true, force: true });
+test("concurrent invocations retain tenant identity and bounded capacity", { skip: !native }, async () => {
+  const p = new SandboxPoolManager({ sandboxBin: helper, maxActiveWorkers: 2 });
+  let max = 0; const timer = setInterval(() => { max = Math.max(max, p.getFleetSnapshot().activeCount); }, 5);
+  try {
+    const responses = await Promise.all(Array.from({ length: 6 }, (_, i) => p.execute(`tenant-${i}`, invocation("export async function handleAction(id,value){await new Promise(r=>setTimeout(r,40));return {tenant:value}}", i))));
+    assert.deepEqual(responses.map(r => r.result.tenant), [0, 1, 2, 3, 4, 5]);
+    assert.ok(max <= 2); assert.equal(p.getFleetSnapshot().activeCount, 0);
+    assert.equal(p.getFleetSnapshot().standbyCount, 0);
+  } finally { clearInterval(timer); await p.shutdown(); }
 });
 
+test("missing handlers, rejected handlers and timeouts fail without a success receipt", { skip: !native }, async () => {
+  const p = new SandboxPoolManager({ sandboxBin: helper });
+  try {
+    await assert.rejects(p.execute("missing-app", invocation("export const other=1")), /Missing app handler/);
+    await assert.rejects(p.execute("reject-app", invocation("export async function handleAction(){throw new Error('original failure')}")), /original failure/);
+    await assert.rejects(p.execute("timeout-app", { ...invocation("export function handleAction(){while(true){}}"), timeoutMs: 1000 }), /limit|failed/);
+  } finally { await p.shutdown(); }
+});
+
+test("brokered data reaches ordinary app code through a bounded declared exchange", { skip: !native }, async () => {
+  const p = new SandboxPoolManager({ sandboxBin: helper });
+  const calls: unknown[] = [];
+  try {
+    const response = await p.execute("data-app", { ...invocation("export async function handleAction(id,value,ctx){const rows=await ctx.callTool('source__read',{table:'items'});ctx.state.total=rows.reduce((n,r)=>n+r.amount,0);return {total:ctx.state.total}}"), callTool: async (name, args) => { calls.push({ name, args }); return [{ amount: 7 }, { amount: 11 }]; } });
+    assert.equal(response.result.total, 18); assert.equal(response.state.total, 18);
+    assert.deepEqual(calls, [{ name: "source__read", args: { table: "items" } }]);
+  } finally { await p.shutdown(); }
+});

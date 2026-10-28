@@ -2083,3 +2083,16 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 
 
 
+
+/* App operations remain usable in narrow windows and with several surfaces. */
+.app-runner-top { height: auto; min-height: 54px; flex-wrap: wrap; }
+.app-runner-head-info { min-width: 0; flex: 1; }
+.app-runner-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-runner-actions { flex-wrap: wrap; max-width: 100%; }
+#app-run-status { padding: 0 24px; overflow-wrap: anywhere; }
+#app-run-status:empty { display: none; }
+@media (max-width: 620px) {
+  .app-runner-top { padding: 10px 12px; gap: 8px; }
+  .app-runner-actions { width: 100%; }
+  #app-run-status { padding: 0 12px; }
+}

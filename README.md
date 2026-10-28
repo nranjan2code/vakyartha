@@ -41,6 +41,8 @@ Current authoring cleanup uses skills and shared record mappings for forms, tabl
 | macOS and Linux | macOS only so far. |
 | `vak setup`, `vak doctor`, `vak serve` | Those belong to the [earlier codebase](https://github.com/nranjan2code/code) the site still links to; the rebuild installs from source as below. |
 
+Executable apps extend this into persistent local software: chat/Studio builds reviewed packages, and ordinary sandboxed code performs published actions and data refreshes without an LLM per interaction. Canvas can seed an inert app draft; missing behavior must still be authored and tested. Real-data access uses existing integration permissions. [Architecture, lifecycle and current limits](docs/sandboxed-apps/README.md). The primary-provider authoring gate remains open; source verification does not imply an installed-app update.
+
 ## Get started
 
 Open source under MIT. Download the latest Apple-silicon build from [Releases](https://github.com/nranjan2code/vakyartha/releases) (unsigned and not notarized: quit any running Vakyartha first, drag it to Applications, then allow it in System Settings → Privacy & Security), or build it from source.

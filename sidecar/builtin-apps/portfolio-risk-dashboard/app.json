@@ -24,7 +24,7 @@
     },
     "mcpTools": [],
     "storage": {
-      "sqlite": true,
+      "sqlite": false,
       "duckdb": false
     }
   },

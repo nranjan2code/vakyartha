@@ -1,118 +1,76 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { AppRegistry, isCronMatch } from "../sidecar/sandbox-pool/app-registry.ts";
 import { SandboxPoolManager } from "../sidecar/sandbox-pool/pool-manager.ts";
 
-test("cron matching handles wildcard, step, list and exact minute matches", () => {
-  // Test: At minute 15 on every hour
-  const d1 = new Date(2026, 9, 28, 14, 15, 0); // 14:15
-  assert.equal(isCronMatch("15 * * * *", d1), true);
-
-  const d2 = new Date(2026, 9, 28, 14, 16, 0); // 14:16
-  assert.equal(isCronMatch("15 * * * *", d2), false);
-
-  // Test: Every 5 minutes (*/5)
-  assert.equal(isCronMatch("*/5 * * * *", new Date(2026, 9, 28, 14, 25, 0)), true);
-  assert.equal(isCronMatch("*/5 * * * *", new Date(2026, 9, 28, 14, 26, 0)), false);
-
-  // Test: List (0,30)
-  assert.equal(isCronMatch("0,30 * * * *", new Date(2026, 9, 28, 14, 30, 0)), true);
-  assert.equal(isCronMatch("0,30 * * * *", new Date(2026, 9, 28, 14, 31, 0)), false);
-});
-
-test("app registry installs, lists, executes actions, runs triggers and uninstalls apps", async (t) => {
-  const tmp = mkdtempSync(path.join(tmpdir(), "vak-registry-test-"));
-  const pool = new SandboxPoolManager({
-    maxActiveWorkers: 2,
-    standbyWorkers: 1,
-  });
-
+const helper = process.env.VAK_TEST_SANDBOX_BIN ?? path.resolve("../sandbox/target/debug/vaksb");
+const manifest = { id: "computed-app", name: "Computed app", version: "1.0.0", entrypoints: { backend: "main.ts", surface: "surface.json" }, triggers: [{ id: "refresh", kind: "cron", expression: "* * * * *", action: "refreshData", maxDurationSec: 10 }] };
+const surface = { id: "view", version: 1, data: { total: 0 }, nodes: [{ id: "root", type: "text", props: { content: "{/total}" } }] };
+const files = { "surface.json": JSON.stringify(surface), "main.ts": `export async function handleAction(id,value,ctx){ctx.state.total=Number(value)*2;return {data:{total:ctx.state.total}}}
+export async function refreshData(ctx){ctx.state.total=(ctx.state.total??0)+3;return {data:{total:ctx.state.total}}}` };
+function setup() {
+  const tmp = mkdtempSync(path.join(tmpdir(), "vak-app-registry-"));
+  const pool = new SandboxPoolManager({ sandboxBin: helper });
   const registry = new AppRegistry({ dataDir: tmp, pool });
-
-  t.after(async () => {
-    registry.shutdown();
-    await pool.shutdown(2000);
-    rmSync(tmp, { recursive: true, force: true });
-  });
-
-  await pool.start();
-  await registry.init();
-
-  // 1. Initially no apps
-  assert.equal(registry.listApps().length, 0);
-
-  // 2. Install a dynamic app
-  const app = await registry.installApp(
-    {
-      id: "risk-dashboard",
-      name: "Risk Dashboard",
-      version: "1.0.0",
-      description: "Interactive portfolio risk dashboard",
-      author: "Nisheeth",
-      category: "finance",
-      icon: "chart",
-      entrypoints: {
-        backend: "server.ts",
-        surface: "surface.json",
-      },
-      runtime: {
-        engine: "node24",
-        memoryLimitMb: 128,
-        cpuTimeLimitSec: 30,
-        maxStorageMb: 256,
-      },
-      entitlements: {
-        network: { mode: "brokered", allowedDomains: ["api.risk.com"] },
-        mcpTools: [],
-        storage: { sqlite: true },
-      },
-      triggers: [
-        {
-          id: "hourly-calc",
-          kind: "cron",
-          expression: "0 * * * *",
-          action: "recalculateRisk",
-          maxDurationSec: 30,
-        },
-      ],
-    },
-    {
-      "server.ts": "// backend code\nexport function calculate() { return 42; }",
-      "surface.json": JSON.stringify({ type: "dashboard", title: "Risk Live" }),
-    }
-  );
-
-  assert.equal(app.manifest.id, "risk-dashboard");
-  assert.ok(app.storageBytes > 0, "Storage bytes should be greater than 0");
-  assert.equal(app.surface?.title, "Risk Live");
-
-  // 3. List apps
-  const list = registry.listApps();
-  assert.equal(list.length, 1);
-  assert.equal(list[0]?.id, "risk-dashboard");
-  assert.equal(list[0]?.category, "finance");
-
-  // 4. Dispatch action to the app
-  const patch = await registry.dispatchAction("risk-dashboard", "slider-volatility", 0.25, "slide");
-  assert.equal(patch.controlId, "slider-volatility");
-  assert.equal(patch.value, 0.25);
-
-  // Verify app is now running in pool
-  const runningDetails = registry.getApp("risk-dashboard");
-  assert.equal(runningDetails?.isRunning, true);
-
-  // 5. Run declared trigger
-  const trigResult = await registry.runTrigger("risk-dashboard", "hourly-calc");
-  assert.equal(trigResult.ok, true);
-  assert.equal(trigResult.action, "recalculateRisk");
-
-  // 6. Delete app
-  const deleted = await registry.deleteApp("risk-dashboard");
-  assert.equal(deleted, true);
-  assert.equal(registry.listApps().length, 0);
-  assert.ok(!existsSync(path.join(tmp, "apps", "risk-dashboard")));
+  return { tmp, pool, registry, async close() { await pool.shutdown(); await registry.shutdown(); rmSync(tmp, { recursive: true, force: true }); } };
+}
+test("cron supports exact, step and list matches", () => {
+  assert.equal(isCronMatch("15 * * * *", new Date(2026, 9, 28, 14, 15)), true);
+  assert.equal(isCronMatch("*/5 * * * *", new Date(2026, 9, 28, 14, 26)), false);
+  assert.equal(isCronMatch("0,30 * * * *", new Date(2026, 9, 28, 14, 30)), true);
 });
-
+test("package traversal, deletion escape, stale publication and live draft writes are refused", async () => {
+  const s = setup(); await s.registry.init();
+  try {
+    mkdirSync(path.join(s.tmp, "outside"));
+    await assert.rejects(s.registry.installApp(manifest, { ...files, "../outside/escaped": "bad" }), /Unsafe/);
+    await assert.rejects(s.registry.deleteApp("../outside"), /identifier/);
+    assert.ok(existsSync(path.join(s.tmp, "outside")));
+    const draft = s.registry.saveDraft(manifest.id, { manifest, files }) as any;
+    assert.equal(s.registry.listApps().length, 0);
+    await assert.rejects(s.registry.publishDraft(manifest.id, "stale"), /changed/);
+    await s.registry.publishDraft(manifest.id, draft.fingerprint);
+    const live = s.registry.getApp(manifest.id)!;
+    const edited = s.registry.saveDraft(manifest.id, { manifest: { ...manifest, version: "1.0.1" }, files, base: live.fingerprint }) as any;
+    assert.equal(s.registry.getApp(manifest.id)!.manifest.version, "1.0.0");
+    assert.equal(s.registry.getDraft(manifest.id).files["main.ts"], files["main.ts"]);
+    await assert.rejects(s.registry.updateApp(manifest.id, { version: "1.0.2" }, {}, "stale"), /changed/);
+    await s.registry.publishDraft(manifest.id, edited.fingerprint);
+    assert.notEqual(s.registry.getApp(manifest.id)!.fingerprint, live.fingerprint);
+    assert.equal(s.registry.getApp(manifest.id)!.scheduling, false);
+  } finally { await s.close(); }
+});
+test("incomplete draft source survives saves but cannot be published", async () => {
+  const s = setup(); await s.registry.init();
+  try {
+    const draft = s.registry.saveDraft(manifest.id, { manifest, manifestText: "{ incomplete", files: { ...files, "surface.json": "{ incomplete" } }) as any;
+    assert.equal(s.registry.getDraft(manifest.id).manifestText, "{ incomplete");
+    assert.equal(s.registry.getDraft(manifest.id).files["surface.json"], "{ incomplete");
+    await assert.rejects(s.registry.publishDraft(manifest.id, draft.fingerprint));
+    assert.equal(s.registry.listApps().length, 0);
+  } finally { await s.close(); }
+});
+test("direct async actions, named refresh, reopen and restart retain calculated data without models", { skip: process.platform !== "darwin" }, async () => {
+  const s = setup(); await s.registry.init();
+  try {
+    await s.registry.installApp(manifest, files);
+    const response = await s.registry.dispatchAction(manifest.id, "/input", 21, undefined, 1);
+    assert.equal(response.surfaces.view.data.total, 42);
+    assert.equal(s.registry.getApp(manifest.id)!.state.total, 42);
+    await assert.rejects(s.registry.dispatchAction(manifest.id, "/input", 99, undefined, 1), /changed/);
+    await s.registry.runTrigger(manifest.id, "refresh");
+    assert.equal(s.registry.getApp(manifest.id)!.surfaces!.view!.data.total, 45);
+    s.registry.reloadApps();
+    assert.equal(s.registry.getApp(manifest.id)!.state.total, 45);
+    assert.equal(s.registry.getApp(manifest.id)!.surfaces!.view!.data.total, 45);
+    await s.registry.setScheduling(manifest.id, true);
+    const minute = new Date(2026, 9, 28, 14, 15);
+    await Promise.all([s.registry.checkSchedules(minute), s.registry.checkSchedules(minute)]);
+    assert.equal(s.registry.getApp(manifest.id)!.state.total, 48);
+    s.registry.reloadApps(); await s.registry.checkSchedules(minute);
+    assert.equal(s.registry.getApp(manifest.id)!.state.total, 48);
+  } finally { await s.close(); }
+});

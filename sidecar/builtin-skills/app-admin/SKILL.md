@@ -4,32 +4,15 @@ description: Administrate, monitor, and audit sandboxed applications, worker poo
 license: MIT
 metadata:
   author: Vakyartha Team
-  version: "1.0"
+  version: "1.1"
 ---
 
-# Administrating Hosted Applications
+# Inspect app execution
 
-Use this procedure when monitoring worker runtimes, managing storage volumes, and auditing security isolation.
+`GET /api/admin/fleet` reports bounded invocation capacity (default three), active executions and logical hibernated tenants. Standby processes are not used. No RSS/CPU quota or latency guarantee is established by the manifest. Security depends on each successful compatible vaksb launch, not a static green indicator.
 
-## Fleet Observability
-1. **List Installed Applications:**
-   `GET /api/apps`
-   Returns summaries including storage footprint, active worker status, and last executed timestamp.
+`GET /api/apps` lists published app status. App package/state is written by the host into private app-state records; drafts are separate. Processes receive disposable copies, minimal environment and no direct network authority. Existing integration permissions control declared tool calls.
 
-2. **Fleet Snapshot:**
-   `GET /api/fleet`
-   Reports all slots in the Sandbox Pool Manager:
-   - Total slots available and leased
-   - Tenant IDs bound to slots
-   - Memory and CPU limits per slot
+Pause schedules before maintenance. Runtime suspend cancels current invocations; restart drains/cancels them and clears logical leases. Uncertain external effects require explicit review and are never automatically replayed. Deletion validates a registered identity and serializes behind running app work.
 
-3. **Fleet Console:**
-   Accessible via UI shortcut `⌘⇧A` or the `Fleet Console` button in the Apps toolbar.
-
-## Security & Resource Boundaries
-- **Process Isolation:** Worker runtimes execute in dedicated child processes with seatbelt profiles.
-- **Airgap Policy:** Applications default to airgap (`allowedDomains: []`). External network calls are blocked unless explicitly configured in entitlements.
-- **Volume Boundaries:** Data writes are confined to `<dataDir>/apps/<id>/data/`. Disk consumption is tracked and bounded to `maxStorageMb`.
-- **Termination:** Inactive slots hibernate automatically. To manually terminate or delete an application and its storage volume:
-  `DELETE /api/apps/:id`
-
+The console streams bounded invocation logs. Settings → FinOps owns measured provider usage; no app hard-spend governor or estimated savings is implied. No arbitrary CPU/RSS/process-count/disk-growth quotas, permanent daemons, file watchers or multi-platform isolation guarantees are implemented.

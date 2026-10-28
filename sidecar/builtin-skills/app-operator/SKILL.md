@@ -4,43 +4,15 @@ description: Operate running hosted applications, invoke background triggers, po
 license: MIT
 metadata:
   author: Vakyartha Team
-  version: "1.0"
+  version: "1.1"
 ---
 
-# Operating Hosted Applications
+# Operate local apps
 
-Use this procedure when interacting with, querying, or polling live hosted applications.
+Apps run direct code without an LLM per interaction. Open Apps to use published surfaces. A manual trigger calls its declared exported function, awaits computation and commits canonical state/projections only on success. Closing a view does not delete persistent data.
 
-## Launching Applications in Full View
-- Applications run in the dedicated runner view inside the `Apps` tab.
-- Navigating to `Apps` keeps execution isolated from active conversation threads.
-- Clicking "Back to apps" returns to the catalog without tearing down background daemons.
+Inspect `GET /api/apps/:id` for current revision, surfaces and run receipt. Action submissions use `POST /api/apps/:id/action` with controlId, value, action and the current revision. Stale revisions fail. Retain local edits when background updates conflict. Multiple app surfaces share the same canonical app state.
 
-## Running Background Triggers & Polls
-To manually trigger a background cron job or data refresh:
-```http
-POST /api/apps/:id/triggers/:triggerId/run
-```
-The response reports execution status, duration in milliseconds, and the action executed:
-```json
-{
-  "ok": true,
-  "action": "recalculateMetrics",
-  "durationMs": 4
-}
-```
+Manual refresh uses `POST /api/apps/:id/triggers/:triggerId/run`. Scheduling is explicitly enabled/paused in Apps. The app and computer must be running/awake; missed intervals are skipped, never burst-replayed. A failure is evidence to inspect, not a reason to add hidden model refresh calls.
 
-## Dispatching Interactive Actions
-When a user interacts with a control or clicks an action button:
-```http
-POST /api/apps/:id/action
-Content-Type: application/json
-
-{
-  "controlId": "select-risk-profile",
-  "value": "aggressive",
-  "action": "change"
-}
-```
-The sandboxed runtime evaluates the action in pure code (sub-millisecond latency, zero LLM tokens) and returns patch operations applied directly to the surface store.
-
+Real-data tools must be declared by the package and permitted through existing integrations. Credentials never go into app source or state. Ask/off tools do not run unattended. Inspect uncertain effects before acknowledging a run by its exact identity; acknowledgement never replays it.

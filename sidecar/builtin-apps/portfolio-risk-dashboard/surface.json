@@ -5,48 +5,95 @@
   "data": {
     "riskTolerance": 65,
     "portfolioValue": "$124,500.00",
-    "var95": "$2,850.00",
-    "sharpe": "1.84",
-    "expectedReturn": "14.2%"
+    "var95": "$2097.76",
+    "sharpe": "0.41",
+    "expectedReturn": "11.1%",
+    "riskProfile": "balanced",
+    "allocation": [
+      {
+        "name": "Allocation %",
+        "values": [
+          59,
+          27,
+          12,
+          2
+        ]
+      }
+    ]
   },
   "nodes": [
     {
       "id": "root",
       "type": "stack",
-      "props": { "direction": "vertical", "gap": 16 },
-      "children": ["kpi-metrics", "controls-section", "chart-section"]
+      "props": {
+        "direction": "vertical",
+        "gap": "md"
+      },
+      "children": [
+        "kpi-metrics",
+        "controls-section",
+        "chart-section"
+      ]
     },
     {
       "id": "kpi-metrics",
       "type": "grid",
-      "props": { "columns": 4, "gap": 12 },
-      "children": ["card-total-val", "card-var-95", "card-sharpe", "card-expected-return"]
+      "props": {
+        "columns": 4,
+        "gap": "md"
+      },
+      "children": [
+        "card-total-val",
+        "card-var-95",
+        "card-sharpe",
+        "card-expected-return"
+      ]
     },
     {
       "id": "card-total-val",
       "type": "stat",
-      "props": { "label": "Portfolio Value", "value": "$124,500.00", "delta": "+4.2%" }
+      "props": {
+        "label": "Portfolio Value",
+        "value": "$124,500.00",
+        "delta": "+4.2%"
+      }
     },
     {
       "id": "card-var-95",
       "type": "stat",
-      "props": { "label": "Value-at-Risk (95% 1-Day)", "value": "$2,850.00", "tone": "warn" }
+      "props": {
+        "label": "Value-at-Risk (95% 1-Day)",
+        "value": "{/var95}",
+        "tone": "warn"
+      }
     },
     {
       "id": "card-sharpe",
       "type": "stat",
-      "props": { "label": "Sharpe Ratio", "value": "1.84", "tone": "positive" }
+      "props": {
+        "label": "Sharpe Ratio",
+        "value": "{/sharpe}",
+        "tone": "positive"
+      }
     },
     {
       "id": "card-expected-return",
       "type": "stat",
-      "props": { "label": "Expected Annual Return", "value": "14.2%" }
+      "props": {
+        "label": "Expected Annual Return",
+        "value": "{/expectedReturn}"
+      }
     },
     {
       "id": "controls-section",
-      "type": "card",
-      "props": { "title": "Portfolio Risk Allocation Model" },
-      "children": ["select-risk-profile"]
+      "type": "form",
+      "props": {
+        "title": "Portfolio Risk Allocation Model",
+        "submitLabel": "Apply profile"
+      },
+      "children": [
+        "select-risk-profile"
+      ]
     },
     {
       "id": "select-risk-profile",
@@ -55,9 +102,18 @@
         "label": "Asset Allocation Strategy",
         "bind": "/riskProfile",
         "options": [
-          { "label": "Conservative (Capital Preservation · 25% Equity)", "value": "conservative" },
-          { "label": "Balanced Growth (Default · 65% Equity)", "value": "balanced" },
-          { "label": "Aggressive High-Yield (85% Equity)", "value": "aggressive" }
+          {
+            "label": "Conservative (Capital Preservation · 25% Equity)",
+            "value": "conservative"
+          },
+          {
+            "label": "Balanced Growth (Default · 65% Equity)",
+            "value": "balanced"
+          },
+          {
+            "label": "Aggressive High-Yield (85% Equity)",
+            "value": "aggressive"
+          }
         ]
       }
     },
@@ -67,8 +123,13 @@
       "props": {
         "kind": "donut",
         "title": "Asset Allocation Weights",
-        "labels": ["US Large Cap Equities", "Govt Bonds", "Gold / Commodities", "Cash Reserves"],
-        "series": [{ "name": "Allocation %", "values": [55, 25, 12, 8] }]
+        "labels": [
+          "US Large Cap Equities",
+          "Govt Bonds",
+          "Gold / Commodities",
+          "Cash Reserves"
+        ],
+        "series": "{/allocation}"
       }
     }
   ]

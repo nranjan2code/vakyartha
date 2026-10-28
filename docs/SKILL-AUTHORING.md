@@ -202,3 +202,7 @@ When changing this method, update the canonical guide and the appropriate contra
 | Apparent refresh/delivery without evidence | Tool result and task/output receipt, not the button text |
 
 The source map is intentionally small: `sidecar/builtin-skills/` (bundled packages), `sidecar/skills-builtin.ts` (discovery), `sidecar/skills.ts` (parse/store/select/import/update), `sidecar/server.ts` (chat/task wiring), `src/skills-page.ts` (review/edit UI), `src/app.css` (theme tokens), `src/canvas.ts`/`src/drafts.ts` (canvas/drafts), `src/voice/speech-text.ts` (spoken content), and `src/voice/decisions.ts` (voice choices/forms). Framework contracts/projectors live in Projection; app code imports only package exports.
+
+## Executable app packages
+
+Chat can stage complete executable packages with `save_app_draft`; Canvas promotion alone creates an inert presentation draft. Studio rehearses and publishes reviewed source. App actions and refresh handlers run ordinary code through the existing supervised sandbox, with persistent canonical state and governed integration tools. They do not require an LLM per refresh. Draft/publication, backend interface, multiple surfaces, data permissions, bounds and unsupported capabilities: [current contract](sandboxed-apps/RUNTIME-CONTRACT.md).

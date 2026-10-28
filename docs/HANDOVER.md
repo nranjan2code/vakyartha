@@ -1,5 +1,16 @@
 # Vakyartha handover — 2026-10-28
 
+## Executable app runtime repairs — 2026-10-28
+
+This checkpoint supersedes the earlier “complete/enterprise-grade” app-pool claims below. The app now executes declared async Node handlers and named refresh functions through the existing supervised `vaksb run`, using bounded disposable package copies and a minimal environment. No ordinary Node fallback or prewarmed uncontained process remains. Direct app actions/refreshes do not call a model. Declared real-data tools use existing integration schemas, policy rechecks and logs; credentials stay in the host, and Ask/off tools cannot run unattended.
+
+Private host-owned app records serialize publication, domain state, multiple canonical surface snapshots, revisions, schedule markers and bounded run history. Drafts are inert, retain actual source (including incomplete JSON text), and use review/base fingerprints. Studio rehearses/publishes explicitly, discovers app drafts and offers Build with chat as an editable request through the ordinary composer. Canvas promotion creates a presentation draft, not a fake executable backend. Startup imports compatible legacy source as inert drafts without deleting original data. Schedules start off; uncertain effects are retained, block execution and require exact-run acknowledgement without replay. [Current contract and deliberate limits](sandboxed-apps/RUNTIME-CONTRACT.md); ADR-048 records the boundary.
+
+Verification: 217 app tests pass; final receipts and retained failed attempts are in EVALUATION.md. Typecheck, UI and self-contained sidecar/worker bundling pass; an actual bundled worker computes 42 under the helper. Targeted real-helper/API checks prove asynchronous execution, declared entrypoints, missing/rejected handlers, deadlines, outside-file denial, synthetic environment isolation, live local-network denial, concurrent tenant separation, brokered data and integration revocation, traversal refusal, draft isolation/stale review refusal, computed state across restart and schedule-minute deduplication. WebKit at 1100/620/375 proves 7×6=42, named background refresh to 47, two surfaces, restored values on reopen and usable width. Existing canvas WebKit passes at 1100/620. Off-screen animation handling follows the existing checker; failed fixture/checker attempts are retained.
+
+The required free primary-provider graph gate remains **2/3**, receipt `~/Projects/vakProjection/.vak/contracts/primary-provider-2026-10-28T14-48-33.063Z.json`: one case still emits reserved node IDs after a rejected root ID. No broader model app-authoring trial followed. Runtime/UI checks do not close model-authoring or earlier source/value/interpretation/interaction/receipt failures. No paid model call, framework/sandbox source change, installed-app replacement, commit, push or public release was made for this checkpoint. Permanent daemons, persistent filesystem databases, file watchers, raw network/model brokers and strict CPU/RSS/disk quotas remain unsupported rather than advertised as enforced.
+
+
 ## Local multimodal voice adapter — 2026-10-28
 
 Current correction supersedes the original provider-page selectors: Settings → Voice now owns read-aloud selection/preview/style alongside the original dictation selector and controls. Providers has compact expandable setup rows; existing labs and media providers link to voice setup without duplicate cards, standalone voice providers remain accessible there, and MCP has no Voice category. Saved IDs/keys/model choices and the existing dictation selection behavior are preserved. Master/individual switches now hide and disable real speaker/microphone/conversation controls; disabled entry points are blocked, active transcription is abortable, and late microphone-permission results cannot restart switched-off capture. 213 app tests, typecheck and build pass. `scripts/voice-settings-check.ts` passes canonical controls/navigation/preference/preview/ready/empty/visibility/late-permission regressions at 1100/620/375 px with fixture discovery and microphone I/O. Logs: `/tmp/vakyartha-voice-consolidation-tests.log`, `/tmp/vakyartha-voice-switches-races-webkit.log`. No live microphone or model-quality claim follows from those fixture tests. Installation receipt is recorded in RELEASING.md once refreshed.
@@ -8,42 +19,9 @@ Earlier adapter checkpoint (app `70c3391`, before the correction above): install
 
 213 app tests, typecheck and UI build pass; the final adapter changes also pass all 38 voice tests. Isolated WebKit at 1100/375 px verifies actual model/voice/dictation selectors and mono audio decoding through `/api/speech`. Local synthetic transcription preserves the negative command exactly, but the frozen number-verbatim check fails (digits replace spoken number words), and silence incorrectly produces `And`. Both endpoint and adapter retain the same failures. This is a partial mechanism improvement, not a completed conversation outcome. No real microphone, interruption, multilingual quality, subjective listening or primary agent/surface gate is certified. Evidence and commands: [EVALUATION.md](EVALUATION.md#local-multimodal-voice--2026-10-28). Next: listening review and independently recorded microphone checks; investigate the earliest audio-input boundary before changing prompts or adding output filters. Existing primary-provider/source/value/interaction/receipt gates remain open.
 
-## Mini-Cloud Pooled Sandboxed Runtime, Dynamic Hosted Apps & Observability Console — 2026-10-28
+## Earlier app-pool checkpoint — superseded
 
-A complete, enterprise-grade **Multi-Tenant Pooled Sandbox Runtime** and **Dynamic Hosted Applications Platform** (the "Mini-Cloud" model) has been designed, implemented, and verified in Vakyartha without mocks or stubs:
-- **Shared Sandbox Worker Pool (`SandboxPoolManager`)**:
-  - Eliminates uncontrolled workstation process proliferation through deterministic slot bounds (`maxActiveWorkers = 3`).
-  - Pre-warms 1 idle standby runner for instant leasing in `< 50ms`.
-  - Least-Recently-Used (LRU) slot eviction gracefully flushes and hibernates active slots under concurrency pressure.
-  - Inactivity state machine: transitions from `active` -> `idle` (5 min) -> `hibernated` (15 min) with zero CPU overhead on disk. Waking up from hibernation completes in `< 150ms`.
-- **Dynamic Hosted Artifact Applications (`AppRegistry`)**:
-  - Turns static artifacts and models into full-fledged persistent applications executing in dedicated sandboxes.
-  - Dedicated tenant directory volumes (`<dataDir>/apps/<id>/`) containing `app.json`, `server.ts`, `surface.json`, `state.json`, and database folders (`data/app.sqlite`, `data/analytics.duckdb`).
-  - Strict manifest validator `parseAppManifest()` enforces directory traversal security (`..`, absolute paths, NUL characters) and clamps memory/storage quotas within platform bounds.
-  - Single-writer persistence rule (ADR-001): workers own writes inside their workspace; state is persisted atomically via write-renaming (`state.json.tmp` -> `state.json`).
-  - Zero-latency local reactivity: Canvas control events are dispatched over private stdio IPC to worker daemons, returning DOM patches in `< 16ms` with zero model inference costs.
-  - Autonomous zero-dependency cron scheduler with anti-thundering-herd protection and manual trigger runner.
-- **Physical Workstation Lifecycle & Crash Durability**:
-  - **Hardware Sleep & Clock Skew Detection**: Automatic interval delta measurement (`elapsed > 45s`) detects when the host event loop was suspended during MacBook lid-close. Upon waking, `wakeAndReconcile()` probes worker sockets with heartbeat pings, resumes suspended processes, and coalesces missed crons.
-  - **Graceful 4-Second Shutdown Waterfall**: Tauri native shell intercepts quit requests (`Cmd+Q` / Tray) and coordinates a 5-step waterfall draining in-flight turns, checkpointing SQLite databases, committing state, and SIGTERMing child processes before hard SIGKILL fallback.
-- **Admin & Observability Console (`admin.html`)**:
-  - Dual delivery modes: launches as a dedicated native Tauri webview window (`1100×720px`) via `show_admin` or runs in the default browser over loopback HTTP and Server-Sent Events (SSE).
-  - Five core workbenches: Fleet & Pool Manager, Dynamic App Inventory, Real-Time Streaming Log Terminal (`/api/admin/logs/stream`), FinOps Spend Governor, and Zero-Trust Security Inspector.
-  - System Tray launcher: quick one-click access from the macOS menu bar (`Cmd+Shift+A`) and Settings → General.
-- **Built-in Reference Application (`portfolio-risk`)**:
-  - Packaged financial risk workbench (`sidecar/builtin-apps/portfolio-risk/`) computing parametric Value-at-Risk (95%/99%), Sharpe ratios, and asset allocation with `< 16ms` local Canvas reactive surface updates.
-- **Comprehensive Documentation & Runbooks**:
-  - Enterprise Architecture: [`docs/sandboxed-apps/ARCHITECTURE.md`](sandboxed-apps/ARCHITECTURE.md).
-  - Operations & Lifecycle Manual: [`docs/sandboxed-apps/OPERATIONS-AND-LIFECYCLE.md`](sandboxed-apps/OPERATIONS-AND-LIFECYCLE.md).
-  - Directory Index & Source Tree: [`docs/sandboxed-apps/README.md`](sandboxed-apps/README.md).
-  - Architecture Decision Record: [ADR-047 in `docs/ADR.md`](ADR.md).
-- **Verification & Quality Gates**:
-  - 211 app tests pass (`npm test`).
-  - 399 framework tests pass (`npm run test:framework`).
-  - Total: **610 automated tests passing**.
-  - TypeScript typecheck (`npm run typecheck`) and Vite production bundle (`npm run build`) pass cleanly with 0 errors.
-  - Cargo tests pass (`cargo test --manifest-path src-tauri/Cargo.toml --lib`: 3 passed, 0 failed). Zero secret leaks.
-  - Real WebKit smokes pass: `canvas-check.ts` (1100px, 620px). Zero mocks or stubs.
+The original app-pool checkpoint claimed a warm process pool, embedded databases, sleep/wake recovery and sub-16ms reactions. The [baseline review](sandboxed-apps/REVIEW-2026-10-28.md) found those claims unsupported and reproduced containment, path, tenant-ownership and receipt failures. The executable app repair checkpoint above and [current contract](sandboxed-apps/RUNTIME-CONTRACT.md) replace that implementation description. Historical test totals did not establish those outcomes.
 
 ## Unified Creator Studio: Hub, Flow DAG, Multi-Tab Multitasking & Draft Lifecycle — 2026-10-28
 
@@ -61,7 +39,7 @@ A complete, production-grade **Creator Studio** workbench has been built and int
 - **Interactive Flow DAG (Directed Acyclic Graph) & Bidirectional Authoring**:
   - Visual node-based graph mapping execution flow:
     - *For Skills*: `User Intent` ➔ `use_skill Gate` ➔ `Allowed Tools & Sandbox` ➔ `Chained Skills` ➔ `Procedural Steps` ➔ `Canonical /records` ➔ `3-Tier Surface` ➔ `Dual Spoken TTS`.
-    - *For Sandboxed Apps*: `Cron / Action Triggers` ➔ `Isolated Worker (server.ts)` ➔ `App Storage (SQLite)` ➔ `Canvas Projection (surface.json)`.
+    - *For Sandboxed Apps*: authoring shows declared triggers, backend and projections. Actual execution uses bounded supervised invocations and host-owned JSON state; no persistent SQLite capability is implied.
   - SVG cubic bezier curves, live node status badges, and interactive inspector drawer on node selection.
   - **DAG Direct Authoring**: `+ Add Tool`, `+ Add Chained Skill`, and `+ Add Procedural Step` buttons directly mutate the package specification, auto-save to draft, and synchronize across all tabs.
   - **Cross-Screen Navigation**: Node inspector provides one-click deep links (`✏️ Jump to Spec & Code`, `👁️ Preview in Canvas`, `🧪 Rehearse in Sandbox`) and contextual removal actions.
@@ -76,7 +54,7 @@ A complete, production-grade **Creator Studio** workbench has been built and int
   - Surface Design Linter checks single-chart full-width clamping, flags raw hex colors in favor of semantic tones, and validates the 8 standard chart kinds.
   - Dual Spoken Voice TTS auditioning via `lowerSurface` and `projectText`.
 - **Sandbox Rehearsal & Selection Gate Testing**:
-  - Runs inert scripts and app daemons inside `vak-sandbox` with SHA-256 integrity verification.
+  - Skill scripts use their integrity-checked rehearsal path. App drafts use the separate fingerprint-bound bounded invocation path, with no external-tool authority during rehearsal.
   - For scriptless skills, displays prompt-guided procedural testing with `+ Add Helper Script (scripts/rehearse.py)` action.
   - Preloaded domain-specific positive and distractor verification prompts testing the `use_skill` selection gate (`/api/skills/eval`).
 - **Verification**:

@@ -17,7 +17,7 @@ import type {
   SkillView,
 } from "../shared/skills.ts";
 import type { AppSummary, AppDetails } from "../sidecar/sandbox-pool/app-registry.ts";
-import type { AppManifest } from "../shared/app-manifest.ts";
+import { parseAppManifest, type AppManifest } from "../shared/app-manifest.ts";
 
 let activeStudioBackAction: (() => Promise<void>) | null = null;
 
@@ -97,6 +97,9 @@ export async function openSkillStudio(
   let currentSkillPkg: SkillPackageView | null = null;
   let currentAppDetails: AppDetails | null = null;
   let hasDraft = false;
+  let appDraftFingerprint: string | undefined;
+  let appBaseFingerprint: string | undefined;
+  let appManifestText: string | undefined;
   let draftSavedAt: string | undefined = undefined;
   let isDirty = false;
   let isAutoSaving = false;
@@ -145,7 +148,7 @@ export async function openSkillStudio(
     try {
       const [skills, apps, integrations] = await Promise.all([
         api<SkillView[]>("/api/skills").catch(() => []),
-        api<AppSummary[]>("/api/apps").catch(() => []),
+        Promise.all([api<AppSummary[]>("/api/apps"), api<AppSummary[]>("/api/apps/drafts")]).then(([live, drafts]) => [...new Map([...live, ...drafts].map(a => [a.id, a])).values()]).catch(() => []),
         api<{ entry: { id: string; name: string }; enabled: boolean }[]>("/api/integrations").catch(() => []),
       ]);
       installedSkills = skills;
@@ -170,6 +173,7 @@ export async function openSkillStudio(
   async function loadItemData(name: string, kind: "skill" | "app"): Promise<void> {
     isDirty = false;
     hasDraft = false;
+    appDraftFingerprint = undefined; appBaseFingerprint = undefined; appManifestText = undefined;
     draftSavedAt = undefined;
     evalResults = [];
     sandboxLog = null;
@@ -205,7 +209,13 @@ export async function openSkillStudio(
       activeFileName = "app.json";
       sessionActiveFileName = "app.json";
       try {
-        currentAppDetails = await api<AppDetails>(`/api/apps/${encodeURIComponent(name)}`);
+        const draft = await api<any>(`/api/apps/${encodeURIComponent(name)}/draft`);
+        const published = await api<AppDetails>(`/api/apps/${encodeURIComponent(name)}`).catch(() => null);
+        currentAppDetails = { ...(published ?? { workspaceDir: "", isRunning: false, storageBytes: 0, state: {}, lastExecutedAt: null }), manifest: draft.manifest, _supportingFiles: Object.entries(draft.files).map(([path, text]) => ({ path, text: String(text) })) };
+        appManifestText = draft.manifestText ?? JSON.stringify(draft.manifest, null, 2);
+        try { if (draft.manifest.entrypoints.surface) currentAppDetails.surface = JSON.parse(draft.files[draft.manifest.entrypoints.surface]); } catch { /* Preserve incomplete source; preview waits for valid JSON. */ }
+        appDraftFingerprint = draft.fingerprint ?? undefined; appBaseFingerprint = draft.base ?? undefined;
+        hasDraft = Boolean(draft.fingerprint); draftSavedAt = draft.savedAt;
       } catch {
         initNewApp(name);
       }
@@ -283,6 +293,7 @@ Analyze domain records from verified sources and project structured findings ont
   }
 
   function initNewApp(name = "custom-app"): void {
+    appDraftFingerprint = undefined; appBaseFingerprint = undefined; appManifestText = undefined; hasDraft = false;
     const slug = name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
     const manifest: AppManifest = {
       $schema: "https://vakyartha.dev/schemas/app-manifest.v1.json",
@@ -306,7 +317,7 @@ Analyze domain records from verified sources and project structured findings ont
       entitlements: {
         network: { mode: "airgap", allowedDomains: [] },
         mcpTools: [],
-        storage: { sqlite: true, duckdb: false },
+        storage: { sqlite: false, duckdb: false },
       },
       triggers: [
         {
@@ -319,19 +330,15 @@ Analyze domain records from verified sources and project structured findings ont
       ],
     };
 
-    const serverScript = `// Sandboxed Application Backend Worker
-export async function handleAction(action: string, payload: Record<string, unknown>) {
-  console.log(\`[app] Received action: \${action}\`, payload);
-  return {
-    patches: [
-      { op: "replace", path: "/records/0/status", value: "normal" }
-    ]
-  };
+    const serverScript = `// Each invocation receives durable state and canonical surface snapshots.
+export async function handleAction(controlId, value, context) {
+  context.state.lastInput = { controlId, value };
+  return { data: { lastInput: value } };
 }
 
-export async function handleTrigger(triggerId: string) {
-  console.log(\`[app] Trigger fired: \${triggerId}\`);
-  return { status: "ok", timestamp: new Date().toISOString() };
+export async function recalculateMetrics(context) {
+  context.state.refreshCount = (context.state.refreshCount ?? 0) + 1;
+  return { data: { refreshCount: context.state.refreshCount } };
 }
 `;
 
@@ -361,12 +368,12 @@ export async function handleTrigger(triggerId: string) {
         {
           id: "s1",
           type: "stat",
-          props: { label: "Memory Limit", value: "256 MB" }
+          props: { label: "Execution limit", value: "30 seconds" }
         },
         {
           id: "s2",
           type: "stat",
-          props: { label: "Sandbox Isolation", value: "Seatbelt Airgapped" }
+          props: { label: "Runtime", value: "Requires sandbox helper" }
         },
         {
           id: "records-table",
@@ -422,7 +429,7 @@ export async function handleTrigger(triggerId: string) {
       const f = currentSkillPkg.files.find(item => item.path === activeFileName);
       return f ? f.text : "";
     } else if (activeKind === "app" && currentAppDetails) {
-      if (activeFileName === "app.json") return JSON.stringify(currentAppDetails.manifest, null, 2);
+      if (activeFileName === "app.json") return appManifestText ?? JSON.stringify(currentAppDetails.manifest, null, 2);
       const supporting = (currentAppDetails as any)._supportingFiles as { path: string; text: string }[] | undefined;
       const f = supporting?.find(item => item.path === activeFileName);
       return f ? f.text : "";
@@ -455,7 +462,8 @@ export async function handleTrigger(triggerId: string) {
       }
     } else if (activeKind === "app" && currentAppDetails) {
       if (activeFileName === "app.json") {
-        try { currentAppDetails.manifest = JSON.parse(content); } catch {}
+        appManifestText = content;
+        try { currentAppDetails.manifest = parseAppManifest(JSON.parse(content)); } catch { /* Raw manifest text stays in the inert draft. */ }
       } else {
         let supporting = (currentAppDetails as any)._supportingFiles as { path: string; text: string }[] | undefined;
         if (!supporting) {
@@ -536,10 +544,11 @@ export async function handleTrigger(triggerId: string) {
         const supporting = ((currentAppDetails as any)._supportingFiles as { path: string; text: string }[] | undefined) ?? [];
         const filesMap: Record<string, string> = {};
         for (const f of supporting) filesMap[f.path] = f.text;
-        await api("/api/apps", {
-          method: "POST",
-          body: JSON.stringify({ manifest: currentAppDetails.manifest, files: filesMap })
+        const draft = await api<any>(`/api/apps/${encodeURIComponent(currentAppDetails.manifest.id)}/draft`, {
+          method: "PUT",
+          body: JSON.stringify({ manifest: currentAppDetails.manifest, files: filesMap, manifestText: appManifestText, previous: appDraftFingerprint, base: appBaseFingerprint })
         });
+        appDraftFingerprint = draft.fingerprint; appBaseFingerprint = draft.base ?? undefined; hasDraft = true; draftSavedAt = draft.savedAt;
         isDirty = false;
         if (!silent) showNotice(`Saved application “${currentAppDetails.manifest.name}”.`);
         await loadHubData();
@@ -554,6 +563,11 @@ export async function handleTrigger(triggerId: string) {
   }
 
   async function discardDraftAction(): Promise<void> {
+    if (activeKind === "app" && currentAppDetails) {
+      if (!await ask("Discard this unpublished app draft?", "Discard")) return;
+      await api(`/api/apps/${encodeURIComponent(currentAppDetails.manifest.id)}/draft`, { method: "DELETE" });
+      await loadItemData(currentAppDetails.manifest.id, "app"); render(); return;
+    }
     if (activeKind === "skill" && currentSkillPkg && hasDraft) {
       const ok = await ask(`Discard working draft for “${currentSkillPkg.skill.name}”? Workspace will revert to published package.`, "Discard Draft");
       if (!ok) return;
@@ -603,7 +617,15 @@ export async function handleTrigger(triggerId: string) {
         render();
       }
     } else if (activeKind === "app" && currentAppDetails) {
-      await saveDraftAction(false);
+      if (isDirty || !appDraftFingerprint) await saveDraftAction(false);
+      if (isDirty || !appDraftFingerprint) return;
+      const tools = currentAppDetails.manifest.entitlements.mcpTools.join(", ") || "None";
+      if (!await ask(`Publish reviewed application “${currentAppDetails.manifest.name}”? Declared tools: ${tools}. Scheduled work stays off until enabled in Apps.`, "Publish App")) return;
+      try {
+        currentAppDetails = await api<AppDetails>(`/api/apps/${encodeURIComponent(currentAppDetails.manifest.id)}/publish`, { method: "POST", body: JSON.stringify({ fingerprint: appDraftFingerprint }) });
+        hasDraft = false; appDraftFingerprint = undefined; showNotice("App published. Open it in Apps; its actions run directly without a model.");
+        await loadHubData();
+      } catch (error) { showError(error); }
     }
   }
 
@@ -1655,6 +1677,15 @@ export async function handleTrigger(triggerId: string) {
 
   // Sandbox script test execution
   async function runSandboxTest(scriptPath: string): Promise<void> {
+    if (activeKind === "app" && currentAppDetails) {
+      try {
+        if (isDirty || !appDraftFingerprint) await saveDraftAction(true);
+        if (isDirty) throw new Error("Save the current draft before rehearsal");
+        const result = await api(`/api/apps/${encodeURIComponent(currentAppDetails.manifest.id)}/rehearse`, { method: "POST", body: JSON.stringify({ fingerprint: appDraftFingerprint, controlId: "rehearsal", value: null }) });
+        showNotice(`Isolated app rehearsal completed: ${JSON.stringify(result).slice(0, 1000)}`);
+      } catch (error) { showError(error); }
+      return;
+    }
     if (isRunningSandbox || !currentSkillPkg) return;
     isRunningSandbox = true;
     sandboxLog = null;
@@ -1821,8 +1852,9 @@ export async function handleTrigger(triggerId: string) {
     }
 
     // 2. App items
-    if (hubFilter === "all" || hubFilter === "apps") {
+    if (hubFilter === "all" || hubFilter === "apps" || hubFilter === "drafts") {
       for (const a of installedApps) {
+        if (hubFilter === "drafts" && !a.isDraft) continue;
         if (hubQuery && !a.name.toLowerCase().includes(hubQuery) && !a.description.toLowerCase().includes(hubQuery)) continue;
 
         const card = el("div", {
@@ -1839,7 +1871,7 @@ export async function handleTrigger(triggerId: string) {
         const titleRow = el("div", { className: "studio-card-title-row" },
           el("h3", { className: "studio-card-title", textContent: a.name }),
           pill("Sandboxed App", "info"),
-          a.isRunning ? pill("Live", "ok") : pill("Ready")
+          a.isDraft ? pill("Draft", "caution") : a.isRunning ? pill("Live", "ok") : pill("Ready")
         );
         const desc = el("p", { className: "studio-card-desc", textContent: a.description });
         const head = el("div", { className: "studio-card-head" }, iconBox, el("div", { className: "studio-card-info" }, titleRow, desc));
@@ -2654,17 +2686,25 @@ export async function handleTrigger(triggerId: string) {
       onclick: () => void saveDraftAction(false)
     });
 
+    const buildAppBtn = activeKind === "app" ? el("button", {
+      type: "button", className: "ghost small", textContent: "Build with chat", onclick: async () => {
+        if (isDirty || !appDraftFingerprint) await saveDraftAction(true);
+        if (isDirty || !currentAppDetails) return;
+        window.dispatchEvent(new CustomEvent("vak:build-app", { detail: { id: currentAppDetails.manifest.id, sourceSession: currentAppDetails.manifest.sourceSession } }));
+      }
+    }) : null;
+
     const publishBtn = el("button", {
       type: "button",
       className: "primary small",
-      textContent: isPublishing ? "Publishing…" : activeKind === "skill" ? "Publish Skill" : "Save App",
+      textContent: isPublishing ? "Publishing…" : activeKind === "skill" ? "Publish Skill" : "Publish App",
       onclick: () => void publishAction()
     });
 
     const header = el("header", { className: "studio-header", "data-tauri-drag-region": "true" },
       el("div", { className: "studio-header-left" }, backBtn, el("span", { className: "studio-header-divider" }), titleBox),
       el("div", { className: "studio-header-center" }, modeSelector),
-      el("div", { className: "studio-header-right" }, ...(discardBtn ? [discardBtn] : []), saveDraftBtn, publishBtn)
+      el("div", { className: "studio-header-right" }, ...(discardBtn ? [discardBtn] : []), ...(buildAppBtn ? [buildAppBtn] : []), saveDraftBtn, publishBtn)
     );
 
     const feedbackBanner = el("div", {

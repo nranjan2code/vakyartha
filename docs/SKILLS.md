@@ -13,7 +13,7 @@ Twenty-nine skills ship on: assistant, interactive-ui, plan-my-day, write-email,
 The desktop workbench accessible from the sidebar (`✨ Studio`) and Settings → Skills (`Skill Studio…` or `Open in Skill Studio` on any installed skill) enables authoring, inspecting, editing, and verifying multi-file Agent Skills packages and Sandboxed Dynamic Applications:
 
 - **Studio Hub & Multitasking**: Clicking Studio opens the Creator Hub overview to manage skills, sandboxed apps, and active drafts. Switching away to chat turns or starting a New Chat hides Studio non-destructively without wiping working state, unmounting editors, or resetting scroll positions.
-- **Isolated Draft Quarantine & Auto-Save**: Working drafts are auto-saved in the background (800ms debounce) under `<data>/skills/.drafts/<name>/` (`PUT /api/skills/:name/draft`). Because local discovery ignores dot-prefixed directories, unpublished drafts never reach the assistant until explicitly published.
+- **Isolated Draft Quarantine & Auto-Save**: Skill working drafts are auto-saved in the background (800ms debounce) under `<data>/skills/.drafts/<name>/` (`PUT /api/skills/:name/draft`). Because local discovery ignores dot-prefixed directories, unpublished drafts never reach the assistant until explicitly published.
 - **Publishing & Discarding**: `Publish Skill` (`POST /api/skills/:name/publish`) promotes the draft package to the active directory `<data>/skills/<name>/` and clears the draft. `Discard Draft` (`DELETE /api/skills/:name/draft`) reverts to the active published version.
 - **Unified 4-View Architecture**:
   - *Package Explorer Rail*: Root file (`SKILL.md` or `app.json`), supporting files (`server.ts`, `surface.json`, schemas, scripts, references), file size indicators, add/delete controls, and active capabilities/entitlements summary.
@@ -22,6 +22,12 @@ The desktop workbench accessible from the sidebar (`✨ Studio`) and Settings �
   - *Live Preview View*: Responsive container query viewports (`320px`, `720px`, `960px`, `100% Fluid`), live `<vak-surface>` canvas mount, Surface Design Linter compliance checking, and Dual Spoken Voice TTS auditioning.
   - *Sandbox & Tests View*: Disposable `vak-sandbox` script rehearsal terminal with SHA-256 integrity verification, and selection gate prompt evaluation suite (`/api/skills/eval`).
 
+
+### Executable app authoring
+
+Apps have their own lifecycle, distinct from skill drafts and inert supporting references. App drafts live in `<data>/app-drafts/<id>.json`; published package/state/projection records live in `<data>/app-state/<id>.json`. Chat can inspect paged source with `read_app_package` and request approval to stage code with `save_app_draft`. App draft saves carry review fingerprints and do not activate schedules or executable versions. Studio retains actual source, offers an editable Build with chat request in the source conversation, rehearses without external-tool authority, and publishes explicitly. `app-authoring`, `app-operator`, `app-maintainer` and `app-admin` describe this flow; they grant no permissions.
+
+Published actions and named refreshes run ordinary code through the existing supervised sandbox. Skills guide construction/maintenance; the model is not invoked on each refresh. Real-data access uses declared tools and existing integration policies. [Full contract and unsupported capabilities](sandboxed-apps/RUNTIME-CONTRACT.md).
 
 ## Format
 

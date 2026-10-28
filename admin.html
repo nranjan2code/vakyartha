@@ -160,25 +160,25 @@
         <div class="metrics-row">
           <div class="metric-card">
             <span class="metric-label">Total Spend</span>
-            <div class="metric-value" id="finops-total-cost">$0.00</div>
+            <div class="metric-value" id="finops-total-cost">Unknown</div>
             <span class="metric-sub">Across all sessions &amp; apps</span>
           </div>
           <div class="metric-card">
             <span class="metric-label">Local Ollama Savings</span>
-            <div class="metric-value ok-text" id="finops-local-savings">100% Free</div>
+            <div class="metric-value ok-text" id="finops-local-savings">Not measured</div>
             <span class="metric-sub">Zero-cost local inference</span>
           </div>
           <div class="metric-card">
             <span class="metric-label">Budget Consumption</span>
-            <div class="metric-value" id="finops-budget-usage">0%</div>
-            <span class="metric-sub">Circuit breaker at 100%</span>
+            <div class="metric-value" id="finops-budget-usage">Unavailable</div>
+            <span class="metric-sub">Hard spending ceilings unavailable</span>
           </div>
         </div>
 
         <div class="finops-details-card">
           <h3>Token Usage Attribution</h3>
           <div id="finops-attribution-container" class="finops-container">
-            <p class="empty-state">No paid token usage recorded in current billing cycle.</p>
+            <p class="empty-state">See Settings → FinOps for measured usage and missing prices.</p>
           </div>
         </div>
       </section>
@@ -195,15 +195,15 @@
             <h3>macOS Seatbelt Process Isolation</h3>
             <div class="security-item">
               <span class="security-label">Engine Isolation:</span>
-              <span class="security-value ok" id="sec-isolation-status">Active (vaksb)</span>
+              <span class="security-value" id="sec-isolation-status">Per invocation; requires compatible vaksb</span>
             </div>
             <div class="security-item">
               <span class="security-label">File System Jailing:</span>
-              <span class="security-value ok">Strictly Scoped to Workspace</span>
+              <span class="security-value">Disposable workspace and helper runtime grants</span>
             </div>
             <div class="security-item">
               <span class="security-label">Credential Vault Protection:</span>
-              <span class="security-value ok">Zero Keys in Child Env</span>
+              <span class="security-value">Minimal environment for app invocations</span>
             </div>
           </div>
 
@@ -211,15 +211,15 @@
             <h3>Brokered Network Proxy</h3>
             <div class="security-item">
               <span class="security-label">Raw Sockets:</span>
-              <span class="security-value danger">DENIED by Kernel</span>
+              <span class="security-value danger">Denied for app invocations by helper</span>
             </div>
             <div class="security-item">
               <span class="security-label">Outbound Mode:</span>
-              <span class="security-value">Explicit Whitelist (Signed HTTPS)</span>
+              <span class="security-value">Governed integration tools only</span>
             </div>
             <div class="security-item">
               <span class="security-label">Cookie Stripping:</span>
-              <span class="security-value ok">Enforced on all requests</span>
+              <span class="security-value">Integration-owned; no raw HTTP broker</span>
             </div>
           </div>
         </div>

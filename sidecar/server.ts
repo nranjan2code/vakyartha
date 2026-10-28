@@ -11,8 +11,8 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createHost, json, readJson } from "@vak/host";
 import { attachmentsRoute } from "./attachments.ts";
-import type { Integrations } from "@vak/mcp/client";
-import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, providersFromEnv, pinnedFetch } from "@vak/providers";
+import { toolName, type Integrations } from "@vak/mcp/client";
+import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, type AgentTool, providersFromEnv, pinnedFetch } from "@vak/providers";
 import { Channels, CHANNELS } from "./channels.ts";
 import { Marketplaces } from "./marketplaces.ts";
 import { Skills } from "./skills.ts";
@@ -248,7 +248,7 @@ ${skills.index()}`;
   const host = createHost({
     tools: async ({ session }) => {
       finops.session(session);
-      return withSkill((await integrations?.toolsFor(session) ?? []).map((tool) => ({ ...tool, execute: (args, ctx) => media.withSession(session, () => tool.execute(args, ctx)) })));
+      return withSkill([...appAuthoringTools(), ...(await integrations?.toolsFor(session) ?? [])].map((tool) => ({ ...tool, execute: (args, ctx) => media.withSession(session, () => tool.execute(args, ctx)) })));
     },
     providers: () => modelProviders(),
     profiles,
@@ -265,11 +265,23 @@ ${skills.index()}`;
     log,
   });
 
-  const pool = new SandboxPoolManager();
-  const apps = new AppRegistry({ dataDir, pool, seedBuiltins: true });
-  await apps.init();
-
   const sandboxBin = opts.sandboxBin || "vaksb";
+  const pool = new SandboxPoolManager({ sandboxBin, enabled: () => process.env.VAK_SANDBOX_ENABLED !== "false" });
+  await pool.start();
+  const apps = new AppRegistry({ dataDir, pool, seedBuiltins: true, callTool: async (app, name, args, signal) => {
+    // Unattended apps may use only explicit Allow policies. Ask remains Ask;
+    // package declarations never grant a background approval.
+    const available = await integrations!.toolsFor(`app:${app.id}`);
+    const candidates = integrations!.view().filter(i => i.enabled && i.status === "ready")
+      .flatMap(i => i.tools.filter(t => toolName(i.entry.id, t.name) === name).map(t => ({ integration: i, tool: t })));
+    if (candidates.length !== 1 || candidates[0]!.tool.policy !== "allow") throw new Error("App data access requires an enabled integration tool with an explicit Allow policy in Settings");
+    const tool = available.find(t => t.spec.name === name);
+    if (!tool) throw new Error("Integration tool is unavailable");
+    const result = await tool.execute(args, { signal, callId: crypto.randomUUID() });
+    if (typeof result !== "string" && result.isError) throw new Error(result.text);
+    return result;
+  } });
+  await apps.init();
   marketplaces = new Marketplaces(dataDir, integrationCatalog(media, sandboxBin, dataDir), opts.marketplaceFetch, opts.marketplaceImageFetch);
   const processIsolationEnabled = process.env.VAK_SANDBOX_ENABLED !== "false";
   integrations = createIntegrations({ dataDir, observe: (request, result) => tasks?.observeResult(request, result), secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: processIsolationEnabled, binaryPath: sandboxBin } }, media, marketplaces.catalog);
@@ -339,6 +351,35 @@ ${skills.index()}`;
       } else json(res, 405, { error: "method not allowed" });
     } catch (err) { json(res, 400, { error: (err as Error).message }); }
     return true;
+  }
+
+  function appAuthoringTools(): AgentTool[] {
+    return [{
+      kind: "context",
+      spec: { name: "read_app_package", description: "Inspect app/draft manifests, source file names and review fingerprints. Supply path and offset to read up to 16000 source characters. Omit id to list apps and drafts.", inputSchema: { type: "object" as const, properties: { id: { type: "string" as const }, path: { type: "string" as const }, offset: { type: "number" as const } } } },
+      execute: async (args: Record<string, unknown>) => {
+        if (typeof args.id !== "string") return JSON.stringify({ apps: apps.listApps(), drafts: apps.listDrafts() });
+        const draft = apps.getDraft(args.id);
+        if (typeof args.path === "string") {
+          const text = args.path === "app.json" ? draft.manifestText : draft.files[args.path];
+          if (typeof text !== "string") throw new Error("File is not part of this app package");
+          const offset = Number(args.offset ?? 0);
+          if (!Number.isInteger(offset) || offset < 0 || offset > text.length) throw new Error("Invalid source offset");
+          return JSON.stringify({ path: args.path, offset, text: text.slice(offset, offset + 16000), next: offset + 16000 < text.length ? offset + 16000 : null });
+        }
+        return JSON.stringify({ manifest: draft.manifest, files: Object.keys(draft.files), fingerprint: draft.fingerprint, base: draft.base });
+      },
+    }, {
+      spec: { name: "save_app_draft", description: "Stage an inert executable application package for Studio review and publication. Include actual backend behavior, data-tool declarations and every required file. A saved surface alone does not supply application logic. This does not publish, schedule or execute code.", inputSchema: { type: "object" as const, properties: { manifest: { type: "object" as const }, files: { type: "object" as const, additionalProperties: { type: "string" as const } }, previous: { type: "string" as const }, base: { type: "string" as const } }, required: ["manifest", "files"] } },
+      execute: async (args: Record<string, unknown>, ctx) => {
+        const manifest = args.manifest as { id?: string };
+        const decision = await host.approve({ id: ctx.callId ?? crypto.randomUUID(), server: "apps", tool: "save_app_draft", title: "Save an inert application draft for review", args: { id: manifest?.id, files: Object.keys((args.files ?? {}) as object) } }, ctx.emit, ctx.signal);
+        if (decision === "deny") return { text: "App draft save declined; no package was written.", isError: true };
+        ctx.signal?.throwIfAborted();
+        const draft = apps.saveDraft(String(manifest?.id ?? ""), args as any) as { fingerprint: string };
+        return JSON.stringify({ id: manifest.id, fingerprint: draft.fingerprint, files: Object.keys((args.files ?? {}) as object), next: "Open Studio, rehearse and review the package, then publish. Scheduling remains off until enabled." });
+      },
+    }];
   }
 
   function withSkill<T>(tools: T[]): T[] {
@@ -510,7 +551,7 @@ ${skills.index()}`;
         return true;
       }
       if (p === "/api/admin/fleet/restart" && req.method === "POST") {
-        await pool.suspendAll();
+        await pool.restart();
         json(res, 200, { ok: true });
         return true;
       }
@@ -580,6 +621,9 @@ ${skills.index()}`;
     if (!p.startsWith("/api/apps")) return false;
 
     try {
+      const builtin = /^\/api\/apps\/builtin\/([a-z0-9][a-z0-9_-]{1,63})$/.exec(p);
+      if (builtin && req.method === "POST") { json(res, 201, await apps.installBuiltin(builtin[1]!)); return true; }
+      if (p === "/api/apps/drafts" && req.method === "GET") { json(res, 200, apps.listDrafts()); return true; }
       if (p === "/api/apps" && req.method === "GET") {
         json(res, 200, apps.listApps());
         return true;
@@ -597,11 +641,28 @@ ${skills.index()}`;
         return true;
       }
 
+      const lifecycle = /^\/api\/apps\/([a-z0-9][a-z0-9_-]{1,63})\/(draft|publish|rehearse|schedule|recover)$/.exec(p);
+      if (lifecycle) {
+        const [, id, operation] = lifecycle;
+        if (operation === "draft" && req.method === "GET") json(res, 200, apps.getDraft(id!));
+        else if (operation === "draft" && req.method === "PUT") json(res, 200, apps.saveDraft(id!, await readJson(req) as any));
+        else if (operation === "draft" && req.method === "DELETE") { apps.discardDraft(id!); json(res, 200, { ok: true }); }
+        else if (req.method === "POST") {
+          const body = await readJson(req);
+          if (operation === "publish") json(res, 200, await apps.publishDraft(id!, String(body.fingerprint ?? "")));
+          else if (operation === "rehearse") json(res, 200, await apps.rehearse(id!, String(body.fingerprint ?? ""), String(body.controlId ?? "rehearsal"), body.value));
+          else if (operation === "recover") json(res, 200, await apps.acknowledgeUncertain(id!, String(body.runId ?? "")));
+          else if (operation === "schedule") json(res, 200, await apps.setScheduling(id!, body.enabled === true));
+          else json(res, 405, { error: "Method not allowed" });
+        } else json(res, 405, { error: "Method not allowed" });
+        return true;
+      }
+
       const actionMatch = /^\/api\/apps\/([^/]+)\/action$/.exec(p);
       if (actionMatch && req.method === "POST") {
         const id = decodeURIComponent(actionMatch[1]!);
         const body = await readJson(req);
-        const result = await apps.dispatchAction(id, String(body.controlId ?? ""), body.value, body.action ? String(body.action) : undefined);
+        const result = await apps.dispatchAction(id, String(body.controlId ?? ""), body.value, body.action ? String(body.action) : undefined, typeof body.revision === "number" ? body.revision : undefined, typeof body.surface === "string" ? body.surface : undefined);
         json(res, 200, result);
         return true;
       }
@@ -623,18 +684,7 @@ ${skills.index()}`;
           json(res, 404, { error: `App '${id}' not found` });
           return true;
         }
-        const stateFile = path.join(dataDir, "apps", id, "state.json");
-        if (existsSync(stateFile)) {
-          try {
-            const parsed = JSON.parse(readFileSync(stateFile, "utf-8"));
-            json(res, 200, parsed.state ?? parsed);
-            return true;
-          } catch {
-            json(res, 200, {});
-            return true;
-          }
-        }
-        json(res, 200, {});
+        json(res, 200, app.state);
         return true;
       }
 
@@ -658,7 +708,7 @@ ${skills.index()}`;
           }
           const manifest = ("manifest" in body && typeof body.manifest === "object") ? body.manifest : body;
           const files = ("files" in body && typeof body.files === "object" && body.files !== null) ? body.files as Record<string, string> : undefined;
-          const app = await apps.updateApp(id, manifest as any, files);
+          const app = await apps.updateApp(id, manifest as any, files, String(body.fingerprint ?? ""));
           json(res, 200, app);
           return true;
         }
@@ -708,8 +758,8 @@ ${skills.index()}`;
     apps,
     async shutdown() {
       server?.close();
-      await apps.shutdown();
       await pool.shutdown(2000);
+      await apps.shutdown();
       await tasks?.close();
       await media.close();
       await channels.stopAll();

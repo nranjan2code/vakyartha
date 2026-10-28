@@ -4,43 +4,15 @@ description: Maintain, update, patch UI layouts, modify server code, and preserv
 license: MIT
 metadata:
   author: Vakyartha Team
-  version: "1.0"
+  version: "1.1"
 ---
 
-# Maintaining and Updating Applications
+# Maintain app packages
 
-Use this procedure when updating, modifying, or refactoring hosted applications.
+Read the complete published source and current revision/fingerprint before changing an app. `GET /api/apps/:id/draft` returns the current draft or published source. Preserve existing surfaces, bindings, domain values and declared action semantics.
 
-## Reading the Architectural Contract
-Before making any changes to an application, read its `AGENTS.md` and `app.json`:
-1. Check the existing visual node IDs in `surface.json`.
-2. Inspect the exported `handleAction` function in `server.ts`.
-3. Check trigger action handlers.
+Edit an inert draft using `save_app_draft` or Studio; subsequent saves supply its previous fingerprint. Saving does not change the running package. Rehearse saved code with the current draft fingerprint, inspect its actual result, and independently check data and calculations. Rehearsal has no external-tool authority.
 
-Never guess node IDs, data binding paths, or action names.
+Publishing in Studio checks both draft and base package fingerprints. A stale review cannot overwrite a newer package. Publishing retains domain state, switches the complete package record and pauses scheduling. Surface schema changes require deliberate migration in application code; do not silently replace user data to obtain a pass.
 
-## Modifying Backend Logic
-- Edit `server.ts` directly.
-- Preserve deterministic calculations and pure TypeScript logic.
-- Return patches conforming to the surface tree:
-  ```ts
-  return {
-    op: "batch_update",
-    controlId,
-    value,
-    patches: [
-      { id: "node-id", props: { ... } }
-    ]
-  };
-  ```
-
-## Updating Visual Surfaces
-- Update `surface.json` with new or revised nodes.
-- Increment the `version` field in `surface.json` and `app.json`.
-- When adding interactive controls, update `server.ts` to handle the new `controlId` and update `AGENTS.md` to document the new control and its valid values.
-
-## Syncing Self-Documentation
-Always keep `AGENTS.md` in sync:
-- Document newly added controls, data bindings, and action handlers.
-- Record any updated entitlements (storage, memory, domains).
-
+Backend handlers are awaited, run in disposable supervised workspaces and persist only context.state plus validated returned surface updates. Local database files/module memory are scratch, not persistent storage. Never bypass the sandbox on execution failure or claim a static surface gained refresh logic automatically.

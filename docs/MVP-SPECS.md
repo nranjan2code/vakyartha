@@ -312,3 +312,7 @@ Task diagnostic retention and deletion now share an explicit scope, while canoni
 
 
 External discovery supplements selectable integrations through the existing capability lifecycle (ADR-027). Browsing grants no task access, installation or activation. Imports stay unverified/off; service charges remain unknown, and task scopes and interactive multiple-surface behavior remain intact. Unsupported runtime/authentication requirements and stale/offline metadata are explicit. Implementation and verification boundaries are in [EXTERNAL-CATALOGS.md](EXTERNAL-CATALOGS.md).
+
+## Executable app runtime boundary (2026-10-28)
+
+The mini-cloud hosts apps with persistent state and ordinary executable behavior, rather than routing every refresh through a chat turn. Draft/source construction and reviewed publication remain distinct from app execution. The app owns records, scheduling and projection commits; the existing sandbox owns contained process lifetime, and existing integrations own external-tool authority. Independent interactive surfaces remain supported. [Current app contract](sandboxed-apps/RUNTIME-CONTRACT.md) and ADR-048 replace earlier warm-daemon/database assumptions. This app-specific cron capability does not certify recurring agent tasks. Model-authoring correctness remains an open gate tracked in the checklist and Evaluation.

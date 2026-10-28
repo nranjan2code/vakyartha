@@ -98,3 +98,9 @@ failure cleanup, picker navigation, library search/filtering, Markdown content, 
 restoration, removal, form submit, keyboard controls, pagination, sorting and
 cross-chat opening at 1100px and 620px. It prints its screenshot directory.
 `webkit-check.swift` also accepts `WK_WIDTH` and `WK_HEIGHT` for manual probes.
+
+## From a surface to an executable app
+
+Create app draft preserves the selected presentation and its source-chat identity as inert source. A surface alone does not retain the executable calculation, connector or action behavior that produced it. Studio's Build with chat returns to that conversation and prepares an editable request to build the missing backend; it does not send a hidden model request or fabricate a working refresh handler.
+
+After source review, rehearsal and explicit publication, app controls and refresh triggers execute code directly through the existing sandbox. The app's host-owned domain state and validated surface snapshots persist; multiple surfaces stay independently selectable. Current revisions protect submitted actions and open views retain local edits when background data changes. Code updates return through reviewed publication; ordinary refresh changes data. [App contract](sandboxed-apps/RUNTIME-CONTRACT.md), [lifecycle](sandboxed-apps/OPERATIONS-AND-LIFECYCLE.md) and [verification](EVALUATION.md#executable-local-app-runtime--2026-10-28).
