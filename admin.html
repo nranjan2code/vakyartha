@@ -10,34 +10,41 @@
     <script type="module" src="/src/admin.ts"></script>
   </head>
   <body class="admin-body">
-    <header class="admin-header" data-tauri-drag-region>
-      <div class="admin-brand" data-tauri-drag-region>
-        <img src="/icon.svg" alt="" width="20" height="20" class="admin-logo" />
-        <span class="admin-title">Mini-Cloud Admin & Observability</span>
-        <span class="admin-badge" id="admin-connection-status">Connecting...</span>
+    <header class="app-topbar admin-topbar" data-tauri-drag-region>
+      <div class="topbar-left" data-tauri-drag-region>
+        <div class="topbar-brand" data-tauri-drag-region>
+          <img src="/icon.svg" alt="" width="18" height="18" class="topbar-logo" />
+          <span class="topbar-brand-title">Admin Console</span>
+        </div>
+        <span class="admin-badge live" id="admin-connection-status">Connected</span>
       </div>
 
-      <nav class="admin-nav" aria-label="Workbenches">
-        <button type="button" class="admin-nav-btn active" data-tab="fleet">
-          <span class="nav-icon">⚡</span> Fleet & Pool
+      <nav class="topbar-nav" id="admin-topbar-nav" aria-label="Workbenches">
+        <button type="button" class="topbar-tab" data-tab="fleet" aria-current="page" title="Fleet &amp; Pool">
+          <span class="tab-icon" id="admin-icon-fleet"></span>
+          <span class="tab-label">Fleet &amp; Pool</span>
         </button>
-        <button type="button" class="admin-nav-btn" data-tab="apps">
-          <span class="nav-icon">📦</span> Hosted Apps
+        <button type="button" class="topbar-tab" data-tab="apps" aria-current="false" title="Hosted Apps">
+          <span class="tab-icon" id="admin-icon-apps"></span>
+          <span class="tab-label">Hosted Apps</span>
         </button>
-        <button type="button" class="admin-nav-btn" data-tab="logs">
-          <span class="nav-icon">📟</span> Live Logs
+        <button type="button" class="topbar-tab" data-tab="logs" aria-current="false" title="Live Logs">
+          <span class="tab-icon" id="admin-icon-logs"></span>
+          <span class="tab-label">Live Logs</span>
         </button>
-        <button type="button" class="admin-nav-btn" data-tab="finops">
-          <span class="nav-icon">💎</span> FinOps
+        <button type="button" class="topbar-tab" data-tab="finops" aria-current="false" title="FinOps">
+          <span class="tab-icon" id="admin-icon-finops"></span>
+          <span class="tab-label">FinOps</span>
         </button>
-        <button type="button" class="admin-nav-btn" data-tab="security">
-          <span class="nav-icon">🛡️</span> Security
+        <button type="button" class="topbar-tab" data-tab="security" aria-current="false" title="Security">
+          <span class="tab-icon" id="admin-icon-security"></span>
+          <span class="tab-label">Security</span>
         </button>
       </nav>
 
-      <div class="admin-header-actions" data-tauri-drag-region>
-        <button type="button" class="admin-action-btn secondary" id="admin-refresh-btn" title="Refresh state">↻ Refresh</button>
-        <button type="button" class="admin-action-btn danger" id="admin-restart-pool-btn" title="Restart sandbox worker pool">Restart Pool</button>
+      <div class="topbar-right" data-tauri-drag-region>
+        <button type="button" class="ghost small" id="admin-refresh-btn" title="Refresh state">Refresh</button>
+        <button type="button" class="ghost small danger" id="admin-restart-pool-btn" title="Restart sandbox worker pool">Restart Pool</button>
       </div>
     </header>
 
@@ -86,7 +93,7 @@
 
         <div class="apps-toolbar">
           <input type="text" id="apps-search-input" class="admin-input" placeholder="Search applications by name, ID or category..." />
-          <button type="button" class="admin-action-btn primary small" id="install-app-btn">+ Re-install Reference App</button>
+          <button type="button" class="ghost small" id="install-app-btn">+ Re-install Reference App</button>
           <span class="apps-count" id="apps-count-label">0 applications</span>
         </div>
 
@@ -128,7 +135,7 @@
             <label class="admin-checkbox-label">
               <input type="checkbox" id="logs-autoscroll" checked /> Auto-scroll
             </label>
-            <button type="button" class="admin-action-btn secondary small" id="logs-clear-btn">Clear</button>
+            <button type="button" class="ghost small" id="logs-clear-btn">Clear</button>
           </div>
         </div>
 

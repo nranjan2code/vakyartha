@@ -4,6 +4,17 @@
 import type { FleetSnapshot, WorkerSlotSummary } from "../shared/sandbox-pool.ts";
 import type { AppSummary } from "../sidecar/sandbox-pool/app-registry.ts";
 import { connect, engineFetch, inTauri, type Backend } from "./backend.ts";
+import { applyAppearance } from "./theme.ts";
+import { icon } from "./icons.ts";
+
+// Apply Vakyartha theme & tokens immediately
+applyAppearance();
+
+window.addEventListener("storage", (e) => {
+  if (e.key?.startsWith("vak:appearance:")) {
+    applyAppearance();
+  }
+});
 
 let activeTab = "fleet";
 let token: string | null = null;
@@ -109,8 +120,8 @@ function formatBytes(bytes: number): string {
 
 function switchTab(tabName: string): void {
   activeTab = tabName;
-  document.querySelectorAll(".admin-nav-btn").forEach((btn) => {
-    btn.classList.toggle("active", btn.getAttribute("data-tab") === tabName);
+  document.querySelectorAll("#admin-topbar-nav .topbar-tab").forEach((btn) => {
+    btn.setAttribute("aria-current", btn.getAttribute("data-tab") === tabName ? "page" : "false");
   });
   document.querySelectorAll(".admin-workbench").forEach((wb) => {
     wb.classList.toggle("active", wb.id === `workbench-${tabName}`);
@@ -119,6 +130,28 @@ function switchTab(tabName: string): void {
   if (tabName === "fleet") void refreshFleet();
   if (tabName === "apps") void refreshApps();
   if (tabName === "finops") void refreshFinops();
+}
+
+function setupTopbarIcons(): void {
+  const iconMap: Record<string, string> = {
+    "admin-icon-fleet": "cpu",
+    "admin-icon-apps": "form",
+    "admin-icon-logs": "page",
+    "admin-icon-finops": "sliders",
+    "admin-icon-security": "shield",
+  };
+  for (const [id, glyph] of Object.entries(iconMap)) {
+    const el = document.getElementById(id);
+    if (el) el.replaceChildren(icon(glyph, 14));
+  }
+  const refreshBtn = document.getElementById("admin-refresh-btn");
+  if (refreshBtn && !refreshBtn.querySelector("svg")) {
+    refreshBtn.prepend(icon("clock", 13), " ");
+  }
+  const restartBtn = document.getElementById("admin-restart-pool-btn");
+  if (restartBtn && !restartBtn.querySelector("svg")) {
+    restartBtn.prepend(icon("stop", 13), " ");
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -190,7 +223,7 @@ function renderFleet(fleet: FleetSnapshot): void {
         <div class="slot-actions">
           ${
             isActive
-              ? `<button type="button" class="admin-action-btn danger small" data-action="hibernate" data-slot="${slot.slotId}">Hibernate</button>`
+              ? `<button type="button" class="ghost small danger" data-action="hibernate" data-slot="${slot.slotId}">Hibernate</button>`
               : ""
           }
         </div>
@@ -265,8 +298,8 @@ function renderAppsTable(apps: AppSummary[]): void {
       </td>
       <td>
         <div style="display: flex; gap: 6px;">
-          ${app.triggerCount > 0 ? `<button type="button" class="admin-action-btn small" data-action="run-trigger" data-id="${app.id}">Run Poll</button>` : ""}
-          <button type="button" class="admin-action-btn small danger" data-action="uninstall-app" data-id="${app.id}">Delete</button>
+          ${app.triggerCount > 0 ? `<button type="button" class="ghost small" data-action="run-trigger" data-id="${app.id}">Run Poll</button>` : ""}
+          <button type="button" class="ghost small danger" data-action="uninstall-app" data-id="${app.id}">Delete</button>
         </div>
       </td>
     </tr>
@@ -435,8 +468,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     token = qToken;
   }
 
+  setupTopbarIcons();
+
   // Setup tab listeners
-  document.querySelectorAll(".admin-nav-btn").forEach((btn) => {
+  document.querySelectorAll("#admin-topbar-nav .topbar-tab").forEach((btn) => {
     btn.addEventListener("click", () => {
       const tab = btn.getAttribute("data-tab");
       if (tab) switchTab(tab);

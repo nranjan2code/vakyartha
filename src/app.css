@@ -533,9 +533,11 @@ body:not(.notes) details.diag { display: none; }
 .send.stop { background: var(--muted); }
 
 /* buttons */
-.ghost { font-weight: 600; font-size: 0.85rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.ghost { font-weight: 600; font-size: 0.85rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; color: var(--fg); }
 .ghost:hover { border-color: var(--faint); }
 .ghost.small { padding: 3px 10px; font-size: 0.8rem; }
+.ghost.danger { color: var(--danger); }
+.ghost.danger:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--panel)); }
 .primary { font-weight: 600; font-size: 0.88rem; color: var(--accent-fg); background: var(--accent); border: 0; border-radius: 8px; padding: 7px 16px; cursor: pointer; }
 
 /* dialogs */

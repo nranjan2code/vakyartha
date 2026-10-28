@@ -1,4 +1,5 @@
-/* Admin & Observability Console Stylesheet */
+/* Admin & Observability Console Stylesheet
+   Harmonized with Vakyartha's core design tokens and appearance system. */
 
 .admin-body {
   background: var(--bg);
@@ -12,135 +13,74 @@
   user-select: none;
 }
 
-.admin-header {
-  height: 52px;
-  background: var(--side);
-  border-bottom: 1px solid var(--border);
+/* ---------------------------------------------------------------------------
+ * Topbar & Navigation (macOS Titlebar Clearance & Token Integration)
+ * ------------------------------------------------------------------------- */
+
+.admin-topbar {
+  flex: none;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  flex-shrink: 0;
-  gap: 16px;
+  padding: 0 14px 0 84px; /* Clearance for macOS traffic lights */
+  background: var(--side);
+  border-bottom: 1px solid var(--border);
+  -webkit-user-select: none;
+  user-select: none;
+  z-index: 50;
+  box-sizing: border-box;
+  max-width: 100vw;
+  overflow: hidden;
 }
 
-.admin-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.admin-title {
-  font-size: 14px;
+.admin-topbar .topbar-brand-title {
   font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 0.9rem;
+  letter-spacing: -0.015em;
+  color: var(--fg);
 }
 
 .admin-badge {
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 550;
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: 999px;
   background: var(--hover);
   color: var(--muted);
+  border: 1px solid var(--border);
+  margin-left: 6px;
 }
 
 .admin-badge.live {
-  background: rgba(34, 197, 94, 0.15);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ok) 25%, transparent);
   color: var(--ok);
 }
 
-.admin-badge.disconnected {
-  background: rgba(239, 68, 68, 0.15);
+.admin-badge.disconnected,
+.admin-badge.error {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent);
   color: var(--danger);
 }
 
-.admin-nav {
-  display: flex;
-  gap: 4px;
-  background: var(--panel);
-  padding: 3px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-}
-
-.admin-nav-btn {
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-  padding: 6px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.15s ease;
-}
-
-.admin-nav-btn:hover {
-  color: var(--fg);
-  background: var(--hover);
-}
-
-.admin-nav-btn.active {
-  background: var(--hover);
-  color: var(--fg);
-  font-weight: 600;
-}
-
-.admin-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.admin-action-btn {
-  font-size: 12px;
-  font-weight: 500;
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--fg);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.admin-action-btn:hover {
-  background: var(--hover);
-}
-
-.admin-action-btn.secondary {
-  color: var(--muted);
-}
-
-.admin-action-btn.secondary:hover {
-  color: var(--fg);
-}
-
-.admin-action-btn.danger {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.2);
-  color: var(--danger);
-}
-
-.admin-action-btn.danger:hover {
-  background: rgba(239, 68, 68, 0.2);
-}
-
-.admin-action-btn.small {
-  padding: 4px 8px;
-  font-size: 11px;
-}
+/* ---------------------------------------------------------------------------
+ * Workbenches & Main Layout
+ * ------------------------------------------------------------------------- */
 
 .admin-content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 24px 32px;
-  display: flex;
-  flex-direction: column;
+  padding: 28px clamp(20px, 4vw, 56px) 48px;
+  background: var(--bg);
+}
+
+.admin-content > .admin-workbench {
+  max-width: 1120px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .admin-workbench {
@@ -153,7 +93,10 @@
   display: flex;
 }
 
-/* Metrics Cards */
+/* ---------------------------------------------------------------------------
+ * Metrics Cards
+ * ------------------------------------------------------------------------- */
+
 .metrics-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -163,31 +106,31 @@
 .metric-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   box-shadow: 0 1px 3px var(--shadow);
 }
 
 .metric-label {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 0.74rem;
+  font-weight: 600;
   color: var(--muted);
+  letter-spacing: 0.02em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .metric-value {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 1.65rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
   color: var(--fg);
 }
 
 .metric-sub {
-  font-size: 12px;
+  font-size: 0.78rem;
   color: var(--faint);
 }
 
@@ -199,7 +142,10 @@
   color: var(--danger);
 }
 
-/* Section Header */
+/* ---------------------------------------------------------------------------
+ * Section Headers
+ * ------------------------------------------------------------------------- */
+
 .section-header {
   display: flex;
   flex-direction: column;
@@ -208,17 +154,22 @@
 
 .section-header h2 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--fg);
 }
 
 .section-desc {
-  font-size: 13px;
+  font-size: 0.85rem;
   color: var(--muted);
+  line-height: 1.45;
 }
 
-/* Slots Grid */
+/* ---------------------------------------------------------------------------
+ * Slots Grid & Worker Cards
+ * ------------------------------------------------------------------------- */
+
 .slots-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -228,8 +179,8 @@
 .slot-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 16px;
+  border-radius: 12px;
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -238,11 +189,11 @@
 }
 
 .slot-card.active {
-  border-color: rgba(79, 70, 229, 0.4);
+  border-color: var(--accent);
 }
 
 .slot-card.standby {
-  border-color: rgba(34, 197, 94, 0.3);
+  border-color: var(--ok);
 }
 
 .slot-card.hibernated {
@@ -257,7 +208,7 @@
 
 .slot-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 0.88rem;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -268,27 +219,31 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 3px 8px;
-  border-radius: 12px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
 }
 
 .slot-state-badge.active {
-  background: rgba(79, 70, 229, 0.15);
+  background: var(--soft);
   color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .slot-state-badge.standby {
-  background: rgba(34, 197, 94, 0.15);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
   color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
 }
 
 .slot-state-badge.idle {
-  background: rgba(234, 179, 8, 0.15);
-  color: #eab308;
+  background: color-mix(in srgb, #eab308 12%, transparent);
+  color: #b45309;
+  border-color: color-mix(in srgb, #eab308 30%, transparent);
 }
 
 .slot-state-badge.hibernated {
-  background: rgba(156, 163, 175, 0.15);
+  background: var(--hover);
   color: var(--muted);
 }
 
@@ -296,7 +251,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  font-size: 12px;
+  font-size: 0.8rem;
 }
 
 .slot-item {
@@ -321,7 +276,10 @@
   margin-top: 4px;
 }
 
-/* Apps Table */
+/* ---------------------------------------------------------------------------
+ * Hosted Apps Table & Controls
+ * ------------------------------------------------------------------------- */
+
 .apps-toolbar {
   display: flex;
   align-items: center;
@@ -334,10 +292,11 @@
   border: 1px solid var(--border);
   color: var(--fg);
   padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: 8px;
+  font-size: 0.84rem;
   outline: none;
-  width: 320px;
+  width: 340px;
+  transition: border-color 120ms;
 }
 
 .admin-input:focus {
@@ -345,14 +304,14 @@
 }
 
 .apps-count {
-  font-size: 12px;
+  font-size: 0.8rem;
   color: var(--muted);
 }
 
 .apps-list-table-wrapper {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 1px 3px var(--shadow);
 }
@@ -360,17 +319,17 @@
 .admin-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 0.84rem;
   text-align: left;
 }
 
 .admin-table th {
   background: var(--side);
   padding: 10px 16px;
-  font-size: 11px;
+  font-size: 0.74rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   color: var(--muted);
   border-bottom: 1px solid var(--border);
 }
@@ -397,10 +356,11 @@
 
 .app-name {
   font-weight: 600;
+  color: var(--fg);
 }
 
 .app-id {
-  font-size: 11px;
+  font-size: 0.76rem;
   color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
 }
@@ -408,10 +368,13 @@
 .empty-cell {
   text-align: center;
   color: var(--muted);
-  padding: 32px 16px !important;
+  padding: 36px 16px !important;
 }
 
-/* Terminal & Logs */
+/* ---------------------------------------------------------------------------
+ * Terminal & Live Logging View
+ * ------------------------------------------------------------------------- */
+
 .logs-toolbar {
   display: flex;
   align-items: center;
@@ -429,20 +392,18 @@
   background: var(--panel);
   border: 1px solid var(--border);
   color: var(--fg);
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 13px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  font-size: 0.84rem;
   outline: none;
 }
 
-.logs-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.admin-select:focus {
+  border-color: var(--accent);
 }
 
 .admin-checkbox-label {
-  font-size: 12px;
+  font-size: 0.8rem;
   color: var(--muted);
   display: flex;
   align-items: center;
@@ -451,21 +412,21 @@
 }
 
 .terminal-container {
-  background: #0d0e11;
-  color: #e2e8f0;
-  border-radius: 10px;
-  padding: 16px;
+  background: light-dark(#f4f4f7, #0d0e11);
+  color: var(--fg);
+  border-radius: 12px;
+  padding: 16px 18px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  font-size: 0.8rem;
   line-height: 1.6;
   height: 480px;
   overflow-y: auto;
   border: 1px solid var(--border);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 1px 3px var(--shadow);
 }
 
 .terminal-welcome {
-  color: #64748b;
+  color: var(--muted);
   font-style: italic;
   margin-bottom: 8px;
 }
@@ -477,7 +438,7 @@
 }
 
 .log-timestamp {
-  color: #64748b;
+  color: var(--muted);
   flex-shrink: 0;
 }
 
@@ -488,37 +449,41 @@
 }
 
 .log-level.info {
-  color: #38bdf8;
+  color: var(--accent);
 }
 
 .log-level.warn {
-  color: #facc15;
+  color: #eab308;
 }
 
 .log-level.error {
-  color: #f87171;
+  color: var(--danger);
 }
 
 .log-slot {
-  color: #a78bfa;
+  color: var(--muted);
   flex-shrink: 0;
 }
 
 .log-message {
-  color: #f1f5f9;
+  color: var(--fg);
 }
 
-/* Security Cards */
+/* ---------------------------------------------------------------------------
+ * Security Inspector & FinOps Attribution
+ * ------------------------------------------------------------------------- */
+
 .security-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: 16px;
 }
 
-.security-card {
+.security-card,
+.finops-details-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -526,19 +491,21 @@
   box-shadow: 0 1px 3px var(--shadow);
 }
 
-.security-card h3 {
+.security-card h3,
+.finops-details-card h3 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 0.95rem;
+  font-weight: 650;
   border-bottom: 1px solid var(--border);
   padding-bottom: 8px;
+  color: var(--fg);
 }
 
 .security-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 13px;
+  font-size: 0.84rem;
 }
 
 .security-label {
@@ -546,7 +513,7 @@
 }
 
 .security-value {
-  font-weight: 500;
+  font-weight: 550;
 }
 
 .security-value.ok {
@@ -557,26 +524,8 @@
   color: var(--danger);
 }
 
-/* FinOps Container */
-.finops-details-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.finops-details-card h3 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
 .empty-state {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.85rem;
   margin: 0;
 }
-
