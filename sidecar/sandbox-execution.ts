@@ -3,7 +3,7 @@ import { copyFile, mkdir, mkdtemp, readdir, realpath, rm, stat } from "node:fs/p
 import path from "node:path";
 import { tmpdir } from "node:os";
 import type { CatalogEntry } from "@vak/mcp/client";
-import { validateSandboxWorkspace } from "./sandbox-status.ts";
+import { sandboxHelper, validateSandboxWorkspace } from "./sandbox-status.ts";
 import { SandboxRealms, realmTools } from "./sandbox-realms.ts";
 
 const MAX_WORKSPACE_BYTES = 512 * 1024 * 1024;
@@ -65,6 +65,16 @@ function runProcess(command: string, args: string[], cwd: string, timeoutMs: num
     });
     if (signal?.aborted) abort();
   });
+}
+
+/** Shared execution primitive for approved project runs and explicit Studio rehearsals. */
+export async function runSandboxCommand(binary: string, workspace: string, command: string, args: string[], cwd = workspace, timeoutMs = MAX_RUNTIME_MS, signal?: AbortSignal): Promise<{ code: number; stdout: string; stderr: string }> {
+  if (process.platform !== "darwin") throw new Error("OS-isolated command execution requires macOS. No command was run.");
+  if (!(await sandboxHelper(binary)).compatible) throw new Error("A supervised sandbox helper is required. Rebuild or reinstall it; no command was run.");
+  const checked = validateArgs({ command, args, workingDirectory: path.relative(workspace, cwd) || "." });
+  if (!(timeoutMs > 0 && timeoutMs <= MAX_RUNTIME_MS)) throw new Error("Invalid sandbox command deadline.");
+  signal?.throwIfAborted();
+  return runProcess(binary, ["run", "--cwd", cwd, "--workspace", workspace, "--timeout-seconds", String(Math.max(1, Math.ceil(timeoutMs / 1000))), "--max-output-bytes", String(MAX_OUTPUT_BYTES), "--", checked.command, ...checked.argv], cwd, timeoutMs, signal);
 }
 
 async function snapshot(source: string, target: string, started: number, signal?: AbortSignal): Promise<void> {
@@ -151,7 +161,7 @@ export function sandboxExecutionEntry(opts: { binaryPath: string; enabled: () =>
         await stat(work).then((s) => { if (!s.isDirectory()) throw new Error("workingDirectory is not a directory."); });
         const remaining = MAX_RUNTIME_MS - (Date.now() - started);
         if (remaining <= 0) throw new Error("Preparing the bounded workspace exceeded the 30 second run limit.");
-        const result = await runProcess(opts.binaryPath, ["run", "--cwd", work, "--workspace", staged, "--timeout-seconds", String(Math.max(1, Math.ceil(remaining / 1000))), "--max-output-bytes", String(MAX_OUTPUT_BYTES), "--", command, ...argv], work, remaining, signal);
+        const result = await runSandboxCommand(opts.binaryPath, staged, command, argv, work, remaining, signal);
         const parts = [result.stdout && `stdout:\n${result.stdout}`, result.stderr && `stderr:\n${result.stderr}`, `exit code: ${result.code}`].filter(Boolean);
         return { text: parts.join("\n\n") || `Command completed with exit code ${result.code} and no output.`, isError: result.code !== 0 };
       } catch (error) {

@@ -3,7 +3,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, realpath } from "node:fs/promises";
 import path from "node:path";
-import { validateSandboxWorkspace } from "./sandbox-status.ts";
+import { sandboxHelper, validateSandboxWorkspace } from "./sandbox-status.ts";
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export interface RealmSummary { realm_id: string; base_path: string | null; workspace: string; created_at: string; status: string; last_transaction: string | null; entries: number; bytes: number }
@@ -36,6 +36,7 @@ export class SandboxRealms {
   private async call(args: string[], signal?: AbortSignal): Promise<unknown> {
     if (!this.options.enabled() && !["list", "status", "snapshot", "read"].includes(args[0] ?? "")) throw new Error("Sandbox execution is disabled. No Realm operation was performed.");
     if (process.platform !== "darwin") throw new Error("Realm execution requires macOS Seatbelt.");
+    if (!(await sandboxHelper(this.options.binaryPath)).compatible) throw new Error("A supervised sandbox helper is required. Rebuild or reinstall it before accessing Realms.");
     const store = path.join(this.options.dataDir, "sandbox");
     await mkdir(store, { recursive: true, mode: 0o700 });
     return cli(this.options.binaryPath, ["--store", store, "realm", ...args], this.options.dataDir, signal);

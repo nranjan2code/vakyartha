@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Skills } from "../sidecar/skills.ts";
@@ -15,7 +16,7 @@ test("Skill Studio: savePackage and getPackage persist full multi-file packages"
     const text = `---
 name: revenue-health
 description: Evaluate recurring revenue metrics and churn risk from supplied accounting records.
-allowed-tools: sandbox_exec read_skill_file
+allowed-tools: run_command read_skill_file
 metadata:
   version: "1.0.0"
 ---
@@ -117,14 +118,14 @@ Direct body.
 test("Skill Studio: YOLO package generator synthesizes a valid Agent Skills package", async () => {
   const generated = await generateSkillPackage(
     { prompt: "Customer Churn and Retention Risk Analysis" },
-    ["sandbox_exec", "brave_search", "filesystem"]
+    ["run_command", "brave_search", "filesystem"]
   );
 
   assert.ok(generated.name.includes("customer-churn"));
   assert.ok(generated.description.length > 20);
   assert.ok(generated.description.length <= 1024);
   assert.ok(generated.body.includes("3-Tier liquid layout architecture"));
-  assert.ok(generated.allowedTools?.includes("sandbox_exec"));
+  assert.ok(generated.allowedTools?.includes("run_command"));
   assert.ok(generated.files.some(f => f.path.startsWith("references/")));
   assert.ok(generated.files.some(f => f.path.startsWith("schemas/")));
   assert.ok(generated.files.some(f => f.path.startsWith("scripts/")));
@@ -166,29 +167,44 @@ test("Skill Studio: smart element suggestions advise triggers, charts, and bindi
   assert.ok(gist.suggestion.length > 20);
 });
 
-test("Skill Studio: sandbox script runner executes Python and captures output", async () => {
+test("Skill Studio: rehearsal fails closed without authorized OS containment", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "vak-studio-sandbox-"));
   try {
     const skills = new Skills(dir);
-    const text = `---
-name: test-runner-skill
-description: Run test scripts
----
-Instructions
-`;
-    const files = [
-      { path: "scripts/hello.py", text: "import sys\nprint('hello from sandbox python')\nsys.stderr.write('logged note\\n')\n" }
-    ];
-    skills.savePackage("test-runner-skill", { text, files });
+    const text = "---\nname: test-runner-skill\ndescription: Test scripts\n---\nInstructions";
+    const script = "echo should-not-run";
+    skills.savePackage("test-runner-skill", { text, files: [{ path: "scripts/hello.sh", text: script }] });
+    const refused = await runSkillScript(skills, "test-runner-skill", "scripts/hello.sh");
+    assert.notEqual(refused.exitCode, 0); assert.match(refused.error!, /Enable sandbox/);
+    const options = { binaryPath: path.join(dir, "missing-helper"), enabled: () => true, authorized: () => true, scriptSha256: createHash("sha256").update(script).digest("hex") };
+    const missing = await runSkillScript(skills, "test-runner-skill", "scripts/hello.sh", [], options);
+    assert.notEqual(missing.exitCode, 0); assert.match(missing.error!, /helper|macOS/);
+    const changed = await runSkillScript(skills, "test-runner-skill", "scripts/hello.sh", [], { ...options, scriptSha256: "0".repeat(64) });
+    assert.match(changed.error!, /changed/);
+    const denied = await runSkillScript(skills, "test-runner-skill", "scripts/hello.sh", [], { ...options, authorized: () => false });
+    assert.match(denied.error!, /Enable sandbox/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 
-    const res = await runSkillScript(skills, "test-runner-skill", "scripts/hello.py");
-    assert.equal(res.exitCode, 0);
-    assert.ok(res.stdout.includes("hello from sandbox python"));
-    assert.ok(res.stderr.includes("logged note"));
-    assert.ok(res.durationMs >= 0);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+test("Skill Studio: saved drafts run only through the real sandbox and cannot read outside", { skip: process.platform !== "darwin" }, async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "vak-studio-sandbox-real-"));
+  try {
+    const skills = new Skills(dir);
+    const binaryPath = path.resolve("../sandbox/target/debug/vaksb");
+    assert.ok(existsSync(binaryPath), "Build the sandbox helper before this integration test");
+    const text = "---\nname: test-runner-skill\ndescription: Test scripts\n---\nInstructions";
+    const outside = path.join(dir, "outside"); writeFileSync(outside, "outside-canary");
+    const script = `printf 'draft-receipt\\n'\nprintf 'stderr-note\\n' >&2\nif cat '${outside}'; then exit 9; fi\ncat references/value.txt\n`;
+    skills.savePackage("test-runner-skill", { text, files: [{ path: "scripts/hello.sh", text: "echo published" }] });
+    skills.saveDraft("test-runner-skill", { text, files: [{ path: "scripts/hello.sh", text: script }, { path: "references/value.txt", text: "supporting-file" }] });
+    const result = await runSkillScript(skills, "test-runner-skill", "scripts/hello.sh", [], {
+      binaryPath, enabled: () => true, authorized: () => true, scriptSha256: createHash("sha256").update(script).digest("hex"),
+    });
+    assert.equal(result.exitCode, 0, result.stderr);
+    assert.equal(result.source, "saved-draft"); assert.match(result.stdout, /draft-receipt/); assert.match(result.stdout, /supporting-file/);
+    assert.doesNotMatch(result.stdout, /outside-canary|published/); assert.match(result.stderr, /stderr-note/);
+    assert.equal(skills.fileText("test-runner-skill", "scripts/hello.sh").text, "echo published");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("Skill Studio: evaluation harness checks prompt matching", async () => {
@@ -218,4 +234,12 @@ Instructions
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("Skill Studio: tool hints use offered names without inventing sandbox aliases", async () => {
+  const generated = await generateSkillPackage({ prompt: "Run shell script" }, ["run_command"]);
+  assert.equal(generated.allowedTools, "read_skill_file run_command");
+  const result = suggestSkillElement({ type: "tools", body: "Run sandbox script" }, [], ["run_command", "unrelated_tool"]);
+  assert.equal(result.suggestion, "read_skill_file run_command");
+  assert.doesNotMatch(result.suggestion, /sandbox_exec|unrelated_tool/);
 });

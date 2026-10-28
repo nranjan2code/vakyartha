@@ -99,12 +99,16 @@ export interface SkillEvalResult {
 }
 
 export interface SkillSandboxRunRequest {
+  scriptSha256: string;
   name: string;
   scriptPath: string;
   args?: string[];
 }
 
 export interface SkillSandboxRunResponse {
+  scriptPath?: string;
+  scriptSha256?: string;
+  source?: "saved-draft" | "published";
   exitCode: number;
   stdout: string;
   stderr: string;

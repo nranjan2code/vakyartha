@@ -399,12 +399,20 @@ Analyze domain records from supplied inputs and project structured findings acro
     sandboxLog = null;
     render();
     try {
+      if (isDirty) {
+        await saveDraftAction();
+        if (isDirty) throw new Error("Save the draft before running its script.");
+      }
+      const script = pkg.files.find(file => file.path === scriptPath);
+      if (!script) throw new Error("Choose a script from this package.");
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(script.text));
+      const scriptSha256 = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
       sandboxLog = await api<SkillSandboxRunResponse>(`/api/skills/${encodeURIComponent(pkg.skill.name)}/sandbox-test`, {
         method: "POST",
-        body: JSON.stringify({ scriptPath })
+        body: JSON.stringify({ scriptPath, scriptSha256 })
       });
       if (sandboxLog.exitCode === 0) {
-        showNotice(`Sandbox test run succeeded (0 errors in ${sandboxLog.durationMs}ms).`);
+        showNotice(`Script exited successfully in ${sandboxLog.durationMs}ms; inspect its output before accepting the result.`);
       } else {
         showError(new Error(`Sandbox script exited with code ${sandboxLog.exitCode}: ${sandboxLog.stderr || sandboxLog.stdout}`));
       }
@@ -964,7 +972,7 @@ Analyze domain records from supplied inputs and project structured findings acro
         type: "text",
         className: "wide studio-input",
         value: pkg.skill.allowedTools ?? "",
-        placeholder: "read_skill_file sandbox_exec search_web",
+        placeholder: "read_skill_file run_command",
         "aria-label": "Allowed Tools"
       });
       toolsInput.oninput = () => {
@@ -1007,7 +1015,7 @@ Analyze domain records from supplied inputs and project structured findings acro
         group("Identity & Semantic Trigger",
           row("Skill Name", "Alphanumeric lowercase with hyphens (e.g. market-dashboard).", nameInput),
           row("Trigger Description", "Crucial for use_skill semantic discovery. Stated in third person.", el("div", {}, descInput, descCount)),
-          row("Declared Tools (allowed-tools)", "Guards tool coordination; does not grant ambient authority.", el("div", {}, toolsInput, toolChips))
+          row("Declared Tools (allowed-tools)", "Selection hints only; do not enforce or grant tool access.", el("div", {}, toolsInput, toolChips))
         ),
         group("Instructions & Visual Layout Contract",
           el("p", { className: "row-hint", textContent: "Adheres to 3-Tier liquid layout, single canonical projection, and multi-surface degradation." }),
@@ -1072,7 +1080,7 @@ Analyze domain records from supplied inputs and project structured findings acro
 
     // Sandbox Test Execution Card
     const sandboxCard = el("div", { className: "studio-sandbox-card" });
-    const scriptFiles = pkg.files.filter(f => /\.(?:py|sh|js)$/i.test(f.path));
+    const scriptFiles = pkg.files.filter(f => /\.(?:py|sh|js|mjs|cjs)$/i.test(f.path));
     if (scriptFiles.length) {
       const scriptSel = el("select", { className: "tiny" });
       for (const s of scriptFiles) scriptSel.append(el("option", { value: s.path, textContent: s.path }));
@@ -1081,12 +1089,13 @@ Analyze domain records from supplied inputs and project structured findings acro
         type: "button",
         className: "ghost tiny",
         textContent: isRunningSandbox ? "Running…" : "▶ Run in Sandbox",
+        disabled: isRunningSandbox || isSavingDraft,
         onclick: () => void runSandboxTest(scriptSel.value)
       });
 
       const sandboxOutput = el("pre", {
         className: "studio-sandbox-output",
-        textContent: sandboxLog ? (sandboxLog.stdout || sandboxLog.stderr || "Process exited with code 0") : "Click 'Run in Sandbox' to test script execution in disposable realm."
+        textContent: sandboxLog ? [`exit code: ${sandboxLog.exitCode}`, sandboxLog.source && `source: ${sandboxLog.source}`, sandboxLog.scriptSha256 && `script SHA-256: ${sandboxLog.scriptSha256}`, sandboxLog.stdout && `stdout:\n${sandboxLog.stdout}`, sandboxLog.stderr && `stderr:\n${sandboxLog.stderr}`].filter(Boolean).join("\n\n") : "Run the saved script in a disposable isolated package. Requires enabled sandbox access; no project files are included."
       });
 
       sandboxCard.append(

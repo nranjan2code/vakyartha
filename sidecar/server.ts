@@ -363,12 +363,12 @@ ${skills.index()}`;
       else if (m[1] === "add" && req.method === "POST") { const b = await readJson(req); json(res, 200, { name: skills.add(String(b.fingerprint ?? ""), b.acknowledged === true) }); }
       else if (m[1] === "generate" && req.method === "POST") {
         const b = await readJson(req) as unknown as SkillGenerateRequest;
-        const toolsList = integrations ? integrations.view().filter(i => i.enabled).map(i => i.entry.id) : [];
+        const toolsList = integrations ? integrations.view().filter(i => i.enabled && i.status === "ready").flatMap(i => i.tools.filter(t => t.policy !== "off").map(t => t.name)) : [];
         json(res, 200, await generateSkillPackage(b, toolsList));
       }
       else if (m[1] === "suggest" && req.method === "POST") {
         const b = await readJson(req) as unknown as SkillSuggestRequest;
-        const toolsList = integrations ? integrations.view().filter(i => i.enabled).map(i => i.entry.id) : [];
+        const toolsList = integrations ? integrations.view().filter(i => i.enabled && i.status === "ready").flatMap(i => i.tools.filter(t => t.policy !== "off").map(t => t.name)) : [];
         json(res, 200, suggestSkillElement(b, skills.view(), toolsList));
       }
       else if (m[1] === "eval" && req.method === "POST") {
@@ -397,7 +397,14 @@ ${skills.index()}`;
       }
       else if (m[2] && m[3] === "sandbox-test" && req.method === "POST") {
         const b = await readJson(req);
-        json(res, 200, await runSkillScript(skills, m[2], String(b.scriptPath ?? ""), Array.isArray(b.args) ? b.args : []));
+        const result = await runSkillScript(skills, m[2], String(b.scriptPath ?? ""), Array.isArray(b.args) ? b.args : [], {
+          binaryPath: sandboxBin,
+          enabled: () => process.env.VAK_SANDBOX_ENABLED !== "false",
+          authorized: () => integrations!.view().some(i => i.entry.id === "sandbox-execution" && i.enabled && i.status === "ready" && i.tools.some(t => t.name === "run_command" && t.policy !== "off")),
+          scriptSha256: String(b.scriptSha256 ?? ""),
+        });
+        log(`Skill rehearsal ${m[2]} ${result.scriptPath ?? "refused"}: exit ${result.exitCode}, sha256 ${result.scriptSha256 ?? "none"}`);
+        json(res, 200, result);
       }
       else if (m[2] && m[3] === "file" && req.method === "GET") json(res, 200, skills.fileText(m[2], url.searchParams.get("path") ?? ""));
       else if (m[2] && m[3] === "proposed-file" && req.method === "GET") json(res, 200, { text: skills.proposedBuiltinFile(m[2], url.searchParams.get("fingerprint") ?? "", url.searchParams.get("path") ?? "") });

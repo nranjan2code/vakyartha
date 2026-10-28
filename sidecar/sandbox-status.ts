@@ -26,7 +26,8 @@ export async function sandboxHelper(binary: string): Promise<{ available: boolea
   try {
     const version = (await probe(["--version"])).trim().slice(0, 120);
     const help = await probe(["run", "--help"]);
-    const compatible = ["--workspace", "--cwd", "--timeout-seconds", "--max-output-bytes"].every(flag => help.includes(flag));
+    const capabilities = JSON.parse(await probe(["capabilities"])) as { contract?: number; supervised_processes?: boolean; detachment_denied?: boolean };
+    const compatible = capabilities.contract === 2 && capabilities.supervised_processes === true && capabilities.detachment_denied === true && ["--workspace", "--cwd", "--timeout-seconds", "--max-output-bytes"].every(flag => help.includes(flag));
     const realmHelp = await probe(["realm", "--help"]);
     const realms = ["create", "exec", "snapshot", "read", "promote", "rollback", "recover", "destroy"].every(command => realmHelp.includes(command));
     return { available: true, compatible, realms, path: binary, version, ...(!compatible ? { error: "This helper is outdated. Rebuild or reinstall it before running commands." } : {}) };

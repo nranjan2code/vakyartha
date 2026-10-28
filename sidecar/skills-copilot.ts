@@ -33,12 +33,7 @@ export async function generateSkillPackage(req: SkillGenerateRequest, activeTool
 
   // Determine allowed tools based on active tools
   const tools: string[] = ["read_skill_file"];
-  if (activeTools.some(t => t.includes("sandbox") || t.includes("command") || t.includes("shell"))) {
-    tools.push("sandbox_exec");
-  }
-  if (activeTools.some(t => t.includes("brave") || t.includes("tavily") || t.includes("search"))) {
-    tools.push("search_web");
-  }
+  tools.push(...activeTools.filter(tool => /(?:^|__)(?:run_command|run_in_realm)$/.test(tool) || /search/i.test(tool)));
   const allowedTools = tools.join(" ");
 
   // Instructions adhering to Vakyartha's liquid layout & multi-surface rules
@@ -246,13 +241,11 @@ export function suggestSkillElement(req: SkillSuggestRequest, activeSkills: Skil
   }
 
   if (type === "tools") {
-    const detected: string[] = ["read_skill_file"];
-    if (/sandbox|python|script|bash|terminal|command|run/i.test(body)) detected.push("sandbox_exec");
-    if (/web|search|internet|browse|news|latest/i.test(body)) detected.push("search_web");
-    if (/file|folder|directory|disk|read|write/i.test(body)) detected.push("filesystem");
-    if (/github|repo|issue|pr|commit/i.test(body)) detected.push("github");
-
-    const matched = detected.filter(t => catalogTools.length === 0 || catalogTools.some(c => c.includes(t) || t.includes(c)));
+    const matched = ["read_skill_file", ...catalogTools.filter(tool =>
+      (/sandbox|python|script|bash|terminal|command|run/i.test(body) && /(?:^|__)(?:run_command|run_in_realm|create_realm)$/.test(tool)) ||
+      (/web|search|internet|browse|news|latest/i.test(body) && /search/i.test(tool)) ||
+      (/file|folder|directory|disk|read|write/i.test(body) && /file|directory/i.test(tool))
+    )];
 
     return {
       suggestion: matched.join(" "),
