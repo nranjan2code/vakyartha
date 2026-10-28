@@ -5,8 +5,8 @@ license: MIT
 compatibility: Works with text chat, markdown reports, and interactive canvas surfaces.
 metadata:
   author: nranjan2code
-  version: "1.2"
-allowed-tools: use_skill
+  version: "1.3"
+allowed-tools: vak_render vak_update vak_submit use_skill
 ---
 
 # Periodic Status & Performance Reporting
@@ -48,8 +48,26 @@ Structure reports logically to facilitate executive scanning:
 5. **Priorities for Next Period**:
    - Outline the 3–5 high-impact objectives planned for the upcoming cycle with committed target dates.
 
+## Liquid Canvas Architecture for Status & Performance Reports
+
+Never stretch single trend charts, short status notes, or cards across 100% of a wide canvas. Structure the interactive reporting canvas into three adaptive tiers:
+
+1. **Tier 1: Executive Briefing & 4-Column KPI Strip**:
+   - **Spoken lead**: 1–2 sentences clearly summarizing period performance, key milestone attainment, and primary escalation so voice projection is immediate.
+   - **KPI grid**: 4-column metric strip (`grid` with `props: { columns: 4, minItemWidth: "xs" }`):
+     - Actual vs Target measures with signed deltas and semantic tones (`tone: "positive"` for beating target, `"caution"` for near-threshold, `"critical"` for missed SLA).
+2. **Tier 2: Paired 2-Column Analytics Grid**:
+   - Paired visual grid (`grid` with `props: { columns: 2, minItemWidth: "sm" }`):
+     - **Left**: Milestone / Delivery Progress (`bar` chart, `props: { maxWidth: "md" }`).
+     - **Right**: Burn / Velocity Trend (`line` chart, `props: { maxWidth: "md" }`).
+   - If only one chart exists, clamp it with `props: { maxWidth: "md" }` or pair with an Accomplishments / Blockers summary card (`card` with `props: { maxWidth: "md" }`). Never span a chart across 100% width on wide desktop monitors.
+3. **Tier 3: Granular Deliverables Table & Forward Commitments**:
+   - **Deliverables Table**: Dense data table (`section` with `table`, `maxWidth: "full"`):
+     - Granular rows mapping canonical records: Deliverable, Owner, Milestone, Status, Target Date.
+   - **Next Period Priorities Card**: Bounded card or checklist (`card` with `maxWidth: "md"`).
+
 ## Presentation & Delivery Boundaries
 
-- **Tone**: Keep reporting objective, candid and balanced. Acknowledge setbacks with the same clarity as successes.
+- **Tone & Style**: Keep reporting objective, candid and balanced. Use semantic tones exclusively; never inject raw CSS or hex codes.
 - **Dual projection**: When creating a canvas report, lead with a concise spoken-friendly headline so voice synthesis provides an effective audio briefing.
 - **Delivery limits**: Generating a periodic report does not configure an automatic recurring cron trigger. Scheduled recurring tasks or email dispatches require matching configured tools and user approvals.

@@ -1,5 +1,38 @@
 # Vakyartha handover — 2026-10-28
 
+## Canvas liquid layout audit & multi-surface projection — 2026-10-28
+
+A comprehensive audit was performed on `interactive-ui`, `surface-design`, and all 18 canvas-authoring built-in skills to eliminate LLM confusion, align with Vakyartha's runtime, enforce minimalist design and theming, implement responsive **Liquid & Adaptive Layout** architecture, and audit multi-surface projection across conversational channels:
+- **Interactive-UI & Surface-Design Fixes**:
+  - Eliminated inverted schemas (fixed `"kind": "table"` to `"type": "table"`, `"props: { "chart": "bar" }"` to `"props: { "kind": "bar" }"`).
+  - Clarified argument naming: top-level UI handle is `surface: "my-surface"`, while tree nodes use distinct node IDs (`id: "root"`).
+  - Explicit input taxonomy: `input` (`text`, `number`, `email`, `password`), `textarea`, `select` (`options`), `checkbox` (`bind: "/path"`), and `date`.
+  - Separated client-side interactive actions (`action: "filter"`, handled by listeners/tools) from terminal task submissions (`vak_submit`).
+- **Liquid & Adaptive Layout Architecture**:
+  - **100% chart/card stretch ban**: Single charts, forms, and cards must never span 100% width on wide desktop monitors (e.g. 1400px+). Doing so distorts bar aspect ratios and flattens line graphs.
+  - **Clamped Measures**: Charts and forms default or clamp to `maxWidth: "md"` (720px) or `maxWidth: "lg"` (960px). Full width (`maxWidth: "full"`) is strictly reserved for dense data tables, multi-column grids, and proportional splits.
+  - **3-Tier Hierarchy**: Canvases follow a 3-tier structure:
+    1. *Tier 1*: Executive headline & 4-column metric strip (`columns: 4, minItemWidth: "xs"`).
+    2. *Tier 2*: Paired 2-column analytics grid (`columns: 2, minItemWidth: "sm"`) or split view (`split` with `ratio: [2, 1]`).
+    3. *Tier 3*: Granular data table (`table`, `maxWidth: "full"`) and bounded action forms (`form`, `maxWidth: "md"`).
+  - **Color & Typography Guide**: Inter typography scale; strict semantic tones (`positive`, `caution`, `critical`, `neutral`); zero inline CSS or hex codes; theme series colors for charts.
+- **Built-in Skills Synchronized**:
+  - All 18 canvas-authoring skills (`surface-design`, `interactive-ui`, `dashboard`, `operations-dashboard`, `sales-dashboard`, `finance-dashboard`, `market-dashboard`, `budget-helper`, `task-tracker`, `meeting-actions`, `plan-my-day`, `trip-planner`, `meal-plan`, `periodic-report`, `data-review`, `compare-options`, `research-brief`, `daily-news`) updated to v1.3 with liquid layout rules and synchronized byte-for-byte between `sidecar/builtin-skills/` and `src-tauri/resources/builtin-skills/`.
+- **Multi-Surface Architecture & Platform Audit (`docs/SURFACES.md`)**:
+  - Audited and documented rendering across all five projection targets:
+    - **Desktop / Web (`@vak/web`)**: Container queries, 8 SVG chart types, interactive HTML tables, reactive form bindings.
+    - **Telegram (`@vak/telegram`)**: Bot API 10.3 alignment, linear HTML markup, charts degrade to `<table compact>`, tables render up to 20 columns, forms degrade to sequential Q&A (`FormFlow`), 64-byte inline callback buttons, safe HTTPS media pre-checks.
+    - **Slack (`@vak/slack`)**: Block Kit 2026 alignment, headers, section fields for stats (up to 10 fields), native `table` blocks, charts degrade to tables, forms open native modals (`slackModal`), limits enforced (50 blocks max, 3k chars/section, 10k table chars).
+    - **Discord (`@vak/discord`)**: Components V2 (`IS_COMPONENTS_V2`), text displays up to 4k chars, tables and charts degrade to aligned monospace code blocks, forms open paged modals (≤5 fields/page), limits enforced (40 components max, 5 buttons/row).
+    - **Voice / Spoken Audio**: Dual projection lowering, opening sentence gist, top 3-6 table rows, endpoint narration, skipping unprojectable controls.
+- **Verification**:
+  - 185 app tests pass (`npm test`).
+  - 398 framework tests pass (`npm run test:framework`).
+  - TypeScript typecheck and Vite build pass cleanly.
+  - Real WebKit smokes pass: `surface-design-check.ts` (1440, 1100, 620px), `canvas-check.ts` (1100, 620px), `skills-check.ts` (1100, 620, 375px).
+  - Cargo tests pass (3 passed, 0 failed). Zero secret leaks.
+
+
 ## Agent Skills specification and runtime resilience — 2026-10-28
 
 The skill pipeline and all 28 built-in skills across the app now conform to the full Agent Skills specification (`agentskills.io/specification`) with Vakyartha extensions:

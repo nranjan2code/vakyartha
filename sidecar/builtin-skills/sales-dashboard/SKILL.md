@@ -5,7 +5,7 @@ license: MIT
 compatibility: Works with CRM exports, sales pipeline spreadsheets, and canvas projection.
 metadata:
   author: nranjan2code
-  version: "1.2"
+  version: "1.3"
 allowed-tools: vak_render vak_update vak_submit use_skill
 ---
 
@@ -35,22 +35,33 @@ Framework for analyzing sales pipeline health, revenue realization, win rates, q
    - Win rate must be calculated from an explicit cohort population (e.g. `Closed Won / (Closed Won + Closed Lost)`).
    - Never sum percentages across sales reps or product categories.
 
-## Dashboard Architecture
+## Adaptive Sales Canvas Layout
 
-Structure the sales canvas into three coordinated tiers:
+Never let single charts stretch across 100% width on wide desktop screens. Structure the sales canvas into three adaptive tiers:
+
 1. **Executive KPI Strip**:
-   - Total Booked Revenue (vs Quota / Target).
-   - Quota Attainment Percentage.
-   - Total Active Pipeline Value.
-   - Win Rate (%) and Average Deal Size.
-2. **Visual Funnel & Trend Analysis**:
-   - Stage breakdown: `bar` or `stacked` chart showing deal value or count by pipeline stage.
-   - Time series: `line` or `area` chart showing revenue bookings over the quarter/year.
+   - 4-metric fluid `grid` (`props: { columns: 4, minItemWidth: "sm" }`):
+     - Total Booked Revenue (with delta vs Quota / Target).
+     - Quota Attainment (%) with `trend: "up" | "down"`.
+     - Total Active Pipeline Value.
+     - Win Rate (%) and Average Deal Size.
+2. **Paired Visual Funnel & Trend Analysis (No 100% Chart Stretch)**:
+   - Place two complementary charts side-by-side using a 2-column `grid` (`props: { columns: 2, minItemWidth: "sm", gap: "md" }`):
+     - Pipeline Stage Distribution: `bar` or `stacked` chart showing deal value or count by pipeline stage (`maxWidth: "lg"`).
+     - Revenue Booking Velocity: `line` or `area` chart showing contracted revenue pace over weeks or quarters (`maxWidth: "lg"`).
+   - If only one chart is needed, clamp it with `maxWidth: "md"` (720px) or `"lg"` inside a clean `section`.
 3. **Deal-level Opportunity Table**:
-   - Granular table displaying Opportunity Name, Account, Owner, Stage, Amount, and Expected Close Date.
+   - Granular detail table below the analytics in a clean `section` (`props: { title: "Open Pipeline & Key Opportunities" }`).
+   - Table uses `maxWidth: "full"` with searchable and sortable columns: `Opportunity`, `Account`, `Owner`, `Stage`, `Amount ($)`, `Expected Close Date`.
+
+## Style & Theming Guide
+
+- **Semantic Tones**: Use `tone: "success"` for exceeded quotas or closed deals; `tone: "warning"` for pipeline coverage risks; `tone: "danger"` for stalled deals past close date. Never use arbitrary hex colors or inline CSS styles.
+- **Number Discipline**: Keep raw dollar amounts and rates as pure numbers in `data`. Put currency units (`$k`, `$M`) in labels and column headers.
+- **Dual Projection**: Lead with a concise 1–2 sentence finding stating booked revenue against quota and the quarter's key driver. Spoken gist mode reads this first sentence in isolation.
 
 ## Filtering & Action Boundaries
 
-- **Interactive filters**: Provide bound controls (`select`, `date`) for filtering by Sales Rep, Region or Stage with a submit action (`vak_submit`).
+- **Interactive filters**: Provide bound controls (`select`, `date`) in a compact form container (`maxWidth: "md"`) with an explicit submit action (`submit: "filter_sales"`).
 - **Coherent updates**: Submitting a filter must recalculate KPI totals, update the stage chart, refresh the opportunity table and revise the natural-language summary together.
 - **CRM integration boundaries**: Generating or editing a sales dashboard does not create, update or sync records in external CRMs (Salesforce, HubSpot) unless an authorized integration tool returns a verified receipt.

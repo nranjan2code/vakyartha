@@ -5,7 +5,7 @@ license: MIT
 compatibility: Works with text chat, weekly meal matrices, shopping lists, and interactive recipe canvases.
 metadata:
   author: nranjan2code
-  version: "1.2"
+  version: "1.3"
 allowed-tools: vak_render vak_update vak_submit use_skill
 ---
 
@@ -36,18 +36,30 @@ Systematic culinary framework for designing balanced weekly meal plans, pantry-d
 4. **Prep rhythm**:
    - Schedule faster, low-effort meals on busy weekdays and reserve more involved culinary projects for weekends.
 
-## Canvas & Shopping Architecture
+## Liquid Canvas Architecture & Shopping Surfaces
 
-When presenting meal plans on an interactive canvas:
-1. **Weekly Menu Table**:
-   - Render a structured table with `interactive-ui` listing `Day`, `Breakfast`, `Lunch`, `Dinner`, and `Estimated Active Prep Time`.
-2. **Recipe Highlight Cards**:
-   - Provide expandable cards detailing ingredients, prep steps, cooking time, and dietary tags for standout dinners.
-3. **Categorized Grocery Shopping List**:
-   - Organize grocery items into standard supermarket aisles: `Fresh Produce`, `Proteins / Meat / Seafood`, `Dairy & Refrigerated`, `Pantry Staples & Grains`, and `Spices & Condiments`.
-   - Include bound checkboxes (`checkbox`, `bind: "/grocery/0/bought"`) so the user can check off items while shopping.
+Never stretch single recipe cards, short shopping lists, or simple meal cards across 100% of a wide canvas. Structure the meal planning canvas into three adaptive tiers:
+
+1. **Tier 1: Weekly Overview Strip & Spoken Lead**:
+   - Lead with a clear 1–2 sentence spoken summary naming the schedule cadence, dietary adherence, and total active prep time so voice projection is immediate.
+   - 4-column metric strip (`grid` with `props: { columns: 4, minItemWidth: "xs" }`):
+     - `Planned Meals`: e.g. "21 meals (7 days)"
+     - `Est. Active Prep`: e.g. "5.5 hrs total"
+     - `Grocery Items`: e.g. "28 items needed"
+     - `Dietary Target`: e.g. "100% Gluten-Free" with semantic `tone: "positive"`
+
+2. **Tier 2: Paired Weekly Matrix & Recipe Detail**:
+   - Dual split layout (`split` with `props: { ratio: [2, 1] }`) or paired 2-column grid (`grid` with `props: { columns: 2, minItemWidth: "sm" }`):
+     - **Left / Primary**: 7-Day Menu Matrix (`section` with `table`, `maxWidth: "full"`, columns for `Day`, `Breakfast`, `Lunch`, `Dinner`, and `Prep Time`).
+     - **Right / Detail**: Clamped Recipe Highlight Card (`card` with `maxWidth: "md"`, detailing ingredients, prep steps, cooking time, dietary tags, and difficulty).
+
+3. **Tier 3: Categorized Grocery Checklist & Prep Actions**:
+   - Sectioned shopping list organized by standard supermarket aisles (`Fresh Produce`, `Proteins`, `Dairy / Refrigerated`, `Pantry Staples`, `Spices`).
+   - Interactive bound checkboxes (`checkbox`, `bind: "/groceries/0/checked"`) for live shopping completion.
+   - Clamped Quick-Add / Substitution Form (`form` with `maxWidth: "md"`).
 
 ## Health & Safety Guardrails
 
 - **Culinary guidance**: Clarify that meal planning provides culinary inspiration, not clinical dietetics or medical nutrition therapy.
 - **Allergen diligence**: Rigorously honor declared food allergies and flag potential cross-contamination risks or hidden allergen sources (e.g. gluten in standard soy sauce).
+- **Tone & Style**: Never use raw CSS or hex values; use semantic tones (`positive` for compliant, `caution` for allergens or perishables).

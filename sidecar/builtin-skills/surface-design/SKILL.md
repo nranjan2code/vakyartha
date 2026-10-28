@@ -5,49 +5,77 @@ license: MIT
 compatibility: Core required Vakyartha capability; active across desktop and web runtimes.
 metadata:
   author: nranjan2code
-  version: "1.2"
+  version: "1.3"
 allowed-tools: vak_render vak_update vak_submit
 ---
 
 # Visual & Spoken Surface Design
 
-Design guidelines and layout architecture for crafting responsive, accessible visual canvases and harmonized spoken audio projections in Vakyartha.
+Design guidelines and layout architecture for crafting responsive, minimalistic, accessible visual canvases and harmonized spoken audio projections in Vakyartha.
 
 ## Overview & Core Principles
 
-- **Always active**: This skill is required and always on. Its principles govern every visual canvas, whether generated in desktop windows, browsers or channel projections.
+- **Always active**: This skill is required and always on. Its principles govern every visual canvas across desktop windows, browsers and channel projections.
 - **Skill pairing**: Pair with enabled `interactive-ui` whenever surfaces require data bindings (`{/records}`), mapped rows/series, form inputs or action handling.
-- **Semantic component model**: Author interfaces strictly using offered semantic components and properties (`grid`, `stack`, `split`, `card`, `stat`, `table`, `chart`, `form`). Raw arbitrary HTML, inline CSS style strings, executable JavaScript and template expression scripts are not supported and are rejected by the renderer.
+- **Minimalist aesthetic**: Emphasize clarity, typography and breathing room. Avoid clutter, heavy nested boxes, and border soup. Let whitespace, clear typography and clean layout containers structure the content.
+- **Semantic component model**: Author interfaces strictly using offered semantic components (`grid`, `stack`, `split`, `section`, `card`, `stat`, `table`, `chart`, `form`, `text`, `alert`, `button`). Raw arbitrary HTML, inline CSS style strings, executable JavaScript and template expression scripts are not supported and are rejected by the renderer.
 
-## Layout Architecture & Sizing
+## Liquid & Adaptive Layout Architecture
 
-1. **Hierarchy**:
-   - Establish a clear title and brief context at the top.
-   - Lead with a compact metric strip (`stat`) if key indicators exist.
-   - Follow with the primary analysis (chart or primary table).
-   - Conclude with secondary detail, granular tables or action forms.
-2. **Layout containers**:
-   - **`grid`**: Use with explicit `columns` for peer panels and balanced multi-card sections. Use `span` to control panel width.
-   - **`split`**: Use with `ratio` (e.g. `[2, 1]`) for primary/detail layouts only when offered.
-   - **`stack`**: Use for linear reading order, forms, and compact vertical tool panels.
-3. **Content measure (`maxWidth`)**:
-   - `sm`: Compact summaries, confirmation receipts, single-card alerts.
-   - `md`: Forms, configuration dialogs, medium charts.
-   - `lg`: Detailed analytical views, mixed layouts, multi-metric dashboards.
-   - `full`: Dense data tables, wide comparative matrices, multi-column operational boards.
-4. **Spacing & Alignment**:
-   - Size panels according to content length rather than forcing all panels to stretch.
-   - Allow natural empty space rather than artificially padding short cards.
-   - Use top alignment for adjacent columns with unequal content heights.
+Surfaces adapt dynamically to container widths (from 375px mobile to 1400px+ desktop). Never author a static, single-column vertical stack where every element stretches full-width:
 
-## Component Selection & Density
+1. **Fluid Grid Rhythm (`grid`)**:
+   - **Metric Strips**: Place 2 to 4 key indicators at the top using `grid` with `columns: 2`, `3`, or `4` and `minItemWidth: "sm"`. On wide desktop screens this creates a balanced horizontal row; on narrow viewports it automatically wraps without horizontal clipping.
+   - **Paired Visualizations**: Place complementary analytical components side-by-side using a 2-column `grid` (`props: { columns: 2, minItemWidth: "sm", gap: "md" }`):
+     - Trend chart (`line`) + Categorical breakdown (`bar` or `pie`).
+     - Primary visual chart + Key drivers/summary card.
+     - Schedule/Timeline + Focus task card.
+   - **Column Spans**: Use `span` on child nodes (`span: 2` or `span: "full"`) to balance asymmetric tracks.
+2. **Proportional Split Layouts (`split`)**:
+   - Use `split` with `props: { ratio: [2, 1], gap: "md" }` for primary/detail layouts:
+     - Left (2/3 width): Primary analytical chart or primary data view.
+     - Right (1/3 width): Contextual summary card, filter form, or action buttons.
+   - Automatically collapses into a clean vertical stack on narrow containers (<700px).
+3. **Linear Flow & Toolbars (`stack`)**:
+   - Use `stack` for vertical reading order (`direction: "vertical"`) or horizontal toolbars/actions (`direction: "horizontal"`, `align: "start" | "center" | "end"`, `gap: "sm" | "md" | "lg"`).
+4. **Clamped Measures (`maxWidth`) — Preventing 100% Chart Stretch**:
+   - **Rule**: Single charts, forms, and cards must **never** span 100% width across a wide canvas. A chart stretching 1400px looks distorted with extreme aspect ratios.
+   - **`sm` (320px)**: Compact summary cards, confirmation receipts, single-card alerts.
+   - **`md` (720px)**: **Default standard for single analytical charts and interactive forms.** Keeps controls and charts ergonomically readable.
+   - **`lg` (1040px)**: Paired analytics, multi-metric dashboard sections.
+   - **`full` (100%)**: **Reserved strictly for dense data tables** (4+ columns) and multi-track timelines/Gantt charts that genuinely require wide horizontal space.
+5. **Sections vs Cards (Eliminating Card Soup)**:
+   - **`section`**: Use `section` (`props: { title: "...", description: "..." }`) for primary visual divisions. It provides a clean heading and description with open breathing room and no bounding border box.
+   - **`card`**: Use `card` deliberately for focal items, distinct actionable cards, or summary receipts. **Never wrap every single metric or paragraph in its own separate card, and never nest cards inside cards.**
 
-- **Cards**: Use cards to demarcate distinct logical groups. Do not wrap every isolated label or single metric in its own separate card.
-- **Metrics (`stat`)**: Keep numbers legible with explicit units. Place sign (+/-) and delta comparisons close to the value.
-- **Tables**: Ensure column headers state clear units. Provide visible row identities (names, IDs, dates). Limit default display to readable row limits.
-- **Forms**: Place inputs logically, group related parameters, and locate the primary submission action directly beneath or beside its inputs.
+## Color, Typography & Style Guide
 
-## Chart Selection Matrix
+Canvases follow a world-class, durable desktop design system:
+
+1. **Color Codes & Theming**:
+   - **No Raw Colors**: NEVER write raw hex codes (`#123456`, `#ff0000`), RGB, HSL, or inline `style="..."` attributes. The renderer rejects or strips arbitrary styles.
+   - **Semantic Tones**: Use only semantic `tone` values for cards, badges, and alerts:
+     - `"neutral"`: Default card, standard tag.
+     - `"info"`: Informational notices, blue highlight.
+     - `"success"`: Favorable variance, completed task, target met, green.
+     - `"warning"`: Caution, pending approval, approaching threshold, amber.
+     - `"danger"`: SLA breach, critical blocker, unfavorable variance, red.
+   - **Chart Series Palette**: Chart colors are assigned automatically from the system theme palette (`--vak-series-1` through `--vak-series-6`). Do not specify custom stroke or fill colors.
+   - **Desktop Theme Alignment**: Canvases automatically inherit the active desktop theme (Indigo, Ocean, Forest, Rose, Amber, Graphite) and light/dark color scheme.
+2. **Typography & Hierarchy**:
+   - System typography uses Inter Variable font (`ui-sans-serif, system-ui, -apple-system, Inter`).
+   - Use semantic `text` variants:
+     - `variant: "heading"`: Canvas and section headlines (weight 650, tight tracking).
+     - `variant: "subheading"`: Subsection headers.
+     - `variant: "caption"`: Data source footnotes, observation window caveats, fine print (muted color).
+     - `variant: "code"`: Identifiers, JSON pointers, timestamps.
+   - Use standard markdown inside `text.props.content` (`**bold**`, `*italic*`, `[link](url)`).
+3. **Number & Unit Precision**:
+   - Store **raw finite numbers** in `data` (e.g. `42500.5`, `0.08`), never pre-formatted display strings like `"$42,500.50"`.
+   - Specify units in labels, table column headers, or deltas (`props.label: "Revenue ($k)"`, `columns: ["Date", "Close (points)"]`, `delta: "+3.2%"` with `trend: "up" | "down"`).
+   - Use explicit `null` for missing metrics; never coerce missing values to `0`.
+
+## Chart Selection Matrix & Constraints
 
 Choose chart kinds strictly by the analytical question asked:
 - **`bar`**: Comparing discrete categories or ranking quantities.
@@ -68,7 +96,7 @@ Choose chart kinds strictly by the analytical question asked:
 ## Dual Projection: Visual & Spoken Harmony
 
 Vakyartha projects content simultaneously to the visual screen and to voice/speech synthesis:
-1. **Lead with natural prose**: Put the central takeaway, reporting period and material caveat in 1–2 concise sentences near the top. Ensure this first sentence is meaningful when heard aloud in isolation.
+1. **Lead with natural prose**: Put the central takeaway, reporting period and material caveat in 1–2 concise sentences near the top. Ensure this first sentence is meaningful when heard aloud in isolation (TTS gist mode).
 2. **Self-contained text**: Do not hide crucial warnings or statuses solely in tooltip hover states, background colors or icon symbols. State them in readable text.
 3. **Spoken conversation gist**: Spoken summaries compress long tables and skip control labels. Essential findings and limitations must exist in visible prose to be spoken.
 4. **No synthetic fields**: Do not invent parallel `tts` properties or separate narration payloads. Speech reads directly from the canonical visual content.

@@ -5,8 +5,8 @@ license: MIT
 compatibility: Works with text chat, markdown tables, and interactive comparison canvases.
 metadata:
   author: nranjan2code
-  version: "1.2"
-allowed-tools: use_skill
+  version: "1.3"
+allowed-tools: vak_render vak_update vak_submit use_skill
 ---
 
 # Structured Tradeoff & Options Comparison
@@ -40,15 +40,31 @@ Systematic evaluation framework for comparing products, frameworks, architecture
    - Recommend a specific path if requested, clearly linking the choice to the user's stated priorities.
    - Outline alternative scenarios where a secondary option would be preferred.
 
-## Canvas Presentation
+## Liquid Canvas Architecture for Option Comparisons
 
-When presenting the comparison on a visual canvas:
-- Lead with an executive recommendation card stating the top choice and core rationale.
-- Render a structured comparison table using `interactive-ui` with clear columns for each option.
-- Use balanced cards or a `grid` to detail option-specific strengths, weaknesses and pricing tiers.
-- Ensure the spoken projection leads with the recommended decision and primary tradeoff so audio briefings are clear.
+Never output a single-column card stack that stretches candidate options across 100% of a wide canvas. Structure the comparison canvas into three adaptive tiers:
 
-## Objectivity Guardrails
+1. **Tier 1: Recommendation Header & Decision Score Strip**:
+   - **Spoken lead**: 1–2 sentences naming the recommended option, key rationale, and primary trade-off so audio briefings are instant.
+   - **Scorecard grid**: 3-column or 4-column metric strip (`grid` with `props: { columns: 3, minItemWidth: "xs" }`):
+     - `Top Recommendation`: e.g. "Option A (PostgreSQL)" (`tone: "positive"`)
+     - `Est. Cost Delta`: e.g. "-$420 / mo" (`tone: "positive"`)
+     - `Implementation Effort`: e.g. "Medium (2 weeks)" (`tone: "neutral"`)
+2. **Tier 2: Balanced Multi-Column Candidate Grid**:
+   - Fluid candidate grid (`grid` with `props: { columns: 3, minItemWidth: "sm" }` or `columns: 2` for two candidates):
+     - Each candidate receives a balanced card (`card` with `props: { maxWidth: "md" }`) highlighting:
+       - Candidate Name & Badge (e.g. `tone: "positive"` for "Recommended", `"neutral"` for "Alternative")
+       - Primary Strengths (bullet points)
+       - Key Limitations / Trade-offs
+       - Pricing / Cost Tier
+     - Cards remain balanced within the fluid grid tracks; never let an individual candidate card span 100% of the canvas.
+3. **Tier 3: Granular Feature Matrix & Trade-off Scoring**:
+   - **Feature Matrix Table**: Dense data table (`section` with `table`, `maxWidth: "full"`):
+     - Columns: `Criterion / Capability`, `Option A`, `Option B`, `Option C`, `Evaluation / Winner`.
+   - **Score Comparison Visual**: Clamped horizontal bar chart (`chart` with `props: { kind: "bar", maxWidth: "md" }`) comparing overall suitability scores, or paired with a criteria weight adjustment form (`form` with `maxWidth: "md"`).
+
+## Objectivity & Styling Guardrails
 
 - **Zero bias**: Treat all candidates with equal analytical rigor. Do not write dismissive assessments of viable alternatives.
 - **Fact vs opinion**: Distinguish verified benchmarks and official limits from marketing claims or community sentiment.
+- **Tone & Style**: Never inject raw CSS or hex codes; use semantic tones (`positive` for recommended/winning, `caution` for elevated risk or cost, `neutral` for baseline).

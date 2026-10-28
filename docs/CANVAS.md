@@ -3,7 +3,17 @@
 The desktop app and playground own the canvas and the Artifacts library. The
 framework continues to own surfaces, rendering, bindings, validation and actions.
 
-For composition rather than canvas mechanics, read [SKILL-AUTHORING.md](SKILL-AUTHORING.md): shared surface-design guidance, content measures, chart selection and the visual/spoken contract. The app's spoken projection uses the same resolved surface, not a second report payload. Keep findings, reporting periods, units and important caveats in readable content; controls and visual position alone do not carry them into TTS.
+For composition rather than canvas mechanics, read [SKILL-AUTHORING.md](SKILL-AUTHORING.md): shared surface-design guidance, liquid layout architecture, content measures, chart selection and the visual/spoken contract. See [SURFACES.md](SURFACES.md) for how the same resolved surfaces project to external channels (Telegram, Slack, Discord) and voice audio. The app's spoken projection uses the same resolved surface, not a second report payload. Keep findings, reporting periods, units and important caveats in readable content; controls and visual position alone do not carry them into TTS.
+
+## Liquid & Adaptive Layouts on Canvas
+
+The canvas uses container queries (`container-type: inline-size`) so elements adapt fluidly to the available canvas width regardless of window size:
+- **No 100% chart or card stretching**: Charts, forms, and cards must never span 100% width on wide desktop monitors (e.g. 1400px+). Doing so distorts bar aspect ratios and flattens line graphs.
+- **Clamped Measures**: Single charts and forms are clamped to `maxWidth: "md"` (720px) or `maxWidth: "lg"` (960px). Full width (`maxWidth: "full"`) is reserved for dense data tables, multi-column grids, and proportional splits.
+- **3-Tier Hierarchy**: Canvases follow a 3-tier structure:
+  1. *Tier 1*: Executive headline & 4-column metric strip (`columns: 4, minItemWidth: "xs"`).
+  2. *Tier 2*: Paired 2-column analytics grid (`columns: 2, minItemWidth: "sm"`) or split view (`split` with `ratio: [2, 1]`).
+  3. *Tier 3*: Granular data table (`table`, `maxWidth: "full"`) and bounded action forms.
 
 ## Experience
 

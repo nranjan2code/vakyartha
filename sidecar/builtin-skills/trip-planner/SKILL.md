@@ -5,7 +5,7 @@ license: MIT
 compatibility: Works with text chat, itinerary tables, travel budgets, and interactive trip canvases.
 metadata:
   author: nranjan2code
-  version: "1.2"
+  version: "1.3"
 allowed-tools: vak_render vak_update vak_submit use_skill
 ---
 
@@ -37,16 +37,27 @@ Methodology for designing practical, well-paced travel itineraries, vacation sch
    - Note key operational details: typical museum closing days (e.g. Mondays in Europe), advance ticket booking requirements, seasonal weather, and local transit passes.
    - Provide rainy-day indoor alternatives for outdoor attractions.
 
-## Itinerary Canvas Architecture
+## Adaptive Itinerary Canvas Layout
 
-When presenting travel plans on an interactive canvas:
-1. **Trip Overview Header**:
-   - Destination, travel dates, duration, party size, and estimated cost tier.
-   - Metric cards (`stat`) showing Total Days, Estimated Budget, Key Cities, and Major Milestones.
-2. **Day-by-Day Schedule Table**:
-   - Structured table listing `Day / Date`, `Area / Neighborhood`, `Morning`, `Afternoon`, `Evening`, and `Meal Highlights`.
+Never stretch simple travel checklists or short schedules across 100% of a wide desktop canvas. Structure the itinerary adaptively:
+
+1. **Trip Overview & Metric Strip**:
+   - Lead with destination, dates, party size, and pacing style.
+   - Follow with a fluid `grid` (`props: { columns: 4, minItemWidth: "sm" }`):
+     - Total Days.
+     - Major Cities / Bases.
+     - Planned Highlights / Key Bookings.
+     - Estimated Trip Budget (per person or total).
+2. **Day-by-Day Itinerary Tier**:
+   - Render a structured table in a clean `section` (`props: { title: "Day-by-Day Schedule & Route" }`). Table uses `maxWidth: "full"` with columns: `Day / Date`, `Neighborhood / Area`, `Morning Activity`, `Afternoon Activity`, `Evening & Dining`.
+   - Alternatively, for weekend getaways (2–3 days), use a 2- or 3-column `grid` with daily cards (`maxWidth: "lg"`).
 3. **Logistics & Pre-Trip Checklist**:
-   - Checklist covering packing priorities, passport validity, visas, international roaming, and necessary advance reservations.
+   - Render pre-departure preparations (passports, transit passes, bookings, packing essentials) inside a clamped container (`maxWidth: "md"`, 720px) with interactive checkboxes (`bind: "/checklist/0/done"`).
+
+## Style & Theming Guide
+
+- **Semantic Tones**: Use `tone: "info"` for transit/flight details; `tone: "success"` for confirmed bookings; `tone: "warning"` for advance reservation alerts or visa deadlines. Never use raw hex codes or inline CSS.
+- **Dual Projection**: Lead with a concise 1–2 sentence finding stating destination, travel dates, and the trip's geographic anchors. Spoken gist mode reads this first sentence in isolation.
 
 ## Truthfulness & Booking Guardrails
 

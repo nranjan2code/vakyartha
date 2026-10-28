@@ -127,7 +127,20 @@ Local table sorting/search/paging affects that table, not the chart or aggregate
 | Dense table or deliberately wide content | common `maxWidth: full` |
 | Track occupancy | grid `span`, independent of content measure |
 
-Web measures are 320/720/1040 pixels or available width, always capped by the container. Charts default to the medium measure. These are semantic props, not arbitrary model-supplied CSS. Layout responds to its container; primary content should remain first when columns collapse. Use empty space deliberately rather than stretching every small item. Respect the app theme and express status in words as well as colour. Form labels, grouping, validation and nearby submit controls are part of composition. App placement/canvas/library behavior stays unchanged; see [CANVAS.md](CANVAS.md).
+Web measures are 320 (`sm`), 720 (`md`), 960 (`lg`) pixels or available container width (`full`). Charts default to the medium measure (`md`). These are semantic props, never arbitrary model-supplied CSS.
+
+### Liquid & Adaptive Layout Rules
+1. **Never stretch single charts or cards across 100% width**: A single chart given `maxWidth: "full"` stretches 1400px+ across wide desktop screens, distorting bar aspect ratios and flattening trend lines. Single charts and forms must be clamped to `maxWidth: "md"` or `"lg"`.
+2. **Three-Tier Architecture**:
+   - *Tier 1*: Executive headline & 4-column metric strip (`columns: 4, minItemWidth: "xs"`).
+   - *Tier 2*: Paired 2-column analytics grid (`columns: 2, minItemWidth: "sm"`) or split ratio (`split` with `ratio: [2, 1]`).
+   - *Tier 3*: Full-width dense detail table (`maxWidth: "full"`) and clamped actions (`maxWidth: "md"`).
+3. **Eliminate Card Soup**: Use `section` for thematic grouping with titles and descriptions; reserve `card` for standalone distinct focal units.
+4. **Color & Typography Guide**:
+   - **No Raw CSS or Hex Values**: Never inject inline CSS or hex codes (`#123456`). Use semantic tones: `"positive"` (green), `"caution"` (amber), `"critical"` (red), `"neutral"` / `"info"` (blue/slate).
+   - **Inter Typography Scale**: `heading` (page titles), `subheading` (section titles), `body` (reading prose), `caption` (citations and timestamps).
+   - **Theme Series**: Multi-series charts automatically inherit the system theme palette (`--vak-series-1` through `--vak-series-8`).
+5. **Multi-Surface Awareness**: Surfaces authored here also project to Telegram, Slack, Discord, and Voice audio. See [SURFACES.md](SURFACES.md) for the exact platform degradation matrices and 2026 platform limits. App placement/canvas/library behavior stays unchanged; see [CANVAS.md](CANVAS.md).
 
 ## Chart choice and actual support
 
