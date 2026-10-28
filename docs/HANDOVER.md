@@ -15,10 +15,23 @@ A complete, production-grade **Skill Studio** workbench has been built and integ
 - **Integration Points**:
   - Settings → Skills includes a `Skill Studio…` action bar button, `Draft` status badge on card footers, and direct `Skill Studio` deep-link on installed skill detail views.
 - **Verification**:
-  - 192 app tests pass (`npm test`).
+  - 195 app tests pass (`npm test`).
   - 398 framework tests pass (`npm run test:framework`).
   - TypeScript typecheck (`npm run typecheck`) and Vite production bundle (`npm run build`) pass cleanly with 0 errors.
-  - Real WebKit smokes pass: `skills-check.ts` (1100px, 620px, 375px) and `canvas-check.ts` (1100px, 620px). Zero mocks or stubs. Zero external dependencies added.
+  - Real WebKit smokes pass: `skills-check.ts` (1100px, 620px, 375px), `canvas-check.ts` (1100px, 620px), and `surface-design-check.ts` (1440px, 1100px, 620px). Zero mocks or stubs. Zero external dependencies added.
+  - Cargo tests pass (`cargo test --manifest-path src-tauri/Cargo.toml --lib`: 3 passed, 0 failed). Zero secret leaks.
+
+## Official NSE MCP Integrations & Built-in Skill Package — 2026-10-28
+
+Added official National Stock Exchange of India (NSE) vendor MCP servers and a comprehensive built-in skill package:
+- **Vendor Integrations** (`sidecar/integrations.ts`):
+  - `nse`: Bhavcopy historical end-of-day equity data, OHLCV records, 5-year trade history, market breadth (advances/declines), and delivery volumes via hosted Streamable HTTP endpoint `https://mcp.nseindia.in/bhavcopy/cm/mcp`. Authentication-free.
+  - `nse-cmmkt`: Market Live near-real-time intraday snapshots, live equity quotes, index performance, and top gainers/losers via hosted Streamable HTTP endpoint `https://mcp.nseindia.in/cmmkt/mcp`. Authentication-free.
+- **Built-in Skill Package** (`sidecar/builtin-skills/nse-mcp/`):
+  - Conforms to full Agent Skills specification with YAML frontmatter, chaining rules (`market-dashboard`, `interactive-ui`, `surface-design`), and dual visual/spoken guidelines.
+  - Includes supporting reference files: `references/nse-tools-guide.md` (full tool catalog and schema documentation) and `references/nse-query-patterns.md` (step-by-step query workflows).
+  - Seeded and synchronized into `src-tauri/resources/builtin-skills/nse-mcp/`.
+  - Covered by unit tests in `test/integrations.test.ts` and `test/skills.test.ts`.
 
 
 A comprehensive audit was performed on `interactive-ui`, `surface-design`, and all 18 canvas-authoring built-in skills to eliminate LLM confusion, align with Vakyartha's runtime, enforce minimalist design and theming, implement responsive **Liquid & Adaptive Layout** architecture, and audit multi-surface projection across conversational channels:
