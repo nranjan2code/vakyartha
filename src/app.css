@@ -1317,6 +1317,7 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
   display: flex;
   flex-direction: column;
   gap: 20px;
+  background: var(--bg);
 }
 
 .studio-hub-header {

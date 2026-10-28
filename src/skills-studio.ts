@@ -37,14 +37,18 @@ export function isSkillStudioOpen(): boolean {
 }
 
 export async function closeSkillStudio(): Promise<void> {
-  if (flushPendingAutoSave) {
-    await flushPendingAutoSave();
-  }
   const root = document.getElementById("skills-studio-page");
   if (root) {
     root.hidden = true;
   }
   document.body.classList.remove("in-skill-studio");
+  if (flushPendingAutoSave) {
+    try {
+      await flushPendingAutoSave();
+    } catch {
+      // flush error is non-blocking
+    }
+  }
   window.dispatchEvent(new Event("vak:studio-closed"));
 }
 
@@ -62,6 +66,17 @@ export async function openSkillStudio(
 
   root.hidden = false;
   document.body.classList.add("in-skill-studio");
+
+  // Ensure all sibling views in the app grid are hidden
+  const workspaceEl = document.getElementById("workspace");
+  if (workspaceEl) workspaceEl.hidden = true;
+  const artifactsEl = document.getElementById("artifacts-page");
+  if (artifactsEl) artifactsEl.hidden = true;
+  const appsEl = document.getElementById("apps-page");
+  if (appsEl) appsEl.hidden = true;
+  const scheduleEl = document.getElementById("schedule-page");
+  if (scheduleEl) scheduleEl.hidden = true;
+
   window.dispatchEvent(new Event("vak:studio-opened"));
 
   const settingsEl = document.getElementById("settings");

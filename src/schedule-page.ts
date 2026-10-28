@@ -77,7 +77,14 @@ export class SchedulePage {
 
   visible(): boolean { return !this.page.hidden; }
   async openPage(): Promise<void> {
-    this.beforeOpen(); this.page.hidden = false; $("workspace").hidden = true;
+    const studioEl = document.getElementById("skills-studio-page");
+    if (studioEl) studioEl.hidden = true;
+    document.body.classList.remove("in-skill-studio");
+    this.beforeOpen();
+    this.page.hidden = false;
+    $("workspace").hidden = true;
+    $("artifacts-page") && ($("artifacts-page").hidden = true);
+    $("apps-page") && ($("apps-page").hidden = true);
     document.body.classList.add("in-schedule"); $("open-schedule").setAttribute("aria-current", "page");
     window.dispatchEvent(new Event("vak:schedule-opened"));
     this.list(); await this.refresh();

@@ -75,9 +75,51 @@ function stopRun(id: string): void {
   void api(`/api/sessions/${encodeURIComponent(id)}/stop`, { method: "POST", body: "{}" }).then(() => setTimeout(() => void loadChats(), 600)).catch(() => {});
   streams.get(id)?.abort();
 }
-const tasksPanel = new TasksPanel(() => session, (id) => openChat(id), () => { artifacts.close(false, false); appsPage.close(false); }, toggleSidebar);
-document.getElementById("open-artifacts")!.addEventListener("click", () => { tasksPanel.page.close(false, false); appsPage.close(false); }, { capture: true });
-document.getElementById("open-apps")?.addEventListener("click", () => { artifacts.close(false, false); tasksPanel.page.close(false, false); }, { capture: true });
+const tasksPanel = new TasksPanel(
+  () => session,
+  (id) => openChat(id),
+  () => {
+    artifacts.close(false, false);
+    appsPage.close(false);
+    if (isSkillStudioOpen()) void closeSkillStudio();
+    const st = document.getElementById("skills-studio-page");
+    if (st) st.hidden = true;
+  },
+  toggleSidebar
+);
+document.getElementById("open-artifacts")!.addEventListener(
+  "click",
+  () => {
+    tasksPanel.page.close(false, false);
+    appsPage.close(false);
+    if (isSkillStudioOpen()) void closeSkillStudio();
+    const st = document.getElementById("skills-studio-page");
+    if (st) st.hidden = true;
+  },
+  { capture: true }
+);
+document.getElementById("open-apps")?.addEventListener(
+  "click",
+  () => {
+    artifacts.close(false, false);
+    tasksPanel.page.close(false, false);
+    if (isSkillStudioOpen()) void closeSkillStudio();
+    const st = document.getElementById("skills-studio-page");
+    if (st) st.hidden = true;
+  },
+  { capture: true }
+);
+document.getElementById("open-schedule")?.addEventListener(
+  "click",
+  () => {
+    artifacts.close(false, false);
+    appsPage.close(false);
+    if (isSkillStudioOpen()) void closeSkillStudio();
+    const st = document.getElementById("skills-studio-page");
+    if (st) st.hidden = true;
+  },
+  { capture: true }
+);
 const drafts = new Drafts(localStorage, (message) => tasksPanel.error(message));
 document.addEventListener("vak-change", (e) => {
   const detail = (e as CustomEvent<{ surface: string; path: string; value: unknown }>).detail;
@@ -918,6 +960,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
 }
 
 window.addEventListener("vak:settings-opened", () => {
+  if (isSkillStudioOpen()) void closeSkillStudio();
   artifacts.close(false, false);
   appsPage.close(false);
   tasksPanel.page.close(false, false);
@@ -935,11 +978,13 @@ window.addEventListener("vak:settings-closed", () => {
 });
 
 window.addEventListener("vak:artifacts-opened", () => {
+  if (isSkillStudioOpen()) void closeSkillStudio();
   appsPage.close(false);
   tasksPanel.page.close(false, false);
   $("workspace").hidden = true;
   $("apps-page").hidden = true;
   $("schedule-page").hidden = true;
+  $("skills-studio-page").hidden = true;
   setTopNavActive("artifacts");
 });
 window.addEventListener("vak:artifacts-closed", () => {
@@ -949,11 +994,13 @@ window.addEventListener("vak:artifacts-closed", () => {
 });
 
 window.addEventListener("vak:apps-opened", () => {
+  if (isSkillStudioOpen()) void closeSkillStudio();
   artifacts.close(false, false);
   tasksPanel.page.close(false, false);
   $("workspace").hidden = true;
   $("artifacts-page").hidden = true;
   $("schedule-page").hidden = true;
+  $("skills-studio-page").hidden = true;
   setTopNavActive("apps");
 });
 window.addEventListener("vak:apps-closed", () => {
@@ -972,11 +1019,13 @@ window.addEventListener("vak:run-app", (e) => {
 });
 
 window.addEventListener("vak:schedule-opened", () => {
+  if (isSkillStudioOpen()) void closeSkillStudio();
   artifacts.close(false, false);
   appsPage.close(false);
   $("workspace").hidden = true;
   $("artifacts-page").hidden = true;
   $("apps-page").hidden = true;
+  $("skills-studio-page").hidden = true;
   setTopNavActive("schedule");
 });
 window.addEventListener("vak:schedule-closed", () => {
@@ -985,10 +1034,23 @@ window.addEventListener("vak:schedule-closed", () => {
   }
 });
 
-window.addEventListener("vak:studio-opened", () => setTopNavActive("studio"));
+window.addEventListener("vak:studio-opened", () => {
+  artifacts.close(false, false);
+  appsPage.close(false);
+  tasksPanel.page.close(false, false);
+  $("workspace").hidden = true;
+  $("artifacts-page").hidden = true;
+  $("apps-page").hidden = true;
+  $("schedule-page").hidden = true;
+  $("skills-studio-page").hidden = false;
+  setTopNavActive("studio");
+});
 window.addEventListener("vak:studio-closed", () => {
+  const st = document.getElementById("skills-studio-page");
+  if (st) st.hidden = true;
   if (settingsOpen()) setTopNavActive("settings");
   else if (document.body.classList.contains("in-artifacts")) setTopNavActive("artifacts");
+  else if (document.body.classList.contains("in-apps")) setTopNavActive("apps");
   else if (tasksPanel.page.visible()) setTopNavActive("schedule");
   else setTopNavActive("chats");
 });

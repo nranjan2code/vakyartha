@@ -46,8 +46,13 @@ export class ArtifactsPage {
   }
 
   async open(): Promise<void> {
+    const studioEl = document.getElementById("skills-studio-page");
+    if (studioEl) studioEl.hidden = true;
+    document.body.classList.remove("in-skill-studio");
     this.#page.hidden = false;
     $("workspace").hidden = true;
+    $("apps-page") && ($("apps-page").hidden = true);
+    $("schedule-page") && ($("schedule-page").hidden = true);
     document.body.classList.add("in-artifacts");
     $("open-artifacts").setAttribute("aria-current", "page");
     window.dispatchEvent(new Event("vak:artifacts-opened"));

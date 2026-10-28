@@ -83,6 +83,9 @@ export class AppsPage {
   }
 
   async open(): Promise<void> {
+    const studioEl = document.getElementById("skills-studio-page");
+    if (studioEl) studioEl.hidden = true;
+    document.body.classList.remove("in-skill-studio");
     this.#activeApp = null;
     this.#activeStore = null;
     this.#page.hidden = false;

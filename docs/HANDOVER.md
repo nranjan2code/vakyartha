@@ -45,6 +45,7 @@ A complete, production-grade **Creator Studio** workbench has been built and int
   - Non-destructive context switching allows navigating between active studio packages and ongoing chat turns without losing state, open files, or cursor positions.
   - Multi-package catalog lists skills, sandboxed apps, active drafts, and dedicated creators (`+ New Skill`, `+ New Sandboxed App`) with clean, single-line action button styling.
   - `#skills-studio-page` resides cleanly within the `.app` CSS grid (`grid-column: 2; grid-row: 1;`), fully preserving sidebar expansion/collapse transitions via `⌘\` or `#topbar-sidebar-toggle`.
+  - **Strict Navigation Mutual Exclusion**: Switching from Studio to any other primary surface (`Schedule`, `Apps`, `Artifacts`, `Chats`, `Settings`) immediately hides `#skills-studio-page` synchronously and calls `closeSkillStudio()`, and vice versa, preventing overlapping UI layers or transparent bleed-through in the CSS grid.
 - **Continuous Background Auto-Save & Quarantine Lifecycle**:
   - Debounced auto-save (800ms) continuously persists drafts to `<dataDir>/skills/.drafts/<name>/` (`PUT /api/skills/:name/draft`).
   - Navigating between app tabs immediately flushes pending auto-saves to disk.
