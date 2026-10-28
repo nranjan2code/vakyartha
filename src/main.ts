@@ -829,6 +829,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
     $("artifacts-page").hidden = true;
     $("apps-page").hidden = true;
     $("schedule-page").hidden = true;
+    $("skills-studio-page").hidden = true;
     setTopNavActive("chats");
     input.focus();
     return;
@@ -842,6 +843,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
     $("workspace").hidden = true;
     $("apps-page").hidden = true;
     $("schedule-page").hidden = true;
+    $("skills-studio-page").hidden = true;
     setTopNavActive("artifacts");
     await artifacts.open();
     return;
@@ -855,6 +857,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
     $("workspace").hidden = true;
     $("artifacts-page").hidden = true;
     $("schedule-page").hidden = true;
+    $("skills-studio-page").hidden = true;
     setTopNavActive("apps");
     await appsPage.open();
     return;
@@ -868,6 +871,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
     $("workspace").hidden = true;
     $("artifacts-page").hidden = true;
     $("apps-page").hidden = true;
+    $("skills-studio-page").hidden = true;
     setTopNavActive("schedule");
     await tasksPanel.page.openPage();
     return;
@@ -890,6 +894,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
       async () => {
         setTopNavActive("chats");
         $("workspace").hidden = false;
+        $("skills-studio-page").hidden = true;
       },
       async () => {}
     );
@@ -905,6 +910,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
     $("artifacts-page").hidden = true;
     $("apps-page").hidden = true;
     $("schedule-page").hidden = true;
+    $("skills-studio-page").hidden = true;
     setTopNavActive("settings");
     await openSettings();
     return;
@@ -919,6 +925,7 @@ window.addEventListener("vak:settings-opened", () => {
   $("artifacts-page").hidden = true;
   $("apps-page").hidden = true;
   $("schedule-page").hidden = true;
+  $("skills-studio-page").hidden = true;
   setTopNavActive("settings");
 });
 window.addEventListener("vak:settings-closed", () => {

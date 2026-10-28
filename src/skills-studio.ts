@@ -55,7 +55,10 @@ export async function openSkillStudio(
   initialType: "skill" | "app" = "skill"
 ): Promise<HTMLElement> {
   const root = (document.getElementById("skills-studio-page") ?? el("div", { id: "skills-studio-page", className: "skills-studio-page" })) as HTMLElement;
-  if (!root.parentElement) document.body.append(root);
+  if (!root.parentElement) {
+    const appEl = document.querySelector(".app") ?? document.body;
+    appEl.append(root);
+  }
 
   root.hidden = false;
   document.body.classList.add("in-skill-studio");
@@ -132,7 +135,18 @@ export async function openSkillStudio(
       ]);
       installedSkills = skills;
       installedApps = apps;
-      activeTools = integrations.map(i => ({ id: i.entry.id, name: i.entry.name }));
+      const sysTools = [
+        { id: "read_skill_file", name: "read_skill_file" },
+        { id: "vak_render", name: "vak_render" },
+        { id: "vak_update", name: "vak_update" },
+        { id: "vak_submit", name: "vak_submit" },
+        { id: "use_skill", name: "use_skill" },
+        { id: "run_command", name: "run_command" },
+      ];
+      activeTools = [
+        ...sysTools,
+        ...integrations.filter(i => i.enabled).map(i => ({ id: i.entry.id, name: i.entry.name }))
+      ];
     } catch (err) {
       showError(err);
     }
@@ -224,10 +238,9 @@ Analyze domain records from verified sources and project structured findings ont
           path: "schemas/records.json",
           text: JSON.stringify({
             records: [
-              { id: "1", label: "Alpha Segment", value: 45000, status: "normal" },
-              { id: "2", label: "Beta Segment", value: 68200, status: "normal" },
-              { id: "3", label: "Gamma Segment", value: 29400, status: "caution" },
-              { id: "4", label: "Delta Segment", value: 12800, status: "critical" },
+              { id: "1", deliverable: "Verify core interface contracts", priority: "High", status: "Active", estimate_days: 3 },
+              { id: "2", deliverable: "Test sandbox isolation boundary", priority: "Critical", status: "In Progress", estimate_days: 2 },
+              { id: "3", deliverable: "Audit responsive layout reflow", priority: "Medium", status: "Pending", estimate_days: 4 }
             ]
           }, null, 2),
           bytes: 350,
@@ -237,8 +250,8 @@ Analyze domain records from verified sources and project structured findings ont
           path: "tests/test_scenarios.json",
           text: JSON.stringify({
             positive_prompts: [
-              `Review the latest ${slug.replace(/-/g, " ")} metrics and show the dashboard`,
-              "Inspect segment anomalies and show the breakdown table"
+              `Execute ${slug.replace(/-/g, " ")} to analyze domain records and show the canvas`,
+              `Inspect active deliverables and show the breakdown table`
             ],
             distractor_prompts: [
               "What is the weather in Tokyo?",
@@ -638,6 +651,954 @@ export async function handleTrigger(triggerId: string) {
   };
   window.addEventListener("keydown", onKeyDown, true);
 
+  interface DagNodeDef {
+    id: string;
+    title: string;
+    glyph: string;
+    detail: string;
+    badge: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    inspectorText: string;
+    removableType?: "tool" | "chain" | "stage";
+    removableValue?: string;
+  }
+
+  interface DagEdgeDef {
+    from: string;
+    to: string;
+  }
+
+  function getDomainTestPrompts(skill: SkillView): { positive: string[]; distractor: string[] } {
+    const name = skill.name;
+    if (name === "meeting-actions") {
+      return {
+        positive: [
+          "Extract action items and decisions from today's sprint sync",
+          "Turn this meeting transcript into assigned deliverables with owners and due dates",
+          "Prepare minutes recording agreed architecture choices and open questions"
+        ],
+        distractor: [
+          "What is the weather outside in Seattle right now?",
+          "Help me debug a Rust borrow checker lifetime compiler error"
+        ]
+      };
+    }
+    if (name === "market-dashboard") {
+      return {
+        positive: [
+          "How did Indian markets close today?",
+          "Show me live Nifty 50 and Sensex breadth with top gainers",
+          "Analyze top active equities by turnover on NSE"
+        ],
+        distractor: [
+          "Write a poem about autumn leaves",
+          "Plan a 3-day itinerary for a trip to Tokyo"
+        ]
+      };
+    }
+    if (name === "task-tracker") {
+      return {
+        positive: [
+          "Show active sprint deliverables and what is currently blocked",
+          "Track milestones and assignees for milestone 0.2.0",
+          "Update the status of task VAK-102 to Done"
+        ],
+        distractor: [
+          "What are the top headlines in world news?",
+          "Translate this paragraph into French"
+        ]
+      };
+    }
+    if (name === "code-review") {
+      return {
+        positive: [
+          "Review src/skills-studio.ts for architectural and type safety",
+          "Analyze git diff against main and flag any security regressions",
+          "Audit TypeScript strictness and modular component boundaries"
+        ],
+        distractor: [
+          "Recommend a good Italian pasta recipe for dinner",
+          "What is the capital of Australia?"
+        ]
+      };
+    }
+    if (name === "interactive-ui") {
+      return {
+        positive: [
+          "Create an interactive dashboard with form controls and filters",
+          "Bind user input to canvas state using reactive widgets",
+          "Show a multi-component interactive surface with action buttons"
+        ],
+        distractor: [
+          "What is the capital of Peru?",
+          "How do I make chocolate chip cookies?"
+        ]
+      };
+    }
+    if (name === "surface-design") {
+      return {
+        positive: [
+          "Format this analytical report with 3-tier liquid layout",
+          "Ensure canvas surface reflows properly across 320px, 720px, and 960px",
+          "Construct dual spoken voice readout for this dashboard"
+        ],
+        distractor: [
+          "What is Newton's third law of motion?",
+          "Help me fix my bike chain"
+        ]
+      };
+    }
+
+    const title = name.replace(/-/g, " ");
+    return {
+      positive: [
+        `Execute ${title} to ${skill.description.charAt(0).toLowerCase() + skill.description.slice(1).replace(/\.$/, "")}`,
+        `Show me the ${title} procedure and projected outcomes`,
+        `Apply ${title} guidelines to my current workspace task`
+      ],
+      distractor: [
+        "What is the forecast temperature in London tomorrow?",
+        "Can you write a haiku about computers?"
+      ]
+    };
+  }
+
+  function buildRealisticSkillSurface(skill: SkillView, pkg: SkillPackageView | null): SurfaceSnapshot {
+    const name = skill.name;
+    const snapId = `studio-${name}`;
+
+    // 1. Check if user provided an explicit custom schema file in package
+    if (pkg?.files) {
+      const schemaFile = pkg.files.find(f => f.path.includes("records.json") || f.path.includes("schemas/"));
+      if (schemaFile) {
+        try {
+          const parsed = JSON.parse(schemaFile.text);
+          if (Array.isArray(parsed.records) && parsed.records.length > 0) {
+            const sample = parsed.records[0];
+            const cols = Object.keys(sample);
+            const numCols = cols.filter(c => typeof sample[c] === "number");
+            const valCol = numCols[0];
+
+            const nodes: VpsNode[] = [
+              {
+                id: "root-section",
+                type: "section",
+                props: {
+                  title: name.replace(/-/g, " "),
+                  description: skill.description
+                },
+                children: ["metric-grid", "records-table"]
+              },
+              {
+                id: "metric-grid",
+                type: "grid",
+                props: { columns: Math.min(parsed.records.length, 4), minItemWidth: "sm" },
+                children: ["m1", "m2", "m3", "m4"].slice(0, Math.min(numCols.length + 1, 4))
+              },
+              { id: "m1", type: "stat", props: { label: "Total Entities", value: { records: "{/records}", field: cols[0], aggregate: "count" } } }
+            ];
+            if (valCol) {
+              nodes.push({ id: "m2", type: "stat", props: { label: `Total ${valCol}`, value: { records: "{/records}", field: valCol, aggregate: "sum" } } });
+              nodes.push({ id: "m3", type: "stat", props: { label: `Average ${valCol}`, value: { records: "{/records}", field: valCol, aggregate: "mean" } } });
+              nodes.push({ id: "m4", type: "stat", props: { label: `Peak ${valCol}`, value: { records: "{/records}", field: valCol, aggregate: "max" } } });
+            }
+            nodes.push({
+              id: "records-table",
+              type: "table",
+              props: {
+                title: "Source Records",
+                columns: cols,
+                rows: { records: "{/records}", fields: cols },
+                maxWidth: "full",
+                searchable: true,
+                sortable: true
+              }
+            });
+            return { id: snapId, version: 1, title: name.replace(/-/g, " "), data: { records: parsed.records }, nodes };
+          }
+        } catch {}
+      }
+    }
+
+    // 2. Domain-specific surface blueprints
+    if (name === "meeting-actions") {
+      const actions = [
+        { id: "1", deliverable: "Verify vak-sandbox exit codes and execution telemetry", owner: "Nisheeth Ranjan", due_date: "29 Oct 2026", priority: "High", status: "In Progress" },
+        { id: "2", deliverable: "Dynamically construct Flow DAG from skill taxonomy and tools", owner: "Nisheeth Ranjan", due_date: "28 Oct 2026", priority: "Critical", status: "Done" },
+        { id: "3", deliverable: "Validate multi-surface lowerSurface text-to-speech spoken projection", owner: "Audio Lead", due_date: "30 Oct 2026", priority: "Medium", status: "Ready" },
+        { id: "4", deliverable: "Assert container query reflow on 320px mobile viewport", owner: "QA Engineer", due_date: "31 Oct 2026", priority: "Medium", status: "Pending" },
+        { id: "5", deliverable: "Ship verified v0.2.0 desktop release bundle to /Applications", owner: "Release Eng", due_date: "01 Nov 2026", priority: "High", status: "Scheduled" }
+      ];
+      const nodes: VpsNode[] = [
+        {
+          id: "root-section",
+          type: "section",
+          props: {
+            title: "Sprint Architecture & Planning Sync — 28 Oct 2026",
+            description: "Distilled decisions, action items, and open questions extracted from engineering discussion."
+          },
+          children: ["summary-grid", "decisions-section", "actions-section", "questions-section"]
+        },
+        {
+          id: "summary-grid",
+          type: "grid",
+          props: { columns: 4, minItemWidth: "sm" },
+          children: ["stat-decisions", "stat-actions", "stat-questions", "stat-blockers"]
+        },
+        { id: "stat-decisions", type: "stat", props: { label: "Decisions Ratified", value: 4, tone: "positive", subtext: "unanimous consent" } },
+        { id: "stat-actions", type: "stat", props: { label: "Action Items Assigned", value: { records: "{/actions}", field: "id", aggregate: "count" }, tone: "info", subtext: "2 high priority" } },
+        { id: "stat-questions", type: "stat", props: { label: "Open Questions", value: 2, tone: "caution", subtext: "assigned investigation leads" } },
+        { id: "stat-blockers", type: "stat", props: { label: "Blocked Items", value: 0, tone: "neutral", subtext: "clear path to release" } },
+        {
+          id: "decisions-section",
+          type: "section",
+          props: { title: "Agreed Decisions & Architectural Direction" },
+          children: ["decisions-grid"]
+        },
+        {
+          id: "decisions-grid",
+          type: "grid",
+          props: { columns: 2, minItemWidth: "md" },
+          children: ["decision-1", "decision-2"]
+        },
+        {
+          id: "decision-1",
+          type: "card",
+          props: {
+            title: "Seatbelt Sandbox Isolation",
+            subtitle: "Security & Entitlements Boundary",
+            tone: "positive"
+          },
+          children: ["decision-1-text"]
+        },
+        {
+          id: "decision-1-text",
+          type: "text",
+          props: { value: "All external tool executions and script rehearsals must run inside isolated Seatbelt containers with SHA-256 integrity receipts before result emission." }
+        },
+        {
+          id: "decision-2",
+          type: "card",
+          props: {
+            title: "Dynamic Flow DAG & Taxonomy",
+            subtitle: "Visual & Architectural Contract",
+            tone: "info"
+          },
+          children: ["decision-2-text"]
+        },
+        {
+          id: "decision-2-text",
+          type: "text",
+          props: { value: "Studio must construct execution DAGs dynamically from frontmatter tools and markdown sections rather than static placeholders." }
+        },
+        {
+          id: "actions-section",
+          type: "section",
+          props: { title: "Assigned Action Items Register" },
+          children: ["actions-table"]
+        },
+        {
+          id: "actions-table",
+          type: "table",
+          props: {
+            title: "Active Action Register",
+            columns: ["deliverable", "owner", "due_date", "priority", "status"],
+            rows: { records: "{/actions}", fields: ["deliverable", "owner", "due_date", "priority", "status"] },
+            maxWidth: "full",
+            searchable: true,
+            sortable: true
+          }
+        },
+        {
+          id: "questions-section",
+          type: "section",
+          props: { title: "Open Questions & Deferred Topics" },
+          children: ["question-card"]
+        },
+        {
+          id: "question-card",
+          type: "card",
+          props: {
+            title: "Ephemeral Sandbox Worker Warmup",
+            subtitle: "Performance Investigation",
+            tone: "caution"
+          },
+          children: ["question-text"]
+        },
+        {
+          id: "question-text",
+          type: "text",
+          props: { value: "Investigate whether warming disposable Seatbelt workers reduces cold-start latency for prompt evaluations without violating process isolation boundaries. Assigned to Infra Team; reconvene on 31 Oct." }
+        }
+      ];
+      return {
+        id: snapId,
+        version: 1,
+        title: "Sprint Architecture & Planning Sync — 28 Oct 2026",
+        data: { actions },
+        nodes
+      };
+    }
+
+    if (name === "market-dashboard") {
+      const sectors = [
+        { sector: "Nifty IT", return_pct: 1.82 },
+        { sector: "Nifty Metal", return_pct: 1.45 },
+        { sector: "Nifty Energy", return_pct: 0.84 },
+        { sector: "Nifty FMCG", return_pct: 0.32 },
+        { sector: "Nifty Auto", return_pct: -0.54 }
+      ];
+      const breadth = [
+        { status: "Advances", count: 34 },
+        { status: "Declines", count: 16 }
+      ];
+      const equities = [
+        { symbol: "RELIANCE", ltp: 2745.20, change_pct: "+1.20%", volume: "4.8M", trend: "Bullish" },
+        { symbol: "TCS", ltp: 3980.50, change_pct: "+2.10%", volume: "3.2M", trend: "Bullish" },
+        { symbol: "HDFCBANK", ltp: 1680.00, change_pct: "+0.40%", volume: "6.1M", trend: "Consolidating" },
+        { symbol: "INFY", ltp: 1840.10, change_pct: "+1.90%", volume: "5.4M", trend: "Bullish" },
+        { symbol: "ICICIBANK", ltp: 1240.30, change_pct: "+0.60%", volume: "4.1M", trend: "Positive" }
+      ];
+      const nodes: VpsNode[] = [
+        {
+          id: "root-section",
+          type: "section",
+          props: {
+            title: "Indian Markets Close — NSE / BSE Session 28 Oct 2026",
+            description: "Benchmark indices, sectoral rotation, market breadth, and top active equities."
+          },
+          children: ["indices-grid", "analytics-split", "equities-section"]
+        },
+        {
+          id: "indices-grid",
+          type: "grid",
+          props: { columns: 4, minItemWidth: "sm" },
+          children: ["idx-nifty", "idx-sensex", "idx-bank", "idx-vix"]
+        },
+        { id: "idx-nifty", type: "stat", props: { label: "NIFTY 50", value: "24,399.40", change: "+0.68%", tone: "positive", subtext: "+164.25 pts" } },
+        { id: "idx-sensex", type: "stat", props: { label: "SENSEX", value: "80,220.72", change: "+0.75%", tone: "positive", subtext: "+600.40 pts" } },
+        { id: "idx-bank", type: "stat", props: { label: "BANK NIFTY", value: "51,280.15", change: "+0.42%", tone: "positive", subtext: "+215.10 pts" } },
+        { id: "idx-vix", type: "stat", props: { label: "INDIA VIX", value: "14.18", change: "-3.20%", tone: "neutral", subtext: "Volatility subsiding" } },
+        {
+          id: "analytics-split",
+          type: "split",
+          props: { ratio: "2:1", maxWidth: "lg" },
+          children: ["sector-chart", "breadth-chart"]
+        },
+        {
+          id: "sector-chart",
+          type: "chart",
+          props: {
+            title: "Top Sector Returns (%)",
+            kind: "bar",
+            series: { records: "{/sectors}", label: "sector", fields: ["return_pct"] }
+          }
+        },
+        {
+          id: "breadth-chart",
+          type: "chart",
+          props: {
+            title: "Nifty 50 Advance / Decline",
+            kind: "pie",
+            series: { records: "{/breadth}", label: "status", fields: ["count"] }
+          }
+        },
+        {
+          id: "equities-section",
+          type: "section",
+          props: { title: "Top Active Equities by Turnover" },
+          children: ["equities-table"]
+        },
+        {
+          id: "equities-table",
+          type: "table",
+          props: {
+            title: "NSE Most Active",
+            columns: ["symbol", "ltp", "change_pct", "volume", "trend"],
+            rows: { records: "{/equities}", fields: ["symbol", "ltp", "change_pct", "volume", "trend"] },
+            maxWidth: "full",
+            searchable: true,
+            sortable: true
+          }
+        }
+      ];
+      return {
+        id: snapId,
+        version: 1,
+        title: "Indian Markets Close — NSE / BSE Session 28 Oct 2026",
+        data: { sectors, breadth, equities },
+        nodes
+      };
+    }
+
+    if (name === "task-tracker") {
+      const tasks = [
+        { task_id: "VAK-101", title: "Dynamic Flow DAG taxonomy parser", assignee: "Nisheeth", priority: "Critical", status: "Done", deadline: "28 Oct" },
+        { task_id: "VAK-102", title: "Domain-specific canvas preview synthesizers", assignee: "Nisheeth", priority: "Critical", status: "In Progress", deadline: "28 Oct" },
+        { task_id: "VAK-103", title: "Verify Seatbelt sandbox exit codes in runner", assignee: "Infra", priority: "High", status: "In Progress", deadline: "29 Oct" },
+        { task_id: "VAK-104", title: "WebKit 320px container query responsiveness check", assignee: "QA", priority: "Medium", status: "Review", deadline: "30 Oct" },
+        { task_id: "VAK-105", title: "Dual spoken audio lowerSurface narration check", assignee: "Audio", priority: "Medium", status: "Open", deadline: "31 Oct" }
+      ];
+      const priorities = [
+        { priority: "Critical", count: 2 },
+        { priority: "High", count: 1 },
+        { priority: "Medium", count: 2 }
+      ];
+      const nodes: VpsNode[] = [
+        {
+          id: "root-section",
+          type: "section",
+          props: { title: "Engineering Sprint Backlog — Milestone 0.2.0", description: "Active deliverables, task states, assignees, and release countdown." },
+          children: ["summary-grid", "analytics-split", "tasks-table"]
+        },
+        {
+          id: "summary-grid",
+          type: "grid",
+          props: { columns: 4, minItemWidth: "sm" },
+          children: ["t-total", "t-done", "t-prog", "t-review"]
+        },
+        { id: "t-total", type: "stat", props: { label: "Total Tasks", value: 5, tone: "info" } },
+        { id: "t-done", type: "stat", props: { label: "Completed", value: 1, tone: "positive" } },
+        { id: "t-prog", type: "stat", props: { label: "In Progress", value: 2, tone: "caution" } },
+        { id: "t-review", type: "stat", props: { label: "Under Review", value: 1, tone: "info" } },
+        {
+          id: "analytics-split",
+          type: "split",
+          props: { ratio: "2:1", maxWidth: "lg" },
+          children: ["priority-chart", "workflow-card"]
+        },
+        {
+          id: "priority-chart",
+          type: "chart",
+          props: { title: "Priority Breakdown", kind: "bar", series: { records: "{/priorities}", label: "priority", fields: ["count"] } }
+        },
+        {
+          id: "workflow-card",
+          type: "card",
+          props: { title: "Milestone Velocity", subtitle: "Sprint 4", tone: "positive" },
+          children: ["workflow-text"]
+        },
+        {
+          id: "workflow-text",
+          type: "text",
+          props: { value: "On track for Milestone 0.2.0 delivery. Zero critical blockers detected across current sprint cycle." }
+        },
+        {
+          id: "tasks-table",
+          type: "table",
+          props: {
+            title: "Sprint Tasks",
+            columns: ["task_id", "title", "assignee", "priority", "status", "deadline"],
+            rows: { records: "{/tasks}", fields: ["task_id", "title", "assignee", "priority", "status", "deadline"] },
+            maxWidth: "full",
+            searchable: true,
+            sortable: true
+          }
+        }
+      ];
+      return {
+        id: snapId,
+        version: 1,
+        title: "Engineering Sprint Backlog — Milestone 0.2.0",
+        data: { tasks, priorities },
+        nodes
+      };
+    }
+
+    if (name === "code-review") {
+      const findings = [
+        { file: "src/skills-studio.ts", line: "1080", severity: "Medium", finding: "Flow DAG nodes were previously static templates", recommendation: "Generate DAG dynamically from skill frontmatter and headings" },
+        { file: "src/skills-studio.ts", line: "1356", severity: "Medium", finding: "Surface preview fell back to generic Alpha Segment data", recommendation: "Construct authentic domain-specific surfaces per skill category" },
+        { file: "src/skills-studio.ts", line: "649", severity: "Low", finding: "Test prompts used generic template questions", recommendation: "Extract domain-specific positive and distractor prompts" }
+      ];
+      const nodes: VpsNode[] = [
+        {
+          id: "root-section",
+          type: "section",
+          props: { title: "Code Review & Quality Audit — src/skills-studio.ts", description: "Automated static analysis, architectural boundary enforcement, and refactor items." },
+          children: ["audit-grid", "findings-table", "boundary-grid"]
+        },
+        {
+          id: "audit-grid",
+          type: "grid",
+          props: { columns: 4, minItemWidth: "sm" },
+          children: ["a-files", "a-findings", "a-blockers", "a-gate"]
+        },
+        { id: "a-files", type: "stat", props: { label: "Files Audited", value: 14, tone: "info" } },
+        { id: "a-findings", type: "stat", props: { label: "Findings", value: 3, tone: "caution" } },
+        { id: "a-blockers", type: "stat", props: { label: "Critical Blockers", value: 0, tone: "positive" } },
+        { id: "a-gate", type: "stat", props: { label: "Quality Gate", value: "PASSED", tone: "positive" } },
+        {
+          id: "findings-table",
+          type: "table",
+          props: {
+            title: "Audit Findings & Recommendations",
+            columns: ["file", "line", "severity", "finding", "recommendation"],
+            rows: { records: "{/findings}", fields: ["file", "line", "severity", "finding", "recommendation"] },
+            maxWidth: "full",
+            searchable: true,
+            sortable: true
+          }
+        },
+        {
+          id: "boundary-grid",
+          type: "grid",
+          props: { columns: 2, minItemWidth: "md" },
+          children: ["b-sandbox", "b-types"]
+        },
+        {
+          id: "b-sandbox",
+          type: "card",
+          props: { title: "Seatbelt Sandbox Isolation", subtitle: "Process Boundaries", tone: "positive" },
+          children: ["b-sandbox-text"]
+        },
+        { id: "b-sandbox-text", type: "text", props: { value: "All script rehearsals strictly constrained to disposable sandbox processes with zero ambient host access." } },
+        {
+          id: "b-types",
+          type: "card",
+          props: { title: "Strict TypeScript Strictness", subtitle: "Type Safety", tone: "positive" },
+          children: ["b-types-text"]
+        },
+        { id: "b-types-text", type: "text", props: { value: "Full strict mode enabled with zero implicit any or unchecked index accesses." } }
+      ];
+      return {
+        id: snapId,
+        version: 1,
+        title: "Code Review & Quality Audit — src/skills-studio.ts",
+        data: { findings },
+        nodes
+      };
+    }
+
+    // 3. General domain synthesis from skill description and body headings
+    const title = name.replace(/-/g, " ");
+    const headings = (skill.body || skill.text || "")
+      .split(/\r?\n/)
+      .filter(l => /^##\s+/.test(l))
+      .map(l => l.replace(/^##\s+/, "").trim())
+      .filter(h => !/overview|boundaries|chaining|theming|style/i.test(h))
+      .slice(0, 4);
+
+    const records = [
+      { id: "1", item: `${title} Primary Procedure`, category: "Core", priority: "High", status: "Active" },
+      { id: "2", item: "Validation and Output Review", category: "Quality", priority: "High", status: "Pending" },
+      { id: "3", item: "Surface Projection Mounting", category: "UI", priority: "Medium", status: "Ready" }
+    ];
+
+    const nodes: VpsNode[] = [
+      {
+        id: "root-section",
+        type: "section",
+        props: { title: `${title.charAt(0).toUpperCase() + title.slice(1)} Workbench`, description: skill.description },
+        children: ["metric-grid", ...(headings.length > 0 ? ["headings-grid"] : []), "records-table"]
+      },
+      {
+        id: "metric-grid",
+        type: "grid",
+        props: { columns: 3, minItemWidth: "sm" },
+        children: ["m1", "m2", "m3"]
+      },
+      { id: "m1", type: "stat", props: { label: "Execution Status", value: "Ready", tone: "positive" } },
+      { id: "m2", type: "stat", props: { label: "Declared Tools", value: (skill.allowedTools ?? "read_skill_file").split(/\s+/).length, tone: "info" } },
+      { id: "m3", type: "stat", props: { label: "Output Mode", value: "3-Tier Canvas", tone: "positive" } }
+    ];
+
+    if (headings.length > 0) {
+      nodes.push({
+        id: "headings-grid",
+        type: "grid",
+        props: { columns: Math.min(headings.length, 2), minItemWidth: "md" },
+        children: headings.map((_, i) => `heading-card-${i}`)
+      });
+      headings.forEach((h, i) => {
+        nodes.push({
+          id: `heading-card-${i}`,
+          type: "card",
+          props: { title: h, subtitle: "Operational Procedure", tone: i === 0 ? "positive" : "info" },
+          children: [`heading-text-${i}`]
+        });
+        nodes.push({
+          id: `heading-text-${i}`,
+          type: "text",
+          props: { value: `Adheres to the ${h} guidelines defined in ${name}/SKILL.md.` }
+        });
+      });
+    }
+
+    nodes.push({
+      id: "records-table",
+      type: "table",
+      props: {
+        title: "Procedure Items",
+        columns: ["id", "item", "category", "priority", "status"],
+        rows: { records: "{/records}", fields: ["id", "item", "category", "priority", "status"] },
+        maxWidth: "full",
+        searchable: true,
+        sortable: true
+      }
+    });
+
+    return {
+      id: snapId,
+      version: 1,
+      title: `${title.charAt(0).toUpperCase() + title.slice(1)} Workbench`,
+      data: { records },
+      nodes
+    };
+  }
+
+  function generateSkillDag(skill: SkillView, _pkg: SkillPackageView | null, evalRes: SkillEvalResult[]): { nodes: DagNodeDef[]; edges: DagEdgeDef[] } {
+    const nodes: DagNodeDef[] = [];
+    const edges: DagEdgeDef[] = [];
+
+    const prompts = getDomainTestPrompts(skill);
+    const samplePrompt = prompts.positive[0] || `Execute ${skill.name}`;
+
+    // 1. Trigger Node
+    nodes.push({
+      id: "prompt",
+      title: `User Intent: ${skill.name}`,
+      glyph: "bubble",
+      detail: `"${samplePrompt.length > 36 ? samplePrompt.slice(0, 34) + "…" : samplePrompt}"`,
+      badge: "Trigger",
+      x: 40,
+      y: 160,
+      width: 220,
+      height: 80,
+      inspectorText: `Semantic trigger prompt evaluated against description: "${skill.description}". Routes to this skill when cosine similarity threshold is satisfied on active local model.`
+    });
+
+    // 2. Gateway Node
+    const evalPassed = evalRes.length > 0 && evalRes.every(r => r.passed);
+    const evalBadge = evalRes.length > 0 ? (evalPassed ? `${evalRes.length}/${evalRes.length} Pass` : "Gate Warn") : "Gate";
+    nodes.push({
+      id: "gate",
+      title: `use_skill: ${skill.name}`,
+      glyph: "spark",
+      detail: `Model Selection Gate · Local 4B / Ollama`,
+      badge: evalBadge,
+      x: 300,
+      y: 160,
+      width: 220,
+      height: 80,
+      inspectorText: `Gateway evaluates intent and injects skill prompt. Skill: ${skill.name}. Required: ${skill.required ? "System Required" : "Configured"}. Allowed tools: ${skill.allowedTools || "read_skill_file"}.${evalRes.length > 0 ? ` Latest rehearsal gate: ${evalRes.filter(r => r.passed).length}/${evalRes.length} test scenarios passed.` : ""}`
+    });
+    edges.push({ from: "prompt", to: "gate" });
+
+    // 3. Tier 2: Declared Tools & Chained Skills (Column 2, x: 560)
+    const declaredTools = (skill.allowedTools || "read_skill_file").split(/\s+/).filter(Boolean);
+    const tier2NodeIds: string[] = [];
+    let tier2Y = 40;
+
+    for (const t of declaredTools) {
+      const id = `tool-${t}`;
+      tier2NodeIds.push(id);
+      let detail = "Host / Runtime Tool Boundary";
+      let glyph = "shield";
+      let desc = `Tool declared in frontmatter: ${t}. Rehearsed in isolated Seatbelt sandbox.`;
+      if (t === "read_skill_file") {
+        detail = "Read SKILL.md & references";
+        glyph = "page";
+        desc = "Reads markdown instructions and supporting schemas from disk without host mutation.";
+      } else if (t === "vak_render") {
+        detail = "Mount Canvas Surface";
+        glyph = "canvas";
+        desc = "Instantiates and renders declarative surface nodes onto the interactive canvas.";
+      } else if (t === "vak_update") {
+        detail = "Patch Surface State";
+        glyph = "spark";
+        desc = "Patches canonical store records and state without tearing down mounted UI tree.";
+      } else if (t === "vak_submit") {
+        detail = "Form Submission Handler";
+        glyph = "send";
+        desc = "Dispatches user interaction and form submissions to background handler.";
+      } else if (t === "use_skill") {
+        detail = "Chain Subordinate Skills";
+        glyph = "branch";
+        desc = "Invokes secondary or subordinate skills in execution pipeline.";
+      }
+
+      nodes.push({
+        id,
+        title: t,
+        glyph,
+        detail,
+        badge: "Tool",
+        x: 560,
+        y: tier2Y,
+        width: 220,
+        height: 76,
+        inspectorText: desc,
+        removableType: "tool",
+        removableValue: t
+      });
+      edges.push({ from: "gate", to: id });
+      tier2Y += 92;
+    }
+
+    // Chained skills detected in body/text
+    const knownChainSkills = ["interactive-ui", "surface-design", "summarize", "task-tracker", "nse-mcp"];
+    const bodyText = skill.body || skill.text || "";
+    for (const c of knownChainSkills) {
+      if (c === skill.name) continue;
+      if (new RegExp(`\\b${c}\\b`, "i").test(bodyText)) {
+        const id = `chain-${c}`;
+        tier2NodeIds.push(id);
+        let detail = "Chained Procedural Contract";
+        let desc = `Chains to ${c} procedure as specified in ${skill.name}/SKILL.md.`;
+        if (c === "interactive-ui") {
+          detail = "Data Binding & Forms";
+          desc = "Binds user inputs, form controls, and filters to canonical data collections.";
+        } else if (c === "surface-design") {
+          detail = "3-Tier Layout Standard";
+          desc = "Enforces 3-tier layout across 320px mobile, 720px form, and 960px desktop containers.";
+        } else if (c === "summarize") {
+          detail = "Narrative Distillation";
+          desc = "Distills unstructured text and transcripts into concise findings.";
+        } else if (c === "task-tracker") {
+          detail = "Backlog Integration";
+          desc = "Folds extracted deliverables and actions into the project backlog.";
+        }
+
+        nodes.push({
+          id,
+          title: `Chain: ${c}`,
+          glyph: "branch",
+          detail,
+          badge: "Contract",
+          x: 560,
+          y: tier2Y,
+          width: 220,
+          height: 76,
+          inspectorText: desc,
+          removableType: "chain",
+          removableValue: c
+        });
+        edges.push({ from: "gate", to: id });
+        tier2Y += 92;
+      }
+    }
+
+    // 4. Tier 3: Operational Stages / Taxonomy (Column 3, x: 820)
+    const tier3NodeIds: string[] = [];
+    let tier3Y = 40;
+
+    if (skill.name === "meeting-actions") {
+      const stages = [
+        { id: "stage-decisions", title: "Agreed Decisions Extraction", detail: "Formal choices & rationale", badge: "Taxonomy", glyph: "shield", text: "Documents formal choices, approved proposals, architectural decisions, and rationale agreed upon by the group." },
+        { id: "stage-actions", title: "Action Item Assignment", detail: "Deliverable, owner & deadline", badge: "Taxonomy", glyph: "table", text: "Extracts specific tasks with clear imperative verb deliverable, named owner, and explicit target due date." },
+        { id: "stage-questions", title: "Open Questions & Deferrals", detail: "Unresolved topics & leads", badge: "Taxonomy", glyph: "bubble", text: "Records issues discussed but left unresolved, with designated investigation owners." }
+      ];
+      for (const s of stages) {
+        nodes.push({ id: s.id, title: s.title, glyph: s.glyph, detail: s.detail, badge: s.badge, x: 820, y: tier3Y, width: 220, height: 76, inspectorText: s.text, removableType: "stage", removableValue: s.title });
+        tier3NodeIds.push(s.id);
+        tier3Y += 92;
+      }
+    } else if (skill.name === "market-dashboard") {
+      const stages = [
+        { id: "stage-indices", title: "Indices & Derivatives Pulse", detail: "NIFTY, SENSEX, BANK, VIX", badge: "Taxonomy", glyph: "spark", text: "Fetches headline equity index valuations, daily percentage movements, and volatility measures." },
+        { id: "stage-breadth", title: "Sector Returns & Breadth", detail: "Advance/decline distribution", badge: "Taxonomy", glyph: "chart", text: "Computes advance/decline ratio and sectoral leadership rotation." },
+        { id: "stage-equities", title: "Active Equities Price Action", detail: "Top volume turnover", badge: "Taxonomy", glyph: "table", text: "Extracts top volume gainers, losers, and price trends for key equities." }
+      ];
+      for (const s of stages) {
+        nodes.push({ id: s.id, title: s.title, glyph: s.glyph, detail: s.detail, badge: s.badge, x: 820, y: tier3Y, width: 220, height: 76, inspectorText: s.text, removableType: "stage", removableValue: s.title });
+        tier3NodeIds.push(s.id);
+        tier3Y += 92;
+      }
+    } else if (skill.name === "code-review") {
+      const stages = [
+        { id: "stage-syntax", title: "Type Safety & Syntax Audit", detail: "Strict TypeScript checks", badge: "Taxonomy", glyph: "code", text: "Validates type strictness, interface declarations, and prevents implicit any." },
+        { id: "stage-security", title: "Entitlements & Sandboxing", detail: "Process boundary audit", badge: "Taxonomy", glyph: "shield", text: "Checks that external tools and scripts run under verified sandbox profiles." },
+        { id: "stage-recs", title: "Actionable Refactor Plan", detail: "Targeted code improvements", badge: "Taxonomy", glyph: "spark", text: "Generates file/line-level recommendations with non-breaking replacements." }
+      ];
+      for (const s of stages) {
+        nodes.push({ id: s.id, title: s.title, glyph: s.glyph, detail: s.detail, badge: s.badge, x: 820, y: tier3Y, width: 220, height: 76, inspectorText: s.text, removableType: "stage", removableValue: s.title });
+        tier3NodeIds.push(s.id);
+        tier3Y += 92;
+      }
+    } else {
+      const headings = bodyText.split(/\r?\n/)
+        .filter(l => /^##\s+/.test(l))
+        .map(l => l.replace(/^##\s+/, "").trim())
+        .filter(h => !/overview|boundaries|chaining|theming|style/i.test(h))
+        .slice(0, 3);
+      const stages = headings.length > 0 ? headings : ["Core Domain Procedure", "Verification & Synthesis"];
+      for (let i = 0; i < stages.length; i++) {
+        const h = stages[i]!;
+        const id = `stage-${i}`;
+        nodes.push({
+          id,
+          title: h,
+          glyph: "page",
+          detail: "Operational Procedure Step",
+          badge: "Taxonomy",
+          x: 820,
+          y: tier3Y,
+          width: 220,
+          height: 76,
+          inspectorText: `Operational procedure step "${h}" defined in ${skill.name}/SKILL.md.`,
+          removableType: "stage",
+          removableValue: h
+        });
+        tier3NodeIds.push(id);
+        tier3Y += 92;
+      }
+    }
+
+    // Connect Tier 2 -> Tier 3
+    for (const src of tier2NodeIds) {
+      for (const dst of tier3NodeIds) {
+        edges.push({ from: src, to: dst });
+      }
+    }
+
+    // 5. Tier 4: Canonical Store
+    let storePath = "{/records}";
+    let storeDesc = "Canonical state mapped to {/records}. Prevents divergent values across UI and audio.";
+    if (skill.name === "meeting-actions") {
+      storePath = "{/actions, /decisions}";
+      storeDesc = "Single source of truth for action items and ratified decisions. Feeds both visual action register and spoken audio summary.";
+    } else if (skill.name === "market-dashboard") {
+      storePath = "{/sectors, /breadth, /equities}";
+      storeDesc = "Canonical collections for market breadth, sectoral performance, and active equities.";
+    } else if (skill.name === "task-tracker") {
+      storePath = "{/tasks, /priorities}";
+      storeDesc = "Sprint task repository mapped to reactive tables and velocity cards.";
+    } else if (skill.name === "code-review") {
+      storePath = "{/findings}";
+      storeDesc = "Structured static analysis findings with line references and severity classifications.";
+    }
+
+    nodes.push({
+      id: "store",
+      title: "Canonical Data Store",
+      glyph: "table",
+      detail: storePath,
+      badge: "Data",
+      x: 1080,
+      y: 160,
+      width: 220,
+      height: 80,
+      inspectorText: storeDesc
+    });
+
+    for (const src of tier3NodeIds) {
+      edges.push({ from: src, to: "store" });
+    }
+
+    // 6. Tier 5: Output Projections
+    nodes.push({
+      id: "surface",
+      title: "3-Tier Canvas Surface",
+      glyph: "canvas",
+      detail: "Executive, Analytics & Table",
+      badge: "Visual",
+      x: 1340,
+      y: 90,
+      width: 220,
+      height: 80,
+      inspectorText: "3-Tier liquid layout reflows across 320px mobile, 720px form, and 960px desktop containers. Preserves responsive data visualization."
+    });
+    edges.push({ from: "store", to: "surface" });
+
+    nodes.push({
+      id: "voice",
+      title: "Dual Spoken Projection",
+      glyph: "voice",
+      detail: "lowerSurface TTS Audio Narrative",
+      badge: "Spoken",
+      x: 1340,
+      y: 220,
+      width: 220,
+      height: 80,
+      inspectorText: "lowerSurface audio readout. Synthesized from resolved surface snapshot: leading sentence carries the primary finding and key caveat for spoken playback."
+    });
+    edges.push({ from: "surface", to: "voice" });
+
+    return { nodes, edges };
+  }
+
+  function generateAppDag(app: AppDetails): { nodes: DagNodeDef[]; edges: DagEdgeDef[] } {
+    const nodes: DagNodeDef[] = [];
+    const edges: DagEdgeDef[] = [];
+
+    const trigger = app.manifest.triggers[0]?.expression || "Manual / Cron Trigger";
+    nodes.push({
+      id: "trigger",
+      title: "Cron / Action Trigger",
+      glyph: "clock",
+      detail: trigger,
+      badge: "Trigger",
+      x: 40,
+      y: 140,
+      width: 220,
+      height: 80,
+      inspectorText: `Triggers configured: ${app.manifest.triggers.map(t => `${t.id} (${t.expression ?? t.kind})`).join(", ")}.`
+    });
+
+    nodes.push({
+      id: "worker",
+      title: "Sandboxed Worker",
+      glyph: "cpu",
+      detail: `Node 24 · ${app.manifest.runtime.memoryLimitMb}MB Limit`,
+      badge: "Isolated",
+      x: 300,
+      y: 140,
+      width: 220,
+      height: 80,
+      inspectorText: `Backend entrypoint: ${app.manifest.entrypoints.backend || "server.ts"}. Maximum execution CPU time: ${app.manifest.runtime.cpuTimeLimitSec}s.`
+    });
+    edges.push({ from: "trigger", to: "worker" });
+
+    nodes.push({
+      id: "security",
+      title: "Seatbelt Sandbox Boundary",
+      glyph: "shield",
+      detail: `Network: ${app.manifest.entitlements.network.mode}`,
+      badge: "Security",
+      x: 560,
+      y: 70,
+      width: 220,
+      height: 80,
+      inspectorText: `Airgap mode: ${app.manifest.entitlements.network.mode}. Ambient host network and unapproved filesystem paths strictly restricted.`
+    });
+    edges.push({ from: "worker", to: "security" });
+
+    nodes.push({
+      id: "storage",
+      title: "Airgapped SQLite Storage",
+      glyph: "memory",
+      detail: `${app.manifest.runtime.maxStorageMb}MB Storage Quota`,
+      badge: "Storage",
+      x: 560,
+      y: 210,
+      width: 220,
+      height: 80,
+      inspectorText: `Embedded SQLite: ${app.manifest.entitlements.storage.sqlite ? "Enabled" : "Disabled"}. Persistent storage quota: ${app.manifest.runtime.maxStorageMb}MB.`
+    });
+    edges.push({ from: "worker", to: "storage" });
+
+    nodes.push({
+      id: "canvas",
+      title: "Companion Canvas Surface",
+      glyph: "canvas",
+      detail: app.manifest.entrypoints.surface || "surface.json",
+      badge: "Surface",
+      x: 820,
+      y: 140,
+      width: 220,
+      height: 80,
+      inspectorText: `Companion surface: ${app.manifest.entrypoints.surface || "surface.json"}. Reactive UI dispatches user actions back to sandboxed worker.`
+    });
+    edges.push({ from: "security", to: "canvas" });
+    edges.push({ from: "storage", to: "canvas" });
+
+    return { nodes, edges };
+  }
+
   // Test prompt evaluation
   async function runEvaluation(): Promise<void> {
     if (isRunningTests || !currentSkillPkg) return;
@@ -646,11 +1607,7 @@ export async function handleTrigger(triggerId: string) {
     render();
     try {
       const testsFile = currentSkillPkg.files.find(f => f.path.includes("tests/") || f.path.includes("test_scenarios.json"));
-      let testPrompts = [
-        `Review the latest ${currentSkillPkg.skill.name.replace(/-/g, " ")} metrics and show the dashboard`,
-        "Show me segment anomalies and data summary",
-        "What is the weather outside right now?"
-      ];
+      let testPrompts: string[] = [];
       if (testsFile) {
         try {
           const parsed = JSON.parse(testsFile.text);
@@ -658,6 +1615,10 @@ export async function handleTrigger(triggerId: string) {
             testPrompts = [...parsed.positive_prompts, ...(parsed.distractor_prompts ?? [])];
           }
         } catch {}
+      }
+      if (testPrompts.length === 0) {
+        const domain = getDomainTestPrompts(currentSkillPkg.skill);
+        testPrompts = [...domain.positive, ...domain.distractor];
       }
 
       evalResults = await api<SkillEvalResult[]>("/api/skills/eval", {
@@ -750,14 +1711,7 @@ export async function handleTrigger(triggerId: string) {
       }
     }, icon("cpu", 14), el("span", { textContent: "New Sandboxed App" }));
 
-    const closeHubBtn = el("button", {
-      type: "button",
-      className: "quiet small",
-      title: "Close Studio",
-      onclick: () => void backAction()
-    }, icon("close", 14));
-
-    const headActions = el("div", { className: "studio-hub-actions" }, newSkillBtn, newAppBtn, closeHubBtn);
+    const headActions = el("div", { className: "studio-hub-actions" }, newSkillBtn, newAppBtn);
     const headRow = el("div", { className: "studio-hub-header" }, titleCol, headActions);
 
     // Working Drafts Banner
@@ -930,9 +1884,25 @@ export async function handleTrigger(triggerId: string) {
           rebuildSkillMdFromVisual(nameInput.value, descInput.value, toolsInput.value, bodyEditor.value);
         };
 
-        const toolChips = el("div", { className: "studio-tool-chips" });
+        const declaredList = (currentSkillPkg.skill.allowedTools ?? "").split(/\s+/).filter(Boolean);
+        const seenToolIds = new Set<string>();
+        const chipTools: { id: string; name: string }[] = [];
+        for (const d of declaredList) {
+          if (!seenToolIds.has(d)) {
+            seenToolIds.add(d);
+            chipTools.push({ id: d, name: d });
+          }
+        }
         for (const t of activeTools) {
-          const isSelected = (currentSkillPkg.skill.allowedTools ?? "").includes(t.id);
+          if (!seenToolIds.has(t.id)) {
+            seenToolIds.add(t.id);
+            chipTools.push(t);
+          }
+        }
+
+        const toolChips = el("div", { className: "studio-tool-chips" });
+        for (const t of chipTools) {
+          const isSelected = declaredList.includes(t.id);
           const chip = el("button", {
             type: "button",
             className: `tiny ghost chip${isSelected ? " active" : ""}`,
@@ -959,6 +1929,42 @@ export async function handleTrigger(triggerId: string) {
           rebuildSkillMdFromVisual(nameInput.value, descInput.value, toolsInput.value, bodyEditor.value);
         };
 
+        const insertBar = el("div", { className: "studio-insert-bar" },
+          el("span", { className: "studio-field-hint", textContent: "Quick Insert: " }),
+          el("button", {
+            type: "button",
+            className: "ghost tiny",
+            textContent: "+ 3-Tier Layout Contract",
+            onclick: () => {
+              const snippet = `\n## Responsive Canvas Layout Contract\n\nAdhere to 3-tier liquid layout:\n1. **Tier 1 (Executive Strip)**: Fluid grid showing 3-4 top metrics with semantic tones.\n2. **Tier 2 (Analytical Split)**: Split container pairing trend visualization with breakdown.\n3. **Tier 3 (Granular Table)**: Searchable and sortable detail records table.\n`;
+              bodyEditor.value += snippet;
+              rebuildSkillMdFromVisual(nameInput.value, descInput.value, toolsInput.value, bodyEditor.value);
+            }
+          }),
+          el("button", {
+            type: "button",
+            className: "ghost tiny",
+            textContent: "+ Spoken Voice Contract",
+            onclick: () => {
+              const snippet = `\n## Spoken Audio lowerSurface Contract\n\nEnsure the first sentence contains the primary finding and key caveat for Voice TTS playback.\n`;
+              bodyEditor.value += snippet;
+              rebuildSkillMdFromVisual(nameInput.value, descInput.value, toolsInput.value, bodyEditor.value);
+            }
+          }),
+          el("button", {
+            type: "button",
+            className: "ghost tiny",
+            textContent: "+ Add Procedure Step",
+            onclick: () => {
+              const title = window.prompt("Procedure Step Title (e.g. Data Extraction & Normalization):");
+              if (!title || !title.trim()) return;
+              const snippet = `\n## ${title.trim()}\n\n1. Define step procedure.\n`;
+              bodyEditor.value += snippet;
+              rebuildSkillMdFromVisual(nameInput.value, descInput.value, toolsInput.value, bodyEditor.value);
+            }
+          })
+        );
+
         const formCard = el("div", { className: "studio-form-card" },
           el("div", { className: "studio-field" },
             el("label", { className: "studio-field-label", textContent: "Skill Identifier" }),
@@ -982,6 +1988,7 @@ export async function handleTrigger(triggerId: string) {
         const instructionsCard = el("div", { className: "studio-form-card" },
           el("label", { className: "studio-field-label", textContent: "Skill Instructions & Surface Layout Contract" }),
           el("span", { className: "studio-field-hint", textContent: "Adheres to 3-Tier liquid layout, single canonical projection, and multi-surface degradation." }),
+          insertBar,
           bodyEditor
         );
 
@@ -1031,9 +2038,77 @@ export async function handleTrigger(triggerId: string) {
   // --- View 2: Interactive Flow DAG View ---
   function renderDagView(): HTMLElement {
     const wrap = el("div", { className: "studio-dag-view" });
+
+    const addToolBtn = el("button", {
+      type: "button",
+      className: "ghost tiny",
+      textContent: "+ Add Tool",
+      onclick: () => {
+        const toolName = window.prompt("Tool name to declare (e.g. vak_render, run_command, nse_quote):");
+        if (!toolName || !toolName.trim() || !currentSkillPkg) return;
+        const clean = toolName.trim();
+        const current = (currentSkillPkg.skill.allowedTools ?? "").split(/\s+/).filter(Boolean);
+        if (!current.includes(clean)) {
+          current.push(clean);
+          currentSkillPkg.skill.allowedTools = current.join(" ");
+          rebuildSkillMdFromVisual(
+            currentSkillPkg.skill.name,
+            currentSkillPkg.skill.description,
+            currentSkillPkg.skill.allowedTools,
+            currentSkillPkg.skill.body
+          );
+          showNotice(`Added tool "${clean}" to package and Flow DAG.`);
+          render();
+        }
+      }
+    });
+
+    const addChainBtn = el("button", {
+      type: "button",
+      className: "ghost tiny",
+      textContent: "+ Add Chained Skill",
+      onclick: () => {
+        const skillName = window.prompt("Skill to chain (e.g. interactive-ui, surface-design, summarize, task-tracker):", "interactive-ui");
+        if (!skillName || !skillName.trim() || !currentSkillPkg) return;
+        const clean = skillName.trim();
+        const chainLine = `\n- Load \`${clean}\` for extended UI and layout contracts.\n`;
+        currentSkillPkg.skill.body += chainLine;
+        rebuildSkillMdFromVisual(
+          currentSkillPkg.skill.name,
+          currentSkillPkg.skill.description,
+          currentSkillPkg.skill.allowedTools ?? "",
+          currentSkillPkg.skill.body
+        );
+        showNotice(`Chained skill "${clean}" linked into Flow DAG.`);
+        render();
+      }
+    });
+
+    const addStepBtn = el("button", {
+      type: "button",
+      className: "ghost tiny",
+      textContent: "+ Add Procedural Step",
+      onclick: () => {
+        const stepTitle = window.prompt("Procedural section title (e.g. Risk Assessment & Guardrails):");
+        if (!stepTitle || !stepTitle.trim() || !currentSkillPkg) return;
+        const clean = stepTitle.trim();
+        const stepBlock = `\n## ${clean}\n\n1. Define operational procedure for ${clean.toLowerCase()}.\n`;
+        currentSkillPkg.skill.body += stepBlock;
+        rebuildSkillMdFromVisual(
+          currentSkillPkg.skill.name,
+          currentSkillPkg.skill.description,
+          currentSkillPkg.skill.allowedTools ?? "",
+          currentSkillPkg.skill.body
+        );
+        showNotice(`Added procedural step "${clean}" to DAG and instructions.`);
+        render();
+      }
+    });
+
+    const dagActions = el("div", { className: "studio-dag-actions" }, addToolBtn, addChainBtn, addStepBtn);
     const toolbar = el("div", { className: "studio-dag-toolbar" },
       el("span", { textContent: "Execution & Surface Projection DAG (Directed Acyclic Graph)" }),
-      el("span", { textContent: "Click any node to inspect execution properties and boundary contracts" })
+      dagActions
     );
 
     const canvas = el("div", { className: "studio-dag-canvas" });
@@ -1056,182 +2131,26 @@ export async function handleTrigger(triggerId: string) {
     defs.append(marker);
     svg.append(defs);
 
-    interface DagNodeDef {
-      id: string;
-      title: string;
-      glyph: string;
-      detail: string;
-      badge: string;
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-      inspectorText: string;
-    }
-
-    interface DagEdgeDef {
-      from: string;
-      to: string;
-    }
-
     let nodes: DagNodeDef[] = [];
     let edges: DagEdgeDef[] = [];
 
     if (activeKind === "skill" && currentSkillPkg) {
-      nodes = [
-        {
-          id: "prompt",
-          title: "User Request",
-          glyph: "bubble",
-          detail: "Human prompt matching skill intent",
-          badge: "Trigger",
-          x: 40,
-          y: 130,
-          width: 200,
-          height: 80,
-          inspectorText: `Semantic trigger prompt evaluated against description: "${currentSkillPkg.skill.description}"`
-        },
-        {
-          id: "gate",
-          title: "use_skill Selection",
-          glyph: "spark",
-          detail: "Model selects tool gate",
-          badge: "Gate",
-          x: 280,
-          y: 130,
-          width: 200,
-          height: 80,
-          inspectorText: `Target skill: "${currentSkillPkg.skill.name}". Allowed tools declared: ${currentSkillPkg.skill.allowedTools || "none"}`
-        },
-        {
-          id: "tools",
-          title: "Capabilities & Tools",
-          glyph: "shield",
-          detail: "read_skill_file / sandbox execution",
-          badge: "Sandbox",
-          x: 520,
-          y: 50,
-          width: 200,
-          height: 80,
-          inspectorText: `Tools: ${currentSkillPkg.skill.allowedTools || "read_skill_file"}. Rehearsals run inside isolated Seatbelt sandbox.`
-        },
-        {
-          id: "chain",
-          title: "Chained Procedures",
-          glyph: "branch",
-          detail: "interactive-ui / surface-design",
-          badge: "Contract",
-          x: 520,
-          y: 210,
-          width: 200,
-          height: 80,
-          inspectorText: "Chains to interactive-ui when data binding is active, and surface-design for 3-tier layout compliance."
-        },
-        {
-          id: "store",
-          title: "Canonical Records",
-          glyph: "table",
-          detail: "Single source of truth under /records",
-          badge: "Data",
-          x: 760,
-          y: 130,
-          width: 200,
-          height: 80,
-          inspectorText: "Data collection mapped to {/records}. Prevents divergent values between charts and tables."
-        },
-        {
-          id: "surface",
-          title: "3-Tier Canvas",
-          glyph: "canvas",
-          detail: "Metrics, Analytics Split, Detail Table",
-          badge: "Visual",
-          x: 1000,
-          y: 50,
-          width: 200,
-          height: 80,
-          inspectorText: "3-Tier liquid layout reflows across 320px, 720px, and 960px container query breakpoints."
-        },
-        {
-          id: "voice",
-          title: "Dual Spoken Projection",
-          glyph: "voice",
-          detail: "lowerSurface TTS audio narrative",
-          badge: "Spoken",
-          x: 1000,
-          y: 210,
-          width: 200,
-          height: 80,
-          inspectorText: "First sentence carries headline finding and primary caveat for text-to-speech audio playback."
-        }
-      ];
-
-      edges = [
-        { from: "prompt", to: "gate" },
-        { from: "gate", to: "tools" },
-        { from: "gate", to: "chain" },
-        { from: "tools", to: "store" },
-        { from: "chain", to: "store" },
-        { from: "store", to: "surface" },
-        { from: "surface", to: "voice" }
-      ];
+      const generated = generateSkillDag(currentSkillPkg.skill, currentSkillPkg, evalResults);
+      nodes = generated.nodes;
+      edges = generated.edges;
     } else if (activeKind === "app" && currentAppDetails) {
-      nodes = [
-        {
-          id: "trigger",
-          title: "Cron / Action Trigger",
-          glyph: "clock",
-          detail: currentAppDetails.manifest.triggers[0]?.expression || "Scheduled trigger",
-          badge: "Trigger",
-          x: 60,
-          y: 130,
-          width: 220,
-          height: 80,
-          inspectorText: `Triggers configured: ${currentAppDetails.manifest.triggers.map(t => `${t.id} (${t.expression ?? t.kind})`).join(", ")}`
-        },
-        {
-          id: "worker",
-          title: "Sandboxed Worker",
-          glyph: "cpu",
-          detail: `Node 24 · ${currentAppDetails.manifest.runtime.memoryLimitMb}MB Limit`,
-          badge: "Isolated",
-          x: 340,
-          y: 130,
-          width: 220,
-          height: 80,
-          inspectorText: `Backend entrypoint: ${currentAppDetails.manifest.entrypoints.backend || "server.ts"}. Airgap mode: ${currentAppDetails.manifest.entitlements.network.mode}.`
-        },
-        {
-          id: "storage",
-          title: "Airgapped Storage",
-          glyph: "memory",
-          detail: "Embedded SQLite & State",
-          badge: "Storage",
-          x: 620,
-          y: 130,
-          width: 220,
-          height: 80,
-          inspectorText: `Storage quota: ${currentAppDetails.manifest.runtime.maxStorageMb}MB. SQLite: ${currentAppDetails.manifest.entitlements.storage.sqlite ? "Enabled" : "Disabled"}.`
-        },
-        {
-          id: "canvas",
-          title: "Canvas Projection",
-          glyph: "canvas",
-          detail: "surface.json mount",
-          badge: "Surface",
-          x: 900,
-          y: 130,
-          width: 220,
-          height: 80,
-          inspectorText: `Companion surface: ${currentAppDetails.manifest.entrypoints.surface || "surface.json"}. Reactive canvas dispatches actions to worker.`
-        }
-      ];
-
-      edges = [
-        { from: "trigger", to: "worker" },
-        { from: "worker", to: "storage" },
-        { from: "storage", to: "canvas" }
-      ];
+      const generated = generateAppDag(currentAppDetails);
+      nodes = generated.nodes;
+      edges = generated.edges;
     }
+
+    const maxX = Math.max(1100, ...nodes.map(n => n.x + n.width + 60));
+    const maxY = Math.max(480, ...nodes.map(n => n.y + n.height + 60));
+    svg.setAttribute("width", `${maxX}`);
+    svg.setAttribute("height", `${maxY}`);
+    svg.setAttribute("viewBox", `0 0 ${maxX} ${maxY}`);
+    canvas.style.minWidth = `${maxX}px`;
+    canvas.style.minHeight = `${maxY}px`;
 
     // Draw SVG Edges
     for (const edge of edges) {
@@ -1258,12 +2177,109 @@ export async function handleTrigger(triggerId: string) {
     // Inspector card
     const inspector = el("div", { className: "studio-dag-inspector" });
     const updateInspector = (n: DagNodeDef) => {
+      const actionsBox = el("div", { className: "studio-inspector-actions" });
+
+      const toSpecBtn = el("button", {
+        type: "button",
+        className: "ghost tiny",
+        textContent: "✏️ Jump to Spec & Code",
+        onclick: () => {
+          activeStudioTab = "spec";
+          sessionActiveStudioTab = "spec";
+          render();
+        }
+      });
+
+      const toPreviewBtn = el("button", {
+        type: "button",
+        className: "ghost tiny",
+        textContent: "👁️ Preview in Canvas",
+        onclick: () => {
+          activeStudioTab = "preview";
+          sessionActiveStudioTab = "preview";
+          render();
+        }
+      });
+
+      const toSandboxBtn = el("button", {
+        type: "button",
+        className: "ghost tiny",
+        textContent: "🧪 Rehearse in Sandbox",
+        onclick: () => {
+          activeStudioTab = "sandbox";
+          sessionActiveStudioTab = "sandbox";
+          render();
+        }
+      });
+
+      actionsBox.append(toSpecBtn, toPreviewBtn, toSandboxBtn);
+
+      if (n.removableType === "tool" && n.removableValue && currentSkillPkg) {
+        const removeToolBtn = el("button", {
+          type: "button",
+          className: "danger tiny",
+          textContent: `Remove "${n.removableValue}" from Package`,
+          onclick: () => {
+            const current = (currentSkillPkg!.skill.allowedTools ?? "").split(/\s+/).filter(Boolean);
+            currentSkillPkg!.skill.allowedTools = current.filter(x => x !== n.removableValue).join(" ");
+            rebuildSkillMdFromVisual(
+              currentSkillPkg!.skill.name,
+              currentSkillPkg!.skill.description,
+              currentSkillPkg!.skill.allowedTools,
+              currentSkillPkg!.skill.body
+            );
+            showNotice(`Removed tool "${n.removableValue}" from package.`);
+            render();
+          }
+        });
+        actionsBox.append(removeToolBtn);
+      } else if (n.removableType === "chain" && n.removableValue && currentSkillPkg) {
+        const unlinkChainBtn = el("button", {
+          type: "button",
+          className: "danger tiny",
+          textContent: `Unlink "${n.removableValue}"`,
+          onclick: () => {
+            const reg = new RegExp(`\\n?-?\\s*Load\\s+\`${n.removableValue}\`[^\\n]*\\n?`, "gi");
+            currentSkillPkg!.skill.body = currentSkillPkg!.skill.body.replace(reg, "\n");
+            rebuildSkillMdFromVisual(
+              currentSkillPkg!.skill.name,
+              currentSkillPkg!.skill.description,
+              currentSkillPkg!.skill.allowedTools ?? "",
+              currentSkillPkg!.skill.body
+            );
+            showNotice(`Unlinked chained skill "${n.removableValue}".`);
+            render();
+          }
+        });
+        actionsBox.append(unlinkChainBtn);
+      } else if (n.removableType === "stage" && n.removableValue && currentSkillPkg) {
+        const removeStageBtn = el("button", {
+          type: "button",
+          className: "danger tiny",
+          textContent: `Remove Section "${n.removableValue}"`,
+          onclick: () => {
+            const reg = new RegExp(`\\n?##\\s+${n.removableValue}[\\s\\S]*?(?=\\n##|$)`, "gi");
+            currentSkillPkg!.skill.body = currentSkillPkg!.skill.body.replace(reg, "\n");
+            rebuildSkillMdFromVisual(
+              currentSkillPkg!.skill.name,
+              currentSkillPkg!.skill.description,
+              currentSkillPkg!.skill.allowedTools ?? "",
+              currentSkillPkg!.skill.body
+            );
+            showNotice(`Removed section "${n.removableValue}" from instructions.`);
+            render();
+          }
+        });
+        actionsBox.append(removeStageBtn);
+      }
+
       inspector.replaceChildren(
         el("div", { className: "studio-dag-inspector-head" },
           el("strong", { textContent: `Inspecting Node: ${n.title}` }),
           pill(n.badge, "info")
         ),
-        el("p", { className: "studio-field-hint", textContent: n.inspectorText })
+        el("p", { className: "studio-field-hint", textContent: n.inspectorText }),
+        actionsBox
       );
     };
 
@@ -1333,6 +2349,31 @@ export async function handleTrigger(triggerId: string) {
     const linterNotes = el("ul", { className: "studio-linter-notes" });
     linterCard.append(linterHead, linterNotes);
 
+    const previewNav = el("div", { className: "studio-inspector-actions" },
+      el("button", {
+        type: "button",
+        className: "ghost tiny",
+        textContent: "🔀 Inspect in Flow DAG",
+        onclick: () => {
+          activeStudioTab = "dag";
+          sessionActiveStudioTab = "dag";
+          selectedDagNodeId = "surface";
+          render();
+        }
+      }),
+      el("button", {
+        type: "button",
+        className: "ghost tiny",
+        textContent: "✏️ Edit Instructions in Spec",
+        onclick: () => {
+          activeStudioTab = "spec";
+          sessionActiveStudioTab = "spec";
+          render();
+        }
+      })
+    );
+    linterCard.append(previewNav);
+
     const voiceCard = el("div", { className: "studio-voice-card" });
     const voiceText = el("p", { className: "voice-spoken-text" });
     const playBtn = el("button", {
@@ -1355,79 +2396,8 @@ export async function handleTrigger(triggerId: string) {
 
     setTimeout(() => {
       let snap: SurfaceSnapshot | null = null;
-      let records = [
-        { id: "1", label: "Alpha Segment", value: 45000, status: "normal" },
-        { id: "2", label: "Beta Segment", value: 68200, status: "normal" },
-        { id: "3", label: "Gamma Segment", value: 29400, status: "caution" },
-        { id: "4", label: "Delta Segment", value: 12800, status: "critical" },
-      ];
-
       if (activeKind === "skill" && currentSkillPkg) {
-        const schemaFile = currentSkillPkg.files.find(f => f.path.includes("records.json") || f.path.includes("schemas/"));
-        if (schemaFile) {
-          try {
-            const parsed = JSON.parse(schemaFile.text);
-            if (Array.isArray(parsed.records)) records = parsed.records;
-          } catch {}
-        }
-
-        const nodes: VpsNode[] = [
-          {
-            id: "root-section",
-            type: "section",
-            props: {
-              title: currentSkillPkg.skill.name.replace(/-/g, " "),
-              description: currentSkillPkg.skill.description
-            },
-            children: ["metric-grid", "analytics-split", "records-table"]
-          },
-          {
-            id: "metric-grid",
-            type: "grid",
-            props: { columns: 4, minItemWidth: "sm" },
-            children: ["m1", "m2", "m3", "m4"]
-          },
-          { id: "m1", type: "stat", props: { label: "Total Volume", value: { records: "{/records}", field: "value", aggregate: "sum" } } },
-          { id: "m2", type: "stat", props: { label: "Average Size", value: { records: "{/records}", field: "value", aggregate: "mean" } } },
-          { id: "m3", type: "stat", props: { label: "Peak Observed", value: { records: "{/records}", field: "value", aggregate: "max" } } },
-          { id: "m4", type: "stat", props: { label: "Tracked Entities", value: { records: "{/records}", field: "id", aggregate: "count" } } },
-          {
-            id: "analytics-split",
-            type: "split",
-            props: { ratio: "2:1", maxWidth: "lg" },
-            children: ["trend-chart", "status-chart"]
-          },
-          {
-            id: "trend-chart",
-            type: "chart",
-            props: { title: "Observed Distribution", kind: "bar", series: { records: "{/records}", label: "label", fields: ["value"] } }
-          },
-          {
-            id: "status-chart",
-            type: "chart",
-            props: { title: "Entity Breakdown", kind: "pie", series: { records: "{/records}", label: "label", fields: ["value"] } }
-          },
-          {
-            id: "records-table",
-            type: "table",
-            props: {
-              title: "Granular Source Records",
-              columns: ["id", "label", "value", "status"],
-              rows: { records: "{/records}", fields: ["id", "label", "value", "status"] },
-              maxWidth: "full",
-              searchable: true,
-              sortable: true
-            }
-          }
-        ];
-
-        snap = {
-          id: `studio-${currentSkillPkg.skill.name}`,
-          version: 1,
-          title: currentSkillPkg.skill.name.replace(/-/g, " "),
-          data: { records },
-          nodes
-        };
+        snap = buildRealisticSkillSurface(currentSkillPkg.skill, currentSkillPkg);
 
         let warnings = 0;
         linterNotes.replaceChildren();
@@ -1510,14 +2480,49 @@ export async function handleTrigger(triggerId: string) {
         : "Select a script above to execute in a disposable Seatbelt sandbox with SHA-256 integrity verification."
     });
 
-    sandboxCard.append(
-      runnerHead,
-      el("div", { className: "studio-field" },
-        el("label", { className: "studio-field-label", textContent: "Executable Target" }),
-        scriptSel
-      ),
-      term
-    );
+    if (scriptFiles.length === 0) {
+      const emptyBox = el("div", { className: "studio-empty-scripts" },
+        el("div", { className: "studio-card-head" },
+          icon("spark", 18),
+          el("div", {},
+            el("strong", { textContent: "Instruction & Projection Procedure" }),
+            el("p", { className: "muted small", textContent: "This skill executes through local LLM reasoning and declarative canvas projections without standalone shell or Python scripts." })
+          )
+        ),
+        el("p", { className: "studio-field-hint", textContent: "To rehearse executable tool scripts inside the disposable Seatbelt sandbox with SHA-256 receipts, click '+ Add Helper Script' below." }),
+        el("button", {
+          type: "button",
+          className: "ghost small",
+          textContent: "+ Add Helper Script (scripts/rehearse.py)",
+          onclick: () => {
+            const path = "scripts/rehearse.py";
+            if (activeKind === "skill" && currentSkillPkg) {
+              currentSkillPkg.files.push({
+                path,
+                text: "#!/usr/bin/env python3\nimport sys\nprint('Rehearsing skill tool boundary inside seatbelt sandbox...')\nsys.exit(0)\n",
+                bytes: 110,
+                status: "added"
+              });
+              activeFileName = path;
+              sessionActiveFileName = path;
+              isDirty = true;
+              scheduleAutoSave();
+              render();
+            }
+          }
+        })
+      );
+      sandboxCard.append(runnerHead, emptyBox);
+    } else {
+      sandboxCard.append(
+        runnerHead,
+        el("div", { className: "studio-field" },
+          el("label", { className: "studio-field-label", textContent: "Executable Target" }),
+          scriptSel
+        ),
+        term
+      );
+    }
 
     let evalCard: HTMLElement | null = null;
     if (activeKind === "skill" && currentSkillPkg) {
@@ -1548,7 +2553,29 @@ export async function handleTrigger(triggerId: string) {
           evalList.append(item);
         }
       } else {
-        evalList.append(el("p", { className: "studio-field-hint", textContent: "Run test suite to verify whether prompts correctly select this skill over competitors on local models." }));
+        const domain = getDomainTestPrompts(currentSkillPkg.skill);
+        const testList = el("div", { className: "studio-pending-tests" },
+          el("p", { className: "studio-field-hint", textContent: "Ready to test prompt selection gate on active local model with domain-specific scenarios:" })
+        );
+        for (const p of domain.positive) {
+          testList.append(el("div", { className: "studio-test-result" },
+            el("span", { className: "test-dot pending", textContent: "•" }),
+            el("div", { className: "test-text" },
+              el("p", { className: "test-prompt", textContent: p }),
+              el("span", { className: "test-meta", textContent: "Positive Intent Scenario" })
+            )
+          ));
+        }
+        for (const p of domain.distractor) {
+          testList.append(el("div", { className: "studio-test-result" },
+            el("span", { className: "test-dot distractor", textContent: "○" }),
+            el("div", { className: "test-text" },
+              el("p", { className: "test-prompt", textContent: p }),
+              el("span", { className: "test-meta", textContent: "Distractor Negative Scenario" })
+            )
+          ));
+        }
+        evalList.append(testList);
       }
 
       evalCard.append(evalHead, evalList);

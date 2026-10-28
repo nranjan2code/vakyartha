@@ -75,10 +75,16 @@ flowchart LR
   end
 ```
 
-### Node Features:
+### Node Features & Interactive Authoring:
 - **Clean SVG Cubic Bezier Connectors**: Smooth vector paths with directional arrowheads connecting nodes.
 - **Status Badges & Icons**: Clear capability markers (`Trigger`, `Gate`, `Sandbox`, `Data`, `Visual`, `Spoken`).
 - **Interactive Node Inspector**: Clicking any node opens the inspector drawer revealing the exact frontmatter, manifest constraints, or prompt match criteria governing that stage.
+- **Cross-Screen Deep Links**: Node inspector actions (`✏️ Jump to Spec & Code`, `👁️ Preview in Canvas`, `🧪 Rehearse in Sandbox`) enable immediate navigation with targeted element focus.
+- **DAG Direct Authoring Actions**:
+  - `+ Add Tool`: Prompts for a tool name, validates it, appends it to `allowed-tools` in frontmatter, and updates DAG/Spec.
+  - `+ Add Chained Skill`: Prompts for a target skill, embeds procedure linkage in `SKILL.md`, and redraws chained edges.
+  - `+ Add Procedural Step`: Appends a structured operational stage (`## Step N: ...`) to the instructions.
+  - All DAG mutations auto-save to `<dataDir>/skills/.drafts/<name>/` immediately.
 
 ---
 

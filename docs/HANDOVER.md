@@ -43,26 +43,33 @@ A complete, production-grade **Creator Studio** workbench has been built and int
 - **Studio Hub & Multitasking**:
   - Direct entry from the sidebar (`✨ Studio`) and Settings → Skills opens the Creator Hub overview.
   - Non-destructive context switching allows navigating between active studio packages and ongoing chat turns without losing state, open files, or cursor positions.
-  - Multi-package catalog lists skills, sandboxed apps, active drafts, and dedicated creators (`+ New Skill`, `+ New Sandboxed App`).
+  - Multi-package catalog lists skills, sandboxed apps, active drafts, and dedicated creators (`+ New Skill`, `+ New Sandboxed App`) with clean, single-line action button styling.
+  - `#skills-studio-page` resides cleanly within the `.app` CSS grid (`grid-column: 2; grid-row: 1;`), fully preserving sidebar expansion/collapse transitions via `⌘\` or `#topbar-sidebar-toggle`.
 - **Continuous Background Auto-Save & Quarantine Lifecycle**:
   - Debounced auto-save (800ms) continuously persists drafts to `<dataDir>/skills/.drafts/<name>/` (`PUT /api/skills/:name/draft`).
   - Navigating between app tabs immediately flushes pending auto-saves to disk.
   - Toolbar status indicators show real-time draft state (`Draft auto-saved (time)` vs `Live / Published`), with explicit `Save Draft`, `Discard Draft` (reverts to published package), and `Publish Skill` (promotes draft to active runtime).
-- **Interactive Flow DAG (Directed Acyclic Graph)**:
+- **Interactive Flow DAG (Directed Acyclic Graph) & Bidirectional Authoring**:
   - Visual node-based graph mapping execution flow:
-    - *For Skills*: `User Intent` ➔ `use_skill Gate` ➔ `Allowed Tools & Sandbox` ➔ `Chained Skills` ➔ `Canonical /records` ➔ `3-Tier Surface` ➔ `Dual Spoken TTS`.
+    - *For Skills*: `User Intent` ➔ `use_skill Gate` ➔ `Allowed Tools & Sandbox` ➔ `Chained Skills` ➔ `Procedural Steps` ➔ `Canonical /records` ➔ `3-Tier Surface` ➔ `Dual Spoken TTS`.
     - *For Sandboxed Apps*: `Cron / Action Triggers` ➔ `Isolated Worker (server.ts)` ➔ `App Storage (SQLite)` ➔ `Canvas Projection (surface.json)`.
-  - SVG cubic bezier curves, node status badges, and interactive inspector drawer on node selection.
-- **Spec & Code Editor**:
+  - SVG cubic bezier curves, live node status badges, and interactive inspector drawer on node selection.
+  - **DAG Direct Authoring**: `+ Add Tool`, `+ Add Chained Skill`, and `+ Add Procedural Step` buttons directly mutate the package specification, auto-save to draft, and synchronize across all tabs.
+  - **Cross-Screen Navigation**: Node inspector provides one-click deep links (`✏️ Jump to Spec & Code`, `👁️ Preview in Canvas`, `🧪 Rehearse in Sandbox`) and contextual removal actions.
+- **Spec & Code Editor & Reactive Tool Chips**:
   - Vertical stacked form fields (name, description with live 1024-character counter, allowed-tools tokens) and tab-indented monospace code editor.
+  - Quick insertion bar (`+ 3-Tier Layout Contract`, `+ Spoken Voice Contract`, `+ Add Procedure Step`).
+  - **Tool Selection Synchronization**: Combines declared tools, core system/canvas tools (`read_skill_file`, `vak_render`, `vak_update`, `vak_submit`, `use_skill`, `run_command`), and active MCP integrations into interactive checked chips (`✓ <tool>` / `+ <tool>`), eliminating disconnected tool counts.
   - Full support for multi-file packages (`schemas/`, `references/`, `scripts/`, `assets/`, `tests/`) and sandboxed apps (`app.json`, `server.ts`, `surface.json`).
-- **Live Canvas Staging & Linter**:
+- **Authentic Domain Live Canvas Staging & Linter**:
   - Live `<vak-surface>` mounting across responsive container viewports (`320px`, `720px`, `960px`, `100% Fluid`).
+  - Domain-specific realistic surface synthesis for domain skills (e.g. `meeting-actions` renders Decisions cards, Action Items table, and Open Questions; `market-dashboard` renders live indices, sector returns, and active equities; `task-tracker` renders sprint tasks and velocity charts; `code-review` renders audit findings) rather than generic volume/segment fallback mocks.
   - Surface Design Linter checks single-chart full-width clamping, flags raw hex colors in favor of semantic tones, and validates the 8 standard chart kinds.
   - Dual Spoken Voice TTS auditioning via `lowerSurface` and `projectText`.
-- **Sandbox Rehearsal**:
+- **Sandbox Rehearsal & Selection Gate Testing**:
   - Runs inert scripts and app daemons inside `vak-sandbox` with SHA-256 integrity verification.
-  - Selection gate test suite verifies prompt matching against the provider selection gate (`/api/skills/eval`).
+  - For scriptless skills, displays prompt-guided procedural testing with `+ Add Helper Script (scripts/rehearse.py)` action.
+  - Preloaded domain-specific positive and distractor verification prompts testing the `use_skill` selection gate (`/api/skills/eval`).
 - **Verification**:
   - 211 app tests pass (`npm test`).
   - 399 framework tests pass (`npm run test:framework`).

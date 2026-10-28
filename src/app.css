@@ -1192,23 +1192,19 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 
 /* --- Studio Workbench & Creator Hub --- */
 .skills-studio-page {
-  position: fixed;
-  top: 44px;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 35;
+  grid-column: 2;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
-  color: var(--fg);
   min-width: 0;
   min-height: 0;
+  background: var(--bg);
+  color: var(--fg);
   overflow: hidden;
 }
 
 .skills-studio-page[hidden] {
-  display: none;
+  display: none !important;
 }
 
 /* Header Chrome */
@@ -1352,6 +1348,20 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
   gap: 10px;
   align-items: center;
   flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.studio-hub-actions button {
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 8px 14px !important;
+  font-size: 0.84rem !important;
+  font-weight: 500 !important;
+  flex-shrink: 0 !important;
+  height: auto !important;
+  line-height: normal !important;
 }
 
 .studio-draft-banner {
@@ -1845,6 +1855,39 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.studio-inspector-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.studio-dag-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.studio-insert-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.studio-empty-scripts {
+  padding: 24px;
+  background: var(--panel);
+  border: 1px dashed var(--border);
+  border-radius: var(--vak-radius, 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
 }
 
 /* Live Preview Stage */
