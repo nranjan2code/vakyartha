@@ -1,5 +1,5 @@
 # Enterprise Architecture Blueprint: Vakyartha "Mini-Cloud"
-## Multi-Tenant Pooled Sandbox Runtime & Full-Lifecycle Dynamic Artifact Applications
+## Multi-Tenant Pooled Sandbox Runtime, Full-Lifecycle Dynamic Apps & Tray-Launched Admin Console
 
 > **Document Class:** Enterprise Architecture Blueprint & Technical Specification  
 > **Target Platform:** Vakyartha Desktop Runtime (macOS Tauri + Node sidecar + `vak-sandbox`)  
@@ -21,9 +21,10 @@
 9. [Information & Data Architecture (Storage, DBs & Concurrency)](#9-information--data-architecture-storage-dbs--concurrency)
 10. [Zero-Trust Security Architecture & Threat Model (STRIDE)](#10-zero-trust-security-architecture--threat-model-stride)
 11. [Desktop Observability, Telemetry & FinOps Governance](#11-desktop-observability-telemetry--finops-governance)
-12. [High-Impact Enterprise Scenarios & Reference Deployments](#12-high-impact-enterprise-scenarios--reference-deployments)
-13. [Failure Modes, Circuit Breakers & Non-Functional Requirements (NFRs)](#13-failure-modes-circuit-breakers--non-functional-requirements-nfrs)
-14. [Phased Implementation Roadmap & Evaluation Gates](#14-phased-implementation-roadmap--evaluation-gates)
+12. [The Mini-Cloud Admin & Observability Console (Tray-Launched Control Plane)](#12-the-mini-cloud-admin--observability-console-tray-launched-control-plane)
+13. [High-Impact Enterprise Scenarios & Reference Deployments](#13-high-impact-enterprise-scenarios--reference-deployments)
+14. [Failure Modes, Circuit Breakers & Non-Functional Requirements (NFRs)](#14-failure-modes-circuit-breakers--non-functional-requirements-nfrs)
+15. [Phased Implementation Roadmap & Evaluation Gates](#15-phased-implementation-roadmap--evaluation-gates)
 
 ---
 
@@ -96,11 +97,15 @@ When resource pool contention occurs, the scheduler enforces strict preemption:
 
 ## 3. System Architecture & Runtime Boundaries
 
-The architecture enforces a strict two-tier separation between the **Host Supervisor Daemon (Trusted Realm)** and the **Sandboxed App Workers (Untrusted Execution Realm)**:
+The architecture enforces a clean separation across the **User Tier**, the **Trusted Supervisor Tier**, and the **Untrusted Execution Pool**:
 
 ```mermaid
 graph TD
-    UI[Tauri Desktop Shell & Canvas UI] <-->|Main-Window IPC & Private Anonymous Pipes| Supervisor[Host Supervisor Daemon]
+    Tray[macOS Menu Bar Tray Icon] -->|Click 'Open Console'| AdminUI[Mini-Cloud Admin & Observability Console\n(Tauri Window or Loopback Web App)]
+    User[Developer / User] -->|Primary Window| MainUI[Tauri Desktop Shell & Canvas UI]
+
+    MainUI <-->|Main-Window Private IPC| Supervisor[Host Supervisor Daemon]
+    AdminUI <-->|Admin IPC / Loopback SSE| Supervisor
     
     subgraph Trusted Realm ["Host Supervisor Daemon (Trusted Realm)"]
         KeyStore["Keychain Vault (API Keys & Credentials)"]
@@ -110,9 +115,11 @@ graph TD
         MCPGateway["Shared MCP Gateway (Stateless)"]
         FinOps["Global FinOps & Cost Ledger"]
         Registry["Catalog & App/Session Index"]
+        TelemetryServer["Admin Telemetry & Log Stream Hub"]
     end
 
     Supervisor <-->|Authenticated Local UDS / Stdio Pipes| PoolMgr
+    TelemetryServer -.->|Live Telemetry Feed| AdminUI
     
     subgraph Untrusted Realm ["Shared Sandbox Runtime Pool (OS Seatbelt Contained)"]
         Slot1["Worker Slot 1 (P0: Active Chat)\n- Node.js Runtime\n- Local Workspace Volume\n- Local SurfaceStore"]
@@ -460,8 +467,8 @@ graph LR
 
 ## 11. Desktop Observability, Telemetry & FinOps Governance
 
-### 11.1 The Desktop Telemetry Console
-Users and administrators have real-time visibility into every running app:
+### 11.1 The Desktop Telemetry Engine
+The Host Supervisor embeds a high-performance telemetry aggregator that collects logs, metrics, and audit entries from all pool workers.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -495,7 +502,117 @@ Users and administrators have real-time visibility into every running app:
 
 ---
 
-## 12. High-Impact Enterprise Scenarios & Reference Deployments
+## 12. The Mini-Cloud Admin & Observability Console (Tray-Launched Control Plane)
+
+### 12.1 Strategic Rationale & Decoupled Control Plane
+In an enterprise architecture, mixing administrative telemetry, process controls, and live log dumps into the primary conversational UI is an anti-pattern. Power users, developers, and operators require a **dedicated Control Plane / Admin Console** that:
+* Can run on a **secondary monitor** while the primary window stays focused on chat and Canvas surfaces.
+* Remains accessible even when the main window is hidden or closed to the macOS menu bar tray (`KEEP_RUNNING`).
+* Provides cloud-grade observability (equivalent to Docker Desktop Dashboard, AWS Console, or Portainer) running 100% locally on macOS.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│             VAKYARTHA MINI-CLOUD ADMINISTRATIVE CONSOLE                │
+├────────────────────────────────────────────────────────────────────────┤
+│ [FLEET: 2 Active | 1 Standby]  [TOTAL RAM: 78.4 MB]  [FINOPS: $0.14]   │
+├───────────────────┬────────────────────────────────────────────────────┤
+│ WORKBENCHES:      │ ACTIVE WORKBENCH: Centralized Log Aggregator       │
+│                   ├────────────────────────────────────────────────────┤
+│ > Fleet & Pool    │ Filter: [App: portfolio-analytics ▼] [Level: ALL ▼]│
+│   Inventory       ├────────────────────────────────────────────────────┤
+│ * Live Logs       │ 12:01:04.120 [INFO]  Worker slot #1 leased (app)   │
+│   FinOps Ledger   │ 12:01:04.180 [IPC]   Mounted volume: /apps/port/   │
+│   Security & Jail │ 12:01:05.020 [DB]    DuckDB WAL checkpoint: 0 ms   │
+│   Storage Volumes │ 12:01:14.300 [NET]   Broker fetch 200 OK (coing..) │
+│                   │ 12:01:14.312 [SURF]  DOM Patch dispatched (16ms)   │
+└───────────────────┴────────────────────────────────────────────────────┘
+```
+
+### 12.2 macOS System Menu Bar Tray Architecture
+Vakyartha's desktop tray (`src-tauri/src/lib.rs`) is expanded from a simple launcher into an active **Mini-Cloud Status Monitor**:
+
+```
+┌────────────────────────────────────────────────────────┐
+│  ● Vakyartha Mini-Cloud: 2 Active | 1 Standby (42MB)   │  <-- Dynamic Health Badge
+├────────────────────────────────────────────────────────┤
+│  Open Main Chat & Canvas                   Cmd+O       │
+│  Open Admin & Observability Console...     Cmd+Shift+A │  <-- Opens Dedicated Console
+│  Open Web Admin Dashboard in Browser...                │  <-- Opens Loopback Browser URL
+├────────────────────────────────────────────────────────┤
+│  Active Tenants:                                       │
+│    ● Portfolio Analytics App      (PID 84920, 0.4% CPU)│
+│    ● Code Refactoring Chat        (PID 84928, Idle)    │
+│    ○ Nightly ETL Sync             (Hibernated on Disk) │
+├────────────────────────────────────────────────────────┤
+│  Operational Actions:                                  │
+│    Force Hibernate Idle Sandboxes                      │
+│    Purge Stale Storage Volumes...                      │
+│    Restart Worker Pool                                 │
+├────────────────────────────────────────────────────────┤
+│  Quit Vakyartha                             Cmd+Q      │
+└────────────────────────────────────────────────────────┘
+```
+
+### 12.3 Dual Delivery Architecture: Native Window vs. Loopback Web App
+The Admin Console is engineered as a unified Vite web application (`admin.html`) that can be presented in **two distinct operational modes**:
+
+```mermaid
+graph TD
+    Tray[macOS Menu Bar Tray Menu] -->|Selection: 'Open Admin Console'| Decision{User Preference}
+    
+    Decision -->|Default: Native Desktop| NativeWin[Mode A: Dedicated Tauri Webview Window\n- Label: 'admin'\n- Custom overlay titlebar & dark mode\n- Private Tauri IPC (engine_request)\n- Zero open network ports]
+    
+    Decision -->|Alternative: In Browser| WebApp[Mode B: Detached Browser Web App\n- Runs in Chrome / Safari\n- URL: http://127.0.0.1:<ephemeral-port>/admin\n- Single-use cryptographically signed token\n- Full browser devtools & multi-tab support]
+
+    NativeWin <-->|Private Stdio Pipes| Supervisor[Host Supervisor Daemon]
+    WebApp <-->|Loopback HTTP + Server-Sent Events| Supervisor
+```
+
+* **Mode A (Dedicated Native Window):**
+  * Spawns a dedicated lightweight webview window (`label: "admin"`, 1100×720px) using Tauri's multi-window capabilities.
+  * Connects over Tauri's private anonymous pipes (ADR-044).
+  * Opens with `Cmd+Shift+A` or via the tray menu.
+* **Mode B (Detached Browser Web App):**
+  * Launches the user's default browser (via `tauri-plugin-opener`) navigating to `http://127.0.0.1:<port>/admin?token=<bearer-token>`.
+  * Employs standard browser devtools for profiling, multi-window tiling, and remote administration.
+
+### 12.4 The Five Core Administrative Workbenches
+The Admin Console is structured into five specialized operational workbenches:
+
+1. **Fleet & Worker Pool Manager:**
+   * Visual slot cards displaying Slot 1, Slot 2, Slot 3 status (`ACTIVE`, `IDLE`, `HIBERNATING`, `STANDBY`).
+   * Live gauges: CPU % core utilization, RSS memory footprint, active OS file descriptors, process uptime.
+   * Emergency controls: `[Hibernate Slot]`, `[Force Restart Pool]`, `[Inspect V8 Heap]`, `[Kill PID]`.
+2. **Tenant & Application Registry:**
+   * Unified searchable inventory of all Chats, Hosted Dynamic Apps, and Scheduled Jobs.
+   * Volume footprint inspector (`<dataDir>/apps/<id>/`).
+   * Embedded database explorer: view SQLite tables, execute read-only SQL queries on local DuckDB files, check row counts and WAL sizes.
+   * Snapshot and Rollback manager: one-click Realm rollback to previous transaction receipts.
+3. **Centralized Streaming Telemetry & Log Aggregator:**
+   * High-performance virtualized terminal stream rendering stdout, stderr, and IPC traces across all pool workers.
+   * Multi-tenant selector (filter by specific app or aggregate all).
+   * Log severity filters (`DEBUG`, `INFO`, `WARN`, `ERROR`) and regex search.
+   * One-click export to `.jsonl` or `.log` files for post-mortem diagnostics.
+4. **FinOps & Spend Governor:**
+   * Granular cost attribution per app and per chat.
+   * Provider distribution chart (OpenAI vs. Anthropic vs. local Ollama 4B runs).
+   * Live budget consumption gauges with visual warnings at 80% and automatic circuit breaker stops at 100%.
+5. **Zero-Trust Security & Audit Inspector:**
+   * Live streaming audit feed of macOS Seatbelt jail events.
+   * Brokered network request inspector (outbound URL, HTTP status, latency, payload size, stripped cookies).
+   * Denied syscall and denied tool call alerts (identifying prompt injection or unauthorized access attempts).
+
+### 12.5 Administrative API & Real-Time SSE Stream Contract
+The Supervisor exposes private streaming endpoints for the Admin Console:
+* `GET /admin/api/fleet`: Returns live snapshot of all worker pool slots, memory, and tenant leases.
+* `GET /admin/api/telemetry/stream` (SSE): Server-Sent Events stream delivering real-time metrics (`cpu`, `rss`, `eventLag`) at 1 Hz.
+* `GET /admin/api/logs/stream` (SSE): High-throughput streaming log feed delivering stdout/stderr lines with microsecond timestamps.
+* `POST /admin/api/fleet/slots/:id/hibernate`: Triggers graceful flush and hibernation of a worker slot.
+* `POST /admin/api/apps/:id/rollback`: Reverts app database and workspace to a designated transaction fingerprint.
+
+---
+
+## 13. High-Impact Enterprise Scenarios & Reference Deployments
 
 ### Reference Deployment 1: Dynamic Financial & Risk Analytics Portal
 * **Persona:** Financial Analyst / Independent Investor.
@@ -522,9 +639,9 @@ Users and administrators have real-time visibility into every running app:
 
 ---
 
-## 13. Failure Modes, Circuit Breakers & Non-Functional Requirements (NFRs)
+## 14. Failure Modes, Circuit Breakers & Non-Functional Requirements (NFRs)
 
-### 13.1 Failure Mode & Effects Analysis (FMEA)
+### 14.1 Failure Mode & Effects Analysis (FMEA)
 
 | Failure Mode | Root Cause | Impact | Automated Recovery Action |
 | :--- | :--- | :--- | :--- |
@@ -533,7 +650,7 @@ Users and administrators have real-time visibility into every running app:
 | **Corrupt SQLite WAL** | Abrupt power loss during write | Database unreadable | SQLite auto-recovers from WAL on next boot; if unrecoverable, Realm journal rolls back to last valid transaction snapshot. |
 | **API Key Exfiltration Attempt** | Prompt injection attacks try to read keys | Critical security threat | **Zero Impact:** Environment contains no keys; outbound network requests without whitelisted broker authorization are dropped by OS kernel. |
 
-### 13.2 Non-Functional Requirements (NFRs)
+### 14.2 Non-Functional Requirements (NFRs)
 * **NFR-1 (UI Latency):** Canvas action-to-DOM patch latency must remain **< 16 ms** for 95% of local interactions.
 * **NFR-2 (Startup Time):** Waking a hibernated app must complete in **< 150 ms**.
 * **NFR-3 (Memory Footprint):** Total idle memory consumption of the Pool Manager (including standby worker) must not exceed **120 MiB**.
@@ -541,7 +658,7 @@ Users and administrators have real-time visibility into every running app:
 
 ---
 
-## 14. Phased Implementation Roadmap & Evaluation Gates
+## 15. Phased Implementation Roadmap & Evaluation Gates
 
 ```mermaid
 gantt
@@ -559,13 +676,15 @@ gantt
     App Manifest (app.json) & Packaging Engine :2026-12-19, 7d
     Canvas Reactive IPC Bridge (surface_patch) :2026-12-26, 10d
     Embedded SQLite & DuckDB Volume Support    :2027-01-05, 10d
-    section Phase 4: Observability & Studio
-    Desktop Telemetry Console (Logs & Metrics) :2027-01-15, 7d
-    Skill Studio YOLO Synthesis for Full Apps  :2027-01-22, 10d
-    End-to-End Evaluation & Release Gating     :2027-02-01, 7d
+    section Phase 4: Observability & Tray Console
+    Tray Menu Integration & Status Badge       :2027-01-15, 5d
+    Admin Console Web App & Workbenches        :2027-01-20, 10d
+    Desktop Telemetry & Log Aggregator SSE     :2027-01-30, 7d
+    End-to-End Evaluation & Release Gating     :2027-02-06, 7d
 ```
 
 ### Evaluation & Acceptance Gates (Before Promotion to Production)
 1. **Gate 1 (Security Proof):** `scripts/sandbox-security-check.ts` must prove that untrusted app code cannot access host filesystem paths (`~/.ssh`, `.env`) or open raw TCP sockets.
 2. **Gate 2 (Resource Concurrency):** `scripts/pool-concurrency-check.ts` must prove that opening 20 concurrent chats/apps keeps total host memory under 200 MiB via automatic slot leasing and LRU hibernation.
 3. **Gate 3 (Reactivity Benchmark):** WebKit performance tests must prove that slider/form actions update the Canvas surface in `< 16 ms` without LLM model requests.
+4. **Gate 4 (Admin Console Telemetry):** `scripts/admin-console-check.ts` must prove that streaming logs and process metrics from active sandboxes render smoothly in both the native Tauri window and the detached loopback browser view without impacting primary chat responsiveness.
