@@ -101,43 +101,43 @@ The architecture enforces a clean separation across the **User Tier**, the **Tru
 
 ```mermaid
 graph TD
-    Tray[macOS Menu Bar Tray Icon] -->|Click 'Open Console'| AdminUI[Mini-Cloud Admin & Observability Console\n(Tauri Window or Loopback Web App)]
-    User[Developer / User] -->|Primary Window| MainUI[Tauri Desktop Shell & Canvas UI]
+    Tray["macOS Menu Bar Tray Icon"] -->|"Click: Open Console"| AdminUI["Mini-Cloud Admin and Observability Console<br/>(Tauri Window or Web App)"]
+    User["Developer or User"] -->|"Primary Window"| MainUI["Tauri Desktop Shell and Canvas UI"]
 
-    MainUI <-->|Main-Window Private IPC| Supervisor[Host Supervisor Daemon]
-    AdminUI <-->|Admin IPC / Loopback SSE| Supervisor
+    MainUI <-->|"Main-Window Private IPC"| Supervisor["Host Supervisor Daemon"]
+    AdminUI <-->|"Admin IPC or Loopback SSE"| Supervisor
     
-    subgraph Trusted Realm ["Host Supervisor Daemon (Trusted Realm)"]
-        KeyStore["Keychain Vault (API Keys & Credentials)"]
+    subgraph TrustedRealm ["Host Supervisor Daemon (Trusted Realm)"]
+        KeyStore["Keychain Vault (API Keys and Credentials)"]
         PoolMgr["Sandbox Worker Pool Manager"]
-        Broker["Brokered Network Proxy & Firewall"]
+        Broker["Brokered Network Proxy and Firewall"]
         LLMProxy["Model Token Streaming Broker"]
         MCPGateway["Shared MCP Gateway (Stateless)"]
-        FinOps["Global FinOps & Cost Ledger"]
-        Registry["Catalog & App/Session Index"]
-        TelemetryServer["Admin Telemetry & Log Stream Hub"]
+        FinOps["Global FinOps and Cost Ledger"]
+        Registry["Catalog and App/Session Index"]
+        TelemetryServer["Admin Telemetry and Log Stream Hub"]
     end
 
-    Supervisor <-->|Authenticated Local UDS / Stdio Pipes| PoolMgr
-    TelemetryServer -.->|Live Telemetry Feed| AdminUI
+    Supervisor <-->|"Authenticated Local UDS or Pipes"| PoolMgr
+    TelemetryServer -.->|"Live Telemetry Feed"| AdminUI
     
-    subgraph Untrusted Realm ["Shared Sandbox Runtime Pool (OS Seatbelt Contained)"]
-        Slot1["Worker Slot 1 (P0: Active Chat)\n- Node.js Runtime\n- Local Workspace Volume\n- Local SurfaceStore"]
-        Slot2["Worker Slot 2 (P1: Dynamic Dashboard App)\n- Node/Python Daemon\n- Embedded DuckDB / SQLite\n- Canvas Reactive Bridge"]
-        Slot3["Worker Slot 3 (Standby Warm Runner)\n- Instant Lease (<50ms)"]
+    subgraph UntrustedRealm ["Shared Sandbox Runtime Pool (OS Seatbelt Contained)"]
+        Slot1["Worker Slot 1 (P0: Active Chat)<br/>- Node.js Runtime<br/>- Local Workspace Volume<br/>- Local SurfaceStore"]
+        Slot2["Worker Slot 2 (P1: Dynamic Dashboard App)<br/>- Node/Python Daemon<br/>- Embedded DuckDB / SQLite<br/>- Canvas Reactive Bridge"]
+        Slot3["Worker Slot 3 (Standby Warm Runner)<br/>- Instant Lease in under 50ms"]
     end
 
-    PoolMgr -->|Slot Lease / Eviction / Freeze| Slot1
-    PoolMgr -->|Slot Lease / Eviction / Freeze| Slot2
-    PoolMgr -->|Pre-warm / Recycle| Slot3
+    PoolMgr -->|"Slot Lease or Eviction"| Slot1
+    PoolMgr -->|"Slot Lease or Eviction"| Slot2
+    PoolMgr -->|"Pre-warm or Recycle"| Slot3
 
-    subgraph Storage Volumes ["Virtual Storage Volumes (<dataDir>/)"]
-        Vol1[("<dataDir>/chats/<id>/workspace/")]
-        Vol2[("<dataDir>/apps/<id>/workspace/")]
+    subgraph StorageVolumes ["Virtual Storage Volumes"]
+        Vol1[("Virtual Storage: chats/id/workspace")]
+        Vol2[("Virtual Storage: apps/id/workspace")]
     end
 
-    Slot1 -.->|File I/O strictly jailed| Vol1
-    Slot2 -.->|File I/O strictly jailed| Vol2
+    Slot1 -.->|"File I/O strictly jailed"| Vol1
+    Slot2 -.->|"File I/O strictly jailed"| Vol2
 ```
 
 ---
@@ -172,14 +172,14 @@ export interface PoolConfig {
 stateDiagram-v2
     [*] --> Standby: Pre-warmed by Pool Manager
     Standby --> Leased: User selects Chat or opens Dynamic App
-    Leased --> Active: Running Turn / Serving UI Interactions
+    Leased --> Active: Running Turn or Serving UI Interactions
     Active --> Idle: Inactivity Timer (5m)
-    Idle --> Suspended: Memory trimmed / GC forced
-    Suspended --> Hibernated: Flushed to Disk / Slot Evicted (15m)
-    Hibernated --> Leased: User returns (Instant Wake <150ms)
+    Idle --> Suspended: Memory trimmed and GC forced
+    Suspended --> Hibernated: Flushed to Disk and Slot Evicted (15m)
+    Hibernated --> Leased: User returns (Instant Wake under 150ms)
     Active --> Terminating: Explicit user close or app deletion
     Hibernated --> Destroyed: Evicted from volume
-    Terminating --> Standby: Sanitized & Recycled
+    Terminating --> Standby: Sanitized and Recycled
 ```
 
 ### 4.3 Hibernation & Hydration Protocol
@@ -335,7 +335,7 @@ Communication between the trusted Host Supervisor and the untrusted Sandboxed Wo
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User
+    actor User as User
     participant Agent as AI Co-Pilot / Skill Studio
     participant Sup as Host Supervisor
     participant Pool as Sandbox Runtime Pool
@@ -346,7 +346,7 @@ sequenceDiagram
     Agent->>Sup: Generate App Package (app.json, server.ts, surface.json)
     
     rect rgb(240, 248, 255)
-        note over Sup,Worker: Phase 1: Rehearsal & Verification
+        note over Sup,Worker: Phase 1: Rehearsal and Verification
         Sup->>Pool: Request Ephemeral Verification Slot
         Pool->>Worker: Run Dry-Run Verification Run
         Worker-->>Sup: Verification Passed (Zero syntax/runtime errors)
@@ -356,10 +356,10 @@ sequenceDiagram
     User->>Canvas: Click "Deploy to Canvas"
     
     rect rgb(240, 255, 240)
-        note over Sup,Canvas: Phase 2: Provisioning & Live Mounting
-        Sup->>Pool: Provision Permanent App Volume (<dataDir>/apps/portfolio/)
-        Pool->>Worker: Lease Slot & Launch App Daemon
-        Worker->>Worker: Initialize SQLite / DuckDB Tables
+        note over Sup,Canvas: Phase 2: Provisioning and Live Mounting
+        Sup->>Pool: Provision Permanent App Volume (portfolio)
+        Pool->>Worker: Lease Slot and Launch App Daemon
+        Worker->>Worker: Initialize SQLite and DuckDB Tables
         Worker->>Sup: Send Initial Surface Layout (surface_patch)
         Sup->>Canvas: Mount Reactive 3-Tier Canvas Surface
     end
@@ -369,20 +369,20 @@ sequenceDiagram
         User->>Canvas: Adjust Slider "Risk Tolerance: Aggressive"
         Canvas->>Sup: Send Control Event (dispatch_action)
         Sup->>Worker: Forward Action to App Worker
-        Worker->>Worker: Query Local DuckDB & Recalculate Risk (1.2ms)
+        Worker->>Worker: Query Local DuckDB and Recalculate Risk (1.2ms)
         Worker-->>Sup: Send Patch Diff (Update 2 Charts, 1 Table)
-        Sup-->>Canvas: Apply DOM Patches (<16ms, Zero LLM tokens)
+        Sup-->>Canvas: Apply DOM Patches (under 16ms, Zero LLM tokens)
     end
 
     rect rgb(245, 245, 245)
-        note over Pool,Worker: Phase 4: Autonomous Hibernation & Wake
+        note over Pool,Worker: Phase 4: Autonomous Hibernation and Wake
         User->>Canvas: Navigates away (App idle for 15 mins)
         Pool->>Worker: Send prepare_hibernate()
-        Worker->>Worker: Checkpoint DB WAL & Flush State
+        Worker->>Worker: Checkpoint DB WAL and Flush State
         Worker-->>Pool: flushed({ ready: true })
         Pool->>Worker: Terminate Child Process (Slot Freed)
         User->>Canvas: Returns to Portfolio tab 2 hours later
-        Pool->>Worker: Instant Wake (<150ms) -> Restores Live State
+        Pool->>Worker: Instant Wake (under 150ms) -> Restores Live State
     end
 ```
 
@@ -424,32 +424,32 @@ Dynamic code execution inside an AI desktop application requires enterprise-grad
 
 ```mermaid
 graph LR
-    subgraph Jailed Sandbox ["vak-sandbox Seatbelt Boundary"]
-        AppCode["Untrusted App Code\n(Node.js / Python)"]
-        LocalDisk[("<dataDir>/apps/<id>/\nONLY Accessible Path")]
+    subgraph JailedSandbox ["vak-sandbox Seatbelt Boundary"]
+        AppCode["Untrusted App Code<br/>(Node.js or Python)"]
+        LocalDisk[("App Volume: apps/id/<br/>ONLY Accessible Path")]
     end
 
-    subgraph Host Supervisor ["Supervisor (Trusted Outside Sandbox)"]
+    subgraph HostSupervisor ["Supervisor (Trusted Outside Sandbox)"]
         KeyStore["Keychain (API Keys)"]
         Broker["Brokered Network Proxy"]
-        Firewall["URL / Domain Whitelist"]
+        Firewall["URL and Domain Whitelist"]
         AuditLog[("audit.jsonl (Tamper-evident)")]
     end
 
-    AppCode -.->|Direct Network Socket| Denied((BLOCKED BY KERNEL))
-    AppCode -.->|Read ~/.ssh or ~/.aws| DeniedFile((BLOCKED BY KERNEL))
-    AppCode <-->|Read / Write| LocalDisk
+    AppCode -.->|"Direct Network Socket"| Denied(("BLOCKED BY KERNEL"))
+    AppCode -.->|"Read ssh or aws credentials"| DeniedFile(("BLOCKED BY KERNEL"))
+    AppCode <-->|"Read and Write"| LocalDisk
 
-    AppCode -->|1. Request Fetch via IPC| Broker
-    Broker -->|2. Check Whitelist & Strip Cookies| Firewall
-    Firewall -->|3. Signed HTTPS Fetch| RemoteAPI[External Web / API]
-    Broker -->|4. Return Sanitized Payload| AppCode
-    Broker -.->|Log Transaction| AuditLog
+    AppCode -->|"1. Request Fetch via IPC"| Broker
+    Broker -->|"2. Check Whitelist and Strip Cookies"| Firewall
+    Firewall -->|"3. Signed HTTPS Fetch"| RemoteAPI["External Web or API"]
+    Broker -->|"4. Return Sanitized Payload"| AppCode
+    Broker -.->|"Log Transaction"| AuditLog
 
-    AppCode -->|1. Request Model Completion| Broker
-    Broker -->|2. Attach API Key from Vault| KeyStore
-    Broker -->|3. Stream Tokens Back| AppCode
-    Broker -.->|Log Token Spending| AuditLog
+    AppCode -->|"1. Request Model Completion"| Broker
+    Broker -->|"2. Attach API Key from Vault"| KeyStore
+    Broker -->|"3. Stream Tokens Back"| AppCode
+    Broker -.->|"Log Token Spending"| AuditLog
 ```
 
 ### 10.1 STRIDE Threat Analysis Matrix
@@ -558,14 +558,14 @@ The Admin Console is engineered as a unified Vite web application (`admin.html`)
 
 ```mermaid
 graph TD
-    Tray[macOS Menu Bar Tray Menu] -->|Selection: 'Open Admin Console'| Decision{User Preference}
+    Tray["macOS Menu Bar Tray Menu"] -->|"Select: Open Admin Console"| Decision{"User Launch Choice"}
     
-    Decision -->|Default: Native Desktop| NativeWin[Mode A: Dedicated Tauri Webview Window\n- Label: 'admin'\n- Custom overlay titlebar & dark mode\n- Private Tauri IPC (engine_request)\n- Zero open network ports]
+    Decision -->|"Default: Native Desktop"| NativeWin["Mode A: Dedicated Tauri Webview Window<br/>- Label: admin (1100x720px)<br/>- Private Tauri IPC (engine_request)<br/>- Zero open network ports"]
     
-    Decision -->|Alternative: In Browser| WebApp[Mode B: Detached Browser Web App\n- Runs in Chrome / Safari\n- URL: http://127.0.0.1:<ephemeral-port>/admin\n- Single-use cryptographically signed token\n- Full browser devtools & multi-tab support]
+    Decision -->|"Alternative: In Browser"| WebApp["Mode B: Detached Browser Web App<br/>- Runs in Chrome or Safari<br/>- Loopback URL with signed token<br/>- Full browser devtools and tabs"]
 
-    NativeWin <-->|Private Stdio Pipes| Supervisor[Host Supervisor Daemon]
-    WebApp <-->|Loopback HTTP + Server-Sent Events| Supervisor
+    NativeWin <-->|"Private Stdio Pipes (ADR-044)"| Supervisor["Host Supervisor Daemon"]
+    WebApp <-->|"Loopback HTTP and SSE"| Supervisor
 ```
 
 * **Mode A (Dedicated Native Window):**
