@@ -810,39 +810,11 @@ if (openStudio) {
   openStudio.addEventListener("click", () => void switchNavTab("studio"));
 }
 
-function updateTopbarModel(): void {
-  const dot = document.getElementById("topbar-model-dot");
-  const name = document.getElementById("topbar-model-name");
-  if (!name || !dot) return;
-  if (current.model) {
-    dot.classList.remove("none");
-    const providerLabel = current.provider ? labelOf(current.provider) : "";
-    name.textContent = providerLabel ? `${current.model} · ${providerLabel}` : current.model;
-  } else {
-    dot.classList.add("none");
-    name.textContent = "Select model";
-  }
-}
-
 const topbarSidebarToggle = document.getElementById("topbar-sidebar-toggle");
 if (topbarSidebarToggle) {
   topbarSidebarToggle.append(icon("sidebar", 18));
   topbarSidebarToggle.addEventListener("click", toggleSidebar);
 }
-
-document.getElementById("topbar-model-badge")?.addEventListener("click", () => {
-  void (async () => {
-    if (isSkillStudioOpen()) await closeSkillStudio();
-    artifacts.close();
-    appsPage.close();
-    tasksPanel.page.close();
-    setTopNavActive("settings");
-    await openSettings("models");
-  })();
-});
-
-window.addEventListener("vak:model", updateTopbarModel);
-updateTopbarModel();
 
 async function switchNavTab(target: NavTab): Promise<void> {
   if (target === "chats") {
