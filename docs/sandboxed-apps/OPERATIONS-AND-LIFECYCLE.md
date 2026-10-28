@@ -267,3 +267,4 @@ node scripts/canvas-check.ts
 | **App manifest rejected with 400** | Inspect supervisor error log for `directory traversal detected`. | Ensure all entrypoints and triggers in `app.json` use relative paths without `..`, leading slashes, or NUL bytes. |
 | **Missed cron runs after laptop sleep** | Check `logs/execution.jsonl` for `coalescing missed crons`. | Expected behavior: the anti-thundering-herd policy fires at most one catch-up run and advances to the next wall-clock window. |
 | **Admin Console fails to open** | Verify Tauri window handler or loopback port. | Use `Cmd+Shift+A` or launch browser via `http://127.0.0.1:<port>/admin` with bearer token from Keychain. |
+

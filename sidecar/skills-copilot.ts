@@ -76,7 +76,7 @@ ${description}
 `,
   });
 
-  // Mock Canonical Data Schema & Records
+  // Canonical Sample Data Schema & Records
   files.push({
     path: "schemas/canonical_records.json",
     text: JSON.stringify({

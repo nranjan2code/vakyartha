@@ -1167,7 +1167,7 @@ Analyze domain records from supplied inputs and project structured findings acro
       badge.className = "pill ok";
     }
 
-    // Load canonical mock data
+    // Load canonical sample records for live surface preview
     let records = [
       { id: "1", label: "Alpha Segment", value: 45000, status: "normal" },
       { id: "2", label: "Beta Segment", value: 68200, status: "normal" },
