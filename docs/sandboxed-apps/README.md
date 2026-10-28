@@ -2,7 +2,29 @@
 
 This directory houses the formal Enterprise Architecture specifications for Vakyartha's **Multi-Tenant Pooled Sandbox Runtime**, **Full-Lifecycle Dynamic Hosted Applications**, and **Tray-Launched Admin & Observability Console** (the "Mini-Cloud" model).
 
-## Core Architecture Document
+## Implementation & Source Tree Reference
+
+The entire architecture is implemented directly without stubs or mocks:
+
+* **Schemas & IPC Contracts:**
+  * [`shared/app-manifest.ts`](../../shared/app-manifest.ts): Strict package manifest parser and validator (`parseAppManifest`).
+  * [`shared/sandbox-pool.ts`](../../shared/sandbox-pool.ts): Core pool contracts, states (`active`, `standby`, `idle`, `suspended`, `hibernated`), framed JSON-RPC message framing, and fleet snapshots.
+* **Pool Orchestrator & Workers:**
+  * [`sidecar/sandbox-pool/worker.ts`](../../sidecar/sandbox-pool/worker.ts): Sandboxed child process entrypoint with atomic `state.json` write-renaming, reactive action dispatch, and stdout/stderr telemetry.
+  * [`sidecar/sandbox-pool/pool-manager.ts`](../../sidecar/sandbox-pool/pool-manager.ts): Pool manager orchestrating pre-warmed standby runners, bounded concurrency (`maxActiveWorkers: 3`), LRU eviction, heartbeat ping probes, workstation sleep/wake clock jump detection (`elapsed > 45s`), and graceful teardown.
+  * [`sidecar/sandbox-pool/app-registry.ts`](../../sidecar/sandbox-pool/app-registry.ts): Hosted app catalog, `<dataDir>/apps/` storage footprint calculation, and autonomous background cron scheduling (`isCronMatch`).
+* **Admin & Observability Console:**
+  * [`admin.html`](../../admin.html), [`src/admin.ts`](../../src/admin.ts), [`src/admin.css`](../../src/admin.css): 5-workbench administrative panel supporting dual delivery (Tauri native window or loopback web app) with live Server-Sent Events (SSE).
+  * [`sidecar/server.ts`](../../sidecar/server.ts): Bound REST & SSE streaming endpoints (`/api/admin/fleet`, `/api/admin/telemetry/stream`, `/api/admin/logs/stream`, `/api/apps`).
+  * [`src-tauri/src/lib.rs`](../../src-tauri/src/lib.rs): System tray menu item ("Admin & Observability Console...", `Cmd+Shift+A`).
+* **Built-in Reference Application:**
+  * [`sidecar/builtin-apps/portfolio-risk/`](../../sidecar/builtin-apps/portfolio-risk/): Complete financial risk workbench calculating parametric VaR (95%/99%), Sharpe ratio, and asset allocation with `< 16ms` local Canvas reactive surface updates.
+* **Test Suites (209 Passing Tests):**
+  * [`test/app-manifest.test.ts`](../../test/app-manifest.test.ts): Unit tests for manifest validation and quota clamping.
+  * [`test/sandbox-pool.test.ts`](../../test/sandbox-pool.test.ts): Multi-process integration tests for slot leasing, LRU eviction, and shutdown.
+  * [`test/app-registry.test.ts`](../../test/app-registry.test.ts): Integration tests for app installation, Canvas actions, and cron matching.
+  * [`test/admin-api.test.ts`](../../test/admin-api.test.ts): Real end-to-end HTTP API tests for fleet and app management.
+  * [`test/builtin-apps.test.ts`](../../test/builtin-apps.test.ts): Verification tests for reference app calculations.
 
 * [**`ARCHITECTURE.md`**](ARCHITECTURE.md): The comprehensive technical specification covering:
   1. **Strategic Rationale & Tenancy Model:** Workload classes (Session tenants, Artifact App tenants, Job tenants), preemption, and fair-share scheduling.

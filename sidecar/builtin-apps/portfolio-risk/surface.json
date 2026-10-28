@@ -1,0 +1,58 @@
+{
+  "title": "Portfolio Risk & Quantitative Analysis",
+  "nodes": [
+    {
+      "id": "root",
+      "type": "stack",
+      "props": { "direction": "vertical", "gap": 16 },
+      "children": ["kpi-metrics", "controls-section", "chart-section"]
+    },
+    {
+      "id": "kpi-metrics",
+      "type": "grid",
+      "props": { "columns": 4, "gap": 12 },
+      "children": ["card-total-val", "card-var-95", "card-sharpe", "card-expected-return"]
+    },
+    {
+      "id": "card-total-val",
+      "type": "metric",
+      "props": { "label": "Portfolio Value", "value": "$124,500.00", "delta": "+4.2%" }
+    },
+    {
+      "id": "card-var-95",
+      "type": "metric",
+      "props": { "label": "Value-at-Risk (95% 1-Day)", "value": "$2,850.00", "status": "warn" }
+    },
+    {
+      "id": "card-sharpe",
+      "type": "metric",
+      "props": { "label": "Sharpe Ratio", "value": "1.84", "status": "ok" }
+    },
+    {
+      "id": "card-expected-return",
+      "type": "metric",
+      "props": { "label": "Expected Annual Return", "value": "14.2%" }
+    },
+    {
+      "id": "controls-section",
+      "type": "card",
+      "props": { "title": "Interactive Risk Sensitivity" },
+      "children": ["slider-risk-tolerance"]
+    },
+    {
+      "id": "slider-risk-tolerance",
+      "type": "slider",
+      "props": { "label": "Risk Tolerance Level", "min": 0, "max": 100, "value": 65, "step": 5 }
+    },
+    {
+      "id": "chart-section",
+      "type": "chart",
+      "props": {
+        "kind": "donut",
+        "title": "Asset Allocation Weights",
+        "labels": ["US Large Cap Equities", "Govt Bonds", "Gold / Commodities", "Cash Reserves"],
+        "series": [{ "name": "Allocation %", "values": [55, 25, 12, 8] }]
+      }
+    }
+  ]
+}

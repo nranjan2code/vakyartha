@@ -317,8 +317,24 @@ export class SandboxPoolManager extends EventEmitter {
     return this.sendRequest(slot, "dispatch_action", { controlId, value, action });
   }
 
+  private lastLoopTime = Date.now();
+
   private sweepIdleWorkers(): void {
     const now = Date.now();
+    const elapsed = now - this.lastLoopTime;
+    this.lastLoopTime = now;
+
+    // Detect system sleep/wake clock jumps (interval is 30s; if > 45s elapsed, system was suspended)
+    if (elapsed > 45_000) {
+      this.emit("log", {
+        slotId: "SYSTEM",
+        level: "warn",
+        message: `System wake detected after ${Math.round(elapsed / 1000)}s suspension. Reconciling pool slots...`,
+        at: new Date().toISOString(),
+      });
+      this.wakeAndReconcile().catch(() => {});
+    }
+
     for (const slot of this.slots.values()) {
       if (slot.state === "active" && slot.lastActiveAt) {
         if (now - slot.lastActiveAt >= this.config.idleTimeoutMs) {
@@ -348,12 +364,17 @@ export class SandboxPoolManager extends EventEmitter {
   async wakeAndReconcile(): Promise<void> {
     const pings: Promise<void>[] = [];
     for (const slot of this.slots.values()) {
-      if (slot.state === "suspended") {
+      if (slot.state === "suspended" || slot.state === "active" || slot.state === "idle") {
+        const wasSuspended = slot.state === "suspended";
         slot.state = "active";
         slot.lastActiveAt = Date.now();
         pings.push(
           this.sendRequest(slot, "ping", {}, 1000)
-            .then(() => this.sendRequest(slot, "resume", {}, 1000))
+            .then(() => {
+              if (wasSuspended) {
+                return this.sendRequest(slot, "resume", {}, 1000);
+              }
+            })
             .catch(() => {
               // Worker hung during sleep: kill and clean
               this.hibernate(slot.slotId).catch(() => {});
