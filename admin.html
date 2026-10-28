@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vakyartha · Admin & Observability Console</title>
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/app.css" />
+    <link rel="stylesheet" href="/src/admin.css" />
+    <script type="module" src="/src/admin.ts"></script>
+  </head>
+  <body class="admin-body">
+    <header class="admin-header" data-tauri-drag-region>
+      <div class="admin-brand" data-tauri-drag-region>
+        <img src="/icon.svg" alt="" width="20" height="20" class="admin-logo" />
+        <span class="admin-title">Mini-Cloud Admin & Observability</span>
+        <span class="admin-badge" id="admin-connection-status">Connecting...</span>
+      </div>
+
+      <nav class="admin-nav" aria-label="Workbenches">
+        <button type="button" class="admin-nav-btn active" data-tab="fleet">
+          <span class="nav-icon">⚡</span> Fleet & Pool
+        </button>
+        <button type="button" class="admin-nav-btn" data-tab="apps">
+          <span class="nav-icon">📦</span> Hosted Apps
+        </button>
+        <button type="button" class="admin-nav-btn" data-tab="logs">
+          <span class="nav-icon">📟</span> Live Logs
+        </button>
+        <button type="button" class="admin-nav-btn" data-tab="finops">
+          <span class="nav-icon">💎</span> FinOps
+        </button>
+        <button type="button" class="admin-nav-btn" data-tab="security">
+          <span class="nav-icon">🛡️</span> Security
+        </button>
+      </nav>
+
+      <div class="admin-header-actions" data-tauri-drag-region>
+        <button type="button" class="admin-action-btn secondary" id="admin-refresh-btn" title="Refresh state">↻ Refresh</button>
+        <button type="button" class="admin-action-btn danger" id="admin-restart-pool-btn" title="Restart sandbox worker pool">Restart Pool</button>
+      </div>
+    </header>
+
+    <main class="admin-content">
+      <!-- 1. Fleet & Pool Workbench -->
+      <section class="admin-workbench active" id="workbench-fleet">
+        <div class="metrics-row">
+          <div class="metric-card">
+            <span class="metric-label">Active Slots</span>
+            <div class="metric-value" id="metric-active-slots">0 / 3</div>
+            <span class="metric-sub" id="metric-active-sub">Bounded concurrency</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Standby Warm Runners</span>
+            <div class="metric-value" id="metric-standby-slots">0</div>
+            <span class="metric-sub">Instant lease in &lt;50ms</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Hibernated Tenants</span>
+            <div class="metric-value" id="metric-hibernated-tenants">0</div>
+            <span class="metric-sub">Zero-CPU state on disk</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Fleet Memory Footprint</span>
+            <div class="metric-value" id="metric-total-rss">0 MB</div>
+            <span class="metric-sub">Resident Set Size</span>
+          </div>
+        </div>
+
+        <div class="section-header">
+          <h2>Worker Pool Slots</h2>
+          <span class="section-desc">Managed child process runtimes strictly isolated per chat or application.</span>
+        </div>
+
+        <div class="slots-grid" id="slots-grid-container">
+          <div class="empty-state">Loading worker pool slots...</div>
+        </div>
+      </section>
+
+      <!-- 2. Hosted Apps Workbench -->
+      <section class="admin-workbench" id="workbench-apps">
+        <div class="section-header">
+          <h2>Hosted Dynamic Artifact Applications</h2>
+          <span class="section-desc">Persistent applications executing in dedicated sandboxes with reactive Canvas bridges.</span>
+        </div>
+
+        <div class="apps-toolbar">
+          <input type="text" id="apps-search-input" class="admin-input" placeholder="Search applications by name, ID or category..." />
+          <span class="apps-count" id="apps-count-label">0 applications</span>
+        </div>
+
+        <div class="apps-list-table-wrapper">
+          <table class="admin-table" id="apps-table">
+            <thead>
+              <tr>
+                <th>Application</th>
+                <th>Category</th>
+                <th>Runtime</th>
+                <th>Storage Volume</th>
+                <th>Triggers</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="apps-table-body">
+              <tr>
+                <td colspan="7" class="empty-cell">No hosted applications installed yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 3. Live Logs Workbench -->
+      <section class="admin-workbench" id="workbench-logs">
+        <div class="logs-toolbar">
+          <div class="logs-filters">
+            <select id="logs-level-filter" class="admin-select">
+              <option value="all">All Severities</option>
+              <option value="info">INFO</option>
+              <option value="warn">WARN</option>
+              <option value="error">ERROR</option>
+            </select>
+            <input type="text" id="logs-search-filter" class="admin-input" placeholder="Filter log messages..." />
+          </div>
+          <div class="logs-controls">
+            <label class="admin-checkbox-label">
+              <input type="checkbox" id="logs-autoscroll" checked /> Auto-scroll
+            </label>
+            <button type="button" class="admin-action-btn secondary small" id="logs-clear-btn">Clear</button>
+          </div>
+        </div>
+
+        <div class="terminal-container" id="admin-terminal">
+          <div class="terminal-welcome">Mini-Cloud live execution log streaming attached. Listening to stdio and IPC events...</div>
+        </div>
+      </section>
+
+      <!-- 4. FinOps Workbench -->
+      <section class="admin-workbench" id="workbench-finops">
+        <div class="section-header">
+          <h2>FinOps Spend &amp; Token Governor</h2>
+          <span class="section-desc">Model token usage, local vs hosted provider attribution, and hard budget enforcement.</span>
+        </div>
+
+        <div class="metrics-row">
+          <div class="metric-card">
+            <span class="metric-label">Total Spend</span>
+            <div class="metric-value" id="finops-total-cost">$0.00</div>
+            <span class="metric-sub">Across all sessions &amp; apps</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Local Ollama Savings</span>
+            <div class="metric-value ok-text" id="finops-local-savings">100% Free</div>
+            <span class="metric-sub">Zero-cost local inference</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Budget Consumption</span>
+            <div class="metric-value" id="finops-budget-usage">0%</div>
+            <span class="metric-sub">Circuit breaker at 100%</span>
+          </div>
+        </div>
+
+        <div class="finops-details-card">
+          <h3>Token Usage Attribution</h3>
+          <div id="finops-attribution-container" class="finops-container">
+            <p class="empty-state">No paid token usage recorded in current billing cycle.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. Security & Sandboxing Workbench -->
+      <section class="admin-workbench" id="workbench-security">
+        <div class="section-header">
+          <h2>Zero-Trust Security &amp; Sandbox Inspector</h2>
+          <span class="section-desc">OS Seatbelt jailing status, brokered API network policies, and file isolation parameters.</span>
+        </div>
+
+        <div class="security-grid">
+          <div class="security-card">
+            <h3>macOS Seatbelt Process Isolation</h3>
+            <div class="security-item">
+              <span class="security-label">Engine Isolation:</span>
+              <span class="security-value ok" id="sec-isolation-status">Active (vaksb)</span>
+            </div>
+            <div class="security-item">
+              <span class="security-label">File System Jailing:</span>
+              <span class="security-value ok">Strictly Scoped to Workspace</span>
+            </div>
+            <div class="security-item">
+              <span class="security-label">Credential Vault Protection:</span>
+              <span class="security-value ok">Zero Keys in Child Env</span>
+            </div>
+          </div>
+
+          <div class="security-card">
+            <h3>Brokered Network Proxy</h3>
+            <div class="security-item">
+              <span class="security-label">Raw Sockets:</span>
+              <span class="security-value danger">DENIED by Kernel</span>
+            </div>
+            <div class="security-item">
+              <span class="security-label">Outbound Mode:</span>
+              <span class="security-value">Explicit Whitelist (Signed HTTPS)</span>
+            </div>
+            <div class="security-item">
+              <span class="security-label">Cookie Stripping:</span>
+              <span class="security-value ok">Enforced on all requests</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -96,6 +96,10 @@ export class SandboxPoolManager extends EventEmitter {
     const rl = readline.createInterface({ input: child.stdout!, terminal: false });
     rl.on("line", (line) => this.handleWorkerLine(slot, line));
 
+    child.stdin?.on("error", () => {
+      // Handled silently: process pipe closed during shutdown or exit
+    });
+
     child.stderr?.on("data", (chunk) => {
       this.emit("log", {
         slotId,
@@ -187,8 +191,20 @@ export class SandboxPoolManager extends EventEmitter {
 
       slot.pendingRequests.set(id, { resolve, reject, timer });
       const raw = encodeIpcMessage({ v: 1, id, type, tenantId: slot.tenantId ?? undefined, payload });
+      if (!slot.child.stdin || slot.child.stdin.destroyed || !slot.child.stdin.writable) {
+        clearTimeout(timer);
+        slot.pendingRequests.delete(id);
+        reject(new Error(`Slot [${slot.slotId}] stdin is not writable`));
+        return;
+      }
       try {
-        slot.child.stdin?.write(raw);
+        slot.child.stdin.write(raw, (err) => {
+          if (err) {
+            clearTimeout(timer);
+            slot.pendingRequests.delete(id);
+            reject(err);
+          }
+        });
       } catch (err) {
         clearTimeout(timer);
         slot.pendingRequests.delete(id);
@@ -393,6 +409,7 @@ export class SandboxPoolManager extends EventEmitter {
       activeCount,
       standbyCount,
       hibernatedCount,
+      maxActiveWorkers: this.config.maxActiveWorkers,
       totalRssBytes,
       slots,
     };

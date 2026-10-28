@@ -32,6 +32,8 @@ import { generateSkillPackage, suggestSkillElement } from "./skills-copilot.ts";
 import { evaluateSkillPrompts } from "./skills-eval.ts";
 import { runSkillScript } from "./skills-sandbox.ts";
 import type { SkillGenerateRequest, SkillSuggestRequest } from "../shared/skills.ts";
+import { SandboxPoolManager } from "./sandbox-pool/pool-manager.ts";
+import { AppRegistry } from "./sandbox-pool/app-registry.ts";
 
 export interface AppServerOptions {
   /** Conversations, settings, channels, logs (and profiles/transcripts unless given). */
@@ -71,6 +73,8 @@ export interface AppServer {
   token?: string;
   url: string;
   shutdown(): Promise<void>;
+  pool?: SandboxPoolManager;
+  apps?: AppRegistry;
 }
 
 export async function startAppServer(opts: AppServerOptions): Promise<AppServer> {
@@ -257,9 +261,13 @@ ${skills.index()}`;
     origins: ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420", "http://127.0.0.1:1420"],
     // Outside agents get a link to watch what they projected (only when this server serves the UI).
     viewerUrl: opts.uiDir ? (session) => `http://127.0.0.1:${listening}/?session=${encodeURIComponent(session)}` : undefined,
-    routes: async (req, res, url) => (await attachRoute(req, res, url)) || (await media.route(req, res, url)) || (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await skillsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await voiceRoute(req, res, url)) || infoRoute(req, res, url),
+    routes: async (req, res, url) => (await attachRoute(req, res, url)) || (await media.route(req, res, url)) || (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await skillsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await voiceRoute(req, res, url)) || (await adminFleetRoute(req, res, url)) || (await appsRoute(req, res, url)) || infoRoute(req, res, url),
     log,
   });
+
+  const pool = new SandboxPoolManager();
+  const apps = new AppRegistry({ dataDir, pool });
+  await apps.init();
 
   const sandboxBin = opts.sandboxBin || "vaksb";
   marketplaces = new Marketplaces(dataDir, integrationCatalog(media, sandboxBin, dataDir), opts.marketplaceFetch, opts.marketplaceImageFetch);
@@ -478,6 +486,178 @@ ${skills.index()}`;
     return true;
   }
 
+  async function adminFleetRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
+    const p = url.pathname;
+    if (!p.startsWith("/api/admin")) return false;
+
+    try {
+      if (p === "/api/admin/fleet" && req.method === "GET") {
+        json(res, 200, pool.getFleetSnapshot());
+        return true;
+      }
+      const hibernateMatch = /^\/api\/admin\/fleet\/slots\/([^/]+)\/hibernate$/.exec(p);
+      if (hibernateMatch && req.method === "POST") {
+        const slotId = decodeURIComponent(hibernateMatch[1]!);
+        await pool.hibernate(slotId);
+        json(res, 200, { ok: true, slotId });
+        return true;
+      }
+      if (p === "/api/admin/fleet/restart" && req.method === "POST") {
+        await pool.suspendAll();
+        json(res, 200, { ok: true });
+        return true;
+      }
+      if (p === "/api/admin/lifecycle/suspend" && req.method === "POST") {
+        await pool.suspendAll();
+        json(res, 200, { ok: true, status: "suspended" });
+        return true;
+      }
+      if (p === "/api/admin/lifecycle/wake" && req.method === "POST") {
+        await pool.wakeAndReconcile();
+        json(res, 200, { ok: true, status: "reconciled" });
+        return true;
+      }
+      if (p === "/api/admin/telemetry/stream" && req.method === "GET") {
+        res.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          "connection": "keep-alive",
+          "x-accel-buffering": "no",
+        });
+        res.write(`data: ${JSON.stringify({ type: "snapshot", data: pool.getFleetSnapshot() })}\n\n`);
+        const onMetric = (m: unknown) => {
+          try { res.write(`data: ${JSON.stringify({ type: "metric", data: m })}\n\n`); } catch {}
+        };
+        pool.on("metric", onMetric);
+        const timer = setInterval(() => {
+          try {
+            res.write(`data: ${JSON.stringify({ type: "heartbeat", timestamp: Date.now(), fleet: pool.getFleetSnapshot() })}\n\n`);
+          } catch {}
+        }, 2000);
+        const cleanup = () => {
+          clearInterval(timer);
+          pool.off("metric", onMetric);
+        };
+        (req as unknown as { on?: (e: string, fn: () => void) => void }).on?.("close", cleanup);
+        res.on("close", cleanup);
+        return true;
+      }
+      if (p === "/api/admin/logs/stream" && req.method === "GET") {
+        res.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          "connection": "keep-alive",
+          "x-accel-buffering": "no",
+        });
+        const onLog = (l: unknown) => {
+          try { res.write(`data: ${JSON.stringify(l)}\n\n`); } catch {}
+        };
+        pool.on("log", onLog);
+        const cleanup = () => {
+          pool.off("log", onLog);
+        };
+        (req as unknown as { on?: (e: string, fn: () => void) => void }).on?.("close", cleanup);
+        res.on("close", cleanup);
+        return true;
+      }
+      json(res, 404, { error: "Unknown admin endpoint" });
+      return true;
+    } catch (err) {
+      json(res, 500, { error: (err as Error).message });
+      return true;
+    }
+  }
+
+  async function appsRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
+    const p = url.pathname;
+    if (!p.startsWith("/api/apps")) return false;
+
+    try {
+      if (p === "/api/apps" && req.method === "GET") {
+        json(res, 200, apps.listApps());
+        return true;
+      }
+      if (p === "/api/apps" && req.method === "POST") {
+        const body = await readJson(req);
+        if (!body || typeof body !== "object") {
+          json(res, 400, { error: "Request body must be an object" });
+          return true;
+        }
+        const manifest = ("manifest" in body && typeof body.manifest === "object") ? body.manifest : body;
+        const files = ("files" in body && typeof body.files === "object" && body.files !== null) ? body.files as Record<string, string> : undefined;
+        const app = await apps.installApp(manifest as any, files);
+        json(res, 201, app);
+        return true;
+      }
+
+      const actionMatch = /^\/api\/apps\/([^/]+)\/action$/.exec(p);
+      if (actionMatch && req.method === "POST") {
+        const id = decodeURIComponent(actionMatch[1]!);
+        const body = await readJson(req);
+        const result = await apps.dispatchAction(id, String(body.controlId ?? ""), body.value, body.action ? String(body.action) : undefined);
+        json(res, 200, result);
+        return true;
+      }
+
+      const triggerMatch = /^\/api\/apps\/([^/]+)\/triggers\/([^/]+)\/run$/.exec(p);
+      if (triggerMatch && req.method === "POST") {
+        const id = decodeURIComponent(triggerMatch[1]!);
+        const triggerId = decodeURIComponent(triggerMatch[2]!);
+        const result = await apps.runTrigger(id, triggerId);
+        json(res, 200, result);
+        return true;
+      }
+
+      const stateMatch = /^\/api\/apps\/([^/]+)\/state$/.exec(p);
+      if (stateMatch && req.method === "GET") {
+        const id = decodeURIComponent(stateMatch[1]!);
+        const app = apps.getApp(id);
+        if (!app) {
+          json(res, 404, { error: `App '${id}' not found` });
+          return true;
+        }
+        const stateFile = path.join(dataDir, "apps", id, "state.json");
+        if (existsSync(stateFile)) {
+          try {
+            const parsed = JSON.parse(readFileSync(stateFile, "utf-8"));
+            json(res, 200, parsed.state ?? parsed);
+            return true;
+          } catch {
+            json(res, 200, {});
+            return true;
+          }
+        }
+        json(res, 200, {});
+        return true;
+      }
+
+      const appMatch = /^\/api\/apps\/([^/]+)$/.exec(p);
+      if (appMatch) {
+        const id = decodeURIComponent(appMatch[1]!);
+        if (req.method === "GET") {
+          const app = apps.getApp(id);
+          if (!app) {
+            json(res, 404, { error: `App '${id}' not found` });
+            return true;
+          }
+          json(res, 200, app);
+          return true;
+        }
+        if (req.method === "DELETE") {
+          await apps.deleteApp(id);
+          json(res, 200, { ok: true, id });
+          return true;
+        }
+      }
+
+      json(res, 405, { error: "Method not allowed" });
+      return true;
+    } catch (err) {
+      json(res, 400, { error: (err as Error).message });
+      return true;
+    }
+  }
+
   const handle = async (req: HostRequest, res: HostResponse) => {
     try {
       if (req.method === "POST" && new URL(req.url ?? "/", "http://localhost").pathname === "/api/chat") {
@@ -505,8 +685,12 @@ ${skills.index()}`;
     request: createFetchHandler(handle),
     token,
     url: server ? `http://127.0.0.1:${port}` : "vak://localhost",
+    pool,
+    apps,
     async shutdown() {
       server?.close();
+      await apps.shutdown();
+      await pool.shutdown(2000);
       await tasks?.close();
       await media.close();
       await channels.stopAll();
@@ -530,7 +714,11 @@ async function serveUi(root: string, req: HostRequest, res: HostResponse): Promi
   const rel = decodeURIComponent(new URL(req.url ?? "/", "http://x").pathname).replace(/^\/+/, "");
   let file = path.resolve(root, rel || "index.html");
   if (!file.startsWith(path.resolve(root) + path.sep)) return void res.writeHead(403).end();
-  if (!existsSync(file) || statSync(file).isDirectory()) file = path.join(root, "index.html");
+  if (rel === "admin" && existsSync(path.join(root, "admin.html"))) {
+    file = path.join(root, "admin.html");
+  } else if (!existsSync(file) || statSync(file).isDirectory()) {
+    file = path.join(root, "index.html");
+  }
   const ext = path.extname(file);
   res.writeHead(200, {
     "content-type": MIME[ext] ?? "application/octet-stream",

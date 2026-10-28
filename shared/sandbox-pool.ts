@@ -47,6 +47,7 @@ export interface FleetSnapshot {
   activeCount: number;
   standbyCount: number;
   hibernatedCount: number;
+  maxActiveWorkers: number;
   totalRssBytes: number;
   slots: WorkerSlotSummary[];
 }
@@ -110,3 +111,4 @@ export function decodeIpcMessage(line: string): IpcMessage | null {
   }
   return null;
 }
+

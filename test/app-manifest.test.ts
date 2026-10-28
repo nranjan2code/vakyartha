@@ -98,3 +98,4 @@ test("app manifest clamps runaway memory and storage quotas within platform boun
   assert.equal(manifest.runtime.maxStorageMb, 2048);  // Clamped to 2048 MiB
   assert.equal(manifest.runtime.cpuTimeLimitSec, 300); // Clamped to 300s
 });
+

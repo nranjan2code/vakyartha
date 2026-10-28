@@ -214,3 +214,4 @@ export function parseAppManifest(raw: unknown): AppManifest {
     triggers,
   };
 }
+

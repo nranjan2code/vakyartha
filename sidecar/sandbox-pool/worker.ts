@@ -154,9 +154,10 @@ rl.on("line", (line) => {
     case "dispatch_action": {
       const { controlId, value, action } = msg.payload ?? {};
       emitLog("info", `Action dispatched on ${controlId}: ${action ?? value}`);
-      // Update in-memory state
+      // Update in-memory state and persist atomically
       if (controlId) {
         stateData[controlId] = value;
+        flushStateToDisk();
       }
       // Emit reactive surface patch back to Canvas
       send({
@@ -203,3 +204,4 @@ setInterval(() => {
     },
   });
 }, 10_000).unref();
+

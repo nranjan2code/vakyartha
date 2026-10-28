@@ -120,11 +120,30 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+fn show_admin(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("admin") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    } else {
+        let _ = tauri::WebviewWindowBuilder::new(
+            app,
+            "admin",
+            tauri::WebviewUrl::App("admin.html".into()),
+        )
+        .title("Vakyartha - Admin & Observability Console")
+        .inner_size(1100.0, 720.0)
+        .min_inner_size(800.0, 500.0)
+        .build();
+    }
+}
+
 fn tray(app: &tauri::App) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open vak", true, None::<&str>)?;
     let new_chat = MenuItem::with_id(app, "new-chat", "New chat", true, None::<&str>)?;
+    let admin = MenuItem::with_id(app, "admin", "Admin & Observability Console...", true, Some("CmdOrCtrl+Shift+A"))?;
     let quit = MenuItem::with_id(app, "quit", "Quit vak", true, Some("CmdOrCtrl+Q"))?;
-    let menu = Menu::with_items(app, &[&open, &new_chat, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &new_chat, &admin, &PredefinedMenuItem::separator(app)?, &quit])?;
     TrayIconBuilder::with_id("main")
         .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
         .icon_as_template(true)
@@ -139,6 +158,7 @@ fn tray(app: &tauri::App) -> tauri::Result<()> {
                     let _ = window.eval("window.dispatchEvent(new Event('vak:new-chat'))");
                 }
             }
+            "admin" => show_admin(app),
             "quit" => app.exit(0),
             _ => {}
         })
