@@ -5,6 +5,7 @@ import { MEDIA_OPERATIONS, mediaSelection, type MediaAsset, type MediaJob, type 
 import { api, ask, el, engine } from "./core.ts";
 import { group, row, select } from "./ui.ts";
 import { resolveMedia } from "./media.ts";
+import { surfaceMode } from "./theme.ts";
 
 let timer: ReturnType<typeof setTimeout> | undefined;
 export function disposeMediaPage(): void { clearTimeout(timer); document.querySelectorAll<VakSurfaceElement>(".media-result-surface vak-surface").forEach((s) => s.pauseMedia()); }
@@ -95,7 +96,7 @@ export function mediaResults(kind: MediaKind): HTMLElement {
         for (const id of j.assets) { const a = view.assets.find((a) => a.id === id); if (a) { const download = el("button", { type: "button", className: "ghost small", textContent: `Download ${a.name}` }); download.addEventListener("click", () => void fileLink(a, download, note)); controls.append(download); } }
         const content = el("div", { className: "media-result-surface" });
         const snap = view.projections[j.id];
-        if (snap) { const store = new SurfaceStore(basicCatalog); store.load(snap); const surface = document.createElement("vak-surface") as VakSurfaceElement; surface.mediaResolver = resolveMedia; surface.attach(store, snap.id); content.append(surface); }
+        if (snap) { const store = new SurfaceStore(basicCatalog); store.load(snap); const surface = document.createElement("vak-surface") as VakSurfaceElement; surface.mediaResolver = resolveMedia; surfaceMode(surface); surface.attach(store, snap.id); content.append(surface); }
         const element = el("div", { className: "row stack" }, el("div", { className: "row-label", textContent: `${Object.entries(MEDIA_OPERATIONS[kind]).find(([op]) => op === j.operation)?.[1] ?? j.operation} · ${j.state}` }), el("p", { className: "row-hint", textContent: `${j.selection.replace("|", " / ")} · ${new Date(j.created).toLocaleString()} · charge unknown` }), el("code", { textContent: j.id }), j.error || j.projectionError ? el("p", { className: "row-hint bad", textContent: j.error ?? j.projectionError }) : null, content, controls);
         rendered.set(j.id, { signature: jobSignature, element });
         return element;
