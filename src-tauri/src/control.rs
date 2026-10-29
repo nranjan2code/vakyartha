@@ -29,6 +29,10 @@ use state::{CheckOutcome, Requirement, RootStatus, RootTask, StateError, UserRev
 pub enum Resource {
     Generation,
     ProviderRequest,
+    ChildExecution,
+    VerificationExecution,
+    ToolInvocation,
+    PersistentService,
     ContainedProcess,
     IntegrationProcess,
 }
@@ -38,6 +42,7 @@ pub enum AdmissionError {
     InvalidIdentity,
     InvalidProfile,
     CapacityUnavailable(Resource),
+    UnconfiguredResource(Resource),
     RootLimit(Resource),
     ConflictingRequestIdentity,
     RequestAlreadySettled,
@@ -126,11 +131,14 @@ impl CapacityLedger {
             || !valid_identity(root_id)
             || amounts.is_empty()
             || amounts.values().any(|amount| *amount == 0)
-            || amounts
-                .keys()
-                .any(|resource| !profile.global.contains_key(resource))
         {
             return Err(AdmissionError::InvalidIdentity);
+        }
+        if let Some(resource) = amounts
+            .keys()
+            .find(|resource| !profile.global.contains_key(resource))
+        {
+            return Err(AdmissionError::UnconfiguredResource(*resource));
         }
         if let Some(existing_id) = self.request_ids.get(request_id) {
             let Some(existing) = self.active.get(existing_id) else {
@@ -1652,6 +1660,56 @@ mod tests {
                 .reserve(&profile(), "r3", "root-c", ask(Resource::Generation, 1))
                 .unwrap_err(),
             AdmissionError::CapacityUnavailable(Resource::Generation)
+        );
+    }
+
+    #[test]
+    fn child_admission_is_unavailable_until_the_profile_configures_its_slot_domain() {
+        let mut ledger = CapacityLedger::default();
+        assert_eq!(
+            ledger.reserve(
+                &profile(),
+                "child-request-1",
+                "root-child-1",
+                ask(Resource::ChildExecution, 1),
+            ),
+            Err(AdmissionError::UnconfiguredResource(
+                Resource::ChildExecution
+            ))
+        );
+
+        let configured = CapacityProfile::new(
+            BTreeMap::from([(Resource::ChildExecution, 3)]),
+            BTreeMap::from([(Resource::ChildExecution, 1)]),
+            8,
+        )
+        .unwrap();
+        ledger
+            .reserve(
+                &configured,
+                "child-request-2",
+                "root-child-1",
+                ask(Resource::ChildExecution, 1),
+            )
+            .unwrap();
+        assert_eq!(
+            ledger.reserve(
+                &configured,
+                "child-request-3",
+                "root-child-1",
+                ask(Resource::ChildExecution, 1),
+            ),
+            Err(AdmissionError::RootLimit(Resource::ChildExecution))
+        );
+        assert!(
+            ledger
+                .reserve(
+                    &configured,
+                    "child-request-4",
+                    "root-child-2",
+                    ask(Resource::ChildExecution, 1),
+                )
+                .is_ok()
         );
     }
 

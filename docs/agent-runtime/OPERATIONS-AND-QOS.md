@@ -21,6 +21,8 @@ flowchart LR
 
 Root limits cover model requests, tool attempts, child creations/replacements, retries, context/output, active work and deadline. Reserve checking/synthesis capacity before creating children. Reservation is authorization accounting; measured usage is telemetry. Do not double-count transferring a reservation from root to child, and do not refund uncertain provider consumption merely because the worker died.
 
+The native capacity profile currently models concurrent slot dimensions separately: primary generation, provider request, child execution, verification execution, tool invocation, persistent service, contained process and integration process. An omitted dimension is unavailable, even when another dimension has free capacity; it is never inferred from spare model slots. These leases are concurrent-capacity accounting only. Cumulative requests/tokens/bytes/time/child creations need separate root budgets and trusted usage receipts before delegation can be enabled.
+
 Define wall deadline, queue wait, human wait, external wait, per-attempt active time, aggregate worker time, native CPU time and monetary estimates separately. Parallel workers can consume twice the aggregate work in the same elapsed interval. Existing `activeMs` semantics cannot silently change during the ownership cutover. Select units, charging rules and crash treatment before coding.
 
 Per-provider rate limits and unavailable capacity produce bounded queueing/backoff, not unlimited retries or silent paid fallback. One logical operation retains its idempotency identity across safe attempts. Non-idempotent uncertainty is reconciled instead of retried. Strict monetary ceilings remain refused where prices/tool charges cannot be conservatively enforced.
