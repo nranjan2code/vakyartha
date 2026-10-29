@@ -1,12 +1,18 @@
 # Vakyartha handover — 2026-10-29
 
+## Prompt cleanup delivery — 2026-10-29
+
+Executable source `4746d71` is pushed and locally installed with Projection `d017a18`, built from a clean remote clone and absent Rust release target. Fresh 259 app / 410 framework / 3 native tests, typecheck and private desktop transport checks pass; full build/install provenance and retained setup failure are in [RELEASING.md](RELEASING.md#prompt-and-skill-cleanup--installed-2026-10-29). Twenty-eight fingerprint-reviewed exact known-default packages are refreshed, preserving custom content, optional removal and enabled state. Native About and required Skills state agree with the new bundle. A free installed primary-local smoke passes exact one-card/title/Ready checks in 74.2 seconds, including Canvas and persisted reopening; the full bundle matches after launch and the prior model preference is restored without inference. The new folder-workspace default seeds once; existing identities and enabled choices are preserved.
+
+The final documentation sweep corrects Realm limits (30 seconds/32 KiB versus direct/disposable 300 seconds/256 KiB), removes unproved arbitrary build/worktree claims, and labels pre-implementation workspace notes and prompt captures as historical. ADR-051 records ownership, default-refresh evidence and current-contract precedence. The mapped-table 2/3 timeout remains open; installation does not close original semantic/source/interaction gates.
+
 ## Prompt cleanup source implementation — 2026-10-29
 
 Adopts pushed Projection `d017a18` from its owning repository. Reviewed local procedure loaders now deliver complete instructions once in current-run system context, retain untrusted external/reference boundaries, omit historical procedure bodies from later wire history without deleting facts, and have separate finite context admission. The app recognizes decoded submission contracts for required design injection, acknowledges repeat/required loads and supplies bounded task/recent conversation context to selection. callerInstructions metadata prevents copying generated catalog/protocol text into the selector.
 
 Built-ins delegate visual composition to compact shared surface-design and canonical mappings/actions to interactive-ui. Removed fixed tiers/width bans, copied wire envelopes and old schema aliases while retaining domain/source/calculation/receipt rules. Workspace and app procedures describe actual offered tools or UI handoffs. Direct writes and retained/shared copies remain distinct; helper limits are not inferred from manifest/schema promises. Studio uses request-preserving deterministic starters, current chart choices and source-backed wording rather than invented findings. Its real selection-only evaluator requires an enabled published optional skill, explicit chosen provider/model and positive/negative expectations; no offline lexical substitute or draft/adherence claim. Preview/DAG/lint and resource labels now state their actual scope.
 
-259 app tests, 410 framework tests/replay, typechecks, framework package/UI builds and native WebKit Skills, mixed/nine-chart surfaces, Canvas, collections and controls pass. New Studio request/preview/DAG checks pass at 1100/375 with actual pane/control bounds and screenshot review. A premature Layout Compliant badge and cramped wrapping were corrected. Off-screen sidebar transitions are disabled in the checker to inspect settled geometry; a speculative CSS compilation-target change was reverted. Earlier first-page/description-match checker failures and overturned narrow screenshot passes are retained. No native transport, sandbox mechanism, dependency, lockfile or installed app change. Reviewed built-in updates preserve customized/on-off/removal state.
+259 app tests, 410 framework tests/replay, typechecks, framework package/UI builds and native WebKit Skills, mixed/nine-chart surfaces, Canvas, collections and controls pass. New Studio request/preview/DAG checks pass at 1100/375 with actual pane/control bounds and screenshot review. A premature Layout Compliant badge and cramped wrapping were corrected. Off-screen sidebar transitions are disabled in the checker to inspect settled geometry; a speculative CSS compilation-target change was reverted. Earlier first-page/description-match checker failures and overturned narrow screenshot passes are retained. At this source checkpoint there was no native transport, sandbox mechanism, dependency, lockfile or installed app change; delivery is recorded above. Reviewed built-in updates preserve customized/on-off/removal state.
 
 Primary local graph contract passes 3/3; table-only mappings pass 2/3 with the final case timing out before dispatch at the unchanged 60 seconds. The failure is retained, located offline at provider generation, and not rerun with prompt variants. Source cleanup does not close original source/value/interpretation/interaction/receipt or installed outcome gates. Current request-size/selector receipts and UI evidence are recorded in EVALUATION.md; the earlier audit below is superseded for implementation status, not erased.
 
@@ -18,9 +24,11 @@ Offline scripted-provider captures reproduce eleven assembly/generator/evaluator
 
 Updated current specs, skill/authoring and Studio docs, ADR clarifications, workspace overview and planning introductions to distinguish implemented paths, intended contracts and open repairs. Historical evaluation failures and dated installation receipts remain. In particular, the earlier density checkpoint did not remove every fixed-tier instruction: several domain bodies and server-side Studio generation still prescribe them. Studio's evaluator currently bypasses the real selector and loses distractor polarity; pass badges do not verify selection/adherence. That audit changed no runtime bodies or installed application; the later source implementation is recorded above. Follow the audit's owner-specific cleanup sequence and unchanged primary-provider/source/value/interaction/receipt gates.
 
-## Folder workspaces and project chats: full implementation and acceptance — 2026-10-29
+## Folder workspace implementation checkpoint — 2026-10-29
 
-Completed all milestones FOLDER1 through FOLDER7 for the folder workspaces and project chats capability ([FOLDER-WORKSPACES.md](sandbox/FOLDER-WORKSPACES.md), [MVP-CHECKLIST.md](MVP-CHECKLIST.md)):
+Historical implementation checkpoint, narrowed by the prompt-cleanup source audit: direct execution accepts up to 300 seconds/256 KiB, but retained/shared Realm execution remains capped by the helper at 30 seconds/32 KiB. Basic Git init/add/commit/log is tested; arbitrary worktrees, builds and every file format are not certified. The maintained [workspace contract](sandbox/FOLDER-WORKSPACES.md) and [operations guide](FOLDER-WORKSPACES-GUIDE.md) supersede broad claims below.
+
+Recorded milestones FOLDER1 through FOLDER7 for the folder workspaces and project chats capability ([FOLDER-WORKSPACES.md](sandbox/FOLDER-WORKSPACES.md), [MVP-CHECKLIST.md](MVP-CHECKLIST.md)):
 
 1. **FOLDER1 (Workspace Registry & Path Admission)**:
    - Built app-owned `WorkspaceRegistry` ([sidecar/workspace-registry.ts](../sidecar/workspace-registry.ts)): stores Projects and Session Workspace Bindings in `<dataDir>/workspaces.json`.
@@ -74,19 +82,21 @@ Completed all milestones FOLDER1 through FOLDER7 for the folder workspaces and p
    - Direct in-place editing mode (`mode: "direct"`):
      - Commands execute directly in the project folder with macOS Seatbelt kernel protection (network denied, path escapes prevented).
      - Writes modify files directly on disk without staging copies or requiring an Apply review step.
-     - Full Git repository (`.git`), worktrees, and branches are preserved and fully functional without copy caps or file exclusion.
+     - Direct mode does not copy or strip `.git`; access remains limited to the admitted root and runtime policy. The retained checkpoint tested basic repository commands, not a complete worktree/build compatibility matrix.
    - Shared project Realms (`sharedRealm: true`):
      - Multiple chats in the same project share a single durable Realm copy (`project.sharedRealmId`).
      - Operations are serialized per Realm ID using mutual-exclusion locks (`withRealmLock`), eliminating race conditions between concurrent chats.
      - Edits in one chat are immediately visible and runnable in other chats of the project without promotion. Unified review and Apply commits changes to the source folder.
-   - Arbitrary long builds and output limits:
+   - Direct execution bounds:
      - Deadlines extended up to 300 seconds (5 minutes) with configurable `timeout_seconds` in `run_command` schema.
      - Maximum output buffer expanded to 256 KiB for extensive compiler logs and command output.
    - Tested in `test/workspace-realms.test.ts` (direct editing on disk, shared Realm cross-chat visibility and promotion, timeout_seconds validation, Git commit/worktree execution, and 64 KiB output).
 
 All 255 repository tests pass, TypeScript typecheck is clean, Vite production bundle builds without errors, and WebKit checks pass across all viewports.
 
-## Folder workspace research and design — 2026-10-29
+## Historical folder workspace research and design — 2026-10-29
+
+This pre-implementation proposal is retained for provenance. Its statements about missing bindings and unchecked milestones are superseded by the implementation checkpoint and maintained workspace contract.
 
 Follow-up scope: the user explicitly includes coding, document creation/editing and image/audio/video work. The design now specifies general-purpose capability composition, format-aware review, exact binary candidate identity, guarded handoff to existing media assets/jobs and honest format/large-file admission. FOLDER7 tracks those outcomes. No runtime feature, new dependency or hosted media call is introduced by this clarification.
 

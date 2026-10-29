@@ -6,7 +6,7 @@ This guide describes the architecture, runtime boundaries, execution modes, REST
 
 ## 1. Overview & Architecture
 
-Vakyartha enables conversations to operate directly on local project folders. Unlike simple command runners or unconfined terminal agents, Vakyartha enforces strict operating system containment, canonical path boundaries, and explicit working modes so that agents and users can safely inspect, modify, build, test, and compose projects.
+Vakyartha enables conversations to operate directly on local project folders. Canonical bindings and explicit modes select the working tree. The supported macOS helper confines commands; full broker/resource/Linux isolation remains open under ADR-050.
 
 ```
 +-------------------------------------------------------------------------------+
@@ -34,7 +34,7 @@ Vakyartha enables conversations to operate directly on local project folders. Un
 |  |            macOS Seatbelt Kernel Profile:                               |  |
 |  |            - (deny network*)                                            |  |
 |  |            - (allow file-read* file-write* <admitted-folder-only>)      |  |
-|  |            - Up to 300s execution deadline, 256 KiB output limit        |  |
+|  |            - Direct: up to 300s/256 KiB; Realm: 30s/32 KiB        |  |
 |  +-------------------------------------------------------------------------+  |
 +-------------------------------------------------------------------------------+
 ```
@@ -85,11 +85,11 @@ Vakyartha provides three distinct working modes tailored for different risk prof
 | **Seatbelt Sandbox** | Enforced (network denied) | Enforced (network denied) | Enforced (network denied) |
 | **Concurrency / Locking** | Isolated per chat | Serialized via mutex per Realm | Sandboxed directly in folder |
 | **Review & Staging** | Snapshot diffs + explicit Apply | Snapshot diffs + explicit Apply | Not needed (writes are on disk) |
-| **Rollback / Undo** | Exact transaction receipt undo | Exact transaction receipt undo | Via Git version control |
-| **Git Worktrees & Repos** | `.git` omitted from copy | `.git` omitted from copy | Native `.git` & worktrees preserved |
+| **Rollback / Undo** | Exact transaction receipt undo | Exact transaction receipt undo | No app-owned rollback; use an authorized external recovery method |
+| **Repository data** | `.git` omitted from copy | `.git` omitted from copy | Files preserved in place; basic Git commands tested |
 | **Size / Copy Ceiling** | 512 MiB copy limit | 512 MiB copy limit | **No copy limits** |
-| **Max Runtime** | Up to 300 seconds | Up to 300 seconds | Up to 300 seconds |
-| **Max Output Buffer** | 256 KiB | 256 KiB | 256 KiB |
+| **Max Runtime** | 30 seconds (helper) | 30 seconds (helper) | Up to 300 seconds |
+| **Max Output Buffer** | 32 KiB (helper) | 32 KiB (helper) | 256 KiB |
 
 ---
 
@@ -114,13 +114,13 @@ Vakyartha provides three distinct working modes tailored for different risk prof
 * **Real-Time Cross-Chat Visibility**:
   When Chat A writes a file or runs a build in the shared Realm, Chat B in the same project can immediately see, read, and build upon those modifications without requiring an Apply or export step.
 * **Mutual-Exclusion Locking**:
-  [`SandboxRealms`](file:///Users/nisheethranjan/Projects/vakyartha/sidecar/sandbox-realms.ts) enforces a strict per-Realm Promise mutex (`withRealmLock`). If Chat A and Chat B issue commands simultaneously on the shared Realm, executions and snapshots are serialized cleanly without corrupted states or file races.
+  [SandboxRealms](../sidecar/sandbox-realms.ts) enforces a strict per-Realm Promise mutex (`withRealmLock`). If Chat A and Chat B issue commands simultaneously on the shared Realm, executions and snapshots are serialized cleanly without corrupted states or file races.
 * **Unified Promotion**:
   Any chat in the project can review accumulated changes and promote them to the source project folder.
 
 ---
 
-### Mode 3: Direct In-Place Editing (`direct`) — Full Dev Speed
+### Mode 3: Direct In-Place Editing (`direct`)
 * **How it works**:
   Selected explicitly during folder admission. Commands execute directly inside the user's project folder (`vaksb run --workspace <folder>`).
 * **Kernel Containment**:
@@ -128,12 +128,12 @@ Vakyartha provides three distinct working modes tailored for different risk prof
   - Network operations are completely blocked.
   - Filesystem writes outside `<folder>` are denied by the kernel.
   - Host environment secrets (`OPENAI_API_KEY`, etc.) are scrubbed.
-* **Full Toolchain & Git Compatibility**:
+* **Repository and toolchain bounds**:
   - No file copying occurs, so the 512 MiB copy cap and 50,000 file ceiling do not apply.
-  - Native `.git` repositories, Git worktrees, Git branches, and submodules remain intact and fully functional.
-  - Large builds (`cargo build`, `npm run build`, `make`, test suites) operate directly in the repo.
+  - Files remain in place, including `.git`. Basic init/add/commit/log commands are tested; external worktree/submodule paths still require admission and may be denied.
+  - Build compatibility depends on the admitted paths, available tools and supported process behavior. The 300-second/256-KiB interface limits are not proof of arbitrary build compatibility.
 * **Review / Staging**:
-  Because writes occur directly on disk, Realm snapshots and Apply steps are bypassed. Standard version control (`git status`, `git diff`, `git checkout`) provides rollback and history.
+  Because writes occur directly on disk, Realm snapshots and Apply steps are bypassed. There is no automatic app rollback. Existing version control or backups can support separately authorized recovery.
 
 ---
 
@@ -209,8 +209,8 @@ Runs an executable and argument list inside the admitted workspace:
   - `command` (string, max 256): Executable name or absolute path. No shell is implicit.
   - `args` (array of strings, max 64 items, max 16 KiB total): Arguments passed to the process.
   - `workingDirectory` (optional string): Relative path inside the workspace. Cannot escape root.
-  - `timeout_seconds` (optional integer, 1 to 300): Execution deadline. Defaults to 30s; can be set up to 300s (5 minutes) for long builds and tests.
-* **Output**: Combined stdout/stderr captured up to 256 KiB, exit code, and error status.
+  - `timeout_seconds` (optional integer, 1 to 300): Direct/disposable deadline, default 30s and maximum 300s. Retained/shared Realm exec remains capped at 30s by the helper.
+* **Output**: Direct/disposable stdout/stderr up to 256 KiB; retained/shared Realm helper output up to 32 KiB, with exit code and error status.
 
 ### Realm Tools (`mode: "copy_review"` and `shared`)
 - `snapshot_realm`: Returns review fingerprint and changed paths.

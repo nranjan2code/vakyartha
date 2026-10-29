@@ -19,7 +19,7 @@ Plain-text requests still retain available surface tools and their typed protoco
 
 Mechanism evidence: 259 app tests, 410 framework tests/replay, typechecks, package/UI builds and WebKit Skills/surface/Canvas/collections/control checks pass. New Studio WebKit checks at 1100/375 verify explicit model/polarity requests, honest preview/DAG labels and settled pane/control geometry after screenshot review. Earlier test/checker failures remain in `/tmp/vak-prompt-*.log`; final evidence is linked from EVALUATION.md. Existing built-ins use reviewed updates. The user subsequently authorized a fresh committed-source build, known-default refresh and local install; its delivery receipt is recorded separately in RELEASING.md. Custom skill content remains protected.
 
-The free primary graph contract passes 3/3 with unchanged checks. The independent mapped-table gate remains 2/3: the last case times out at 60 seconds before dispatch, with no canonical output. No prompt/parser variation or repeat attempt followed that failure. This source cleanup is not a closure of that generation/record outcome, other prior source/value/interaction/receipt failures or installed delivery.
+The free primary graph contract passes 3/3 with unchanged checks. The independent mapped-table gate remains 2/3: the last case times out at 60 seconds before dispatch, with no canonical output. No prompt/parser variation or repeat attempt followed that failure. This cleanup does not close that generation/record outcome or other prior source/value/interaction/receipt failures. Clean installed delivery and its bounded primary-local smoke are verified separately in RELEASING.md.
 
 ## Scope and evidence
 
@@ -29,7 +29,7 @@ Offline probes used public `@vak/core`/`@vak/providers` exports, a scripted prov
 
 Local evidence is under `.vak/evaluations/prompt-audit/2026-10-29/`: `audit.mjs`, `requests.json`, `summary.json` and `schema-checks.json`. The script asserts eleven reproduced assembly/generator/evaluator findings. Schema probes independently check the documented fragments. Evidence is intentionally gitignored; source locations and measured results are recorded below.
 
-## Current execution paths
+## Baseline execution paths (before cleanup)
 
 | Path | What actually reaches execution |
 | --- | --- |

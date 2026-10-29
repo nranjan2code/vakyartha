@@ -346,13 +346,13 @@ Compact shared geometry and local collection paging/search are implemented and c
 
 ## Folder workspaces and project chats checkpoint — 2026-10-29
 
-Milestones FOLDER1 through FOLDER7 and full support for Direct in-place editing, Shared project Realms, and Arbitrary long builds / Git worktrees are implemented and verified without workarounds:
+Historical workspace checkpoint, read with the bounded FOLDER1–FOLDER7 criteria above. Direct/shared modes are implemented; arbitrary builds/worktrees and unrestricted file formats are not certified.
 - [x] App-owned `WorkspaceRegistry` (`sidecar/workspace-registry.ts`) manages project lifecycle, folder validation (`validateWorkspaceFolder`), and session-scoped bindings (`AsyncLocalStorage` context) outside admitted folders.
 - [x] Path validation canonicalizes paths and rejects home folder root, root `/`, system paths (`/System`, `/Library`, `/Applications`, `/usr`, `/etc`, etc.) and private app data directories.
 - [x] Retained Realm copies (`vaksb realm create/exec/snapshot/promote/rollback`) maintain file modifications across turns without touching the original project folder until reviewed and applied.
 - [x] Direct in-place editing mode (`mode: "direct"`): Commands and tools execute directly in the admitted folder under macOS Seatbelt kernel protection (network denied, path boundaries enforced) with no copy limits or staging copies, writing directly to original project files.
 - [x] Shared project Realms (`sharedRealm: true`): Multiple chats in the same project share a single durable Realm with mutual-exclusion locking per Realm ID, enabling real-time collaborative edits and unified promotion.
-- [x] Arbitrary long builds and Git worktrees: Execution deadlines extended up to 300 seconds (5 minutes), output limits up to 256 KiB, and native `.git` repository/worktree commands supported in direct mode without file stripping.
+- [x] Direct execution accepts up to 300 seconds/256 KiB; basic Git init/add/commit/log and 64-KiB output are tested without copying `.git`. Retained/shared Realm exec remains 30 seconds/32 KiB. Actual worktree creation, arbitrary builds and maximum-duration workloads remain unverified.
 - [x] Governed binary media handoff: `/export-asset` and `/import-file` endpoints validate chat bindings, paths, resource limits (20 MB), and media signatures (PNG, WAV, MP4, PDF, text).
 - [x] UI integration: Responsive chat workspace bar and Projects sidebar (`src/workspaces-panel.ts`) with mode pills, review drawer, discard/refresh guards, and dialogs.
 - [x] Verification: All 255 tests pass (`test/workspace-*.test.ts`), WebKit geometry checks pass at 1440/1100/620/375px (`scripts/control-layout-check.ts`, `scripts/collection-ui-check.ts`, `scripts/canvas-check.ts`, `scripts/surface-design-check.ts`), and frozen primary-local Ollama outcome gate passes (`scripts/folder-workspace-outcome.ts`).
