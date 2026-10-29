@@ -116,29 +116,25 @@ export class WorkspacesPanel {
       return;
     }
 
-    if (this.bindingsCache.has(this.currentSession)) {
-      this.currentBinding = this.bindingsCache.get(this.currentSession)!;
-      await this.renderWorkspaceBar();
-      return;
-    }
+    // Immediately render current cached or default state so "Work in folder…" is never delayed
+    this.currentBinding = this.bindingsCache.get(this.currentSession) ?? null;
+    void this.renderWorkspaceBar();
 
-    if (!this.currentSession) {
-      this.currentBinding = null;
-      await this.renderWorkspaceBar();
-      return;
-    }
+    if (!this.currentSession) return;
 
     try {
       const binding = await api<WorkspaceBinding>(`/api/workspaces/bindings/${encodeURIComponent(this.currentSession)}`);
       if (token !== this.updateToken) return;
       this.currentBinding = binding;
       this.bindingsCache.set(this.currentSession, binding);
+      await this.renderWorkspaceBar();
     } catch {
       if (token !== this.updateToken) return;
-      this.currentBinding = null;
+      if (this.currentBinding !== null) {
+        this.currentBinding = null;
+        await this.renderWorkspaceBar();
+      }
     }
-    if (token !== this.updateToken) return;
-    await this.renderWorkspaceBar();
   }
 
   getCurrentBinding(): WorkspaceBinding | null {

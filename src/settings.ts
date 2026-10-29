@@ -74,6 +74,10 @@ export function closeSettings(): void {
   clearInterval(timer);
   page().hidden = true;
   document.body.classList.remove("in-settings");
+  const ws = document.getElementById("workspace");
+  if (ws && !document.querySelector(".artifacts-page:not([hidden]), .apps-page:not([hidden]), .schedule-page:not([hidden]), .skills-studio-page:not([hidden])")) {
+    ws.hidden = false;
+  }
   window.dispatchEvent(new Event("vak:settings-closed"));
 }
 

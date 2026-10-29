@@ -337,6 +337,7 @@ function clearThread(): void {
 
 function newChat(): void {
   if (isSkillStudioOpen()) void closeSkillStudio(false);
+  if (settingsOpen()) closeSettings();
   tasksPanel.page.close();
   artifacts.close();
   appsPage.close();
@@ -358,6 +359,7 @@ function newChat(): void {
 
 async function newProjectChat(projectId: string, folder: string): Promise<void> {
   if (isSkillStudioOpen()) void closeSkillStudio(false);
+  if (settingsOpen()) closeSettings();
   tasksPanel.page.close();
   artifacts.close();
   appsPage.close();
@@ -385,6 +387,7 @@ async function newProjectChat(projectId: string, folder: string): Promise<void> 
 /** Redraw a saved conversation from its timeline and final surfaces. */
 async function openChat(id: string, keepLibrary = false, redraw = false): Promise<void> {
   if (isSkillStudioOpen()) void closeSkillStudio(false);
+  if (settingsOpen()) closeSettings();
   tasksPanel.page.close();
   if (!keepLibrary) {
     artifacts.close();
@@ -1043,39 +1046,28 @@ window.addEventListener("vak:settings-opened", () => {
 });
 window.addEventListener("vak:settings-closed", () => {
   if (!isSkillStudioOpen() && !tasksPanel.page.visible() && !document.body.classList.contains("in-artifacts") && !appsPage.visible()) {
+    $("workspace").hidden = false;
     setTopNavActive("chats");
+    if (!thread.childNodes.length || document.getElementById("empty")) showEmpty();
+    input.focus();
   }
 });
 
-window.addEventListener("vak:artifacts-opened", () => {
-  if (isSkillStudioOpen()) void closeSkillStudio();
-  appsPage.close(false);
-  tasksPanel.page.close(false, false);
-  $("workspace").hidden = true;
-  $("apps-page").hidden = true;
-  $("schedule-page").hidden = true;
-  $("skills-studio-page").hidden = true;
-  setTopNavActive("artifacts");
-});
 window.addEventListener("vak:artifacts-closed", () => {
   if (!isSkillStudioOpen() && !settingsOpen() && !tasksPanel.page.visible() && !appsPage.visible()) {
+    $("workspace").hidden = false;
     setTopNavActive("chats");
+    if (!thread.childNodes.length || document.getElementById("empty")) showEmpty();
+    input.focus();
   }
 });
 
-window.addEventListener("vak:apps-opened", () => {
-  if (isSkillStudioOpen()) void closeSkillStudio();
-  artifacts.close(false, false);
-  tasksPanel.page.close(false, false);
-  $("workspace").hidden = true;
-  $("artifacts-page").hidden = true;
-  $("schedule-page").hidden = true;
-  $("skills-studio-page").hidden = true;
-  setTopNavActive("apps");
-});
 window.addEventListener("vak:apps-closed", () => {
   if (!isSkillStudioOpen() && !settingsOpen() && !tasksPanel.page.visible() && !document.body.classList.contains("in-artifacts")) {
+    $("workspace").hidden = false;
     setTopNavActive("chats");
+    if (!thread.childNodes.length || document.getElementById("empty")) showEmpty();
+    input.focus();
   }
 });
 window.addEventListener("vak:run-app", (e) => {
@@ -1100,7 +1092,10 @@ window.addEventListener("vak:schedule-opened", () => {
 });
 window.addEventListener("vak:schedule-closed", () => {
   if (!isSkillStudioOpen() && !settingsOpen() && !document.body.classList.contains("in-artifacts") && !appsPage.visible()) {
+    $("workspace").hidden = false;
     setTopNavActive("chats");
+    if (!thread.childNodes.length || document.getElementById("empty")) showEmpty();
+    input.focus();
   }
 });
 
@@ -1122,7 +1117,12 @@ window.addEventListener("vak:studio-closed", () => {
   else if (document.body.classList.contains("in-artifacts")) setTopNavActive("artifacts");
   else if (document.body.classList.contains("in-apps")) setTopNavActive("apps");
   else if (tasksPanel.page.visible()) setTopNavActive("schedule");
-  else setTopNavActive("chats");
+  else {
+    $("workspace").hidden = false;
+    setTopNavActive("chats");
+    if (!thread.childNodes.length || document.getElementById("empty")) showEmpty();
+    input.focus();
+  }
 });
 
 function toggleSidebar(): void {
