@@ -1179,7 +1179,20 @@ fn actor_loop(
                         Vec::new()
                     };
                     let changed = match mutation {
-                        RootMutation::StartAttempt => root.start_attempt(expected_revision),
+                        RootMutation::StartAttempt => {
+                            if root.revision() != expected_revision {
+                                root.start_attempt(expected_revision)
+                            } else if root.workspace_grant().is_some_and(|fixed| {
+                                candidate
+                                    .registry
+                                    .grant(&fixed.session_id, fixed.binding_revision)
+                                    .map_or(true, |current| &current != fixed)
+                            }) {
+                                Err(StateError::WorkspaceGrantStale)
+                            } else {
+                                root.start_attempt(expected_revision)
+                            }
+                        }
                         RootMutation::WaitForInput => root.wait_for_input(expected_revision),
                         RootMutation::WaitForApproval => root.wait_for_approval(expected_revision),
                         RootMutation::Stop {
@@ -2778,6 +2791,14 @@ mod tests {
         assert_eq!(admitted_grant.workspace_id, "workspace-001");
         assert_ne!(admitted_grant.workspace_id, current_grant.workspace_id);
         assert_eq!(admitted_grant.binding_revision, binding.revision());
+        assert_eq!(
+            restarted_handle.mutate_root(
+                persisted_root.id().into(),
+                persisted_root.revision(),
+                RootMutation::StartAttempt,
+            ),
+            Err(ControlError::TaskState(StateError::WorkspaceGrantStale))
+        );
         assert_eq!(
             restarted_handle.read_workspace_grant(revoked.session_id().into(), revoked.revision()),
             Err(ControlError::Registry(RegistryError::RevisionConflict))

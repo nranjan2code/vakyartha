@@ -205,6 +205,7 @@ pub enum StateError {
     ChildLimitReached,
     ChildIdentityConflict,
     ChildrenOutstanding,
+    WorkspaceGrantStale,
     Corrupt,
 }
 

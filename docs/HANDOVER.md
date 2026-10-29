@@ -2,7 +2,7 @@
 
 ## Native root workspace grant capture — 2026-10-30
 
-The inactive Rust control actor now captures the exact admitted binding revision and workspace/physical-folder/mode/Realm identity when a workspace-scoped root is created. A persisted task keeps its original grant after the session is rebound to another folder. The trusted caller supplies a session and expected revision; the actor resolves the grant and never accepts a caller path. Host Rust tests pass 50/50; the digest-pinned Linux Rust 1.99.1 Docker gate passes 52/52 and strict Clippy. Snapshot schema is now 6 with no old-schema reader. This does not yet enforce the captured grant at dispatch, invalidate queued roots on rebind, derive child scopes or close filesystem check/use races. The actor and registry remain inactive product prototypes.
+The inactive Rust control actor now captures the exact admitted binding revision and workspace/physical-folder/mode/Realm identity when a workspace-scoped root is created. A persisted task keeps its original grant after the session is rebound to another folder, and the queued-to-running transition refuses a revoked, rebound or physically changed grant. The trusted caller supplies a session and expected revision; the actor resolves the grant and never accepts a caller path. Host Rust tests pass 50/50; the digest-pinned Linux Rust 1.99.1 Docker gate passes 52/52 and strict Clippy. Snapshot schema is now 6 with no old-schema reader. Per-operation broker handoff checks, rebind invalidation of queued descendants, child scope derivation and filesystem check/use enforcement remain open. The actor and registry remain inactive product prototypes.
 
 ## Latest agent-runtime checkpoint — 2026-10-30
 
