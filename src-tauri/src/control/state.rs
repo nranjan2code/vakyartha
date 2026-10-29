@@ -119,6 +119,29 @@ pub struct RootCreate {
     pub delegation: DelegationPolicy,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutionFence {
+    root_id: String,
+    root_revision: u64,
+    contract_revision: u64,
+    cancellation_epoch: u64,
+}
+
+impl ExecutionFence {
+    pub fn root_id(&self) -> &str {
+        &self.root_id
+    }
+    pub fn root_revision(&self) -> u64 {
+        self.root_revision
+    }
+    pub fn contract_revision(&self) -> u64 {
+        self.contract_revision
+    }
+    pub fn cancellation_epoch(&self) -> u64 {
+        self.cancellation_epoch
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RootTask {
@@ -206,6 +229,7 @@ pub enum StateError {
     ChildLimitReached,
     ChildIdentityConflict,
     ChildrenOutstanding,
+    ExecutionFenceStale,
     WorkspaceGrantStale,
     Corrupt,
 }
@@ -314,6 +338,14 @@ impl RootTask {
     }
     pub fn cancellation_epoch(&self) -> u64 {
         self.cancellation_epoch
+    }
+    pub fn execution_fence(&self) -> ExecutionFence {
+        ExecutionFence {
+            root_id: self.id.clone(),
+            root_revision: self.revision,
+            contract_revision: self.contract_revision,
+            cancellation_epoch: self.cancellation_epoch,
+        }
     }
     pub fn status(&self) -> RootStatus {
         self.status

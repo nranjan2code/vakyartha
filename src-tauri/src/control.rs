@@ -26,8 +26,8 @@ use registry::{
     WorkspaceGrant, WorkspaceMode, WorkspaceRecord,
 };
 use state::{
-    CheckOutcome, ChildTask, Requirement, RootCreate, RootStatus, RootTask, StateError, StopCause,
-    UserReview,
+    CheckOutcome, ChildTask, ExecutionFence, Requirement, RootCreate, RootStatus, RootTask,
+    StateError, StopCause, UserReview,
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -559,6 +559,10 @@ enum ActorCommand {
         id: String,
         reply: SyncSender<Result<RootTask, ControlError>>,
     },
+    CheckExecutionFence {
+        fence: ExecutionFence,
+        reply: SyncSender<Result<(), ControlError>>,
+    },
     CreateProject {
         id: String,
         name: String,
@@ -757,6 +761,18 @@ impl ControlHandle {
         let (reply, response) = sync_channel(1);
         self.commands
             .try_send(ActorCommand::ReadRoot { id, reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    /// Checks snapshot freshness only; it does not authorize or reserve an operation.
+    /// The future broker must combine this state with capability policy at its serialized handoff.
+    pub fn check_execution_fence(&self, fence: ExecutionFence) -> Result<(), ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::CheckExecutionFence { fence, reply })
             .map_err(queue_error)?;
         response
             .recv_timeout(self.response_timeout)
@@ -1309,6 +1325,30 @@ fn actor_loop(
                     .get(&id)
                     .cloned()
                     .ok_or(ControlError::Admission(AdmissionError::RootNotFound));
+                let _ = reply.send(result);
+            }
+            ActorCommand::CheckExecutionFence { fence, reply } => {
+                let result = match ledger.roots.get(fence.root_id()) {
+                    None => Err(ControlError::Admission(AdmissionError::RootNotFound)),
+                    Some(root) if root.status() != RootStatus::Running => Err(
+                        ControlError::TaskState(StateError::InvalidTransition(root.status())),
+                    ),
+                    Some(root)
+                        if root.revision() != fence.root_revision()
+                            || root.contract_revision() != fence.contract_revision()
+                            || root.cancellation_epoch() != fence.cancellation_epoch() =>
+                    {
+                        Err(ControlError::TaskState(StateError::ExecutionFenceStale))
+                    }
+                    Some(root)
+                        if root
+                            .workspace_grant()
+                            .is_some_and(|grant| !ledger.workspace_grant_is_current(grant)) =>
+                    {
+                        Err(ControlError::TaskState(StateError::WorkspaceGrantStale))
+                    }
+                    Some(_) => Ok(()),
+                };
                 let _ = reply.send(result);
             }
             ActorCommand::CreateProject { id, name, reply } => {
@@ -2968,6 +3008,8 @@ mod tests {
             ),
             "first-child",
         );
+        let first_fence = first_root.execution_fence();
+        assert_eq!(handle.check_execution_fence(first_fence.clone()), Ok(()));
         let rebound = handle
             .rebind_workspace(
                 binding.session_id().into(),
@@ -2981,6 +3023,10 @@ mod tests {
         assert_eq!(
             invalidated_first.cancellation_epoch(),
             first_root.cancellation_epoch() + 1
+        );
+        assert_eq!(
+            handle.check_execution_fence(first_fence),
+            Err(ControlError::TaskState(StateError::ExecutionFenceStale))
         );
         assert!(
             invalidated_first
