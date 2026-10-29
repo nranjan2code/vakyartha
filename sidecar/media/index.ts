@@ -169,6 +169,14 @@ export class Media {
     if (!current.enabled || current.config[op] !== selection) throw new Error("Media plugin or model selection changed. Review the current settings before trying again.");
   }
   private assetFile(a: MediaAsset): string { return path.join(this.opts.dir, `${a.id}${a.type === "text/plain" ? ".txt" : TYPES[a.type]}`); }
+  getAsset(id: string): { asset: MediaAsset; filePath: string } | undefined {
+    const a = this.saved.assets.find((item) => item.id === id);
+    if (!a) return undefined;
+    return { asset: structuredClone(a), filePath: this.assetFile(a) };
+  }
+  saveAssetBytes(bytes: Uint8Array, name?: string): MediaAsset {
+    return this.saveAsset(bytes, undefined, false, name);
+  }
   readText(id: string): string { const a = this.saved.assets.find((a) => a.id === id && a.type === "text/plain"); if (!a) throw new Error("Unknown transcript asset"); return readFileSync(this.assetFile(a), "utf8"); }
   private saveAsset(bytes: Uint8Array, source?: string, plainText = false, name?: string): MediaAsset {
     if (this.saved.assets.length >= 1000) throw new Error("Media library is full; remove unused files first");

@@ -26,6 +26,7 @@ import { resolveMedia } from "./media.ts";
 window.addEventListener("vak:media-chat", (event) => { const id = (event as CustomEvent<unknown>).detail; if (typeof id === "string") { closeSettings(); void openChat(id); } });
 import { applyAppearance, surfaceMode } from "./theme.ts";
 import { TasksPanel } from "./tasks-panel.ts";
+import { WorkspacesPanel, type Project, type WorkspaceBinding } from "./workspaces-panel.ts";
 import { Drafts } from "./drafts.ts";
 import { VoiceApprovals, VoiceDecisions, recentlySaid, cancelDictation, conversationPrefs, conversationState, type ConversationState, startConversation, stopConversation, dictationPrefs, dictationState, lastError, readAloud, replyText, spokenSurface, startDictation, stopDictation, stopReading, textLanguage, voicePrefs, voiceState } from "./voice/index.ts";
 
@@ -88,6 +89,14 @@ const tasksPanel = new TasksPanel(
   },
   toggleSidebar
 );
+const workspacesPanel = new WorkspacesPanel();
+workspacesPanel.init({
+  bar: $("chat-workspace-bar"),
+  sidebar: $("projects-sidebar"),
+  onOpenChat: (id) => void openChat(id),
+  onNewProjectChat: (projectId, folder) => void newProjectChat(projectId, folder),
+  onRefresh: () => loadChats(),
+});
 document.getElementById("open-artifacts")!.addEventListener(
   "click",
   () => {
@@ -260,8 +269,13 @@ function groupOf(iso: string): string {
 
 let polling: ReturnType<typeof setTimeout> | undefined;
 async function loadChats(): Promise<void> {
-  const list = await api<SessionSummary[]>("/api/sessions");
+  const [list, projects, bindings] = await Promise.all([
+    api<SessionSummary[]>("/api/sessions"),
+    api<Project[]>("/api/projects").catch(() => []),
+    api<WorkspaceBinding[]>("/api/workspaces/bindings").catch(() => []),
+  ]);
   artifacts.update(list);
+  workspacesPanel.renderSidebar(projects, bindings, list);
   // The engine is the record of what runs; this window's own streams count until they end.
   const wasBusy = busy.has(session);
   busy.clear();
@@ -273,9 +287,10 @@ async function loadChats(): Promise<void> {
   clearTimeout(polling);
   if (busy.size) polling = setTimeout(() => void loadChats(), 4000);
   chatsNav.replaceChildren();
+  const projectSessionIds = new Set(bindings.filter((b) => b.projectId).map((b) => b.session));
   let group = "";
   for (const c of list) {
-    if (tasksPanel.owns(c.id)) continue;
+    if (tasksPanel.owns(c.id) || projectSessionIds.has(c.id)) continue;
     if (groupOf(c.updated) !== group) {
       group = groupOf(c.updated);
       chatsNav.append(Object.assign(document.createElement("div"), { className: "group", textContent: group }));
@@ -292,6 +307,7 @@ async function loadChats(): Promise<void> {
     row.querySelector<HTMLButtonElement>(".del")!.addEventListener("click", async () => {
       if (!(await ask(`Delete “${c.title}”?`, "Delete"))) return;
       await api(`/api/sessions/${encodeURIComponent(c.id)}`, { method: "DELETE" });
+      await api(`/api/workspaces/bindings/${encodeURIComponent(c.id)}`, { method: "DELETE" }).catch(() => {});
       drafts.clear(c.id);
       if (c.id === session) newChat();
       await loadChats();
@@ -331,7 +347,33 @@ function newChat(): void {
   watch(session);
   showEmpty();
   tasksPanel.selectionChanged();
+  void workspacesPanel.updateForSession("");
   for (const row of chatsNav.querySelectorAll(".chat")) row.setAttribute("aria-current", "false");
+  input.focus();
+}
+
+async function newProjectChat(projectId: string, folder: string): Promise<void> {
+  if (isSkillStudioOpen()) void closeSkillStudio();
+  tasksPanel.page.close();
+  artifacts.close();
+  appsPage.close();
+  setTopNavActive("chats");
+  clearThread();
+  const newId = crypto.randomUUID();
+  session = newId;
+  attached = [];
+  showAttached();
+  drafts.begin(session);
+  prefs.set("session", session);
+  await api(`/api/workspaces/bindings/${encodeURIComponent(newId)}`, {
+    method: "POST",
+    body: JSON.stringify({ folder, projectId }),
+  }).catch(() => {});
+  watch(session);
+  showEmpty();
+  tasksPanel.selectionChanged();
+  void workspacesPanel.updateForSession(session);
+  await loadChats();
   input.focus();
 }
 
@@ -350,6 +392,7 @@ async function openChat(id: string, keepLibrary = false, redraw = false): Promis
   session = id;
   drafts.begin(session);
   prefs.set("session", id);
+  void workspacesPanel.updateForSession(id);
   const view = await api<SessionView>(`/api/sessions/${encodeURIComponent(id)}`);
   if (session !== id) return;
   watch(id);

@@ -11,6 +11,7 @@ import path from "node:path";
 import { type CatalogEntry, Integrations, type IntegrationsOptions, timeServer, webFetchServer } from "@vak/mcp/client";
 import { ollamaOcrServer } from "./ocr.ts";
 import { sandboxExecutionEntry } from "./sandbox-execution.ts";
+import type { WorkspaceRegistry } from "./workspace-registry.ts";
 import type { Media } from "./media/index.ts";
 
 /** Only documented workspace MCP endpoints may receive this integration's bearer token. */
@@ -231,15 +232,26 @@ export const CATALOG: CatalogEntry[] = [
 ];
 
 /** Keep one live catalog array so reviewed imports reach the existing lifecycle. */
-export function integrationCatalog(media?: Media, binaryPath = "vaksb", dataDir = "."): CatalogEntry[] {
+export function integrationCatalog(media?: Media, binaryPath = "vaksb", dataDir = ".", getWorkspace?: () => string, workspaces?: WorkspaceRegistry): CatalogEntry[] {
   return [...CATALOG, ...(media?.entries() ?? []), sandboxExecutionEntry({
     binaryPath, dataDir,
     enabled: () => process.env.VAK_SANDBOX_ENABLED !== "false",
-    workspace: () => process.env.VAK_SANDBOX_WORKSPACE ?? "",
+    workspace: getWorkspace ?? (() => process.env.VAK_SANDBOX_WORKSPACE ?? ""),
+    workspaces,
   })];
 }
 
 /** App-owned catalog entries run through the framework's common integration lifecycle. */
-export function createIntegrations(deps: Omit<IntegrationsOptions, "catalog" | "enabledAtFirstRun">, media?: Media, catalog?: CatalogEntry[]): Integrations {
-  return new Integrations({ ...deps, catalog: catalog ?? integrationCatalog(media, deps.vakSandbox?.binaryPath, deps.dataDir), enabledAtFirstRun: ["time", "sandbox-execution"] });
+export function createIntegrations(
+  deps: Omit<IntegrationsOptions, "catalog" | "enabledAtFirstRun">,
+  media?: Media,
+  catalog?: CatalogEntry[],
+  getWorkspace?: () => string,
+  workspaces?: WorkspaceRegistry,
+): Integrations {
+  return new Integrations({
+    ...deps,
+    catalog: catalog ?? integrationCatalog(media, deps.vakSandbox?.binaryPath, deps.dataDir, getWorkspace, workspaces),
+    enabledAtFirstRun: ["time", "sandbox-execution"],
+  });
 }

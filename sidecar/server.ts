@@ -4,8 +4,8 @@ import { AppToolResults } from "./app-tool-results.ts";
 // token for the Tauri window; the playground runs it open on :5177 for a
 // browser, serving the same UI, so both show one interface.
 
-import { randomBytes } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from "node:fs";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createFetchHandler, type HostRequest, type HostResponse } from "@vak/host";
 import path from "node:path";
@@ -27,7 +27,8 @@ import { checkTaskSpending } from "./task-policy.ts";
 import { Tasks } from "./tasks.ts";
 import { voiceRoutes } from "./voice/index.ts";
 import { Media } from "./media/index.ts";
-import { isMediaKind } from "../shared/media.ts";
+import { mediaType } from "./media/io.ts";
+import { isMediaKind, type MediaAsset } from "../shared/media.ts";
 import { sandboxHelper, validateSandboxWorkspace } from "./sandbox-status.ts";
 import { generateSkillPackage, suggestSkillElement } from "./skills-copilot.ts";
 import { evaluateSkillPrompts } from "./skills-eval.ts";
@@ -35,6 +36,8 @@ import { runSkillScript } from "./skills-sandbox.ts";
 import type { SkillGenerateRequest, SkillSuggestRequest } from "../shared/skills.ts";
 import { SandboxPoolManager } from "./sandbox-pool/pool-manager.ts";
 import { AppRegistry } from "./sandbox-pool/app-registry.ts";
+import { WorkspaceRegistry, validateWorkspaceFolder } from "./workspace-registry.ts";
+import { SandboxRealms } from "./sandbox-realms.ts";
 
 export interface AppServerOptions {
   /** Conversations, settings, channels, logs (and profiles/transcripts unless given). */
@@ -76,6 +79,8 @@ export interface AppServer {
   shutdown(): Promise<void>;
   pool?: SandboxPoolManager;
   apps?: AppRegistry;
+  workspaces?: WorkspaceRegistry;
+  realms?: SandboxRealms;
 }
 
 export async function startAppServer(opts: AppServerOptions): Promise<AppServer> {
@@ -190,6 +195,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   }
 
   const skills = new Skills(dataDir, opts.marketplaceFetch);
+  const workspaces = new WorkspaceRegistry(dataDir);
   const INSTRUCTIONS = () => `You are the assistant inside ${opts.appName ?? "Vakyartha, a desktop app"}.
 Today is ${new Date().toISOString().slice(0, 10)}.
 ${skills.index()}`;
@@ -249,7 +255,10 @@ ${skills.index()}`;
   const host = createHost({
     tools: async ({ session }) => {
       finops.session(session);
-      return withSkill([...appAuthoringTools(), ...(await integrations?.toolsFor(session) ?? [])].map((tool) => ({ ...tool, execute: (args, ctx) => media.withSession(session, () => tool.execute(args, ctx)) })));
+      return withSkill([...appAuthoringTools(), ...(await integrations?.toolsFor(session) ?? [])].map((tool) => ({
+        ...tool,
+        execute: (args, ctx) => workspaces.withSession(session, () => media.withSession(session, () => tool.execute(args, ctx))),
+      })));
     },
     providers: () => modelProviders(),
     profiles,
@@ -262,7 +271,7 @@ ${skills.index()}`;
     origins: ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420", "http://127.0.0.1:1420"],
     // Outside agents get a link to watch what they projected (only when this server serves the UI).
     viewerUrl: opts.uiDir ? (session) => `http://127.0.0.1:${listening}/?session=${encodeURIComponent(session)}` : undefined,
-    routes: async (req, res, url) => (await attachRoute(req, res, url)) || (await media.route(req, res, url)) || (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await skillsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await voiceRoute(req, res, url)) || (await adminFleetRoute(req, res, url)) || (await appsRoute(req, res, url)) || infoRoute(req, res, url),
+    routes: async (req, res, url) => (await attachRoute(req, res, url)) || (await media.route(req, res, url)) || (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await skillsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await voiceRoute(req, res, url)) || (await adminFleetRoute(req, res, url)) || (await appsRoute(req, res, url)) || (await workspacesRoute(req, res, url)) || infoRoute(req, res, url),
     log,
   });
 
@@ -286,9 +295,11 @@ ${skills.index()}`;
     });
   } });
   await apps.init();
-  marketplaces = new Marketplaces(dataDir, integrationCatalog(media, sandboxBin, dataDir), opts.marketplaceFetch, opts.marketplaceImageFetch);
+  const getWorkspace = () => workspaces.resolveEffectiveWorkspace() || (process.env.VAK_SANDBOX_WORKSPACE ?? "");
   const processIsolationEnabled = process.env.VAK_SANDBOX_ENABLED !== "false";
-  integrations = createIntegrations({ dataDir, observe: (request, result) => { appToolResults.observe(request.session, result); tasks?.observeResult(request, result); }, secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: processIsolationEnabled, binaryPath: sandboxBin } }, media, marketplaces.catalog);
+  const realms = new SandboxRealms({ binaryPath: sandboxBin, dataDir, enabled: () => processIsolationEnabled, workspace: getWorkspace, workspaces });
+  marketplaces = new Marketplaces(dataDir, integrationCatalog(media, sandboxBin, dataDir, getWorkspace, workspaces), opts.marketplaceFetch, opts.marketplaceImageFetch);
+  integrations = createIntegrations({ dataDir, observe: (request, result) => { appToolResults.observe(request.session, result); tasks?.observeResult(request, result); }, secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: processIsolationEnabled, binaryPath: sandboxBin } }, media, marketplaces.catalog, getWorkspace, workspaces);
   // Refresh app-owned tool schemas after an upgrade; the integration journal
   // may otherwise retain an older model's controls indefinitely.
   for (const entry of integrations.view().filter((i) => i.enabled && (i.entry.id.startsWith("media-") || i.entry.id === "sandbox-execution"))) {
@@ -299,7 +310,10 @@ ${skills.index()}`;
   tasks = await Tasks.open({
     files: new TaskFiles(path.join(dataDir, "outputs"), opts.transcriptsDir ?? path.join(dataDir, "transcripts")),
     dir: path.join(dataDir, "tasks"), run: host.run, view: host.view, remove: host.remove,
-    tools: async (session) => withSkill(await integrations!.toolsFor(session)), instructions: INSTRUCTIONS,
+    tools: async (session) => withSkill((await integrations!.toolsFor(session)).map((tool) => ({
+      ...tool,
+      execute: (args, ctx) => workspaces.withSession(session, () => media.withSession(session, () => tool.execute(args, ctx))),
+    }))), instructions: INSTRUCTIONS,
     observe: (session, work, run) => finops.chat(async () => { finops.session(session); await work(); }, run), warn: log,
     permissionRevision: (server) => integrationRevisions.get(server) ?? 0,
     permitted: (server, tool) => integrations!.view().some((i) => i.entry.id === server && i.enabled && i.status === "ready" && i.tools.some((t) => t.name === tool && t.policy !== "off")),
@@ -750,6 +764,451 @@ ${skills.index()}`;
     }
   }
 
+  async function workspacesRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
+    const p = url.pathname;
+    if (!p.startsWith("/api/projects") && !p.startsWith("/api/workspaces")) return false;
+
+    try {
+      if (p === "/api/projects" && req.method === "GET") {
+        json(res, 200, workspaces.listProjects());
+        return true;
+      }
+      if (p === "/api/projects" && req.method === "POST") {
+        const body = (await readJson(req)) as Record<string, unknown>;
+        const project = await workspaces.createProject(
+          String(body.name ?? ""),
+          String(body.folder ?? ""),
+          Boolean(body.sharedRealm)
+        );
+        json(res, 201, project);
+        return true;
+      }
+
+      const projectMatch = /^\/api\/projects\/([^/]+)$/.exec(p);
+      if (projectMatch) {
+        const id = projectMatch[1]!;
+        if (req.method === "GET") {
+          const project = workspaces.getProject(id);
+          if (!project) json(res, 404, { error: `Project '${id}' not found` });
+          else json(res, 200, project);
+          return true;
+        }
+        if (req.method === "PATCH") {
+          const body = (await readJson(req)) as Record<string, unknown>;
+          const updated = await workspaces.updateProject(id, {
+            name: typeof body.name === "string" ? body.name : undefined,
+            folder: typeof body.folder === "string" ? body.folder : undefined,
+            sharedRealm: typeof body.sharedRealm === "boolean" ? body.sharedRealm : undefined,
+          });
+          json(res, 200, updated);
+          return true;
+        }
+        if (req.method === "DELETE") {
+          const ok = await workspaces.removeProject(id);
+          json(res, 200, { ok });
+          return true;
+        }
+      }
+
+      if (p === "/api/workspaces/bindings" && req.method === "GET") {
+        json(res, 200, workspaces.listBindings());
+        return true;
+      }
+
+      const realmActionMatch = /^\/api\/workspaces\/bindings\/([^/]+)\/realm(?:\/([^/]+))?$/.exec(p);
+      if (realmActionMatch) {
+        const session = decodeURIComponent(realmActionMatch[1]!);
+        const action = realmActionMatch[2];
+        const binding = workspaces.getBinding(session);
+        if (!binding) {
+          json(res, 404, { error: `No workspace binding for session '${session}'` });
+          return true;
+        }
+
+        if (binding.mode === "direct") {
+          if (!action && req.method === "GET") {
+            json(res, 200, { mode: "direct", bound: true, message: "Direct editing mode is active. Changes save directly to folder." });
+            return true;
+          }
+          if (action === "ensure" && req.method === "POST") {
+            json(res, 200, { mode: "direct", message: "Direct editing mode is active." });
+            return true;
+          }
+          if (action === "review" && req.method === "GET") {
+            json(res, 200, { mode: "direct", total: 0, changes: [], message: "Direct editing mode is active. No Realm staging is used." });
+            return true;
+          }
+          if (action === "apply" && req.method === "POST") {
+            json(res, 200, { mode: "direct", message: "Direct editing mode writes directly to disk. No Apply step is needed." });
+            return true;
+          }
+          if (action === "undo" && req.method === "POST") {
+            json(res, 200, { mode: "direct", message: "Direct editing mode does not track Realm undo receipts." });
+            return true;
+          }
+          if (action === "refresh" && req.method === "POST") {
+            json(res, 200, { mode: "direct", refreshed: true, message: "Direct editing reads directly from disk." });
+            return true;
+          }
+          if (!action && req.method === "DELETE") {
+            json(res, 200, { ok: true });
+            return true;
+          }
+        }
+
+        const resolveRealmId = (): string | undefined => {
+          if (binding.realmId) return binding.realmId;
+          if (binding.projectId && binding.shared) {
+            return workspaces.getProject(binding.projectId)?.sharedRealmId;
+          }
+          return undefined;
+        };
+
+        if (!action && req.method === "GET") {
+          const id = resolveRealmId();
+          if (!id) {
+            json(res, 200, { bound: false, message: "No Realm created yet for this session." });
+            return true;
+          }
+          const st = await realms.status(id);
+          json(res, 200, { bound: true, realmId: id, status: st });
+          return true;
+        }
+
+        if (action === "ensure" && req.method === "POST") {
+          let id = resolveRealmId();
+          if (!id) {
+            const created = await realms.create(binding.folder);
+            id = created.realm_id;
+            await workspaces.setRealmId(session, id);
+          }
+          const st = await realms.status(id);
+          json(res, 200, { realmId: id, status: st });
+          return true;
+        }
+
+        if (action === "review" && req.method === "GET") {
+          const id = resolveRealmId();
+          if (!id) {
+            json(res, 400, { error: "No Realm created yet for this session." });
+            return true;
+          }
+          const reqRealm = url.searchParams.get("realmId");
+          if (reqRealm) {
+            const access = workspaces.verifySessionRealmAccess(session, reqRealm);
+            if (!access.ok) {
+              json(res, 403, { error: `Cross-chat Realm access denied: ${access.error}` });
+              return true;
+            }
+          }
+          const offsetVal = Number(url.searchParams.get("offset") ?? 0);
+          const review = await realms.snapshot(id, offsetVal);
+          json(res, 200, review);
+          return true;
+        }
+
+        if (action === "apply" && req.method === "POST") {
+          const id = resolveRealmId();
+          if (!id) {
+            json(res, 400, { error: "No Realm created yet for this session." });
+            return true;
+          }
+          const body = (await readJson(req)) as { fingerprint?: string; paths?: string[]; realmId?: string };
+          if (body.realmId) {
+            const access = workspaces.verifySessionRealmAccess(session, body.realmId);
+            if (!access.ok) {
+              json(res, 403, { error: `Cross-chat Realm access denied: ${access.error}` });
+              return true;
+            }
+          }
+          const receipt = await realms.promote(id, String(body.fingerprint ?? ""), body.paths ?? []);
+          json(res, 200, receipt);
+          return true;
+        }
+
+        if (action === "undo" && req.method === "POST") {
+          const id = resolveRealmId();
+          if (!id) {
+            json(res, 400, { error: "No Realm created yet for this session." });
+            return true;
+          }
+          const body = (await readJson(req)) as { transactionId?: string; paths?: string[]; realmId?: string };
+          if (body.realmId) {
+            const access = workspaces.verifySessionRealmAccess(session, body.realmId);
+            if (!access.ok) {
+              json(res, 403, { error: `Cross-chat Realm access denied: ${access.error}` });
+              return true;
+            }
+          }
+          const result = await realms.rollback(id, String(body.transactionId ?? ""), body.paths ?? []);
+          json(res, 200, result);
+          return true;
+        }
+
+        if (action === "refresh" && req.method === "POST") {
+          const body = (await readJson(req).catch(() => ({}))) as { force?: boolean; realmId?: string };
+          const id = resolveRealmId();
+          if (body.realmId) {
+            const access = workspaces.verifySessionRealmAccess(session, body.realmId);
+            if (!access.ok) {
+              json(res, 403, { error: `Cross-chat Realm access denied: ${access.error}` });
+              return true;
+            }
+          }
+          if (!id) {
+            const created = await realms.create(binding.folder);
+            await workspaces.setRealmId(session, created.realm_id);
+            json(res, 200, { refreshed: true, realmId: created.realm_id });
+            return true;
+          }
+          const currentReview = await realms.snapshot(id, 0);
+          if (currentReview.total > 0 && !body.force) {
+            json(res, 409, {
+              error: `Realm has ${currentReview.total} uncommitted changes. Review and apply or pass force: true to discard.`,
+              total: currentReview.total,
+            });
+            return true;
+          }
+          await realms.destroy(id).catch(() => {});
+          const fresh = await realms.create(binding.folder);
+          await workspaces.setRealmId(session, fresh.realm_id);
+          json(res, 200, { refreshed: true, realmId: fresh.realm_id });
+          return true;
+        }
+
+        if (!action && req.method === "DELETE") {
+          const id = resolveRealmId();
+          if (id && !binding.shared) {
+            await realms.destroy(id).catch(() => {});
+            await workspaces.clearRealmId(session);
+          } else if (binding.shared) {
+            await workspaces.clearRealmId(session);
+          }
+          json(res, 200, { ok: true });
+          return true;
+        }
+      }
+
+      const exportMatch = /^\/api\/workspaces\/bindings\/([^/]+)\/export-asset$/.exec(p);
+      if (exportMatch && req.method === "POST") {
+        const session = decodeURIComponent(exportMatch[1]!);
+        const binding = workspaces.getBinding(session);
+        if (!binding) {
+          json(res, 404, { error: `No workspace binding for session '${session}'` });
+          return true;
+        }
+        if (binding.accessState !== "admitted") {
+          json(res, 403, { error: `Workspace access is ${binding.accessState}` });
+          return true;
+        }
+        const body = (await readJson(req)) as { assetId?: string; targetPath?: string };
+        const assetId = String(body.assetId ?? "").trim();
+        const targetPath = String(body.targetPath ?? "").trim();
+        if (!assetId) {
+          json(res, 400, { error: "Asset ID is required" });
+          return true;
+        }
+        if (!targetPath || targetPath.startsWith("/") || targetPath.split(/[\\/]/).includes("..")) {
+          json(res, 400, { error: "Target path must be a relative path inside the workspace" });
+          return true;
+        }
+
+        let sourceFile: string | undefined;
+        const mediaAsset = media.getAsset(assetId);
+        if (mediaAsset) {
+          sourceFile = mediaAsset.filePath;
+        } else {
+          const attachFile = path.join(dataDir, "attachments", session, assetId);
+          if (existsSync(attachFile)) {
+            sourceFile = attachFile;
+          }
+        }
+        if (!sourceFile || !existsSync(sourceFile)) {
+          json(res, 404, { error: `Asset '${assetId}' not found` });
+          return true;
+        }
+
+        let destRoot: string;
+        let id: string | undefined;
+        if (binding.mode === "direct") {
+          destRoot = binding.folder;
+        } else {
+          id = binding.realmId ?? (binding.projectId && binding.shared ? workspaces.getProject(binding.projectId)?.sharedRealmId : undefined);
+          if (!id) {
+            const created = await realms.create(binding.folder);
+            id = created.realm_id;
+            await workspaces.setRealmId(session, id);
+          }
+          destRoot = path.join(dataDir, "sandbox", "realms", id, "workspace");
+        }
+        const destFile = path.join(destRoot, targetPath);
+        const normalizedDest = path.resolve(destFile);
+        if (!normalizedDest.startsWith(destRoot + path.sep) && normalizedDest !== destRoot) {
+          json(res, 400, { error: "Target path escapes workspace boundary" });
+          return true;
+        }
+
+        mkdirSync(path.dirname(destFile), { recursive: true, mode: 0o700 });
+        const bytes = readFileSync(sourceFile);
+        writeFileSync(destFile, bytes, { mode: 0o644 });
+
+        const hash = createHash("sha256").update(bytes).digest("hex");
+        json(res, 200, {
+          ok: true,
+          path: targetPath,
+          bytes: bytes.length,
+          sha256: hash,
+          realmId: id,
+          mode: binding.mode,
+        });
+        return true;
+      }
+
+      const importMatch = /^\/api\/workspaces\/bindings\/([^/]+)\/import-file$/.exec(p);
+      if (importMatch && req.method === "POST") {
+        const session = decodeURIComponent(importMatch[1]!);
+        const binding = workspaces.getBinding(session);
+        if (!binding) {
+          json(res, 404, { error: `No workspace binding for session '${session}'` });
+          return true;
+        }
+        if (binding.accessState !== "admitted") {
+          json(res, 403, { error: `Workspace access is ${binding.accessState}` });
+          return true;
+        }
+        const body = (await readJson(req)) as { relativePath?: string; name?: string };
+        const relPath = String(body.relativePath ?? "").trim();
+        if (!relPath || relPath.startsWith("/") || relPath.split(/[\\/]/).includes("..")) {
+          json(res, 400, { error: "Relative path inside workspace is required" });
+          return true;
+        }
+
+        let sourceRoot = binding.folder;
+        if (binding.mode !== "direct") {
+          const id = binding.realmId ?? (binding.projectId && binding.shared ? workspaces.getProject(binding.projectId)?.sharedRealmId : undefined);
+          if (id) {
+            const realmDir = path.join(dataDir, "sandbox", "realms", id, "workspace");
+            if (existsSync(realmDir)) sourceRoot = realmDir;
+          }
+        }
+
+        const sourceFile = path.join(sourceRoot, relPath);
+        const resolved = path.resolve(sourceFile);
+        if (!resolved.startsWith(sourceRoot + path.sep) && resolved !== sourceRoot) {
+          json(res, 400, { error: "Path escapes workspace boundary" });
+          return true;
+        }
+        if (!existsSync(sourceFile)) {
+          json(res, 404, { error: `File '${relPath}' not found` });
+          return true;
+        }
+
+        const st = statSync(sourceFile);
+        if (!st.isFile()) {
+          json(res, 400, { error: `Path '${relPath}' is not a regular file` });
+          return true;
+        }
+        if (st.size > 20_000_000) {
+          json(res, 413, { error: "File exceeds the 20 MB media import limit" });
+          return true;
+        }
+
+        const bytes = readFileSync(sourceFile);
+        const hash = createHash("sha256").update(bytes).digest("hex");
+
+        let detectedType: string;
+        try {
+          detectedType = mediaType(bytes);
+        } catch {
+          if (bytes.subarray(0, 5).toString("latin1") === "%PDF-") {
+            detectedType = "application/pdf";
+          } else if (/\.(csv|tsv)$/i.test(relPath)) {
+            detectedType = "text/csv";
+          } else if (/\.json$/i.test(relPath)) {
+            detectedType = "application/json";
+          } else if (/\.md$/i.test(relPath)) {
+            detectedType = "text/markdown";
+          } else if (/\.txt$/i.test(relPath)) {
+            detectedType = "text/plain";
+          } else {
+            json(res, 415, { error: "Unsupported file format. Supported: PNG, JPEG, WebP, WAV, MP3, MP4, WebM, PDF, CSV, JSON, Markdown, Text." });
+            return true;
+          }
+        }
+
+        let asset: MediaAsset | undefined;
+        if (/^(image|audio|video)\//.test(detectedType)) {
+          asset = media.saveAssetBytes(bytes, body.name ?? path.basename(relPath));
+        } else {
+          const attachFolder = path.join(dataDir, "attachments", session);
+          mkdirSync(attachFolder, { recursive: true, mode: 0o700 });
+          const attachFile = path.join(attachFolder, `${randomUUID()}${path.extname(relPath) || ".txt"}`);
+          writeFileSync(attachFile, bytes, { mode: 0o600 });
+          asset = {
+            id: path.basename(attachFile),
+            type: detectedType,
+            name: body.name ?? path.basename(relPath),
+            bytes: bytes.length,
+            created: new Date().toISOString(),
+          };
+        }
+
+        json(res, 200, {
+          ok: true,
+          asset,
+          format: detectedType,
+          bytes: bytes.length,
+          sha256: hash,
+        });
+        return true;
+      }
+
+      const bindingMatch = /^\/api\/workspaces\/bindings\/([^/]+)$/.exec(p);
+      if (bindingMatch) {
+        const session = decodeURIComponent(bindingMatch[1]!);
+        if (req.method === "GET") {
+          const binding = workspaces.getBinding(session);
+          if (!binding) json(res, 404, { error: `No workspace binding for session '${session}'` });
+          else json(res, 200, binding);
+          return true;
+        }
+        if (req.method === "POST") {
+          const body = (await readJson(req)) as Record<string, unknown>;
+          const binding = await workspaces.bindSession(session, {
+            folder: String(body.folder ?? ""),
+            projectId: typeof body.projectId === "string" ? body.projectId : undefined,
+            mode: body.mode as any,
+            shareProjectRealm: typeof body.shareProjectRealm === "boolean" ? body.shareProjectRealm : undefined,
+          });
+          json(res, 200, binding);
+          return true;
+        }
+        if (req.method === "DELETE") {
+          const binding = workspaces.getBinding(session);
+          if (binding?.realmId && !binding.shared) {
+            await realms.destroy(binding.realmId).catch(() => {});
+          }
+          const ok = await workspaces.unbindSession(session);
+          json(res, 200, { ok });
+          return true;
+        }
+      }
+
+      if (p === "/api/workspaces/validate-folder" && req.method === "POST") {
+        const body = (await readJson(req)) as Record<string, unknown>;
+        const result = validateWorkspaceFolder(String(body.folder ?? ""), dataDir);
+        json(res, 200, { ok: true, ...result });
+        return true;
+      }
+
+      json(res, 404, { error: "Unknown workspace route" });
+      return true;
+    } catch (err) {
+      json(res, 400, { error: (err as Error).message });
+      return true;
+    }
+  }
+
   const handle = async (req: HostRequest, res: HostResponse) => {
     try {
       if (req.method === "POST" && new URL(req.url ?? "/", "http://localhost").pathname === "/api/chat") {
@@ -779,6 +1238,8 @@ ${skills.index()}`;
     url: server ? `http://127.0.0.1:${port}` : "vak://localhost",
     pool,
     apps,
+    workspaces,
+    realms,
     async shutdown() {
       server?.close();
       await pool.shutdown(2000);

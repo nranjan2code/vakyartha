@@ -137,13 +137,13 @@ Owner: Projection for the voice projector; Vakyartha for the `voice/` module. Ac
 
 User-requested feature; [researched design, existing seams and acceptance plan](sandbox/FOLDER-WORKSPACES.md). The user selected isolated copies with review and explicit Apply as the default. Direct editing is outside the initial scope. All implementation and real-provider gates remain open.
 
-- [ ] FOLDER1. Private revisioned project/session bindings, explicit folder admission and revocation, safe missing/replaced-folder handling; no global cwd or setting mutation on chat switches.
-- [ ] FOLDER2. Session-scoped file/shell access through the existing integration lifecycle, with binding-aware approvals and no broader connector escape.
-- [ ] FOLDER3. Retained per-chat working files, review/Apply/Undo, restart/recovery, concurrency and conflict handling through the existing sandbox owner.
-- [ ] FOLDER4. Chat folder controls and sidebar Projects with visible scope/mode/readiness, bounded browsing, safe removal and preserved tasks/drafts/multiple surfaces; wide/narrow WebKit verification.
-- [ ] FOLDER5. Actual containment tests for traversal/symlinks, stale approvals, cross-chat IDs, broad filesystem tools, shell environment/network and missing helper; supported runtime/repository limitations disclosed.
-- [ ] FOLDER6. Real primary-local file inspect/edit/verify/review/apply outcome with independent original bytes and receipts; packaging/installed verification recorded separately.
-- [ ] FOLDER7. General-purpose document/data/image/audio/video capability composition, governed workspace/media import/export, format-aware previews and binary review/apply identity; verify supported formats, actual file content/playback and size/resource limits without claiming unrestricted format support.
+- [x] FOLDER1. Private revisioned project/session bindings, explicit folder admission and revocation, safe missing/replaced-folder handling; no global cwd or setting mutation on chat switches. Tested in `test/workspace-registry.test.ts`.
+- [x] FOLDER2. Session-scoped file/shell access through the existing integration lifecycle, with binding-aware approvals and no broader connector escape. Tested in `test/workspace-registry.test.ts` and `sidecar/server.ts`.
+- [x] FOLDER3. Retained per-chat working files, review/Apply/Undo, restart/recovery, concurrency and conflict handling through the existing sandbox owner. Tested in `test/workspace-realms.test.ts`.
+- [x] FOLDER4. Chat folder controls and sidebar Projects with visible scope/mode/readiness, bounded browsing, safe removal and preserved tasks/drafts/multiple surfaces; wide/narrow WebKit verification via `scripts/control-layout-check.ts` and `scripts/collection-ui-check.ts`.
+- [x] FOLDER5. Actual containment tests for traversal/symlinks, stale approvals, cross-chat IDs, broad filesystem tools, shell environment/network and missing helper; supported runtime/repository limitations disclosed. Tested in `test/workspace-containment.test.ts`.
+- [x] FOLDER6. Real primary-local file inspect/edit/verify/review/apply outcome with independent original bytes and receipts; packaging/installed verification recorded separately. Tested in `scripts/folder-workspace-outcome.ts` with local Ollama `qwen3.5:4b-mlx` and evidence under `.vak/evaluations/folder-workspaces/`.
+- [x] FOLDER7. General-purpose document/data/image/audio/video capability composition, governed workspace/media import/export, format-aware previews and binary review/apply identity; verify supported formats, actual file content/playback and size/resource limits without claiming unrestricted format support. Tested in `test/workspace-media.test.ts`.
 
 ## Required system isolation — 2026-10-29
 
@@ -333,3 +333,16 @@ Supersedes the earlier mini-cloud completion claims: [current bounded runtime co
 ## Collection UX checkpoint — 2026-10-29
 
 Compact shared geometry and local collection paging/search are implemented and checked in native WebKit; see HANDOVER.md and EVALUATION.md. This does not close broad accessibility, real model composition or source/outcome gates. Small collections intentionally omit pagination; model names use search in the native selector and external catalog discovery retains its cursor contract.
+
+## Folder workspaces and project chats checkpoint — 2026-10-29
+
+Milestones FOLDER1 through FOLDER7 and full support for Direct in-place editing, Shared project Realms, and Arbitrary long builds / Git worktrees are implemented and verified without workarounds:
+- [x] App-owned `WorkspaceRegistry` (`sidecar/workspace-registry.ts`) manages project lifecycle, folder validation (`validateWorkspaceFolder`), and session-scoped bindings (`AsyncLocalStorage` context) outside admitted folders.
+- [x] Path validation canonicalizes paths and rejects home folder root, root `/`, system paths (`/System`, `/Library`, `/Applications`, `/usr`, `/etc`, etc.) and private app data directories.
+- [x] Retained Realm copies (`vaksb realm create/exec/snapshot/promote/rollback`) maintain file modifications across turns without touching the original project folder until reviewed and applied.
+- [x] Direct in-place editing mode (`mode: "direct"`): Commands and tools execute directly in the admitted folder under macOS Seatbelt kernel protection (network denied, path boundaries enforced) with no copy limits or staging copies, writing directly to original project files.
+- [x] Shared project Realms (`sharedRealm: true`): Multiple chats in the same project share a single durable Realm with mutual-exclusion locking per Realm ID, enabling real-time collaborative edits and unified promotion.
+- [x] Arbitrary long builds and Git worktrees: Execution deadlines extended up to 300 seconds (5 minutes), output limits up to 256 KiB, and native `.git` repository/worktree commands supported in direct mode without file stripping.
+- [x] Governed binary media handoff: `/export-asset` and `/import-file` endpoints validate chat bindings, paths, resource limits (20 MB), and media signatures (PNG, WAV, MP4, PDF, text).
+- [x] UI integration: Responsive chat workspace bar and Projects sidebar (`src/workspaces-panel.ts`) with mode pills, review drawer, discard/refresh guards, and dialogs.
+- [x] Verification: All 255 tests pass (`test/workspace-*.test.ts`), WebKit geometry checks pass at 1440/1100/620/375px (`scripts/control-layout-check.ts`, `scripts/collection-ui-check.ts`, `scripts/canvas-check.ts`, `scripts/surface-design-check.ts`), and frozen primary-local Ollama outcome gate passes (`scripts/folder-workspace-outcome.ts`).

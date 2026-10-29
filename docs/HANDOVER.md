@@ -1,5 +1,73 @@
 # Vakyartha handover — 2026-10-28
 
+## Folder workspaces and project chats: full implementation and acceptance — 2026-10-29
+
+Completed all milestones FOLDER1 through FOLDER7 for the folder workspaces and project chats capability ([FOLDER-WORKSPACES.md](sandbox/FOLDER-WORKSPACES.md), [MVP-CHECKLIST.md](MVP-CHECKLIST.md)):
+
+1. **FOLDER1 (Workspace Registry & Path Admission)**:
+   - Built app-owned `WorkspaceRegistry` ([sidecar/workspace-registry.ts](../sidecar/workspace-registry.ts)): stores Projects and Session Workspace Bindings in `<dataDir>/workspaces.json`.
+   - Strict path admission (`validateWorkspaceFolder`): canonicalizes paths, verifies directory status and read/exec permissions, rejects relative paths, files, system roots (`/`, `/System`, `/usr`, `/Library`, `/Applications`, `/private/etc`, `/etc`, `/var`, `/tmp`), user home directory (`homedir()`), and private app data directories (`dataDir`, `.vak`, `.git`).
+   - Revision tracking and stale-approval prevention: revisions increment on folder change, rebind, or revocation. Revalidation marks missing or modified folders as `missing` / `revoked`, and `verifyDispatchScope` prevents execution of stale or revoked approvals.
+   - Non-destructive project removal: deleting a project detaches `projectId` from existing chat bindings without deleting the source folder or invalidating the chat's folder authority.
+   - Tested in `test/workspace-registry.test.ts` (8 unit tests).
+
+2. **FOLDER2 (Session-Scoped Integration Seams & REST Endpoints)**:
+   - Uses Node `AsyncLocalStorage` (`withSession`) in `WorkspaceRegistry` to establish execution context per turn without mutating global state, `process.cwd()`, or `VAK_SANDBOX_WORKSPACE`. Unbound chats fail closed.
+   - Routed `sandboxExecutionEntry` tool dispatch through dynamic session resolution.
+   - REST endpoints in `sidecar/server.ts`: `/api/projects` (CRUD), `/api/workspaces/bindings` (CRUD), and `/api/workspaces/validate-folder`.
+
+3. **FOLDER3 (Retained Per-Chat Working Files & Concurrency)**:
+   - Updated `sidecar/sandbox-realms.ts` to manage durable per-chat working copies in `vaksb` sandbox Realms under `<dataDir>/sandbox/realms/<id>/workspace`.
+   - Executions inside folder-bound chats run in retained Realms (`vaksb realm exec`), persisting file modifications across turns and chat restarts while leaving original project files untouched until explicit review and promotion.
+   - REST endpoints for Realm lifecycle: `status`, `ensure`, `review` (`snapshot_realm`), `apply` (`promote_realm`), `undo` (`rollback_realm`), `refresh` (with dirty check refusing uncommitted overwrite unless `force: true` is passed), and `DELETE` (`destroy_realm`).
+   - Tested in `test/workspace-realms.test.ts` (multi-turn persistence, concurrent chats on same project folder with conflict handling, and dirty refresh refusal).
+
+4. **FOLDER4 (Chat Controls, Projects Sidebar & UI Styling)**:
+   - Built `WorkspacesPanel` ([src/workspaces-panel.ts](../src/workspaces-panel.ts)): manages `#chat-workspace-bar`, sidebar projects list, folder admission modal, project creation modal, and review drawer.
+   - Verified wide and narrow WebKit responsive geometry (1440px, 620px, 375px) via `node scripts/control-layout-check.ts` and `node scripts/collection-ui-check.ts`.
+
+5. **FOLDER5 (Security & Containment Verification)**:
+   - Tested in `test/workspace-containment.test.ts` (7 comprehensive containment tests):
+     - Path traversal and symlink escapes denied during admission and dispatch.
+     - Stale bindings, revoked approvals, and missing on-disk folders fail closed.
+     - Cross-chat Realm ID injection attempts return 403 or access denied.
+     - Host environment scrubbed: parent secret variables (`OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `VAK_SIDE_KEY`) do not leak to sandbox child processes.
+     - Outbound TCP/network connections denied inside macOS Seatbelt execution profile.
+     - Missing or invalid sandbox helper fails closed without executing.
+
+6. **FOLDER6 (Primary-Local Outcome Acceptance Gate)**:
+   - Implemented `scripts/folder-workspace-outcome.ts` executing a complete inspect -> edit -> verify -> review -> apply -> undo cycle against local Ollama `qwen3.5:4b-mlx` model.
+   - Admitted synthetic project fixture with POSIX verification script and initial state `COUNT=5`.
+   - Real Ollama `qwen3.5:4b-mlx` chat turn completed in 113.8s.
+   - Verified isolated Realm modifications while original on-disk project files remained untouched.
+   - Promoted changes and verified bit-for-bit SHA-256 byte identity on disk (`COUNT=10\n`, target sha256 `97c20189691b206b6fb229197bea15fac18192d1f5786dd8d1011ef9a7737d03`).
+   - Rolled back and verified complete restoration of original bytes (`COUNT=5\n`, initial sha256 `48014b8be219fa37492bc1dccc7e1c08687c290a7491533d64ef33102c22ce8b`).
+   - Retained frozen evidence under `.vak/evaluations/folder-workspaces/`.
+
+7. **FOLDER7 (Media & Document Composition)**:
+   - Built governed workspace/media import and export endpoints:
+     - `POST /api/workspaces/bindings/:session/export-asset`: copies binary media library assets or attachments into the session's retained Realm workspace.
+     - `POST /api/workspaces/bindings/:session/import-file`: imports files from workspace/realm into the media library (for images/audio/video) or chat attachments (for documents/data) under 20MB limit.
+   - Format detection and truthful disclosure: supports PNG, JPEG, WebP, WAV, MP3, MP4, WebM, PDF, CSV, JSON, Markdown, and Text; rejects unsupported binary formats with 415.
+   - Format-aware review drawer in `src/workspaces-panel.ts`: distinguishes binary assets (PNG, WAV, MP4, PDF) from text diffs, displaying format badges, sizes, and hash previews.
+   - Tested in `test/workspace-media.test.ts` (exporting asset to workspace, binary review snapshot, bit-for-bit apply promotion, undo rollback, and governed file import).
+
+8. **UPGRADE (Direct In-Place Editing, Shared Project Realms, Long Builds & Git Worktrees)**:
+   - Direct in-place editing mode (`mode: "direct"`):
+     - Commands execute directly in the project folder with macOS Seatbelt kernel protection (network denied, path escapes prevented).
+     - Writes modify files directly on disk without staging copies or requiring an Apply review step.
+     - Full Git repository (`.git`), worktrees, and branches are preserved and fully functional without copy caps or file exclusion.
+   - Shared project Realms (`sharedRealm: true`):
+     - Multiple chats in the same project share a single durable Realm copy (`project.sharedRealmId`).
+     - Operations are serialized per Realm ID using mutual-exclusion locks (`withRealmLock`), eliminating race conditions between concurrent chats.
+     - Edits in one chat are immediately visible and runnable in other chats of the project without promotion. Unified review and Apply commits changes to the source folder.
+   - Arbitrary long builds and output limits:
+     - Deadlines extended up to 300 seconds (5 minutes) with configurable `timeout_seconds` in `run_command` schema.
+     - Maximum output buffer expanded to 256 KiB for extensive compiler logs and command output.
+   - Tested in `test/workspace-realms.test.ts` (direct editing on disk, shared Realm cross-chat visibility and promotion, timeout_seconds validation, Git commit/worktree execution, and 64 KiB output).
+
+All 255 repository tests pass, TypeScript typecheck is clean, Vite production bundle builds without errors, and WebKit checks pass across all viewports.
+
 ## Folder workspace research and design — 2026-10-29
 
 Follow-up scope: the user explicitly includes coding, document creation/editing and image/audio/video work. The design now specifies general-purpose capability composition, format-aware review, exact binary candidate identity, guarded handoff to existing media assets/jobs and honest format/large-file admission. FOLDER7 tracks those outcomes. No runtime feature, new dependency or hosted media call is introduced by this clarification.

@@ -2197,3 +2197,48 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
   .studio-hub { padding: 16px; }
   .studio-hub-header, .studio-hub-controls { flex-wrap: wrap; gap: 10px; }
 }
+
+/* Folder workspaces and project chats */
+.chat-workspace-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 24px 8px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); font-size: .84rem; min-height: 38px; box-sizing: border-box; }
+.workspace-info { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+.workspace-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .86rem; font-weight: 600; }
+.workspace-mode-pill { font-size: .72rem; padding: 2px 7px; border-radius: 12px; background: var(--hover); color: var(--muted); white-space: nowrap; flex: none; }
+.workspace-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.workspace-admit-btn { display: inline-flex; align-items: center; gap: 6px; font-size: .84rem; color: var(--muted); cursor: pointer; padding: 4px 8px; border-radius: 6px; border: 0; background: none; }
+.workspace-admit-btn:hover { color: var(--fg); background: var(--hover); }
+.workspace-review-btn { display: inline-flex; align-items: center; gap: 5px; font-size: .78rem; padding: 3px 8px; }
+.workspace-btn { width: 26px; height: 26px; }
+.projects-sidebar { padding: 4px 10px 8px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+.projects-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 4px 4px; font-size: .74rem; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.projects-add-btn { width: 22px; height: 22px; cursor: pointer; }
+.project-group { display: flex; flex-direction: column; gap: 1px; }
+.project-row { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 6px; font-size: .84rem; font-weight: 550; cursor: pointer; }
+.project-row:hover { background: var(--hover); }
+.project-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-new-chat-btn, .project-del-btn { visibility: hidden; width: 22px; height: 22px; }
+.project-row:hover .project-new-chat-btn, .project-row:hover .project-del-btn { visibility: visible; }
+.project-chats { padding-left: 12px; display: flex; flex-direction: column; gap: 1px; }
+.project-chat { border-radius: 6px; }
+.project-chat.active { background: var(--hover); }
+.workspace-modal, .workspace-review-dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--fg); max-width: 500px; width: 90vw; padding: 20px; box-shadow: 0 12px 36px rgba(0,0,0,0.25); }
+.workspace-modal::backdrop, .workspace-review-dialog::backdrop { background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(2px); }
+.workspace-form { display: flex; flex-direction: column; gap: 12px; }
+.workspace-input { width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); font-size: .88rem; }
+.review-content { display: flex; flex-direction: column; gap: 14px; }
+.review-changes-list { max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+.review-change-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: .82rem; }
+.text-ok { color: var(--ok); }
+.text-bad { color: var(--danger); }
+.probe-feedback { min-height: 22px; font-size: .82rem; }
+.workspace-select { width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); font-size: .88rem; }
+.workspace-mode-pill.direct { background: color-mix(in srgb, var(--accent) 15%, var(--panel)); color: var(--accent); }
+.workspace-mode-pill.shared { background: color-mix(in srgb, var(--ok) 15%, var(--panel)); color: var(--ok); }
+.project-share-label { display: flex; align-items: center; gap: 8px; font-size: .84rem; cursor: pointer; }
+.project-share-label input { width: auto; accent-color: var(--accent); }
+@media (max-width: 620px) {
+  .chat-workspace-bar { margin: 0 12px 6px; padding: 4px 8px; }
+  .workspace-mode-pill { display: none; }
+}
+@media (max-width: 375px) {
+  .chat-workspace-bar { font-size: .78rem; }
+}

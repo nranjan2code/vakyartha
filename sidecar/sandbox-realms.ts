@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { mkdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { sandboxHelper, validateSandboxWorkspace } from "./sandbox-status.ts";
+import type { WorkspaceRegistry } from "./workspace-registry.ts";
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export interface RealmSummary { realm_id: string; base_path: string | null; workspace: string; created_at: string; status: string; last_transaction: string | null; entries: number; bytes: number }
@@ -13,13 +14,13 @@ const realmId = (value: unknown) => { if (typeof value !== "string" || !UUID.tes
 const relative = (value: unknown) => { if (typeof value !== "string" || !value || Buffer.byteLength(value) > 512 || path.isAbsolute(value) || value.split(/[\\/]/).includes("..") || value.includes("\0")) throw new Error("Use a relative path inside the Realm."); return value; };
 const offset = (value: unknown) => { if (value === undefined) return 0; if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new Error("Offset must be a nonnegative integer."); return value; };
 
-function cli(binary: string, args: string[], cwd: string, signal?: AbortSignal): Promise<unknown> {
+function cli(binary: string, args: string[], cwd: string, signal?: AbortSignal, timeoutMs = 45000): Promise<unknown> {
   return new Promise((resolve, reject) => {
     signal?.throwIfAborted();
     const child = spawn(binary, args, { cwd, env: { PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", HOME: cwd, TMPDIR: cwd }, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "", bytes = 0, failure: Error | undefined, settled = false;
     const stop = (error: Error) => { if (!failure) { failure = error; child.kill("SIGTERM"); } };
-    const timer = setTimeout(() => stop(new Error("Realm operation exceeded its 45 second limit. Inspect its status before retrying.")), 45000);
+    const timer = setTimeout(() => stop(new Error(`Realm operation exceeded its ${Math.round(timeoutMs / 1000)} second limit. Inspect its status before retrying.`)), timeoutMs);
     const abort = () => stop(new Error("Realm operation cancelled. Inspect its status before retrying."));
     signal?.addEventListener("abort", abort, { once: true });
     const collect = (stream: "stdout" | "stderr", chunk: Buffer) => { bytes += chunk.length; if (bytes > 256 * 1024) return stop(new Error("Realm response exceeded 256 KiB. Use paged review or file reads.")); if (stream === "stdout") stdout += chunk.toString("utf8"); else stderr += chunk.toString("utf8"); };
@@ -31,48 +32,159 @@ function cli(binary: string, args: string[], cwd: string, signal?: AbortSignal):
 }
 
 export class SandboxRealms {
-  readonly options: { binaryPath: string; dataDir: string; enabled: () => boolean; workspace: () => string };
+  readonly options: { binaryPath: string; dataDir: string; enabled: () => boolean; workspace: () => string; workspaces?: WorkspaceRegistry };
+  private realmLocks = new Map<string, Promise<unknown>>();
+
   constructor(options: SandboxRealms["options"]) { this.options = options; }
-  private async call(args: string[], signal?: AbortSignal): Promise<unknown> {
+
+  private async withRealmLock<T>(id: string, op: () => Promise<T>): Promise<T> {
+    const prev = this.realmLocks.get(id) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    this.realmLocks.set(id, prev.then(() => gate, () => gate));
+    try {
+      await prev;
+      return await op();
+    } finally {
+      release();
+      if (this.realmLocks.get(id) === gate) {
+        this.realmLocks.delete(id);
+      }
+    }
+  }
+
+  private async call(args: string[], signal?: AbortSignal, timeoutMs = 45000): Promise<unknown> {
     if (!this.options.enabled() && !["list", "status", "snapshot", "read"].includes(args[0] ?? "")) throw new Error("Sandbox execution is disabled. No Realm operation was performed.");
     if (process.platform !== "darwin") throw new Error("Realm execution requires macOS Seatbelt.");
     if (!(await sandboxHelper(this.options.binaryPath)).compatible) throw new Error("A supervised sandbox helper is required. Rebuild or reinstall it before accessing Realms.");
     const store = path.join(this.options.dataDir, "sandbox");
     await mkdir(store, { recursive: true, mode: 0o700 });
-    return cli(this.options.binaryPath, ["--store", store, "realm", ...args], this.options.dataDir, signal);
+    return cli(this.options.binaryPath, ["--store", store, "realm", ...args], this.options.dataDir, signal, timeoutMs);
   }
   async list(signal?: AbortSignal): Promise<RealmSummary[]> {
     const value = await this.call(["list"], signal);
     if (!Array.isArray(value)) throw new Error("Invalid Realm list.");
     return value as RealmSummary[];
   }
+  async create(projectPath?: string, signal?: AbortSignal): Promise<{ realm_id: string; base_path: string }> {
+    const raw = projectPath ?? this.options.workspace().trim();
+    if (!raw) throw new Error("No folder workspace is admitted for this chat. Select 'Work in folder' to enable workspace tools.");
+    const project = validateSandboxWorkspace(raw);
+    return (await this.call(["create", `--project=${project}`], signal)) as { realm_id: string; base_path: string };
+  }
+  async status(id: string, signal?: AbortSignal): Promise<any> {
+    return this.call(["status", realmId(id)], signal);
+  }
+  async exec(id: string, command: string, args: string[], cwd = ".", signal?: AbortSignal, timeoutMs = 45000): Promise<any> {
+    return this.withRealmLock(id, () => this.call(["exec", realmId(id), `--cwd=${relative(cwd)}`, "--", command, ...args], signal, timeoutMs));
+  }
+  async snapshot(id: string, offsetVal = 0, signal?: AbortSignal): Promise<RealmReview> {
+    return (await this.withRealmLock(id, () => this.call(["snapshot", realmId(id), `--offset=${offset(offsetVal)}`], signal))) as RealmReview;
+  }
+  async read(id: string, filePath: string, offsetVal = 0, original = false, signal?: AbortSignal): Promise<any> {
+    return this.call(["read", `--offset=${offset(offsetVal)}`, ...(original ? ["--original"] : []), "--", realmId(id), relative(filePath)], signal);
+  }
+  async promote(id: string, fingerprint: string, paths: string[], signal?: AbortSignal): Promise<any> {
+    if (!/^[a-f0-9]{64}$/.test(fingerprint) || !paths.length || paths.length > 200) throw new Error("Provide the current review fingerprint and all reviewed paths (at most 200 changes).");
+    return this.withRealmLock(id, () => this.call(["promote", realmId(id), `--fingerprint=${fingerprint}`, ...paths.map(p => `--paths=${relative(p)}`)], signal));
+  }
+  async rollback(id: string, transactionId: string, paths: string[], signal?: AbortSignal): Promise<any> {
+    if (!paths.length || paths.length > 200) throw new Error("Provide the affected paths from the receipt.");
+    return this.withRealmLock(id, () => this.call(["rollback", realmId(id), realmId(transactionId), ...paths.map(p => `--paths=${relative(p)}`)], signal));
+  }
+  async recover(id: string, paths: string[], signal?: AbortSignal): Promise<any> {
+    if (!paths.length || paths.length > 200) throw new Error("Provide the affected paths from the receipt or current recovery status.");
+    return this.withRealmLock(id, () => this.call(["recover", realmId(id), ...paths.map(p => `--paths=${relative(p)}`)], signal));
+  }
+  async destroy(id: string, signal?: AbortSignal): Promise<any> {
+    return this.withRealmLock(id, () => this.call(["destroy", realmId(id)], signal));
+  }
   async execute(name: string, args: Args, signal?: AbortSignal): Promise<unknown> {
     if (name === "list_realms") return this.list(signal);
-    const project = validateSandboxWorkspace(this.options.workspace().trim());
-    if (name === "create_realm") return this.call(["create", `--project=${project}`], signal);
-    const id = realmId(args.realmId);
-    const status = await this.call(["status", id], signal) as { realm?: RealmSummary };
-    // Revoking/changing the configured project also revokes tools for older
-    // copies. Retaining a Realm never grants access to a previously scoped path.
-    if (!status.realm?.base_path || await realpath(status.realm.base_path) !== project) throw new Error("This Realm belongs to a different project. Restore that project setting before using it.");
+    const rawWorkspace = this.options.workspace().trim();
+    if (!rawWorkspace) throw new Error("No folder workspace is admitted for this chat. Select 'Work in folder' to enable workspace tools.");
+    const project = validateSandboxWorkspace(rawWorkspace);
+    const activeSession = this.options.workspaces?.currentSession()?.session;
+
+    if (activeSession && this.options.workspaces) {
+      const binding = this.options.workspaces.getBinding(activeSession);
+      if (binding?.mode === "direct") {
+        throw new Error("This chat is operating in direct in-place editing mode. Commands write directly to the project folder; Realm staging and promotion are not used.");
+      }
+    }
+
+    if (name === "create_realm") {
+      const created = (await this.call(["create", `--project=${project}`], signal)) as { realm_id: string };
+      if (activeSession && this.options.workspaces) {
+        await this.options.workspaces.setRealmId(activeSession, created.realm_id);
+      }
+      return created;
+    }
+
+    let id: string;
+    if (typeof args.realmId === "string" && args.realmId) {
+      id = realmId(args.realmId);
+      if (activeSession && this.options.workspaces) {
+        const access = this.options.workspaces.verifySessionRealmAccess(activeSession, id);
+        if (!access.ok) throw new Error(access.error);
+      }
+    } else if (activeSession && this.options.workspaces) {
+      const bound = this.options.workspaces.getBinding(activeSession);
+      if (bound?.realmId) {
+        id = bound.realmId;
+      } else if (bound?.projectId && bound?.shared) {
+        const proj = this.options.workspaces.getProject(bound.projectId);
+        if (proj?.sharedRealmId) {
+          id = proj.sharedRealmId;
+          await this.options.workspaces.setRealmId(activeSession, id);
+        } else {
+          const created = (await this.call(["create", `--project=${project}`], signal)) as { realm_id: string };
+          await this.options.workspaces.setRealmId(activeSession, created.realm_id);
+          id = created.realm_id;
+        }
+      } else {
+        const created = (await this.call(["create", `--project=${project}`], signal)) as { realm_id: string };
+        await this.options.workspaces.setRealmId(activeSession, created.realm_id);
+        id = created.realm_id;
+      }
+    } else {
+      id = realmId(args.realmId);
+    }
+
+    const status = (await this.call(["status", id], signal)) as { realm?: RealmSummary };
+    if (!status.realm?.base_path || (await realpath(status.realm.base_path)) !== project) {
+      throw new Error("This Realm belongs to a different project. Restore that project setting before using it.");
+    }
+
     if (name === "realm_status") return status;
-    if (name === "snapshot_realm") return this.call(["snapshot", id, `--offset=${offset(args.offset)}`], signal);
+    if (name === "snapshot_realm") return this.withRealmLock(id, () => this.call(["snapshot", id, `--offset=${offset(args.offset)}`], signal));
     if (name === "read_realm_file") return this.call(["read", `--offset=${offset(args.offset)}`, ...(args.original === true ? ["--original"] : []), "--", id, relative(args.path)], signal);
     if (name === "run_in_realm") {
       const command = args.command, argv = args.args;
       if (typeof command !== "string" || !command || command.length > 256 || command.startsWith("-") || !Array.isArray(argv) || argv.length > 64 || argv.some(a => typeof a !== "string" || Buffer.byteLength(a) > 4096) || Buffer.byteLength(JSON.stringify(argv)) > 16384) throw new Error("Provide a command and at most 64 string arguments, no more than 16 KiB total.");
-      return this.call(["exec", id, `--cwd=${relative(args.workingDirectory ?? ".")}`, "--", command, ...argv], signal);
+      const timeoutSec = typeof args.timeout_seconds === "number" && args.timeout_seconds >= 1 && args.timeout_seconds <= 300
+        ? args.timeout_seconds
+        : 45;
+      const timeoutMs = (timeoutSec + 5) * 1000;
+      return this.withRealmLock(id, () => this.call(["exec", id, `--cwd=${relative(args.workingDirectory ?? ".")}`, "--", command, ...argv], signal, timeoutMs));
     }
     if (name === "promote_realm") {
       if (typeof args.fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(args.fingerprint) || !Array.isArray(args.paths) || !args.paths.length || args.paths.length > 200) throw new Error("Provide the current review fingerprint and all reviewed paths (at most 200 changes).");
-      return this.call(["promote", id, `--fingerprint=${args.fingerprint}`, ...args.paths.map(p => `--paths=${relative(p)}`)], signal);
+      const paths = (args.paths as unknown[]).map(p => relative(p));
+      return this.withRealmLock(id, () => this.call(["promote", id, `--fingerprint=${args.fingerprint}`, ...paths.map(p => `--paths=${p}`)], signal));
     }
     if (name === "rollback_realm" || name === "recover_realm") {
       if (!Array.isArray(args.paths) || args.paths.length > 200) throw new Error("Provide the affected paths from the receipt or current recovery status.");
       const paths = args.paths.map(p => `--paths=${relative(p)}`);
-      return this.call(name === "rollback_realm" ? ["rollback", id, realmId(args.transactionId), ...paths] : ["recover", id, ...paths], signal);
+      return this.withRealmLock(id, () => this.call(name === "rollback_realm" ? ["rollback", id, realmId(args.transactionId), ...paths] : ["recover", id, ...paths], signal));
     }
-    if (name === "destroy_realm") return this.call(["destroy", id], signal);
+    if (name === "destroy_realm") {
+      const res = await this.withRealmLock(id, () => this.call(["destroy", id], signal));
+      if (activeSession && this.options.workspaces) {
+        await this.options.workspaces.clearRealmId(activeSession);
+      }
+      return res;
+    }
     throw new Error(`Unknown Realm operation: ${name}`);
   }
 }
