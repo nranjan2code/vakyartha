@@ -51,3 +51,17 @@ test("createGuardedFetch throws when outbound request is denied by policy", asyn
   assert.equal(await res.text(), "ok");
 });
 
+test("evaluateEgressUrl admits custom hosts and normalizes schemes and paths", () => {
+  const custom = [
+    "https://mcp.alphavantage.co",
+    "http://192.168.1.50:8000/v1/models",
+    ".azure.com",
+    "custom-ai.internal",
+  ];
+  assert.equal(evaluateEgressUrl("https://mcp.alphavantage.co/query", false, custom).allowed, true);
+  assert.equal(evaluateEgressUrl("http://192.168.1.50:8000/v1/chat", false, custom).allowed, true);
+  assert.equal(evaluateEgressUrl("https://my-resource.openai.azure.com/openai/deployments", false, custom).allowed, true);
+  assert.equal(evaluateEgressUrl("https://custom-ai.internal/api", false, custom).allowed, true);
+  assert.equal(evaluateEgressUrl("https://unauthorized-domain.com", false, custom).allowed, false);
+});
+

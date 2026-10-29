@@ -32,7 +32,15 @@ export interface EgressEvaluation {
 
 export function parseCustomEgressHosts(raw?: string): string[] {
   if (!raw) return [];
-  return raw.split(/[\s,]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+  return raw
+    .split(/[\s,]+/)
+    .map((s) => {
+      let clean = s.trim().toLowerCase();
+      clean = clean.replace(/^https?:\/\//, "");
+      clean = clean.split("/")[0] ?? clean;
+      return clean;
+    })
+    .filter(Boolean);
 }
 
 export function evaluateEgressUrl(
@@ -47,13 +55,15 @@ export function evaluateEgressUrl(
     // Check custom user-configured allowed hosts
     for (const custom of customHosts) {
       if (!custom) continue;
-      if (custom.includes(":")) {
-        const [h, p] = custom.split(":");
+      const clean = custom.trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0] ?? "";
+      if (!clean) continue;
+      if (clean.includes(":")) {
+        const [h, p] = clean.split(":");
         const portStr = url.port || (url.protocol === "https:" ? "443" : "80");
         if (h === host && portStr === p) {
           return { allowed: true };
         }
-      } else if (custom === host || (custom.startsWith(".") && host.endsWith(custom) && host.length > custom.length)) {
+      } else if (clean === host || (clean.startsWith(".") && host.endsWith(clean) && host.length > clean.length)) {
         return { allowed: true };
       }
     }

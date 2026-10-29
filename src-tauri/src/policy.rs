@@ -39,17 +39,29 @@ pub enum EgressDecision {
 pub fn evaluate_egress_with_custom(scheme: &str, host: &str, port: Option<u16>, custom_hosts: &[String]) -> EgressDecision {
     let host_lower = host.to_ascii_lowercase();
 
-    // Check custom user-configured allowed hosts (can be host or host:port or .domain suffix)
+    // Check custom user-configured allowed hosts (can be host or host:port or .domain suffix, or URL with scheme/path)
     for custom in custom_hosts {
-        let custom_lower = custom.trim().to_ascii_lowercase();
-        if custom_lower.is_empty() {
+        let mut custom_trimmed = custom.trim().to_ascii_lowercase();
+        if custom_trimmed.is_empty() {
             continue;
         }
-        if let Some((custom_h, custom_p_str)) = custom_lower.split_once(':') {
-            if custom_h == host_lower && port.is_some_and(|p| p.to_string() == custom_p_str) {
+        if let Some(stripped) = custom_trimmed.strip_prefix("https://") {
+            custom_trimmed = stripped.to_string();
+        } else if let Some(stripped) = custom_trimmed.strip_prefix("http://") {
+            custom_trimmed = stripped.to_string();
+        }
+        if let Some((clean, _)) = custom_trimmed.split_once('/') {
+            custom_trimmed = clean.to_string();
+        }
+
+        if let Some((custom_h, custom_p_str)) = custom_trimmed.split_once(':') {
+            let matches_port = port.map(|p| p.to_string() == custom_p_str).unwrap_or_else(|| {
+                (custom_p_str == "443" && scheme == "https") || (custom_p_str == "80" && scheme == "http")
+            });
+            if custom_h == host_lower && matches_port {
                 return EgressDecision::Allowed;
             }
-        } else if custom_lower == host_lower || (custom_lower.starts_with('.') && host_lower.ends_with(&custom_lower) && host_lower.len() > custom_lower.len()) {
+        } else if custom_trimmed == host_lower || (custom_trimmed.starts_with('.') && host_lower.ends_with(&custom_trimmed) && host_lower.len() > custom_trimmed.len()) {
             return EgressDecision::Allowed;
         }
     }
@@ -156,6 +168,8 @@ mod tests {
             "my-resource.openai.azure.com".to_string(),
             ".internal.corp".to_string(),
             "192.168.1.50:8000".to_string(),
+            "https://mcp.alphavantage.co".to_string(),
+            "https://api.custom-ai.org/v1/models".to_string(),
         ];
         assert_eq!(
             evaluate_egress_with_custom("https", "my-resource.openai.azure.com", None, &custom),
@@ -167,6 +181,14 @@ mod tests {
         );
         assert_eq!(
             evaluate_egress_with_custom("http", "192.168.1.50", Some(8000), &custom),
+            EgressDecision::Allowed
+        );
+        assert_eq!(
+            evaluate_egress_with_custom("https", "mcp.alphavantage.co", None, &custom),
+            EgressDecision::Allowed
+        );
+        assert_eq!(
+            evaluate_egress_with_custom("https", "api.custom-ai.org", None, &custom),
             EgressDecision::Allowed
         );
         assert!(matches!(

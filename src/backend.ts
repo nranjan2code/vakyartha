@@ -98,14 +98,88 @@ export async function vaultDelete(account: string, service?: string): Promise<vo
   }
 }
 
+export interface EgressCheckResult {
+  allowed: boolean;
+  scheme: string;
+  host: string;
+  port?: number;
+  reason?: string;
+  matchType?: "builtin" | "custom" | "loopback" | "suffix" | "denied";
+}
+
+export function normalizeEgressTarget(destination: string | URL): { target: string; parsed?: URL; error?: string } {
+  let target = typeof destination === "string" ? destination.trim() : destination.toString();
+  if (typeof destination === "string") {
+    if (!/^https?:\/\//i.test(target)) {
+      if (/^(localhost|127\.0\.0\.1|::1)(:\d+)?(\/.*)?$/i.test(target)) {
+        target = `http://${target}`;
+      } else {
+        target = `https://${target}`;
+      }
+    }
+  }
+  try {
+    const parsed = new URL(target);
+    return { target, parsed };
+  } catch (err) {
+    return { target, error: (err as Error).message };
+  }
+}
+
+export async function checkEgressDetailed(destination: string | URL, customHosts?: string[]): Promise<EgressCheckResult> {
+  const norm = normalizeEgressTarget(destination);
+  if (norm.error || !norm.parsed) {
+    return {
+      allowed: false,
+      scheme: "",
+      host: typeof destination === "string" ? destination : destination.hostname,
+      reason: `Cannot parse "${destination}" as a valid URL or host`,
+      matchType: "denied",
+    };
+  }
+
+  const scheme = norm.parsed.protocol.replace(/:$/, "");
+  const host = norm.parsed.hostname;
+  const port = norm.parsed.port ? Number(norm.parsed.port) : undefined;
+
+  if (!inTauri) {
+    return { allowed: true, scheme, host, port, matchType: "custom" };
+  }
+
+  try {
+    const allowed = await invoke<boolean>("check_egress_endpoint", { scheme, host, port, customHosts });
+    let matchType: "builtin" | "custom" | "loopback" | "suffix" = "builtin";
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
+      matchType = "loopback";
+    } else if (customHosts?.some((c) => {
+      let clean = c.trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0] ?? "";
+      if (clean.includes(":")) clean = clean.split(":")[0] ?? clean;
+      return clean === host.toLowerCase() || (clean.startsWith(".") && host.toLowerCase().endsWith(clean) && host.length > clean.length);
+    })) {
+      matchType = "custom";
+    } else if (host.endsWith(".databricks.com") || host.endsWith(".azuredatabricks.net")) {
+      matchType = "suffix";
+    }
+    return { allowed, scheme, host, port, matchType };
+  } catch (err) {
+    return {
+      allowed: false,
+      scheme,
+      host,
+      port,
+      reason: String((err as Error).message ?? err),
+      matchType: "denied",
+    };
+  }
+}
+
 /** Check whether a destination endpoint is permitted by the engine egress policy. */
 export async function checkEgress(destination: string | URL, customHosts?: string[]): Promise<boolean> {
-  if (!inTauri) return true;
-  const parsed = typeof destination === "string" ? new URL(destination) : destination;
-  const scheme = parsed.protocol.replace(/:$/, "");
-  const host = parsed.hostname;
-  const port = parsed.port ? Number(parsed.port) : undefined;
-  return await invoke<boolean>("check_egress_endpoint", { scheme, host, port, customHosts });
+  const result = await checkEgressDetailed(destination, customHosts);
+  if (!result.allowed) {
+    throw new Error(result.reason ?? "Blocked by Engine Egress Policy");
+  }
+  return true;
 }
 
 /** Open native folder picker dialog and return selected path, or null if cancelled. */
