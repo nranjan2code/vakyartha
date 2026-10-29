@@ -171,10 +171,6 @@ mod macos {
     use std::io::Write;
     use std::process::Stdio;
 
-    #[expect(
-        dead_code,
-        reason = "Secret reads are reserved for the native credential broker, which is not wired yet"
-    )]
     pub fn get(service: &str, account: &str) -> Result<Option<String>, String> {
         let output = Command::new("/usr/bin/security")
             .args(["find-generic-password", "-s", service, "-a", account, "-w"])
@@ -294,10 +290,6 @@ mod linux {
         }
     }
 
-    #[expect(
-        dead_code,
-        reason = "Secret reads are reserved for the native credential broker, which is not wired yet"
-    )]
     pub fn get(service: &str, account: &str, data_dir: &Path) -> Result<Option<String>, String> {
         // Try secret-tool if available in desktop environment.
         if let Ok(output) = Command::new("secret-tool")
@@ -336,10 +328,6 @@ mod linux {
 // Public Unified Vault Interface (macOS, Linux, Windows)
 // ---------------------------------------------------------------------------
 
-#[expect(
-    dead_code,
-    reason = "Secret reads are reserved for the native credential broker, which is not wired yet"
-)]
 pub fn get(service: &str, account: &str, data_dir: &Path) -> Result<Option<String>, String> {
     if !is_valid_service(service) {
         return Err("Invalid service identifier".into());

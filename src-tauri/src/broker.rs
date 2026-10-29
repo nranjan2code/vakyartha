@@ -915,6 +915,32 @@ mod tests {
     }
 
     #[test]
+    fn native_credential_lookup_uses_the_fixed_vault_account() {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let service = format!("vakyartha-test-{}-{suffix}", std::process::id());
+        let data_dir = std::env::temp_dir().join(&service);
+        std::fs::create_dir_all(&data_dir).unwrap();
+        std::fs::write(
+            data_dir.join(".vault.secrets"),
+            "OPENAI_API_KEY=synthetic-key\n",
+        )
+        .unwrap();
+        let client = NativeHttpClient::new(service, data_dir.clone());
+        assert_eq!(
+            client.credential(ModelApi::OpenAi).unwrap(),
+            "synthetic-key"
+        );
+        assert!(matches!(
+            client.credential(ModelApi::Gemini),
+            Err(BrokerError::CredentialUnavailable)
+        ));
+        std::fs::remove_dir_all(data_dir).unwrap();
+    }
+
+    #[test]
     fn registered_generation_operations_resolve_to_fixed_routes() {
         assert_eq!(
             model_endpoint(ModelApi::OpenAi, ModelOperation::Responses)

@@ -26,8 +26,8 @@ struct Backend {
 mod engine;
 mod policy;
 mod vault;
-// Transport primitive only; provider-specific authorization and control-actor
-// dispatch must be completed before this client is used for product traffic.
+// Transport primitive only; provider-specific vault lookup and authentication
+// are implemented, but task authorization and control-actor dispatch are not.
 #[allow(dead_code)]
 mod broker;
 // The native control actor and store start with an empty execution profile.

@@ -4,7 +4,7 @@ Status: active implementation, 2026-10-30. This log records source changes and e
 
 ## Native broker credential lookup and authentication — 2026-10-30
 
-The inactive Rust provider transport now retrieves credentials directly from the app vault using a fixed provider-to-account mapping and inserts provider-specific authentication headers in Rust. OpenAI-compatible providers use Bearer auth; Anthropic and Gemini use their required dedicated headers. The credential is never part of the request body, URL, or returned error. The mapping covers every currently declared native provider route. Focused broker tests pass 15/15, strict macOS Clippy passes, and the pinned Rust 1.99.1 Linux Docker suite passes 79/79 with strict Clippy.
+The inactive Rust provider transport now retrieves credentials directly from the app vault using a fixed provider-to-account mapping and inserts provider-specific authentication headers in Rust. OpenAI-compatible providers use Bearer auth; Anthropic and Gemini use their required dedicated headers. The credential is never part of the request body, URL, or returned error. The mapping covers every currently declared native provider route. A synthetic isolated vault fixture proves fixed-account lookup and missing-key refusal. Focused macOS broker tests pass 16/16, strict macOS Clippy passes, and the pinned Rust 1.99.1 Linux Docker suite passes 80/80 with strict Clippy.
 
 This does not yet remove the active TypeScript `process.env` credential path or mediate product requests. The broker still has no trusted single-use authorization bound atomically to task/workspace revision, user approval, cancellation, durable redacted receipt, or product caller.
 
