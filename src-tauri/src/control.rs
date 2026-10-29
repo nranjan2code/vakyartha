@@ -10,7 +10,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 4;
+const STORE_VERSION: u16 = 5;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -25,7 +25,9 @@ use registry::{
     ProjectMembership, ProjectRecord, RegistryError, RegistryState, WorkspaceBinding,
     WorkspaceGrant, WorkspaceMode, WorkspaceRecord,
 };
-use state::{CheckOutcome, ChildTask, Requirement, RootStatus, RootTask, StateError, UserReview};
+use state::{
+    CheckOutcome, ChildTask, Requirement, RootStatus, RootTask, StateError, StopCause, UserReview,
+};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Resource {
@@ -471,6 +473,7 @@ pub enum RootMutation {
     WaitForApproval,
     Stop {
         status: RootStatus,
+        cause: StopCause,
         reason: String,
     },
     ReviseContract {
@@ -1142,9 +1145,11 @@ fn actor_loop(
                         RootMutation::StartAttempt => root.start_attempt(expected_revision),
                         RootMutation::WaitForInput => root.wait_for_input(expected_revision),
                         RootMutation::WaitForApproval => root.wait_for_approval(expected_revision),
-                        RootMutation::Stop { status, reason } => {
-                            root.stop(expected_revision, status, reason)
-                        }
+                        RootMutation::Stop {
+                            status,
+                            cause,
+                            reason,
+                        } => root.stop(expected_revision, status, cause, reason),
                         RootMutation::ReviseContract { goal, criteria } => {
                             root.revise_contract(expected_revision, goal, criteria)
                         }
@@ -2030,6 +2035,7 @@ mod tests {
                 running.revision() + 1,
                 RootMutation::Stop {
                     status: RootStatus::Cancelled,
+                    cause: StopCause::UserCancelled,
                     reason: "User stopped".into(),
                 },
             )

@@ -38,6 +38,22 @@ impl RootStatus {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+pub enum StopCause {
+    UserCancelled,
+    ActiveTimeLimit,
+    BudgetLimit,
+    ResourceExhausted,
+    ExternalEffectUncertain,
+    ApplicationShutdown,
+    ControlRestart,
+    PolicyBlocked,
+    VerificationStalled,
+    ExecutionError,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CheckOutcome {
     Pending,
     Pass,
@@ -104,6 +120,7 @@ pub struct RootTask {
     run_limit: u32,
     runs_started: u32,
     requirements: BTreeMap<String, Requirement>,
+    stop_cause: Option<StopCause>,
     stop_reason: Option<String>,
     review: Option<UserReview>,
     delegation: DelegationPolicy,
@@ -166,6 +183,7 @@ pub enum StateError {
     InvalidLimit,
     RevisionConflict,
     InvalidTransition(RootStatus),
+    StopCauseMismatch,
     RequirementSetInvalid,
     RequirementNotFound,
     RequirementStale,
@@ -241,6 +259,7 @@ impl RootTask {
             run_limit,
             runs_started: 0,
             requirements: indexed,
+            stop_cause: None,
             stop_reason: None,
             review: None,
             delegation,
@@ -268,6 +287,9 @@ impl RootTask {
     }
     pub fn stop_reason(&self) -> Option<&str> {
         self.stop_reason.as_deref()
+    }
+    pub fn stop_cause(&self) -> Option<StopCause> {
+        self.stop_cause
     }
     pub fn review(&self) -> Option<&UserReview> {
         self.review.as_ref()
@@ -421,6 +443,7 @@ impl RootTask {
             return Ok(false);
         }
         self.status = RootStatus::Interrupted;
+        self.stop_cause = Some(StopCause::ControlRestart);
         self.stop_reason = Some(
             "Native control restarted during work; review in-flight effects before continuing"
                 .into(),
@@ -437,11 +460,13 @@ impl RootTask {
         }
         if self.runs_started >= self.run_limit {
             self.status = RootStatus::LimitReached;
+            self.stop_cause = Some(StopCause::BudgetLimit);
             self.stop_reason = Some("Root run limit reached".into());
             return self.bump_revision();
         }
         self.runs_started += 1;
         self.status = RootStatus::Running;
+        self.stop_cause = None;
         self.stop_reason = None;
         self.review = None;
         self.bump_revision()?;
@@ -460,6 +485,7 @@ impl RootTask {
         &mut self,
         expected_revision: u64,
         status: RootStatus,
+        cause: StopCause,
         reason: String,
     ) -> Result<(), StateError> {
         self.check_revision(expected_revision)?;
@@ -474,11 +500,15 @@ impl RootTask {
         ) {
             return Err(StateError::InvalidTransition(status));
         }
+        if !cause_matches_status(status, cause) {
+            return Err(StateError::StopCauseMismatch);
+        }
         if self.status.is_terminal() {
             return Err(StateError::InvalidTransition(self.status));
         }
         validate_text(&reason, 1_000)?;
         self.status = status;
+        self.stop_cause = Some(cause);
         self.stop_reason = Some(reason);
         self.review = None;
         self.drain_queued_children()?;
@@ -516,6 +546,7 @@ impl RootTask {
         self.goal = goal;
         self.criteria = criteria;
         self.status = RootStatus::Queued;
+        self.stop_cause = None;
         self.stop_reason = None;
         self.review = None;
         self.drain_queued_children()?;
@@ -617,6 +648,7 @@ impl RootTask {
         validate_text(&review.note, 4_000).map_err(|_| StateError::InvalidReview)?;
         self.review = Some(review);
         self.status = RootStatus::Completed;
+        self.stop_cause = None;
         self.stop_reason = None;
         self.bump_revision()
     }
@@ -750,6 +782,18 @@ impl RootTask {
                     | RootStatus::Interrupted
                     | RootStatus::LimitReached
             ) != self.stop_reason.is_some())
+            || (matches!(
+                self.status,
+                RootStatus::Blocked
+                    | RootStatus::Stalled
+                    | RootStatus::Failed
+                    | RootStatus::Cancelled
+                    | RootStatus::Interrupted
+                    | RootStatus::LimitReached
+            ) != self.stop_cause.is_some())
+            || self
+                .stop_cause
+                .is_some_and(|cause| !cause_matches_status(self.status, cause))
         {
             return Err(StateError::Corrupt);
         }
@@ -766,6 +810,38 @@ impl RootTask {
             return Err(StateError::Corrupt);
         }
         Ok(())
+    }
+}
+
+fn cause_matches_status(status: RootStatus, cause: StopCause) -> bool {
+    match status {
+        RootStatus::Blocked => matches!(
+            cause,
+            StopCause::PolicyBlocked | StopCause::ExternalEffectUncertain | StopCause::Unknown
+        ),
+        RootStatus::Stalled => matches!(
+            cause,
+            StopCause::VerificationStalled | StopCause::ResourceExhausted | StopCause::Unknown
+        ),
+        RootStatus::Failed => matches!(
+            cause,
+            StopCause::ExecutionError | StopCause::ExternalEffectUncertain | StopCause::Unknown
+        ),
+        RootStatus::Cancelled => matches!(cause, StopCause::UserCancelled | StopCause::Unknown),
+        RootStatus::Interrupted => matches!(
+            cause,
+            StopCause::ApplicationShutdown | StopCause::ControlRestart | StopCause::Unknown
+        ),
+        RootStatus::LimitReached => matches!(
+            cause,
+            StopCause::ActiveTimeLimit | StopCause::BudgetLimit | StopCause::Unknown
+        ),
+        RootStatus::Queued
+        | RootStatus::Running
+        | RootStatus::WaitingForInput
+        | RootStatus::WaitingForApproval
+        | RootStatus::NeedsReview
+        | RootStatus::Completed => false,
     }
 }
 
@@ -891,9 +967,20 @@ mod tests {
             &[11, 12],
         )
         .unwrap();
+        let mut mismatched = task.clone();
+        assert_eq!(
+            mismatched.stop(
+                mismatched.revision(),
+                RootStatus::Cancelled,
+                StopCause::PolicyBlocked,
+                "Wrong cause for state".into(),
+            ),
+            Err(StateError::StopCauseMismatch)
+        );
         task.stop(
             task.revision(),
             RootStatus::Cancelled,
+            StopCause::UserCancelled,
             "User stopped".into(),
         )
         .unwrap();
@@ -994,10 +1081,12 @@ mod tests {
         task.stop(
             task.revision(),
             RootStatus::Blocked,
+            StopCause::PolicyBlocked,
             "Required evidence is unknown".into(),
         )
         .unwrap();
         assert_eq!(task.status(), RootStatus::Blocked);
+        assert_eq!(task.stop_cause(), Some(StopCause::PolicyBlocked));
         task.validate().unwrap();
     }
 
@@ -1025,6 +1114,7 @@ mod tests {
             .unwrap();
         task.start_attempt(task.revision()).unwrap();
         assert_eq!(task.status(), RootStatus::LimitReached);
+        assert_eq!(task.stop_cause(), Some(StopCause::BudgetLimit));
         assert_eq!(task.stop_reason(), Some("Root run limit reached"));
         task.validate().unwrap();
     }
@@ -1068,6 +1158,7 @@ mod tests {
 
         assert!(task.recover_after_restart().unwrap());
         assert_eq!(task.status(), RootStatus::Interrupted);
+        assert_eq!(task.stop_cause(), Some(StopCause::ControlRestart));
         assert_eq!(
             task.start_attempt(task.revision()),
             Err(StateError::InvalidTransition(RootStatus::Interrupted))
