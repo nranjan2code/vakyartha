@@ -2631,6 +2631,85 @@ mod tests {
         fs::remove_dir_all(data).unwrap();
     }
 
+    #[test]
+    fn concurrent_unique_budget_charges_cannot_overshoot_the_root_limit() {
+        let data = temp_data_dir();
+        let timeout = Duration::from_secs(5);
+        let profile = CapacityProfile::unconfigured().unwrap();
+        let actor = ControlActor::open(&data, "unconfigured-v1", profile, 32, timeout).unwrap();
+        let handle = actor.handle();
+        let queued = handle
+            .create_root_with_budget(RootCreate {
+                id: "task-budget-race".into(),
+                goal: "Finish the bounded operation".into(),
+                criteria: "Do not exceed the model-call limit".into(),
+                run_limit: 1,
+                budget_limits: BudgetLimits::new(1, 1).unwrap(),
+                requirements: vec![Requirement::new("outcome".into(), true).unwrap()],
+                delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0).unwrap(),
+            })
+            .unwrap();
+        let running = handle
+            .mutate_root(
+                queued.id().into(),
+                queued.revision(),
+                RootMutation::StartAttempt,
+            )
+            .unwrap();
+        let expected_revision = running.revision();
+        let workers: Vec<_> = (0..8)
+            .map(|index| {
+                let handle = handle.clone();
+                let root_id = running.id().to_owned();
+                thread::spawn(move || {
+                    handle.charge_model_request(
+                        root_id,
+                        expected_revision,
+                        format!("model-race-{index}"),
+                    )
+                })
+            })
+            .collect();
+        let results: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect();
+        let charged: Vec<_> = results
+            .iter()
+            .filter_map(|result| match result {
+                Ok((BudgetCharge::Charged, root)) => Some(root.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(charged.len(), 1);
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| matches!(
+                    result,
+                    Err(ControlError::TaskState(StateError::RevisionConflict))
+                ))
+                .count(),
+            7
+        );
+        assert_eq!(charged[0].model_requests_used(), 1);
+        assert_eq!(charged[0].status(), RootStatus::Running);
+
+        let (exhausted, stopped) = handle
+            .charge_model_request(
+                charged[0].id().into(),
+                charged[0].revision(),
+                "model-race-after-limit".into(),
+            )
+            .unwrap();
+        assert_eq!(exhausted, BudgetCharge::Exhausted);
+        assert_eq!(stopped.status(), RootStatus::LimitReached);
+        assert_eq!(stopped.model_requests_used(), 1);
+        drop(handle);
+        drop(actor);
+        fs::remove_dir_all(data).unwrap();
+    }
+
     fn profile_with_queued_children(limit: u32) -> CapacityProfile {
         CapacityProfile::new(
             BTreeMap::from([
