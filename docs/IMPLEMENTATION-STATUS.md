@@ -8,7 +8,7 @@ Check an implementation item only after its acceptance behavior is verified. App
 
 ## Agent-runtime implementation checkpoint — 2026-10-30
 
-Rust now has an inactive native HTTP generation primitive with fixed model-provider routes and payload-permit validation. Digest-pinned Linux Rust 1.99.1 Docker passes 62/62 native library tests and strict Clippy. This does not close the runtime boundary: TypeScript provider traffic still does not use Rust mediation, the control actor is not started by the app, TS task/workspace stores remain authoritative, and shared scheduler coverage, effective Linux containment/resources, canonical durable commit and original outcome gates remain open. See [handover](HANDOVER.md), [evaluation](EVALUATION.md) and the [delivery plan](agent-runtime/DELIVERY-PLAN.md). No AR, IA or ISO acceptance item is closed by this mechanism checkpoint.
+Rust now has an inactive native HTTP generation primitive with fixed model-provider routes and payload-permit validation. Digest-pinned Linux Rust 1.99.1 Docker passes 63/63 native library tests and strict Clippy. This does not close the runtime boundary: TypeScript provider traffic still does not use Rust mediation, the control actor is not started by the app, TS task/workspace stores remain authoritative, and shared scheduler coverage, effective Linux containment/resources, canonical durable commit and original outcome gates remain open. See [handover](HANDOVER.md), [evaluation](EVALUATION.md) and the [delivery plan](agent-runtime/DELIVERY-PLAN.md). No AR, IA or ISO acceptance item is closed by this mechanism checkpoint.
 
 ## Planning and design
 

@@ -201,7 +201,11 @@ fn prepare_generation_body(permit: &GenerationPermit, body: &[u8]) -> Result<Vec
     if matches!(permit.operation, ModelOperation::Responses) {
         object.insert("store".into(), Value::Bool(false));
     }
-    serde_json::to_vec(&value).map_err(|_| BrokerError::InvalidPayload)
+    let prepared = serde_json::to_vec(&value).map_err(|_| BrokerError::InvalidPayload)?;
+    if prepared.len() > permit.max_request_bytes {
+        return Err(BrokerError::RequestTooLarge);
+    }
+    Ok(prepared)
 }
 
 fn validate_generation_fields(
@@ -378,13 +382,27 @@ fn validate_tool_names(
         return Ok(());
     };
     let tools = tools.as_array().ok_or(BrokerError::InvalidPayload)?;
+    let mut seen = BTreeSet::new();
     for tool in tools {
+        if !tool.is_object() {
+            return Err(BrokerError::InvalidPayload);
+        }
         let names = match permit.operation {
-            ModelOperation::Responses => vec![tool.get("name")],
-            ModelOperation::ChatCompletions => vec![
-                tool.get("function")
-                    .and_then(|function| function.get("name")),
-            ],
+            ModelOperation::Responses => {
+                if tool.get("type").and_then(Value::as_str) != Some("function") {
+                    return Err(BrokerError::InvalidPayload);
+                }
+                vec![tool.get("name")]
+            }
+            ModelOperation::ChatCompletions => {
+                if tool.get("type").and_then(Value::as_str) != Some("function") {
+                    return Err(BrokerError::InvalidPayload);
+                }
+                vec![
+                    tool.get("function")
+                        .and_then(|function| function.get("name")),
+                ]
+            }
             ModelOperation::Messages => vec![tool.get("name")],
             ModelOperation::StreamGenerateContent { .. } => tool
                 .get("functionDeclarations")
@@ -402,6 +420,9 @@ fn validate_tool_names(
                 .and_then(Value::as_str)
                 .filter(|name| !name.is_empty())
                 .ok_or(BrokerError::InvalidPayload)?;
+            if !seen.insert(name) {
+                return Err(BrokerError::InvalidPayload);
+            }
             if !permit.allowed_tools.contains(name) {
                 return Err(BrokerError::ToolNotAllowed);
             }
@@ -700,6 +721,39 @@ mod tests {
                 br#"{"model":"gpt-local-profile","stream":true,"messages":[],"tools":[{"type":"function"}]}"#
             ),
             Err(BrokerError::InvalidPayload)
+        ));
+        assert!(matches!(
+            prepare_generation_body(
+                &permit,
+                br#"{"model":"gpt-local-profile","stream":true,"messages":[],"tools":[{"type":"function","function":{"name":"search__fetch"}},{"type":"function","function":{"name":"search__fetch"}}]}"#
+            ),
+            Err(BrokerError::InvalidPayload)
+        ));
+        assert!(matches!(
+            prepare_generation_body(
+                &permit,
+                br#"{"model":"gpt-local-profile","stream":true,"messages":[],"tools":[{"type":"custom","function":{"name":"search__fetch"}}]}"#
+            ),
+            Err(BrokerError::InvalidPayload)
+        ));
+    }
+
+    #[test]
+    fn normalized_generation_body_cannot_exceed_its_permit_size() {
+        let body = br#"{"model":"gpt-local-profile","stream":true,"messages":[]}"#;
+        let permit = GenerationPermit::from_admitted_policy(
+            ModelApi::OpenAi,
+            ModelOperation::ChatCompletions,
+            "gpt-local-profile".into(),
+            128,
+            body.len(),
+            BTreeSet::new(),
+            BTreeMap::new(),
+        )
+        .unwrap();
+        assert!(matches!(
+            prepare_generation_body(&permit, body),
+            Err(BrokerError::RequestTooLarge)
         ));
     }
 
