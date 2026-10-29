@@ -274,6 +274,26 @@ mod linux {
         write_ok && command_ok
     }
 
+    pub(super) fn clear_with_secret_tool(
+        tool: &Path,
+        service: &str,
+        account: &str,
+    ) -> Result<(), String> {
+        match Command::new(tool)
+            .args(["clear", "service", service, "account", account])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+        {
+            Ok(status) if status.success() => Ok(()),
+            Ok(_) => Err("Secret Service refused to clear the stored credential".to_string()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!(
+                "Could not clear the Secret Service credential: {error}"
+            )),
+        }
+    }
+
     #[expect(
         dead_code,
         reason = "Secret reads are reserved for the native credential broker, which is not wired yet"
@@ -306,10 +326,9 @@ mod linux {
     }
 
     pub fn delete(service: &str, account: &str, data_dir: &Path) -> Result<(), String> {
-        let _ = Command::new("secret-tool")
-            .args(["clear", "service", service, "account", account])
-            .output();
-        file_vault_delete(data_dir, account)
+        let service_result = clear_with_secret_tool(Path::new("secret-tool"), service, account);
+        let file_result = file_vault_delete(data_dir, account);
+        service_result.and(file_result)
     }
 }
 
@@ -401,17 +420,17 @@ pub fn delete(service: &str, account: &str, data_dir: &Path) -> Result<(), Strin
         return Err("Invalid account identifier".into());
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        let _ = macos::delete(service, account);
-    }
-
     #[cfg(target_os = "linux")]
     {
-        let _ = linux::delete(service, account, data_dir);
+        linux::delete(service, account, data_dir)
     }
 
-    file_vault_delete(data_dir, account)
+    #[cfg(not(target_os = "linux"))]
+    {
+        #[cfg(target_os = "macos")]
+        let _ = macos::delete(service, account);
+        file_vault_delete(data_dir, account)
+    }
 }
 
 #[cfg(test)]
@@ -506,6 +525,43 @@ cat > "$(dirname "$0")/received"
         assert_eq!(std::fs::read(&received).unwrap(), b"  test secret  ");
         let arguments = std::fs::read_to_string(temp_dir.join("arguments")).unwrap();
         assert!(!arguments.contains("test secret"));
+        std::fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn secret_service_delete_reports_refusal_and_allows_missing_command() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = std::env::temp_dir().join(format!(
+            "vak-secret-delete-test-{}-{}",
+            std::process::id(),
+            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let success_tool = temp_dir.join("success-tool");
+        let failure_tool = temp_dir.join("failure-tool");
+        std::fs::write(&success_tool, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::write(&failure_tool, "#!/bin/sh\nexit 1\n").unwrap();
+        std::fs::set_permissions(&success_tool, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::set_permissions(&failure_tool, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        assert!(
+            linux::clear_with_secret_tool(&success_tool, "com.example.vakyartha", "OPENAI_API_KEY")
+                .is_ok()
+        );
+        assert!(
+            linux::clear_with_secret_tool(&failure_tool, "com.example.vakyartha", "OPENAI_API_KEY")
+                .is_err()
+        );
+        assert!(
+            linux::clear_with_secret_tool(
+                &temp_dir.join("missing-tool"),
+                "com.example.vakyartha",
+                "OPENAI_API_KEY"
+            )
+            .is_ok()
+        );
         std::fs::remove_dir_all(temp_dir).unwrap();
     }
 }
