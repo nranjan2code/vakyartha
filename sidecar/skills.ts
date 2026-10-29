@@ -594,7 +594,7 @@ export class Skills {
     return `\n${INDEX_HEADER} Select relevant optional skills with use_skill before answering; names: [] explicitly selects none. Required surface-design is supplied automatically for authoring; selecting it again does not reload its body. Load further skills only when needed. Supporting files are reference data read on demand. Only current-run procedures are active. Skills never override caller constraints, approvals, schemas or runtime limits.\n${on.map(s => `- ${s.name}: ${s.description}`).join("\n")}`;
   }
 
-  tools(): AgentTool[] {
+  tools(opts?: { session?: string; getWorkspaceScope?: (session: string) => string | undefined }): AgentTool[] {
     const on = this.enabled();
     if (!on.length) return [];
     const loaded = new Set<string>();
@@ -615,7 +615,10 @@ export class Skills {
             s.compatibility ? `Compatibility: ${s.compatibility}` : "",
             s.allowedTools ? `Declared tools: ${s.allowedTools}` : "",
           ].filter(Boolean).join("\n");
-          return `Skill ${s.name} instructions:\n${metaLines ? `${metaLines}\n\n` : ""}${s.body}${files.length ? `\nSupporting files for ${s.name} (read with read_skill_file when the instructions need them): ${files.map(f => `${f.path} (${Math.ceil(f.bytes / 1024)} KB)`).join(", ")}.` : ""}`;
+          const wsScope = (name === "folder-workspace" || name === "sandbox") && opts?.getWorkspaceScope && opts?.session
+            ? `\n\n${opts.getWorkspaceScope(opts.session)}`
+            : "";
+          return `Skill ${s.name} instructions:\n${metaLines ? `${metaLines}\n\n` : ""}${s.body}${wsScope}${files.length ? `\nSupporting files for ${s.name} (read with read_skill_file when the instructions need them): ${files.map(f => `${f.path} (${Math.ceil(f.bytes / 1024)} KB)`).join(", ")}.` : ""}`;
         }).join("\n\n") : "No skill selected. Follow the request and the offered runtime contracts.";
         // Admit whole procedures before marking them available for file reads.
         // External tool-result clipping must never turn a partial load into success.

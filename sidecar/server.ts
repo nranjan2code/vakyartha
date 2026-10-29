@@ -200,9 +200,31 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
 
   const skills = new Skills(dataDir, opts.marketplaceFetch);
   const workspaces = new WorkspaceRegistry(dataDir);
-  const INSTRUCTIONS = () => `You are the assistant inside ${opts.appName ?? "Vakyartha, a desktop app"}.
-Today is ${new Date().toISOString().slice(0, 10)}.
+  let activeTurnSession: string | undefined;
+
+  const formatWorkspaceInfo = (sess?: string): string => {
+    if (!sess) return "";
+    const b = workspaces.getBinding(sess);
+    if (!b || b.accessState !== "admitted") return "";
+    return `\nActive workspace: folder "${b.folder}" (mode: ${b.mode}, status: admitted).`;
+  };
+
+  const getWorkspaceScope = (sess: string): string => {
+    const b = workspaces.getBinding(sess);
+    if (!b) return "Admitted workspace scope for this session:\n- No project folder is admitted for this chat session. Ask the user to use \"Work in folder\" to admit one.";
+    if (b.accessState !== "admitted") return `Admitted workspace scope for this session:\n- Project folder "${b.folder}" access is ${b.accessState}. Re-admit an accessible folder with "Work in folder".`;
+    const modeDesc = b.mode === "direct"
+      ? "direct in-place editing (commands and edits write directly to the project folder under macOS Seatbelt protection; no staging or Apply step is needed)"
+      : "isolated copy mode (edits stage in a durable Realm across turns; inspect with snapshot_realm and promote with promote_realm to apply to original)";
+    return `Admitted workspace scope for this session:\n- Folder: "${b.folder}"\n- Mode: ${b.mode} (${modeDesc})\n- Status: admitted`;
+  };
+
+  const INSTRUCTIONS = (ctx?: { session?: string }) => {
+    const sess = ctx?.session ?? activeTurnSession;
+    return `You are the assistant inside ${opts.appName ?? "Vakyartha, a desktop app"}.
+Today is ${new Date().toISOString().slice(0, 10)}.${formatWorkspaceInfo(sess)}
 ${skills.index()}`;
+  };
 
   const profiles = new ProfileCache(opts.profilesPath ?? path.join(dataDir, "models.json"));
   const finops = new Finops(dataDir, log);
@@ -260,10 +282,11 @@ ${skills.index()}`;
   const host = createHost({
     tools: async ({ session }) => {
       finops.session(session);
+      activeTurnSession = session;
       return withSkill([...appAuthoringTools(), ...(await integrations?.toolsFor(session) ?? [])].map((tool) => ({
         ...tool,
         execute: (args, ctx) => workspaces.withSession(session, () => media.withSession(session, () => tool.execute(args, ctx))),
-      })));
+      })), session);
     },
     providers: () => modelProviders(),
     profiles,
@@ -318,7 +341,7 @@ ${skills.index()}`;
     tools: async (session) => withSkill((await integrations!.toolsFor(session)).map((tool) => ({
       ...tool,
       execute: (args, ctx) => workspaces.withSession(session, () => media.withSession(session, () => tool.execute(args, ctx))),
-    }))), instructions: INSTRUCTIONS,
+    })), session), instructions: INSTRUCTIONS,
     observe: (session, work, run) => finops.chat(async () => { finops.session(session); await work(); }, run), warn: log,
     permissionRevision: (server) => integrationRevisions.get(server) ?? 0,
     permitted: (server, tool) => integrations!.view().some((i) => i.entry.id === server && i.enabled && i.status === "ready" && i.tools.some((t) => t.name === tool && t.policy !== "off")),
@@ -405,8 +428,8 @@ ${skills.index()}`;
     }];
   }
 
-  function withSkill<T>(tools: T[]): T[] {
-    return [...tools, ...skills.tools() as T[]];
+  function withSkill<T>(tools: T[], session?: string): T[] {
+    return [...tools, ...skills.tools({ session, getWorkspaceScope }) as T[]];
   }
 
   async function skillsRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {

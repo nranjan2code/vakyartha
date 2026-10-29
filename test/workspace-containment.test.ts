@@ -7,6 +7,7 @@ import { startAppServer } from "../sidecar/server.ts";
 import { validateWorkspaceFolder, WorkspaceRegistry } from "../sidecar/workspace-registry.ts";
 import { runSandboxCommand } from "../sidecar/sandbox-execution.ts";
 import { SandboxRealms } from "../sidecar/sandbox-realms.ts";
+import { Skills } from "../sidecar/skills.ts";
 
 const helper = process.env.VAK_TEST_SANDBOX_BIN ?? path.resolve("../sandbox/target/debug/vaksb");
 const native = process.platform === "darwin" && existsSync(helper);
@@ -375,5 +376,73 @@ test("missing or invalid sandbox helper fails closed without executing", async (
     );
   } finally {
     rmSync(dummyDir, { recursive: true, force: true });
+  }
+});
+
+test("workspace scope is conveyed to folder-workspace skill and instructions in bound sessions", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "vak-ws-context-"));
+  const projDir = mkdtempSync(path.join(tmpdir(), "vak-ws-proj-"));
+  const app = await startAppServer({
+    dataDir: dir,
+    transcriptsDir: path.join(dir, "transcripts"),
+    access: "open",
+    port: 0,
+    transport: "loopback",
+  });
+
+  const api = async (route: string, method = "GET", value?: unknown) => {
+    const res = await app.request(
+      new Request(`http://localhost${route}`, {
+        method,
+        headers: { "content-type": "application/json" },
+        body: value === undefined ? undefined : JSON.stringify(value),
+      }),
+    );
+    return { status: res.status, ok: res.ok, body: (await res.json()) as any };
+  };
+
+  try {
+    // 1. Bind session-bound to projDir
+    await api("/api/workspaces/bindings/session-bound", "POST", { folder: projDir, mode: "copy_review" });
+
+    const b = app.workspaces?.getBinding("session-bound");
+    assert.ok(b);
+    assert.equal(b.accessState, "admitted");
+
+    // 2. Test Skills.tools with workspace scope resolver
+    const skills = new Skills(dir);
+    const tools = skills.tools({
+      session: "session-bound",
+      getWorkspaceScope: (sess) => {
+        const binding = app.workspaces?.getBinding(sess);
+        if (!binding) return "No project folder is admitted for this chat session.";
+        return `Admitted project folder: "${binding.folder}"\nMode: ${binding.mode}`;
+      },
+    });
+    const useSkill = tools.find((t) => t.spec.name === "use_skill");
+    assert.ok(useSkill);
+
+    // Call use_skill with folder-workspace
+    const outBound = await useSkill.execute({ names: ["folder-workspace"] });
+    assert.match(String(outBound), /Admitted project folder/);
+    assert.match(String(outBound), new RegExp(projDir));
+    assert.match(String(outBound), /copy_review/);
+
+    // Call use_skill for unbound session
+    const toolsUnbound = skills.tools({
+      session: "session-unbound",
+      getWorkspaceScope: (sess) => {
+        const binding = app.workspaces?.getBinding(sess);
+        if (!binding) return "No project folder is admitted for this chat session.";
+        return `Admitted project folder: "${binding.folder}"\nMode: ${binding.mode}`;
+      },
+    });
+    const useSkillUnbound = toolsUnbound.find((t) => t.spec.name === "use_skill");
+    const outUnbound = await useSkillUnbound!.execute({ names: ["folder-workspace"] });
+    assert.match(String(outUnbound), /No project folder is admitted/);
+  } finally {
+    await app.shutdown();
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(projDir, { recursive: true, force: true });
   }
 });
