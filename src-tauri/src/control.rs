@@ -10,7 +10,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 6;
+const STORE_VERSION: u16 = 7;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -276,7 +276,7 @@ impl CapacityLedger {
                 .roots
                 .get_mut(&root_id)
                 .ok_or(ControlError::Admission(AdmissionError::RootNotFound))?
-                .invalidate_queued_children()
+                .invalidate_execution_scope()
                 .map_err(ControlError::TaskState)?;
             for lease_id in lease_ids {
                 let lease = self
@@ -2978,6 +2978,10 @@ mod tests {
             )
             .unwrap();
         let invalidated_first = handle.read_root(first_root.id().into()).unwrap();
+        assert_eq!(
+            invalidated_first.cancellation_epoch(),
+            first_root.cancellation_epoch() + 1
+        );
         assert!(
             invalidated_first
                 .children()
@@ -3010,6 +3014,10 @@ mod tests {
             .revoke_workspace(rebound.session_id().into(), rebound.revision())
             .unwrap();
         let invalidated_second = handle.read_root(second_root.id().into()).unwrap();
+        assert_eq!(
+            invalidated_second.cancellation_epoch(),
+            second_root.cancellation_epoch() + 1
+        );
         assert!(
             invalidated_second
                 .children()

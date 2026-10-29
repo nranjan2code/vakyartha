@@ -125,6 +125,7 @@ pub struct RootTask {
     id: String,
     revision: u64,
     contract_revision: u64,
+    cancellation_epoch: u64,
     status: RootStatus,
     goal: String,
     criteria: String,
@@ -286,6 +287,7 @@ impl RootTask {
             id,
             revision: 1,
             contract_revision: 1,
+            cancellation_epoch: 1,
             status: RootStatus::Queued,
             goal,
             criteria,
@@ -309,6 +311,9 @@ impl RootTask {
     }
     pub fn contract_revision(&self) -> u64 {
         self.contract_revision
+    }
+    pub fn cancellation_epoch(&self) -> u64 {
+        self.cancellation_epoch
     }
     pub fn status(&self) -> RootStatus {
         self.status
@@ -346,6 +351,13 @@ impl RootTask {
         if !queue_leases.is_empty() {
             self.bump_revision()?;
         }
+        Ok(queue_leases)
+    }
+
+    pub fn invalidate_execution_scope(&mut self) -> Result<Vec<u64>, StateError> {
+        let queue_leases = self.drain_queued_children()?;
+        self.bump_cancellation_epoch()?;
+        self.bump_revision()?;
         Ok(queue_leases)
     }
 
@@ -481,6 +493,7 @@ impl RootTask {
             return Ok(false);
         }
         self.status = RootStatus::Interrupted;
+        self.bump_cancellation_epoch()?;
         self.stop_cause = Some(StopCause::ControlRestart);
         self.stop_reason = Some(
             "Native control restarted during work; review in-flight effects before continuing"
@@ -500,9 +513,11 @@ impl RootTask {
             self.status = RootStatus::LimitReached;
             self.stop_cause = Some(StopCause::BudgetLimit);
             self.stop_reason = Some("Root run limit reached".into());
+            self.bump_cancellation_epoch()?;
             return self.bump_revision();
         }
         self.runs_started += 1;
+        self.bump_cancellation_epoch()?;
         self.status = RootStatus::Running;
         self.stop_cause = None;
         self.stop_reason = None;
@@ -546,6 +561,7 @@ impl RootTask {
         }
         validate_text(&reason, 1_000)?;
         self.status = status;
+        self.bump_cancellation_epoch()?;
         self.stop_cause = Some(cause);
         self.stop_reason = Some(reason);
         self.review = None;
@@ -576,6 +592,7 @@ impl RootTask {
             .contract_revision
             .checked_add(1)
             .ok_or(StateError::Corrupt)?;
+        self.bump_cancellation_epoch()?;
         for requirement in self.requirements.values_mut() {
             requirement.contract_revision = self.contract_revision;
             requirement.outcome = CheckOutcome::Stale;
@@ -715,6 +732,7 @@ impl RootTask {
             return Err(StateError::InvalidTransition(self.status));
         }
         self.drain_queued_children()?;
+        self.bump_cancellation_epoch()?;
         self.status = to;
         self.bump_revision()
     }
@@ -732,12 +750,21 @@ impl RootTask {
         Ok(())
     }
 
+    fn bump_cancellation_epoch(&mut self) -> Result<(), StateError> {
+        self.cancellation_epoch = self
+            .cancellation_epoch
+            .checked_add(1)
+            .ok_or(StateError::Corrupt)?;
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<(), StateError> {
         let delegation_valid =
             DelegationPolicy::new(self.delegation.mode(), self.delegation.max_children()).is_ok();
         if !valid_identity(&self.id)
             || self.revision == 0
             || self.contract_revision == 0
+            || self.cancellation_epoch == 0
             || self.run_limit == 0
             || self.run_limit > 256
             || self.runs_started > self.run_limit
@@ -1026,6 +1053,7 @@ mod tests {
             "User stopped".into(),
         )
         .unwrap();
+        assert_eq!(task.cancellation_epoch(), 3);
         assert!(
             task.children()
                 .values()
@@ -1198,7 +1226,9 @@ mod tests {
         );
         task.validate().unwrap();
 
+        let before_restart = task.cancellation_epoch();
         assert!(task.recover_after_restart().unwrap());
+        assert_eq!(task.cancellation_epoch(), before_restart + 1);
         assert_eq!(task.status(), RootStatus::Interrupted);
         assert_eq!(task.stop_cause(), Some(StopCause::ControlRestart));
         assert_eq!(
