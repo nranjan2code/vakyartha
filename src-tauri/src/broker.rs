@@ -11,6 +11,7 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::io::Read;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::time::Duration;
 
 const MAX_ENDPOINT_BYTES: usize = 2_048;
@@ -121,20 +122,11 @@ impl GenerationPermit {
     }
 }
 
-pub(crate) struct NativeHttpClient {
-    client: Client,
-}
+pub(crate) struct NativeHttpClient;
 
 impl NativeHttpClient {
-    pub(crate) fn new() -> Result<Self, BrokerError> {
-        let client = Client::builder()
-            .no_proxy()
-            .redirect(Policy::none())
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(120))
-            .build()
-            .map_err(|_| BrokerError::Transport)?;
-        Ok(Self { client })
+    pub(crate) fn new() -> Self {
+        Self
     }
 
     /// POST JSON to one registered model generation route. Callers cannot
@@ -152,8 +144,10 @@ impl NativeHttpClient {
             return Err(BrokerError::RequestTooLarge);
         }
         let body = prepare_generation_body(permit, body)?;
-        let response = self
-            .client
+        let host = url.host_str().ok_or(BrokerError::InvalidEndpoint)?;
+        let addresses = resolve_public_addresses(host)?;
+        let client = build_client(Some((host, &addresses)))?;
+        let response = client
             .post(url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(body)
@@ -161,6 +155,95 @@ impl NativeHttpClient {
             .map_err(|_| BrokerError::Transport)?;
         bounded_stream_response(response)
     }
+}
+
+fn build_client(resolution: Option<(&str, &[SocketAddr])>) -> Result<Client, BrokerError> {
+    let builder = Client::builder()
+        .no_proxy()
+        .redirect(Policy::none())
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(120));
+    let builder = match resolution {
+        Some((host, addresses)) if !addresses.is_empty() => {
+            builder.resolve_to_addrs(host, addresses)
+        }
+        Some(_) => return Err(BrokerError::UnapprovedDestination),
+        None => builder,
+    };
+    builder.build().map_err(|_| BrokerError::Transport)
+}
+
+fn resolve_public_addresses(host: &str) -> Result<Vec<SocketAddr>, BrokerError> {
+    let resolved = (host, 443)
+        .to_socket_addrs()
+        .map_err(|_| BrokerError::Transport)?;
+    validate_public_addresses(resolved)
+}
+
+fn validate_public_addresses(
+    addresses: impl IntoIterator<Item = SocketAddr>,
+) -> Result<Vec<SocketAddr>, BrokerError> {
+    let addresses = addresses.into_iter().collect::<BTreeSet<_>>();
+    if addresses.is_empty()
+        || addresses
+            .iter()
+            .any(|address| !is_public_unicast(address.ip()))
+    {
+        return Err(BrokerError::UnapprovedDestination);
+    }
+    Ok(addresses.into_iter().collect())
+}
+
+/// Conservative public-unicast check based on the IANA special-purpose
+/// registries. Provider names are separately fixed by `model_endpoint`; these
+/// ranges prevent a compromised resolver from mapping one to local services.
+fn is_public_unicast(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => {
+            let blocked = [
+                (Ipv4Addr::new(0, 0, 0, 0), 8),
+                (Ipv4Addr::new(10, 0, 0, 0), 8),
+                (Ipv4Addr::new(100, 64, 0, 0), 10),
+                (Ipv4Addr::new(127, 0, 0, 0), 8),
+                (Ipv4Addr::new(169, 254, 0, 0), 16),
+                (Ipv4Addr::new(172, 16, 0, 0), 12),
+                (Ipv4Addr::new(192, 0, 0, 0), 24),
+                (Ipv4Addr::new(192, 0, 2, 0), 24),
+                (Ipv4Addr::new(192, 88, 99, 0), 24),
+                (Ipv4Addr::new(192, 168, 0, 0), 16),
+                (Ipv4Addr::new(198, 18, 0, 0), 15),
+                (Ipv4Addr::new(198, 51, 100, 0), 24),
+                (Ipv4Addr::new(203, 0, 113, 0), 24),
+                (Ipv4Addr::new(224, 0, 0, 0), 4),
+                (Ipv4Addr::new(240, 0, 0, 0), 4),
+            ];
+            !blocked
+                .iter()
+                .any(|(network, prefix)| ipv4_in_subnet(address, *network, *prefix))
+        }
+        IpAddr::V6(address) => {
+            ipv6_in_subnet(address, Ipv6Addr::new(0x2000, 0, 0, 0, 0, 0, 0, 0), 3)
+                && !address.is_loopback()
+                && !address.is_unspecified()
+                && !address.is_multicast()
+                && !address.is_unique_local()
+                && !address.is_unicast_link_local()
+                && !ipv6_in_subnet(address, Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 0), 23)
+                && !ipv6_in_subnet(address, Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0), 32)
+                && !ipv6_in_subnet(address, Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0), 16)
+                && !ipv6_in_subnet(address, Ipv6Addr::new(0x3fff, 0, 0, 0, 0, 0, 0, 0), 20)
+        }
+    }
+}
+
+fn ipv4_in_subnet(address: Ipv4Addr, network: Ipv4Addr, prefix: u8) -> bool {
+    let mask = u32::MAX << (32 - u32::from(prefix));
+    u32::from(address) & mask == u32::from(network) & mask
+}
+
+fn ipv6_in_subnet(address: Ipv6Addr, network: Ipv6Addr, prefix: u8) -> bool {
+    let mask = u128::MAX << (128 - u32::from(prefix));
+    u128::from(address) & mask == u128::from(network) & mask
 }
 
 fn valid_model_id(model: &str) -> bool {
@@ -640,6 +723,75 @@ mod tests {
     }
 
     #[test]
+    fn public_address_validation_rejects_special_and_mixed_dns_answers() {
+        let public = "8.8.8.8:443".parse::<SocketAddr>().unwrap();
+        let private = "10.0.0.1:443".parse::<SocketAddr>().unwrap();
+        assert_eq!(
+            validate_public_addresses([public, public]).unwrap(),
+            [public]
+        );
+        assert!(matches!(
+            validate_public_addresses([public, private]),
+            Err(BrokerError::UnapprovedDestination)
+        ));
+        assert!(matches!(
+            validate_public_addresses(std::iter::empty()),
+            Err(BrokerError::UnapprovedDestination)
+        ));
+    }
+
+    #[test]
+    fn public_unicast_classifier_allows_global_addresses_and_rejects_special_ranges() {
+        for address in [
+            IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+            IpAddr::V6("2001:4860:4860::8888".parse().unwrap()),
+        ] {
+            assert!(is_public_unicast(address), "{address} should be allowed");
+        }
+        for address in [
+            IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)),
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            IpAddr::V4(Ipv4Addr::new(169, 254, 1, 1)),
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
+            IpAddr::V4(Ipv4Addr::new(224, 0, 0, 1)),
+            IpAddr::V4(Ipv4Addr::new(240, 0, 0, 1)),
+            IpAddr::V6(Ipv6Addr::LOCALHOST),
+            IpAddr::V6("fc00::1".parse().unwrap()),
+            IpAddr::V6("fe80::1".parse().unwrap()),
+            IpAddr::V6("2001:db8::1".parse().unwrap()),
+            IpAddr::V6("2002::1".parse().unwrap()),
+            IpAddr::V6("::ffff:8.8.8.8".parse().unwrap()),
+            IpAddr::V6("3fff::1".parse().unwrap()),
+        ] {
+            assert!(!is_public_unicast(address), "{address} should be refused");
+        }
+    }
+
+    #[test]
+    fn reqwest_uses_the_explicit_resolver_pin() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 4096];
+            let read = stream.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..read]).starts_with("POST / HTTP/1.1"));
+            use std::io::Write;
+            write!(
+                stream,
+                "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            .unwrap();
+        });
+        let client = build_client(Some(("pin.test", &[address]))).unwrap();
+        let url = Url::parse(&format!("http://pin.test:{}/", address.port())).unwrap();
+        let response = client.post(url).body("{}").send().unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        server.join().unwrap();
+    }
+
+    #[test]
     fn registered_generation_operations_resolve_to_fixed_routes() {
         assert_eq!(
             model_endpoint(ModelApi::OpenAi, ModelOperation::Responses)
@@ -925,9 +1077,9 @@ mod tests {
             )
             .unwrap();
         });
-        let client = NativeHttpClient::new().unwrap();
+        let client = build_client(None).unwrap();
         let url = Url::parse(&format!("http://{first_addr}/start")).unwrap();
-        let response = client.client.post(url).body("{}").send().unwrap();
+        let response = client.post(url).body("{}").send().unwrap();
         assert_eq!(response.status(), StatusCode::FOUND);
         first_thread.join().unwrap();
         second_thread.join().unwrap();
@@ -951,9 +1103,8 @@ mod tests {
                 }
             }
         });
-        let client = NativeHttpClient::new().unwrap();
+        let client = build_client(None).unwrap();
         let response = client
-            .client
             .post(Url::parse(&format!("http://{address}/large")).unwrap())
             .body("{}")
             .send()
@@ -991,11 +1142,10 @@ mod tests {
             stream.write_all(b"-second").unwrap();
         });
 
-        let client = NativeHttpClient::new().unwrap();
+        let client = build_client(None).unwrap();
         let (response_tx, response_rx) = std::sync::mpsc::channel();
         thread::spawn(move || {
             let response = client
-                .client
                 .post(Url::parse(&format!("http://{address}/stream")).unwrap())
                 .body("{}")
                 .send()

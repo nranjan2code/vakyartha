@@ -1,5 +1,11 @@
 # Vakyartha handover — 2026-10-30
 
+## Native provider DNS resolution pinning — 2026-10-30
+
+The inactive provider transport now resolves each fixed provider hostname before dispatch, refuses empty or mixed public/private DNS answers, and pins reqwest to the validated address set. Redirects and ambient proxy discovery remain disabled. The conservative IPv4/IPv6 classifier is covered by examples for public, private, local, documentation and transition ranges and is maintained against the linked IANA special-purpose registries in [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-provider-dns-resolution-pinning--2026-10-30). The focused broker suite passes 14/14 and strict Clippy passes; the full pinned Rust 1.99.1 Linux Docker gate passes 78/78 with strict Clippy.
+
+This closes only DNS rebinding for the unused transport primitive. There is still no bounded native I/O worker, broker credential/approval binding, cancellation, receipt, sidecar operation or product provider caller. Product provider requests remain on the TypeScript path, so ISO2 and AR-07 remain open.
+
 ## Typed private native-control health bridge — 2026-10-30
 
 The desktop pipe is now protocol v2 and carries one strict sidecar-to-Rust operation: `health`. Rust decodes an allowlisted request with a `ctl-` identity and 4 KiB frame ceiling, queues at most 16 requests for a dedicated control worker, and replies `ready`, `unavailable` or `overloaded`. Startup probes the actor; unsupported Windows storage returns unavailable without stopping the app. The Rust child-process integration test round-trips the actual anonymous pipes to the actor. TypeScript private-transport tests pass 4/4 and typecheck passes; Rust 1.99.1 macOS tests pass 67/67 and digest-pinned Linux Docker tests pass 69/69, both with strict Clippy. `scripts/desktop-check.ts` passes under Node 26.13.0: private IPC, canonical rendering, FinOps, exact binary upload, zero Node TCP listeners and parent-exit cleanup. This protocol cannot create/read tasks, mutate workspaces, reserve execution, approve effects, or dispatch providers. Task/workspace writers and workload paths remain unchanged; the bridge is a substrate checkpoint only.
@@ -14,7 +20,7 @@ Rust 1.99.1 macOS tests pass 70/70 and pinned Linux Docker tests pass 72/72; str
 
 ## Native provider response streaming primitive — 2026-10-30
 
-The inactive provider transport now exposes response headers and an incrementally read body, with a strict 8 MiB cap that detects chunked overflow before exposing extra bytes. A held-open local HTTP fixture verifies response availability before the full body arrives; the oversized chunked fixture verifies exact cap enforcement. Buffered collection was removed from the broker API. The pinned Rust 1.99.1 Linux Docker suite passes 73/73 with strict Clippy; the focused host broker suite passes 11/11 and rustfmt passes. This remains an unused native primitive: credentials, approvals, DNS/IP pinning, cancellation, durable receipts and the sidecar protocol adapter are still absent, so provider traffic remains on its current TypeScript path.
+The inactive provider transport exposes response headers and an incrementally read body, with a strict 8 MiB cap that detects chunked overflow before exposing extra bytes. A held-open local HTTP fixture verifies response availability before the full body arrives; the oversized chunked fixture verifies exact cap enforcement. Buffered collection was removed from the broker API. That checkpoint's pinned Rust 1.99.1 Linux Docker suite passed 73/73 with strict Clippy; the later DNS/IP pinning follow-up is recorded above. This remains an unused native primitive: credentials, approvals, cancellation, durable receipts and the sidecar protocol adapter are still absent, so provider traffic remains on its current TypeScript path.
 
 ## Single-child delegation decision correction — 2026-10-30
 

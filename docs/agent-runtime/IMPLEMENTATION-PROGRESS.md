@@ -2,6 +2,14 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Native provider DNS resolution pinning — 2026-10-30
+
+The inactive native provider transport now resolves the fixed provider hostname before each dispatch, rejects an empty result or any mixed result containing a non-public/special-purpose address, and configures reqwest to connect only to the validated address set. Redirects and ambient proxy discovery remain disabled. The address classifier conservatively denies IANA special-purpose IPv4 ranges and restricts IPv6 to global-unicast space while excluding local, documentation, transition and other special ranges. The deny policy is intentionally conservative and should be reviewed against the [IANA IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry) and [IANA IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry) registries as they change.
+
+Focused tests cover public and denied IPv4/IPv6 examples, mixed DNS answers, empty answers, deduplication and a local reqwest request proving an explicit resolver pin is honored. Focused broker tests pass 14/14, strict host Clippy passes, and the full digest-pinned Linux Rust 1.99.1 Docker gate passes 78/78 with strict Clippy. The Linux gate compiles and exercises the address policy/pinning primitive; it does not exercise public-provider DNS or authorize live provider traffic.
+
+Limits: the blocking resolver and HTTP call still require a bounded native I/O worker. The broker is not connected to credentials, approval issuance, cancellation, a durable receipt, the private protocol, or product provider traffic. DNS pinning closes only the address-rebinding gap for this transport primitive; it does not close AR-07, ISO2 or any product outcome gate.
+
 ## Typed private native-control health bridge — 2026-10-30
 
 The Rust engine and sidecar now use desktop protocol v2. A sidecar may request only the typed `health` operation with a bounded `ctl-` identity; strict decoding rejects unknown fields/operations and frames above 4 KiB. Rust feeds at most 16 requests through a dedicated control executor, which pings the native actor and returns only `ready`, `unavailable` or `overloaded`. If the actor is unsupported/unavailable, the sidecar reports that state and continues the existing app startup; no protected workload should infer authorization from health status. Tauri UI request/ack/cancel frames and sidecar HTTP response frames were migrated together to v2, with no v1 fallback.
