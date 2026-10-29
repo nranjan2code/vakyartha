@@ -2,6 +2,12 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Sandbox resource-policy refusal correction — 2026-10-30
+
+The sandbox repository is pushed at `fe184ee` following Linux containment `d621f51`. `ResourcePolicy::default()` no longer advertises numeric limits that neither OS backend enforced. Both macOS Seatbelt and Linux Landlock backends reject explicit CPU, memory, wall-time, process-count or file-size policy requests before target launch. The CLI/runtime's own wall/output bounds remain distinct. macOS serial workspace tests pass 59/59, strict Clippy and formatting pass; the pinned Rust 1.99.1 Linux Docker suite passes 59/59 with strict Clippy, formatting and workspace build. The Linux suite exercised real Landlock/seccomp execution and the new resource-refusal canary.
+
+Limits: this is a fail-closed correction, not resource enforcement. The Docker cgroup v2 mount is read-only, so this environment cannot verify a cgroup quota implementation. Both backend capability reports continue to state `resource_limits: false`; Vakyartha does not package/pin this helper, and ISO4/ISO5/ISO6 remain open. One parallel macOS suite run had the localhost networking fixture fail with an unverified supervisor completion; its isolated rerun and later serial 59/59 suite passed. Cause remains unknown and is retained in the sandbox hardening record.
+
 ## Native provider DNS resolution pinning — 2026-10-30
 
 The inactive native provider transport now resolves the fixed provider hostname before each dispatch, rejects an empty result or any mixed result containing a non-public/special-purpose address, and configures reqwest to connect only to the validated address set. Redirects and ambient proxy discovery remain disabled. The address classifier conservatively denies IANA special-purpose IPv4 ranges and restricts IPv6 to global-unicast space while excluding local, documentation, transition and other special ranges. The deny policy is intentionally conservative and should be reviewed against the [IANA IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry) and [IANA IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry) registries as they change.
@@ -50,11 +56,11 @@ Evidence: Rust 1.99.1 macOS `cargo test --lib` passes 63/63 and strict Clippy pa
 
 ## Linux sandbox containment backend — 2026-10-30
 
-Implemented in the owning `vak-sandbox` repository and pushed as `d621f51` on `codex/linux-runtime-fail-closed`; no files under Vakyartha's `framework/` submodule were changed. The backend combines Landlock ABI 5+ path rules, seccomp restrictions, capability dropping, supervised process groups, cancellation, bounded command/output inputs and cleanup receipts. Linux CLI execution requires an existing specific workspace and refuses protected system roots. Unsupported kernel/policy features fail closed. No third-party dependency was added.
+Implemented in the owning `vak-sandbox` repository and pushed as `d621f51` on `codex/linux-runtime-fail-closed`, then corrected at `fe184ee`; no files under Vakyartha's `framework/` submodule were changed. The backend combines Landlock ABI 5+ path rules, seccomp restrictions, capability dropping, supervised process groups, cancellation, bounded command/output inputs and cleanup receipts. Linux CLI execution requires an existing specific workspace and refuses protected system roots. Unsupported kernel/policy features fail closed. No third-party dependency was added.
 
 Evidence: Rust 1.99.1 macOS workspace tests pass 58/58 with strict Clippy and formatting; digest-pinned Linux Docker tests pass 58/58 with strict Clippy and a locked CLI build. The CLI reports `execution_available: true` in the supported container; a workspace write/read canary succeeds and an `/etc` write canary is denied. The earlier `/etc/passwd` read canary is denied as well. These checks exercise the standalone sandbox project only.
 
-Limits: this does not add CPU, memory, process-count or disk quotas; same-user host processes and kernel attacks remain outside the containment claim. Vakyartha does not yet package or pin this helper, start its native control actor, consume atomic workspace grants at execution dispatch, or route app jobs through common admission. Consequently it closes no app-side I2/ISO gate and enables no Linux app execution path.
+Limits: this does not add CPU, memory, process-count or disk quotas; explicit unsupported resource requests now refuse before launch, while default policies request no such backend quota. Same-user host processes and kernel attacks remain outside the containment claim. Vakyartha does not yet package or pin this helper, start its native control actor, consume atomic workspace grants at execution dispatch, or route app jobs through common admission. Consequently it closes no app-side I2/ISO gate and enables no Linux app execution path.
 
 ## Remaining end-to-end closure work — 2026-10-30
 

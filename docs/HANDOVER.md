@@ -1,5 +1,9 @@
 # Vakyartha handover — 2026-10-30
 
+## Sandbox resource-policy refusal correction — 2026-10-30
+
+The owning `vak-sandbox` repo is pushed at `fe184ee`. False numeric `ResourcePolicy` defaults were removed; both macOS and Linux now refuse explicit CPU, memory, wall-time, process-count or file-size limits before target launch. This is a truthfulness/fail-closed correction, not quota enforcement. Its macOS serial suite passes 59/59; the Rust 1.99.1 Linux Docker suite passes 59/59, with strict Clippy, formatting and workspace build. The test container's cgroup v2 mount is read-only, and no resource quotas exist. The helper is still not pinned or dispatched by Vakyartha; ISO4–ISO6 remain open. One parallel macOS suite run had the localhost network fixture fail with unverified supervisor completion; isolated and serial runs pass, with cause unknown. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#sandbox-resource-policy-refusal-correction--2026-10-30).
+
 ## Native provider DNS resolution pinning — 2026-10-30
 
 The inactive provider transport now resolves each fixed provider hostname before dispatch, refuses empty or mixed public/private DNS answers, and pins reqwest to the validated address set. Redirects and ambient proxy discovery remain disabled. The conservative IPv4/IPv6 classifier is covered by examples for public, private, local, documentation and transition ranges and is maintained against the linked IANA special-purpose registries in [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-provider-dns-resolution-pinning--2026-10-30). The focused broker suite passes 14/14 and strict Clippy passes; the full pinned Rust 1.99.1 Linux Docker gate passes 78/78 with strict Clippy.
@@ -32,7 +36,7 @@ On macOS and Linux, Tauri startup now creates the canonical app-data directory, 
 
 ## Linux sandbox backend delivered in owning repository — 2026-10-30
 
-The separate `vak-sandbox` repository now has a native Landlock/seccomp supervised Linux backend at pushed commit `d621f51` on `codex/linux-runtime-fail-closed`. Rust 1.99.1 tests (58/58), strict Clippy and formatting pass on macOS; the digest-pinned Linux Docker run passes 58/58 tests, strict Clippy, locked CLI build and execution canaries (workspace write succeeds; `/etc` write is denied). Unsupported Landlock/kernel/policy configurations fail closed. The backend does not impose CPU, memory or process-count quotas, and it is not integrated into Vakyartha's packaged app or pinned framework helper. Do not claim Linux app containment or enable a dependent app path based on this repository change alone. Full test and threat-model limits are recorded in [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md).
+The separate sandbox repository added a native Landlock/seccomp supervised Linux backend at `d621f51`, followed by explicit refusal of unsupported resource requests at `fe184ee`, both on `codex/linux-runtime-fail-closed`. Current macOS serial tests pass 59/59; the digest-pinned Linux Docker run passes 59/59 with strict Clippy, formatting and workspace build. The cgroup v2 mount is read-only in the test container and quotas remain unavailable. The helper is not integrated into Vakyartha's packaged app or pinned framework helper. Do not claim Linux app containment or resource limits based on this repository change alone. Full test and threat-model limits are recorded in [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md).
 
 ## Work still open
 
