@@ -20,7 +20,7 @@ const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
 const MAX_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ModelApi {
+pub(super) enum ModelApi {
     OpenAi,
     Anthropic,
     Gemini,
@@ -37,7 +37,7 @@ pub(crate) enum ModelApi {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ModelOperation {
+pub(super) enum ModelOperation {
     Responses,
     ChatCompletions,
     Messages,
@@ -45,7 +45,7 @@ pub(crate) enum ModelOperation {
 }
 
 #[derive(Debug)]
-pub(crate) enum BrokerError {
+pub(super) enum BrokerError {
     InvalidEndpoint,
     UnsupportedOperation,
     UnapprovedDestination,
@@ -61,7 +61,7 @@ pub(crate) enum BrokerError {
 
 /// Created only after native admission has resolved the provider/model,
 /// cumulative output allowance and exact tool-name subset for this call.
-pub(crate) struct GenerationPermit {
+pub(super) struct GenerationPermit {
     provider: ModelApi,
     operation: ModelOperation,
     model: String,
@@ -72,7 +72,7 @@ pub(crate) struct GenerationPermit {
 }
 
 impl GenerationPermit {
-    pub(crate) fn from_admitted_policy(
+    pub(super) fn from_admitted_policy(
         provider: ModelApi,
         operation: ModelOperation,
         model: String,
@@ -124,13 +124,13 @@ impl GenerationPermit {
     }
 }
 
-pub(crate) struct NativeHttpClient {
+pub(super) struct NativeHttpClient {
     service: String,
     data_dir: PathBuf,
 }
 
 impl NativeHttpClient {
-    pub(crate) fn new(service: String, data_dir: PathBuf) -> Self {
+    pub(super) fn new(service: String, data_dir: PathBuf) -> Self {
         Self { service, data_dir }
     }
 
@@ -139,7 +139,7 @@ impl NativeHttpClient {
     /// the request envelope before it crosses the network boundary.
     /// Dispatches one admitted request and exposes its bounded response body
     /// incrementally so a future broker bridge can apply backpressure.
-    pub(crate) fn post_provider_json_stream(
+    pub(super) fn post_provider_json_stream(
         &self,
         permit: &GenerationPermit,
         body: &[u8],
@@ -644,8 +644,8 @@ fn valid_model_segment(model: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
-pub(crate) struct BrokerStreamResponse {
-    pub(crate) status: StatusCode,
+pub(super) struct BrokerStreamResponse {
+    pub(super) status: StatusCode,
     body: Response,
     delivered: u64,
 }
@@ -653,7 +653,7 @@ pub(crate) struct BrokerStreamResponse {
 impl BrokerStreamResponse {
     /// Reads at most one caller-provided chunk and never exposes bytes beyond
     /// the response ceiling. A one-byte probe detects an undeclared overflow.
-    pub(crate) fn read_chunk(&mut self, buffer: &mut [u8]) -> Result<usize, BrokerError> {
+    pub(super) fn read_chunk(&mut self, buffer: &mut [u8]) -> Result<usize, BrokerError> {
         if buffer.is_empty() {
             return Ok(0);
         }
@@ -701,7 +701,7 @@ fn validate_endpoint_query(
     {
         return Err(BrokerError::InvalidEndpoint);
     }
-    if !super::policy::MODEL_API_HOSTS.contains(&host) {
+    if !crate::policy::MODEL_API_HOSTS.contains(&host) {
         return Err(BrokerError::UnapprovedDestination);
     }
     Ok(url)

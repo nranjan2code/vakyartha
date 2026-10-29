@@ -2,6 +2,10 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Confine provider broker API to native control — 2026-10-30
+
+Moved the provider broker from the native crate root to `src-tauri/src/control/broker.rs`. Permit, request, client and stream APIs are now visible only to the `control` parent, so unrelated Rust modules cannot mint a generation permit or invoke the transport. This is an API boundary tightening only: the control actor still has no approval-bound, task-fenced dispatch command; no provider traffic is routed through the broker. Focused tests pass 16/16, strict macOS Clippy passes, and the pinned Rust 1.99.1 Linux Docker suite passes 80/80 with strict Clippy.
+
 ## Native broker credential lookup and authentication — 2026-10-30
 
 The inactive Rust provider transport now retrieves credentials directly from the app vault using a fixed provider-to-account mapping and inserts provider-specific authentication headers in Rust. OpenAI-compatible providers use Bearer auth; Anthropic and Gemini use their required dedicated headers. The credential is never part of the request body, URL, or returned error. The mapping covers every currently declared native provider route. A synthetic isolated vault fixture proves fixed-account lookup and missing-key refusal. Focused macOS broker tests pass 16/16, strict macOS Clippy passes, and the pinned Rust 1.99.1 Linux Docker suite passes 80/80 with strict Clippy.

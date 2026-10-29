@@ -1,5 +1,9 @@
 # Vakyartha handover — 2026-10-30
 
+## Provider broker confined to the control boundary — 2026-10-30
+
+The broker moved under `src-tauri/src/control/broker.rs`; its permit/client/dispatch types and constructors are visible only to the private native control module. This prevents unrelated Rust modules from constructing permits or invoking the transport. The actor still does not issue an approval-bound, task-fenced dispatch, and product provider calls still use TypeScript. Focused broker tests pass 16/16, strict macOS Clippy passes, and the pinned Rust 1.99.1 Linux Docker suite passes 80/80 with strict Clippy. This change is ready for commit/push. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#confine-provider-broker-api-to-native-control--2026-10-30).
+
 ## Native broker credential lookup — 2026-10-30
 
 The inactive Rust provider transport now reads each provider key from the native vault through a fixed provider/account map and adds the provider's authentication header inside Rust. A synthetic isolated vault fixture proves fixed-account lookup and missing-key refusal. Focused broker tests pass 16/16, strict macOS Clippy passes, and the pinned Rust 1.99.1 Linux Docker suite passes 80/80 with strict Clippy. This does not remove TypeScript environment-based credential access or enable product dispatch: trusted task/workspace authorization, approval binding, cancellation, durable receipts, bounded worker scheduling and the sidecar operation remain unimplemented. The code and evidence are pushed at `7b25378`. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-broker-credential-lookup-and-authentication--2026-10-30).
