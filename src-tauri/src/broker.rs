@@ -14,9 +14,35 @@ const MAX_ENDPOINT_BYTES: usize = 2_048;
 const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
 const MAX_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ModelApi {
+    OpenAi,
+    Anthropic,
+    Gemini,
+    Mistral,
+    Xai,
+    DeepSeek,
+    Groq,
+    Cerebras,
+    OpenRouter,
+    Together,
+    Fireworks,
+    Moonshot,
+    DashScope,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ModelOperation {
+    Responses,
+    ChatCompletions,
+    Messages,
+    StreamGenerateContent { model: String },
+}
+
 #[derive(Debug)]
 pub(crate) enum BrokerError {
     InvalidEndpoint,
+    UnsupportedOperation,
     UnapprovedDestination,
     RequestTooLarge,
     ResponseTooLarge,
@@ -39,15 +65,16 @@ impl NativeHttpClient {
         Ok(Self { client })
     }
 
-    /// POST a JSON body to an approved provider origin. Callers cannot supply
-    /// headers or proxy policy. Operation paths and payload semantics still
+    /// POST JSON to one registered model generation route. Callers cannot
+    /// supply an origin, path, headers or proxy policy. Payload semantics still
     /// require a provider-specific contract before product use.
     pub(crate) fn post_provider_json(
         &self,
-        endpoint: &str,
+        provider: ModelApi,
+        operation: ModelOperation,
         body: &[u8],
     ) -> Result<BrokerResponse, BrokerError> {
-        let url = validate_endpoint(endpoint)?;
+        let url = model_endpoint(provider, operation)?;
         if body.len() > MAX_REQUEST_BYTES {
             return Err(BrokerError::RequestTooLarge);
         }
@@ -62,12 +89,91 @@ impl NativeHttpClient {
     }
 }
 
+fn model_endpoint(provider: ModelApi, operation: ModelOperation) -> Result<Url, BrokerError> {
+    let (host, path, allowed_query) = match (provider, operation) {
+        (ModelApi::OpenAi, ModelOperation::Responses) => {
+            ("api.openai.com", "/v1/responses".to_owned(), None)
+        }
+        (ModelApi::OpenAi, ModelOperation::ChatCompletions) => {
+            ("api.openai.com", "/v1/chat/completions".to_owned(), None)
+        }
+        (ModelApi::Anthropic, ModelOperation::Messages) => {
+            ("api.anthropic.com", "/v1/messages".to_owned(), None)
+        }
+        (ModelApi::Gemini, ModelOperation::StreamGenerateContent { model })
+            if valid_model_segment(&model) =>
+        {
+            (
+                "generativelanguage.googleapis.com",
+                format!("/v1beta/models/{model}:streamGenerateContent"),
+                Some("alt=sse"),
+            )
+        }
+        (ModelApi::Mistral, ModelOperation::ChatCompletions) => {
+            ("api.mistral.ai", "/v1/chat/completions".to_owned(), None)
+        }
+        (ModelApi::Xai, ModelOperation::ChatCompletions) => {
+            ("api.x.ai", "/v1/chat/completions".to_owned(), None)
+        }
+        (ModelApi::DeepSeek, ModelOperation::ChatCompletions) => {
+            ("api.deepseek.com", "/v1/chat/completions".to_owned(), None)
+        }
+        (ModelApi::Groq, ModelOperation::ChatCompletions) => (
+            "api.groq.com",
+            "/openai/v1/chat/completions".to_owned(),
+            None,
+        ),
+        (ModelApi::Cerebras, ModelOperation::ChatCompletions) => {
+            ("api.cerebras.ai", "/v1/chat/completions".to_owned(), None)
+        }
+        (ModelApi::OpenRouter, ModelOperation::ChatCompletions) => {
+            ("openrouter.ai", "/api/v1/chat/completions".to_owned(), None)
+        }
+        (ModelApi::Together, ModelOperation::ChatCompletions) => {
+            ("api.together.xyz", "/v1/chat/completions".to_owned(), None)
+        }
+        (ModelApi::Fireworks, ModelOperation::ChatCompletions) => (
+            "api.fireworks.ai",
+            "/inference/v1/chat/completions".to_owned(),
+            None,
+        ),
+        (ModelApi::Moonshot, ModelOperation::ChatCompletions) => {
+            ("api.moonshot.ai", "/v1/chat/completions".to_owned(), None)
+        }
+        (ModelApi::DashScope, ModelOperation::ChatCompletions) => (
+            "dashscope-intl.aliyuncs.com",
+            "/compatible-mode/v1/chat/completions".to_owned(),
+            None,
+        ),
+        _ => return Err(BrokerError::UnsupportedOperation),
+    };
+    let mut url =
+        Url::parse(&format!("https://{host}{path}")).map_err(|_| BrokerError::InvalidEndpoint)?;
+    url.set_query(allowed_query);
+    validate_endpoint_query(url.as_str(), allowed_query)
+}
+
+fn valid_model_segment(model: &str) -> bool {
+    !model.is_empty()
+        && model.len() <= 128
+        && model
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+}
+
 pub(crate) struct BrokerResponse {
     pub(crate) status: StatusCode,
     pub(crate) body: Vec<u8>,
 }
 
 fn validate_endpoint(endpoint: &str) -> Result<Url, BrokerError> {
+    validate_endpoint_query(endpoint, None)
+}
+
+fn validate_endpoint_query(
+    endpoint: &str,
+    allowed_query: Option<&str>,
+) -> Result<Url, BrokerError> {
     if endpoint.len() > MAX_ENDPOINT_BYTES {
         return Err(BrokerError::InvalidEndpoint);
     }
@@ -81,7 +187,7 @@ fn validate_endpoint(endpoint: &str) -> Result<Url, BrokerError> {
         || has_user_info
         || url.port().is_some_and(|port| port != 443)
         || url.fragment().is_some()
-        || url.query().is_some()
+        || url.query() != allowed_query
     {
         return Err(BrokerError::InvalidEndpoint);
     }
@@ -152,6 +258,46 @@ mod tests {
             ));
         }
         assert!(validate_endpoint("https://api.openai.com/v1/responses").is_ok());
+    }
+
+    #[test]
+    fn registered_generation_operations_resolve_to_fixed_routes() {
+        assert_eq!(
+            model_endpoint(ModelApi::OpenAi, ModelOperation::Responses)
+                .unwrap()
+                .as_str(),
+            "https://api.openai.com/v1/responses"
+        );
+        assert_eq!(
+            model_endpoint(
+                ModelApi::Gemini,
+                ModelOperation::StreamGenerateContent {
+                    model: "gemini-2.5-flash".into()
+                }
+            )
+            .unwrap()
+            .as_str(),
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+        );
+        assert_eq!(
+            model_endpoint(ModelApi::Groq, ModelOperation::ChatCompletions)
+                .unwrap()
+                .as_str(),
+            "https://api.groq.com/openai/v1/chat/completions"
+        );
+        assert!(matches!(
+            model_endpoint(ModelApi::Anthropic, ModelOperation::ChatCompletions),
+            Err(BrokerError::UnsupportedOperation)
+        ));
+        assert!(matches!(
+            model_endpoint(
+                ModelApi::Gemini,
+                ModelOperation::StreamGenerateContent {
+                    model: "../v1/models".into()
+                }
+            ),
+            Err(BrokerError::UnsupportedOperation)
+        ));
     }
 
     #[test]
