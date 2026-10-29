@@ -146,13 +146,13 @@ Unbinding leaves retained work discoverable under Workspaces/Working copies unti
 
 ## 7. Source-level audit evidence and root corrections
 
-Isolated registry probes used temporary synthetic folders, no app instance, helper, provider, credentials or network, and removed fixtures afterward. Observations on the inspected source:
+The original source audit used temporary synthetic folders, no app instance, helper, provider, credentials or network, and removed fixtures afterward. At that checkpoint it observed:
 
 - `revokeBinding` followed by `verifyDispatchScope` accepted dispatch because `revalidateBinding` restored `admitted` from filesystem availability.
-- Replacing the directory with a new directory at the identical path was accepted; the registry stores no physical folder identity to distinguish it.
-- `verifySessionRealmAccess` accepted an arbitrary Realm identity when the binding had none assigned. The tool adapter later checks source path, so this probe establishes a registry authorization gap, not a complete cross-folder exploit demonstration.
+- Replacing the directory with a new directory at the identical path was accepted; the registry stored no physical folder identity to distinguish it.
+- `verifySessionRealmAccess` accepted an arbitrary Realm identity when the binding had none assigned. The tool adapter later checked source path, so this probe established a registry authorization gap, not a complete cross-folder exploit demonstration.
 - Registry load handles unreadable/corrupt content as empty; the native target must expose recovery failure rather than silently start a new authoritative registry.
 - Binding deletion in `sidecar/server.ts` attempts to destroy a non-shared Realm and suppresses destruction errors. Target detach and discard must be distinct and inspectable.
 - Sidebar grouping currently derives from `WorkspaceBinding.projectId`, coupling organization to the access record. Target membership is separately modelled; no folder is required merely to organize chats.
 
-These findings remain open implementation work under IA-01–IA-06 and AR/ISO gates. Do not claim the new diagrams, source audit or an existing containment test repairs them. Native replacement and original folder workflows need independent acceptance.
+Current code has corrected the first three TypeScript registry defects: revocation stays sticky, a replacement directory at the same path receives no inherited grant, and an unassigned binding cannot access an arbitrary Realm. On Node 26.13.0, the workspace registry, containment and Realm suites pass 28/28 on 2026-10-30. These are current TypeScript-path checks, not native product cutover or dispatch-time filesystem enforcement. The corrupt-registry refusal is also covered by a regression. The native registry remains unconnected to product writes; path check/use safety, the detach/discard workflow across all owners, and the IA acceptance flows remain open under IA-01–IA-06 and AR/ISO gates.
