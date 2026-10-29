@@ -2,7 +2,7 @@
 
 ## Inactive native HTTP transport primitive — 2026-10-30
 
-The approved reqwest transport now compiles as an inactive Rust module with proxy discovery disabled, redirect refusal, HTTPS/allowlist checks, timeouts, bounded request/response bodies, no endpoint query strings and stable transport errors that omit URL details. The Linux Rust 1.99.1 Docker gate passes 56/56 plus strict Clippy. It is deliberately not connected to provider traffic: provider operation/credential/approval contracts, destination IP pinning, cancellation, atomic permit consumption and durable redacted receipts are still required. Full app/agent-runtime cutover remains open; see [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md).
+The approved reqwest transport now compiles as an inactive Rust module with proxy discovery disabled, redirect refusal, HTTPS/allowlist checks, timeouts, bounded request/response bodies, no endpoint user-info/query strings and stable transport errors that omit URL details. The Linux Rust 1.99.1 Docker gate passes 56/56 plus strict Clippy. It is deliberately not connected to provider traffic: provider operation/credential/approval contracts, destination IP pinning, cancellation, atomic permit consumption and durable redacted receipts are still required. Full app/agent-runtime cutover remains open; see [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md).
 
 ## Realm receipt checkpoint correction — 2026-10-30
 

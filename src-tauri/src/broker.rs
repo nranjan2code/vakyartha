@@ -73,9 +73,12 @@ fn validate_endpoint(endpoint: &str) -> Result<Url, BrokerError> {
     }
     let url = Url::parse(endpoint).map_err(|_| BrokerError::InvalidEndpoint)?;
     let host = url.host_str().ok_or(BrokerError::InvalidEndpoint)?;
+    let has_user_info = endpoint
+        .split_once("://")
+        .and_then(|(_, remainder)| remainder.split(['/', '?', '#']).next())
+        .is_some_and(|authority| authority.contains('@'));
     if url.scheme() != "https"
-        || !url.username().is_empty()
-        || url.password().is_some()
+        || has_user_info
         || url.port().is_some_and(|port| port != 443)
         || url.fragment().is_some()
         || url.query().is_some()
@@ -128,6 +131,10 @@ mod tests {
         ));
         assert!(matches!(
             validate_endpoint("https://user@api.openai.com/v1/responses"),
+            Err(BrokerError::InvalidEndpoint)
+        ));
+        assert!(matches!(
+            validate_endpoint("https://@api.openai.com/v1/responses"),
             Err(BrokerError::InvalidEndpoint)
         ));
         assert!(matches!(
