@@ -65,7 +65,7 @@ forms. Preview, text representation and Markdown export are the supported views.
 Arbitrary code execution, document editing, publishing, collaboration and version
 history are separate capabilities, not implied by the canvas shell.
 
-Agent work in [MVP-SPECS.md](MVP-SPECS.md) builds on this design. Bound-field
+Agent work in [AGENT-TASKS.md](AGENT-TASKS.md) builds on this design. Bound-field
 drafts now persist across conversation changes and UI restart, with explicit
 resolution when incoming values conflict. Status refreshes retain mounted live
 elements; local view state remains attached to those elements. The task smoke

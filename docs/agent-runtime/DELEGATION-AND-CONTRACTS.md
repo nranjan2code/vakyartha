@@ -72,6 +72,7 @@ Use a task-scoped request identity for creation deduplication. A repeated identi
 | Assignment | Objective, exclusions, declared requirement references and expected separation benefit |
 | Inputs | Immutable bounded snapshots or authorized artifact references, hash/version, freshness and disclosure classification |
 | Capabilities | Requested existing tool/provider identities and resource subsets; no arbitrary credential names, command tunnel or destination headers |
+| Workspace grant | Fixed root binding/workspace/physical-folder/mode/Realm-sharing identities and revisions; native derives the child's narrower scope and candidate/scratch ownership |
 | Limits | Requests, tools, attempts, deadline, active execution, output/context bounds and effective resource profile |
 | Dependencies | Accepted prerequisite identities and versions; readiness and invalidation policy |
 | Output | Candidate shape, artifact references, supporting evidence, explicit unknowns and partial-result policy |
@@ -81,6 +82,10 @@ Use a task-scoped request identity for creation deduplication. A repeated identi
 Receiver validation precedes domain conversion. Reject unknown versions/operations, malformed values and oversized frames before expensive parsing. Worker-supplied identity is cross-checked against its supervised channel. Errors are bounded and redact secrets.
 
 Effective child authority is the intersection of current root authority, parent authority, child scope, integration policy and any exact operation approval. Child claims never widen that intersection. Check combinations of operations against task restrictions, not just each endpoint individually. Enforce revocation at dispatch and commit, not only creation.
+
+Binding channels to invocation IDs is insufficient if a compromised process can reach another invocation's channel or state. Required scope separation follows the trust-domain topology in the architecture document; a protected verifier cannot share an accessible authority/data boundary with candidate-authoring code. Shared-process invocations are treated as one trust domain, with its combined exposure reflected in admission.
+
+Root/run workspace grants do not follow a later chat binding. Rebinding invalidates queued/scheduled/waiting descendants and prepared results as well as active operations. A child has no implicit new binding or Realm grant; its scope narrows the fixed root grant. Dispatch rejects stale grants and never silently retargets the new folder. [Data/storage](DATA-AND-STORAGE.md#execution-grants-do-not-follow-a-mutable-chat-binding) defines the full identity and continuation contract.
 
 ## 4. Communication and context
 

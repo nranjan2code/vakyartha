@@ -35,7 +35,7 @@ sequenceDiagram
     participant W as Workers
     participant X as External service
     U->>B: Cancel root at current revision
-    B->>B: Persist cancellation epoch and revoke new admission
+    B->>B: Persist cancellation epoch and fence admission and dispatch
     B-->>U: Acknowledge durable cancellation request
     B->>C: Stop scheduling descendants
     B->>W: Abort active invocations
@@ -45,7 +45,7 @@ sequenceDiagram
     B-->>U: Settled cancellation with effect and cleanup status
 ```
 
-The ordering guarantee is at the trusted admission linearization point: after cancellation commits, no newly admitted descendant operation may dispatch. Operations admitted/dispatched earlier may still finish. A durable cancellation receipt is distinct from verified process-tree termination or remote cancellation.
+Cancellation and dispatch-start decisions serialize in the trusted owner. After the cancellation fence commits, queued/reserved operations cannot start dispatch, even if admitted earlier. Only operations whose trusted dispatch handoff began before that fence may remain in flight; their effects can complete later or remain uncertain. A reservation or previously issued start proposal is not a reusable dispatch grant. The broker must recheck at its actual dispatch handoff, rather than give a worker authority to send later. A durable cancellation receipt is distinct from verified process-tree termination or remote cancellation.
 
 | Failure boundary | Recovery rule |
 | --- | --- |
@@ -62,11 +62,19 @@ The ordering guarantee is at the trusted admission linearization point: after ca
 
 Attempt/lease fencing protects local commits and broker admission, not effects already accepted by another service. Restart issues a fresh epoch; stale channels cannot regain authority by replaying an ID. Cleanup failure is visible and prevents reuse of a quarantined execution resource.
 
+### Recovery authority and allowance
+
+Carve a finite reconciliation allowance from the original root envelope before ordinary execution, alongside verification/finalization capacity. Cancellation revokes ordinary work; it does not grant reconciliation. A user-authorized recovery request binds exact uncertain operation IDs, permitted status/read-back tools, destination, expiry and remaining recovery allowance to a separate recovery invocation. Root lineage/accounting remain; no new reasoning worker or ordinary task resumption is implied. Recovery network reads retain the existing egress/approval policy. A compensating external mutation needs its own explicit exact-operation authorization and available allowance.
+
+If no root allowance remains, do not reset counters or automatically grant more. Retain uncertainty and offer manual service-side reconciliation with a revision-bound user record, consistent with current recovery. Incoming late receipts and native containment cleanup require no new provider/tool dispatch; their bounded control capacity is reserved separately under the global profile. A manual note is a labelled user attestation, not a forged service receipt or automatic outcome pass. Freeze exact recovery sublimits, approval expiry and supported adapters under AR-04/07 before automation.
+
 ## 3. Security and governance
 
 Default mutations, deletion and egress to Ask under current policy. Exact arguments, destination, resource, expiry and capability revision bind approvals. Deferred work revalidates immediately before dispatch. A parent cannot approve a child, and generated approval-looking surfaces have no authority.
 
 No reasoning worker receives vault retrieval, private app files, unrestricted environment, arbitrary egress or general native commands. Integrations retain declared variables and the pinned script-free installation lifecycle. Endpoint allowlisting alone is not containment: workers must be unable to open a direct connection or invoke another runtime to bypass mediation. Integration-provided remote autonomy is outside the app's controllable internal child count and needs a separately reviewed capability/data contract.
+
+Operation-composition restrictions are enforceable only where a registered rule names observable actions/resources and evaluates trusted history. An arbitrary natural-language exclusion or worker-supplied requirement mapping is not a deterministic security guarantee. Unsupported mandatory restrictions must be refused or resolved before execution, not advertised as enforced by semantic scoring.
 
 Contain filesystem writes, process creation, signals, inherited descriptors, network, CPU and memory through the existing sandbox project. Verify effective descendant scope and platform support; a heap option, manifest declaration, wall timeout or sampled RSS is not a hard CPU/memory quota. Required protection fails closed.
 
@@ -85,7 +93,7 @@ Safety invariants are release gates. Statistical objectives need named hardware,
 | NFR-03 | Durable intent before consequential dispatch | Fault injection at every journal/dispatch boundary; unsaved state refuses work |
 | NFR-04 | No false verified completion with failed/unknown mandatory evidence | Evidence invalidation and terminal-transition tests; human/semantic uncertainty remains labelled |
 | NFR-05 | Responsive local controls: p95 ≤250 ms, p99 ≤1 s | Proposed target from local input to acknowledgement under defined saturation; measure inference separately |
-| NFR-06 | Cancellation reaches authoritative admission fence promptly | Proposed p99 ≤1 s from trusted receipt of request to durable fence; cleanup time measured separately by backend |
+| NFR-06 | Cancellation reaches authoritative admission and dispatch fence promptly | Proposed p99 ≤1 s from trusted receipt of request to durable fence; test pre-admitted queued work too; cleanup time measured separately by backend |
 | NFR-07 | Bounded queues, messages, context and artifacts | Freeze numerical limits in initial profile; overload rejects/coalesces, never silently loses terminal/control events |
 | NFR-08 | No starvation under sustainable admitted load | Aging/per-root scheduling test with defined maximum wait profile; no deadline guarantee above capacity |
 | NFR-09 | Reconstructable lineage and outcomes | Every child/attempt/operation attributable after restart; cursor replay produces same accepted state |
@@ -94,6 +102,7 @@ Safety invariants are release gates. Statistical objectives need named hardware,
 | NFR-12 | Existing interactions preserved | Wide/narrow actual WebKit, drafts/conflicts, multiple surfaces, local controls and voice/action parity |
 | NFR-13 | Truthful cost and usage | Unknowns remain unknown; failed requests/checks counted; no silent paid provider change |
 | NFR-14 | Bounded detector overhead and error | Measure extra requests/time, false positives and missed drift on frozen labelled scenarios |
+| NFR-15 | Aggregate capacity holds across all admitted workload classes | Global leases include chats/tasks/children/verifiers/apps/integrations; prove [scale and observability](SCALE-AND-OBSERVABILITY.md) under saturation and recovery |
 
 The machine must be awake and app/provider available for local execution. There is no unqualified uptime SLA or hard model-response latency promise. Set native cleanup limits per backend after measuring real operations; a fixed universal timeout is not assumed safe.
 

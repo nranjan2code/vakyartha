@@ -1,11 +1,23 @@
 # Vakyartha handover — 2026-10-29
 
+## Agent runtime architecture documentation — 2026-10-29
+
+At the user's request, added [agent-runtime/](agent-runtime/README.md): architecture/ownership, delegation admission and contracts, drift/evidence/completion, operations/governance/QoS, multi-job capacity/observability, validation/rollout and a primary-source research bibliography. Diagrams cover the overall flow, trust boundary, ownership/dependencies/scheduling, admission sequence, attempt lifecycle, evidence invalidation, drift correction, stopping, accounting, cancellation, global admission/pressure/observability and rollout.
+
+The proposal defaults to one agent and zero children, separates usefulness judgment from enforceable admission, and places authority/control reservations behind the accepted native trust boundary. Native policy source and prior tests are not treated as proof of non-bypassable containment. The proposed control-writer cutover, limits, verifier path, public API seams and aggregate capacity remain AR-01–AR-09 in IMPLEMENTATION-STATUS.md. Documentation authoring does not approve implementation, dependencies, paid runs or installation; no prior primary-local/source/value/interpretation/interaction/output or isolation failure is closed.
+
+The user-requested [Astra review](agent-runtime/REVIEW-2026-10-29.md) and follow-up verified corrections to cancellation/dispatch races, shared-process trust, root-wide uncertainty, cross-owner completion and truthful storage quotas. No substantive documentation finding remains unresolved; implementation proofs remain gated. Documentation-only checks and their limits are recorded in EVALUATION.md.
+
+## Ongoing requirements and status replace MVP framing — 2026-10-29
+
+At the user's direction, renamed the former planning files to [AGENT-TASKS.md](AGENT-TASKS.md) and [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md), refreshed current framing/ownership language and updated references, including working rules. All 123 pre-existing checklist identities and checked states are preserved; AR-01–AR-09 are additional unchecked gates. Dated evidence and failed outcomes remain. The rename does not certify every old statement as freshly tested; current source status, historical checkpoints and proposed architecture are explicitly separated. No obsolete alias files or runtime compatibility layer were added.
+
 ## Indestructible Rust Engine & Minimal Trusted Broker (ADR-052) — 2026-10-29
 
 Formalized the simple rule defining what belongs in Rust vs. Non-Rust:
 - **The Rust Engine (Root of Trust, Indestructible & Immutable):** Must remain unmutable, non-destroyable, and secure in any condition, even if the TypeScript worker is compromised. Implemented cross-platform credential vault (`src-tauri/src/vault.rs`) supporting native macOS Keychain (`/usr/bin/security`), Linux Secret Service/owner-only 0600 storage, and Windows user-isolated app data vault with strict input validation on service, account, and value formats. Implemented outbound network egress policy (`src-tauri/src/policy.rs`) admitting only authorized model providers over HTTPS and designated loopback ports (11434, 1234), refusing arbitrary IP or unapproved egress. Registered frontend IPC commands `vault_get`, `vault_set`, `vault_delete`, and `check_egress_endpoint` with window origin verification (`main_window`). Verified via 11 native cargo unit tests.
 - **The TypeScript Worker (Runtime Flexibility):** Fast-evolving presentation and orchestration layer for agent reasoning loops, dynamic canvas, interactive UI elements, skills, voice, channels, FinOps usage ledger, and sandboxed tool execution. Operates without ambient host authority.
-- **Clean Architecture Principle (0 Users):** No stale code, dead shims, or backwards compatibility compromises are retained. Updated `AGENTS.md` (Rule 8), `docs/ADR.md` (ADR-052), `docs/SPECS.md`, `docs/MVP-SPECS.md`, `docs/MVP-CHECKLIST.md` (ISO0), and `SECURITY.md`.
+- **Clean Architecture Principle (0 Users):** No stale code, dead shims, or backwards compatibility compromises are retained. Updated `AGENTS.md` (Rule 8), `docs/ADR.md` (ADR-052), `docs/SPECS.md`, `docs/AGENT-TASKS.md`, `docs/IMPLEMENTATION-STATUS.md` (ISO0), and `SECURITY.md`.
 - **Worker & UI Wiring:** Connected UI `secretField` ([`src/ui.ts`](../src/ui.ts)) to write directly to native `vaultSet`/`vaultDelete` commands in Tauri mode. Added Outbound Network Egress Policy section and interactive endpoint checker in Settings → Sandbox ([`src/sandbox-page.ts`](../src/sandbox-page.ts)), supporting custom user allowlists (`VAK_EXTRA_EGRESS_HOSTS`) in [`sidecar/settings.ts`](../sidecar/settings.ts). Implemented global worker egress guard in [`sidecar/server.ts`](../sidecar/server.ts) via [`sidecar/egress.ts`](../sidecar/egress.ts) with 4 unit tests ([`test/egress.test.ts`](../test/egress.test.ts)). Validated all integration catalog entries against SemVer pins and HTTPS in [`sidecar/integrations.ts`](../sidecar/integrations.ts).
 - All 11 native cargo tests pass; all 263 Node tests (259 existing + 4 egress) pass; TypeScript typecheck passes with 0 errors.
 
@@ -37,7 +49,7 @@ Updated current specs, skill/authoring and Studio docs, ADR clarifications, work
 
 Historical implementation checkpoint, narrowed by the prompt-cleanup source audit: direct execution accepts up to 300 seconds/256 KiB, but retained/shared Realm execution remains capped by the helper at 30 seconds/32 KiB. Basic Git init/add/commit/log is tested; arbitrary worktrees, builds and every file format are not certified. The maintained [workspace contract](sandbox/FOLDER-WORKSPACES.md) and [operations guide](FOLDER-WORKSPACES-GUIDE.md) supersede broad claims below.
 
-Recorded milestones FOLDER1 through FOLDER7 for the folder workspaces and project chats capability ([FOLDER-WORKSPACES.md](sandbox/FOLDER-WORKSPACES.md), [MVP-CHECKLIST.md](MVP-CHECKLIST.md)):
+Recorded milestones FOLDER1 through FOLDER7 for the folder workspaces and project chats capability ([FOLDER-WORKSPACES.md](sandbox/FOLDER-WORKSPACES.md), [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md)):
 
 1. **FOLDER1 (Workspace Registry & Path Admission)**:
    - Built app-owned `WorkspaceRegistry` ([sidecar/workspace-registry.ts](../sidecar/workspace-registry.ts)): stores Projects and Session Workspace Bindings in `<dataDir>/workspaces.json`.
@@ -328,7 +340,7 @@ Current focus is speed and package interoperability; the user deferred further m
 
 All 27 built-ins now load from `sidecar/builtin-skills/<name>/SKILL.md`; the `market-dashboard` package includes a reusable layout reference and fictional Projection example. Settings previews package-file updates, and release bundling copies the same folders. Unit, type, UI build and responsive WebKit checks pass (175 app/393 pinned framework tests). The local fictional five-close dashboard passed after a general complete-data instruction correction; the first failed run and an initial checker-key-order false negative are retained with an offline adjudication. [Evidence](EVALUATION.md#bundled-packages-and-market-dashboard--2026-10-27). Projection `dab83cf` fixes positional mapped-table totals, but the broader local record-view gate remains 2/3 due to an unrequested total. Real source-backed market and wider provider/receipt outcomes remain open. Fresh pushed app `067c606` / Projection `dab83cf` is installed at `/Applications/Vakyartha.app`; the 1,960-entry manifest matches the clean build. Settings shows the updated market package and both references; a free installed Ollama card/canvas smoke passes. The previous app and skill state are recoverable; [release receipt](RELEASING.md#market-dashboard-package-local-install--2026-10-27).
 
-Read [AGENTS.md](../AGENTS.md), [SPECS.md](SPECS.md), [RELEASING.md](RELEASING.md) and the newest [evaluation](EVALUATION.md). Planning: [MVP spec](MVP-SPECS.md), [checklist](MVP-CHECKLIST.md), [decisions](ADR.md).
+Read [AGENTS.md](../AGENTS.md), [SPECS.md](SPECS.md), [RELEASING.md](RELEASING.md) and the newest [evaluation](EVALUATION.md). Requirements and status: [task contract](AGENT-TASKS.md), [implementation tracker](IMPLEMENTATION-STATUS.md), [decisions](ADR.md), [proposed agent runtime](agent-runtime/README.md).
 
 ## Earlier skill-file installation — 2026-10-27 (superseded)
 
@@ -376,7 +388,7 @@ The user authorized a bounded hosted Luna comparison using the installed Keychai
 
 ## Next
 
-Current prompt-cleanup work is tracked in [PROMPT-AUDIT.md](PROMPT-AUDIT.md) and PC0–PC4 in MVP-CHECKLIST.md. PC1–PC3 source mechanisms are implemented; PC4 retains the unresolved mapping/source/interaction/receipt and installed gates. The earlier priorities below retain their original checkpoint scope.
+Current prompt-cleanup work is tracked in [PROMPT-AUDIT.md](PROMPT-AUDIT.md) and PC0–PC4 in IMPLEMENTATION-STATUS.md. PC1–PC3 source mechanisms are implemented; PC4 retains the unresolved mapping/source/interaction/receipt and installed gates. The earlier priorities below retain their original checkpoint scope.
 
 1. Measure the installed one-card request and mixed surfaces after the Projection schema reduction. The core tool definition is 4,392 characters smaller; the local record-view gate failed, so latency and model-outcome claims remain open. Do not gate integration-tool access through the unreliable group-selection probe.
 2. The skill importer now preserves optional frontmatter and stores reviewed script source as inert references. Binary assets, full YAML and governed script execution remain unsupported. Settings provider switching also commits the model it displays; verify the installed composer shows local before a model smoke. Keep the declared subset and the tool-permission boundary explicit.

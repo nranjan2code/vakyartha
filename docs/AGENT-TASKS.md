@@ -1,4 +1,6 @@
-# Vakyartha agent MVP
+# Agent tasks: requirements and execution contract
+
+Maintained task contract, reviewed 2026-10-29. This document replaces the former MVP framing. It preserves task requirements and their evidence gates; it does not imply that all requirements are implemented. [SPECS.md](SPECS.md) describes current behavior, [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) tracks verified/open work, and [agent-runtime/](agent-runtime/README.md) contains the proposed execution/delegation extension. Dated checkpoints below retain their historical scope.
 
 Authoring implementation method: [SKILL-AUTHORING.md](SKILL-AUTHORING.md) defines reusable procedures, data/view contracts, supported charts and visual/spoken projection requirements. It reuses canonical runtime ownership; new report types do not require new domain engines.
 
@@ -7,9 +9,11 @@ Current authoring boundary (2026-10-27): skills guide procedures and composition
 Reviewed catalog and bundled skill packages retain bounded supporting UTF-8 text, including inert script source, and expose it on demand only for skills loaded in the run. Bundled defaults are authored as Agent Skills folders; market-dashboard includes a reusable Projection example. Binary assets and script execution remain outside the current import tier. The package format and app-owned capability boundary are recorded in [ADR-040](ADR.md#adr-040-standard-skill-packages-app-owned-capabilities-2026-10-27); outcome evidence is in [EVALUATION.md](EVALUATION.md#authoring-cost-and-skill-interoperability--2026-10-27).
 
 
-Planning baseline: 2026-10-25. Status: implementation in progress; the checklist distinguishes working behavior from planned requirements. Progress and release evidence: [MVP-CHECKLIST.md](MVP-CHECKLIST.md). Current implementation: [SPECS.md](SPECS.md). Working rules: [AGENTS.md](../AGENTS.md).
+Original planning baseline: 2026-10-25. Status: ongoing implementation; the tracker distinguishes working behavior from planned requirements. Progress and release evidence: [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md). Current implementation: [SPECS.md](SPECS.md). Working rules: [AGENTS.md](../AGENTS.md).
 
-Architecture decisions: [ADR.md](ADR.md). Implementation is now authorized; the checklist records which parts actually work.
+Architecture decisions: [ADR.md](ADR.md). Existing authorized implementation remains tracked separately from new proposals; an unchecked requirement or design document is not blanket implementation approval.
+
+Proposed execution/delegation extension (2026-10-29): [agent runtime design](agent-runtime/README.md) defines when to retain one agent, bounded children, trusted admission, drift/stopping, recovery, QoS and many-job capacity. The [Rust-first implementation design](agent-runtime/IMPLEMENTATION-DESIGN.md) follows the user's language/ownership direction and clean root correction without compatibility layers. Proposed policy values, native persistence/public API seams and proof remain explicit gates; this documentation does not mark delegation or isolation complete. The current single-agent/multiple-surface baseline below remains.
 
 Task and plugin contracts are explicitly typed and versioned. Validate untrusted boundary data before converting it to domain types; do not treat type assertions as validation. See ADR-004.
 
@@ -19,7 +23,7 @@ Task lifetime, bounded runs, trigger dispatch and task chains are separate conce
 
 Vakyartha helps a person complete a bounded task using selected information and tools. The person can give instructions in conversation, interact with any of the task's surfaces, inspect progress, supply missing information, and approve consequential actions. Results remain useful, interactive artifacts.
 
-The first MVP proposes one agent for individual knowledge work on the desktop. A task can have multiple steps, multiple interactions, multiple execution runs, and multiple surfaces. A conversation turn, an execution run, a surface, and a task are distinct concepts. Producing a valid interface does not by itself complete the task.
+The current bounded task baseline uses one agent for individual knowledge work on the desktop. Selective delegation and aggregate multi-job capacity are proposed extensions with separate acceptance gates. A task can have multiple steps, multiple interactions, multiple execution runs, and multiple surfaces. A conversation turn, an execution run, a surface, and a task are distinct concepts. Producing a valid interface does not by itself complete the task.
 
 Work continues when the user switches tasks or hides the window while the app and computer remain running. Quitting, sleep, loss of connectivity, and engine failure have explicit recovery behavior. No promise of execution while the computer is off or asleep is made.
 
@@ -42,7 +46,7 @@ The reviewed paths are `src/main.ts` (surface mounting and action dispatch), `sr
 
 ## 3. Task workspace and interaction
 
-Current source extension (2026-10-29): standalone chats can bind to a selected folder, and sidebar Projects group chats around a folder. Binding is runtime authority distinct from sidebar membership. File tools and shell commands use the admitted working tree through the existing integration/sandbox lifecycle, without changing global cwd. Isolated copy/review is the default; direct editing and shared project Realms are selectable. FOLDER1–FOLDER7 are recorded as checked in [MVP-CHECKLIST.md](MVP-CHECKLIST.md), with their dated evidence in the [workspace contract](sandbox/FOLDER-WORKSPACES.md) and HANDOVER.md. This documentation audit does not rerun those outcomes or establish expanded system isolation; ISO1–ISO8 remain open. The task/surface requirements below are preserved.
+Current source extension (2026-10-29): standalone chats can bind to a selected folder, and sidebar Projects group chats around a folder. Binding is runtime authority distinct from sidebar membership. File tools and shell commands use the admitted working tree through the existing integration/sandbox lifecycle, without changing global cwd. Isolated copy/review is the default; direct editing and shared project Realms are selectable. FOLDER1–FOLDER7 are recorded as checked in [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md), with their dated evidence in the [workspace contract](sandbox/FOLDER-WORKSPACES.md) and HANDOVER.md. This documentation audit does not rerun those outcomes or establish expanded system isolation; ISO1–ISO8 remain open. The task/surface requirements below are preserved.
 
 The app adds task discovery and task status to the existing workspace. Conversation remains the place for instructions and feedback; activity is a compact, expandable account of work; the existing canvas displays the selected live surface. Three permanently visible columns are not required.
 
@@ -63,7 +67,7 @@ One task may contain a requirements form, plan, comparison table, editable revie
 
 Engine-enforced permission requests remain trusted application controls. A model-generated form or button cannot approve tool access or manufacture permission by displaying an approval-looking interface.
 
-## 4. MVP requirements
+## 4. Task requirements
 
 ### M1. Task definition and setup
 
@@ -200,7 +204,7 @@ Prefer no additional interprocess boundary. Keep related behavior beside its can
 
 Use Rust where native capabilities or a demonstrated correctness, performance or security benefit justify it (ADR-052): process supervision and graceful shutdown, platform integration, cross-platform credential vault (`src-tauri/src/vault.rs` across macOS, Linux, and Windows), outbound network egress gating (`src-tauri/src/policy.rs`), integration pin validation, and user approval enforcement. The Rust engine is the indestructible root of trust; the TypeScript worker provides runtime flexibility for agent reasoning, dynamic canvas, and interactive surfaces. With 0 active production users, the architecture enforces clean boundaries without backward-compatibility compromises or dual-runtime truth.
 
-Each durable entity has one authority and one persistence writer. Do not maintain parallel task truth, independent write caches or separate copies of framework surface schemas across runtimes. Rust-owned transactional storage is an option only if a focused design demonstrates enough benefit to justify the required boundary; it is not an MVP prerequisite or an approved migration. That design must assign transactions, schema versions and migrations to one owner. The storage format and any new dependency remain explicit decisions.
+Each durable entity has one authority and one persistence writer. Do not maintain parallel task truth, independent write caches or separate copies of framework surface schemas across runtimes. ADR-050/052 govern protected native authority. The proposed agent runtime assigns execution control to one native owner; its exact aggregate, transactional persistence and cutover remain AR-02, not an implemented storage migration. Canonical sessions/surfaces keep their framework owner. The storage format, cross-owner finalization protocol and any new dependency remain explicit decisions.
 
 Any unavoidable cross-process contract must be small, versioned and validated at the receiving boundary. Prefer stable task/session/surface/action IDs and necessary values over full state snapshots. Define unknown, absent, error and incompatible-version behavior; reject invalid or stale commands and deduplicate known operation IDs. Do not shuttle large files, credentials or every surface change through native IPC. Task correctness must remain available through the shared app server without a native window; native capabilities have explicit availability and failure behavior.
 
@@ -208,7 +212,7 @@ Before adding a boundary, measure request counts, payload size, rendering respon
 
 ### Dependency and supply-chain policy
 
-The MVP defaults to no new third-party SDK, agent framework, package, crate, service or build tool. Reuse the existing application, framework public APIs and language/platform standard libraries. Build small, bounded capabilities in the appropriate repository when that keeps the implementation understandable and maintainable. Do not add a dependency merely to wrap an existing API or avoid a modest amount of owned code.
+Task execution defaults to no new third-party SDK, agent framework, package, crate, service or build tool. Reuse the existing application, framework public APIs and language/platform standard libraries. Build small, bounded capabilities in the appropriate repository when that keeps the implementation understandable and maintainable. Do not add a dependency merely to wrap an existing API or avoid a modest amount of owned code.
 
 Any necessary exception requires the user's approval before installation or adoption, with the precise gap, alternatives, maintenance cost and security implications documented. Assess the complete transitive dependency change, publisher/source provenance, artifact integrity, exact resolved versions and install/build scripts. Review lockfile diffs and unexpected network or code-generation behavior. Script-free integration installation and existing version-age rules remain mandatory; they do not establish that a package is safe to execute.
 
@@ -216,16 +220,16 @@ Do not use floating versions, ad hoc package execution, model-suggested installs
 
 Dependency avoidance does not justify custom cryptography, a new authentication protocol or a larger execution privilege. Prefer established platform primitives; if those cannot meet a security requirement safely, present the concrete dependency decision instead of quietly weakening the design. New isolation, persistent storage or native integration work does not imply approval of a supporting library.
 
-## 7. Later scope
+## 7. Capability roadmap
 
 The optional media slice is now implemented independently of task admission: three integrations select provider/model per operation, share credentials, retain private files and known provider job identities, and publish results through the canonical host/store. Dedicated screen/voice media projections keep playback local. This does not change scheduled-task free-capability admission, establish a monetary ceiling or implement every prospective editing operation. No new native relay or parallel agent loop was introduced. Current scope and evidence: [MEDIA-TOOLS.md](MEDIA-TOOLS.md).
 
-Memory, reusable context and external tool capabilities use the existing MCP integration/plugin boundary, with catalog choices and user-configured servers. Prefer free built-in/local choices initially. Do not build a parallel memory database, retrieval stack or plugin marketplace. Optional capability failure cannot prevent local task recovery. This is the selected architecture for later knowledge features, not a claim they are implemented; task-local continuity remains MVP scope. See ADR-002.
+Memory, reusable context and external tool capabilities use the existing MCP integration/plugin boundary, with catalog choices and user-configured servers. Prefer free built-in/local choices initially. Do not build a parallel memory database, retrieval stack or plugin marketplace. Optional capability failure cannot prevent local task recovery. This is the selected architecture for later knowledge features, not a claim they are implemented; task-local continuity remains part of the task contract. See ADR-002.
 
-The following are planned candidates, not MVP commitments or implemented features:
+The following capability directions need their own current tracker evidence; listing them does not authorize implementation or describe a fixed initial release boundary:
 
-- Reviewed reusable skills after the initial outcomes are reliable.
-- Inspectable, editable user memory across tasks; task-local continuity is already MVP scope.
+- Extend reviewed reusable skills beyond the current loading/import capabilities, gated by actual task outcomes.
+- Inspectable, editable user memory across tasks; task-local continuity is already part of the task contract.
 - Scheduled routines and event triggers, including time zones, missed runs and change-only notifications.
 - Additional connectors, authorization flows and supported input formats.
 - Browser/computer interaction and broader isolation guarantees. The bounded macOS command/Realm lifecycle is implemented and independently tool-tested; [scope and limits](sandbox/OVERVIEW.md). Autonomous provider outcomes remain separate.
@@ -234,25 +238,29 @@ The following are planned candidates, not MVP commitments or implemented feature
 - Artifact version history, collaboration and publishing.
 - Broader platform distribution and automatic updates.
 
-## 8. Decisions before implementation
+## 8. Decision and acceptance policy
 
-The proposed defaults are individual knowledge work, one agent, one executing task, existing readable inputs and existing interactive surfaces. These remain product decisions for discussion, not evidence of user approval of every feature.
+The original baseline was individual knowledge work, one agent, one executing task, existing readable inputs and existing interactive surfaces. These are historical starting limits, not a permanent architecture ceiling. The proposed agent-runtime package separates logical jobs, child agents and actual execution capacity; its policy/resource defaults remain explicit decisions.
 
-Settle the task-entry and navigation design, draft/update conflict behavior, exact run limits, minimum supported input formats, runtime/data authority and the initial outcome evaluation set before implementation. Show a concrete workspace design covering multiple surfaces, waiting states, recovery and narrow layouts. Keep third-party product names and competitor comparisons out of product and planning documents.
+For each new execution mode, settle entry/navigation, draft/update conflicts, exact limits, supported inputs, runtime/data authority and the outcome evaluation set before implementation. Reuse already verified behavior rather than treating historical decisions as still undecided. Show concrete multiple-surface, waiting, recovery and narrow-layout behavior. Keep third-party product names and competitor comparisons out of product and planning documents.
 
-The MVP is complete only when every MVP gate in the checklist has evidence. Passing the existing rendering suite alone does not establish reliable task execution.
+A capability is accepted only when its applicable implementation, security, interaction and original user-outcome gates have evidence. Passing the rendering suite, completing documentation or installing a build alone does not establish reliable task execution. There is no single MVP label that closes all remaining work.
 
 ### First implementation slice and limits
 
 The initial slice supports manually created tasks, one executing run, persisted input queues, per-run limits, one-time task approvals, explicit user review, safe continuation, multi-surface interaction and scoped deletion. The task journal references the existing canonical conversation; it does not duplicate surfaces. Native responsibilities remain unchanged and no new dependency or native IPC path is introduced.
 
-This is not the complete MVP. Approval waits now yield the execution slot and resume the same call through the dispatcher with fresh authority checks (ADR-008). Typed per-run records retain identity, input identity, timing, tool-call count, stop reason and reviewed/failed/cancelled/interrupted outcomes; schema v5 requires complete run records without compatibility fallbacks (ADR-009). Long-term retention and durable lifetime deduplication are still open, so conservative journal/continuation guards remain. Repeating/event triggers, chains, automatic evidence-based outcome verification, monetary spending controls and complete shared-log retention remain open. Free/local capability choices reuse the existing catalog; configured custom servers require explicit cost/trust review. No additional server is installed automatically.
+This checkpoint did not establish the complete task contract. Approval waits yield the execution slot and resume the same call through the dispatcher with fresh authority checks (ADR-008). Typed per-run records retain identity, input identity, timing, tool-call count, stop reason and reviewed/failed/cancelled/interrupted outcomes; schema v5 requires complete run records without compatibility fallbacks (ADR-009). Long-term retention and durable lifetime deduplication were open at this checkpoint, so conservative journal/continuation guards remain. Repeating/event triggers, chains, automatic evidence-based outcome verification, monetary spending controls and complete shared-log retention remain separate gates. Free/local capability choices reuse the existing catalog; configured custom servers require explicit cost/trust review. No additional server is installed automatically.
 
 The implemented timing slice adds the Schedule page with a full-page composer and lifecycle overview/details. Immediate and one-time future runs use the same queue. Timing records persist an instant, display time zone and armed/paused/dispatched status. Upcoming work can pause, resume, change time or run now; controls require the current revision. Past due triggers on startup, or those delayed over a minute during operation, pause for review. Repeating schedules and event/chain triggers are still not supported. See ADR-007.
 
 Local field drafts persist in UI storage, with explicit resolution of conflicting incoming values. Task deletion removes its journal, conversation, raw transcript and local drafts; shared integration logs, numeric usage records, credentials, memory and external files remain. Deletion requires stopped execution, a current revision and additional acknowledgement of uncertain effects.
 
-## 9. Design review
+## 9. Historical design and implementation checkpoints
+
+The dated records below retain earlier evidence and limitations. Current source status belongs in SPECS.md and IMPLEMENTATION-STATUS.md; they do not override newer accepted architecture decisions.
+
+### Design review — 2026-10-25
 
 An independent architecture and interaction review on 2026-10-25 confirmed the need to retain one canonical surface store, serialize surface actions, separate execution from navigation, and distinguish live drafts from persisted drafts. Its findings are incorporated into sections 3, 4 and 6. The review also requires independent tool-call limits, durable approval identity and explicit uncertain-effect recovery. This is design review evidence, not implementation approval or outcome validation.
 

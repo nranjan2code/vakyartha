@@ -79,4 +79,4 @@ The direct/disposable adapter accepts up to 300 seconds and 256 KiB. Retained/sh
 
 Industry research supports separate workspace scope, per-operation permission decisions, project trust boundaries and OS-enforced shell containment. Those are capability inputs, not proof of this implementation. Checked 2026-10-29.
 
-Related: [architecture and operations guide](../FOLDER-WORKSPACES-GUIDE.md), [existing Realm contract](OVERVIEW.md), [required system isolation](SYSTEM-ISOLATION.md), [runtime ownership](../MVP-SPECS.md#runtime-placement-performance-and-security), [implementation checklist](../MVP-CHECKLIST.md#folder-workspaces-and-project-chats--2026-10-29).
+Related: [architecture and operations guide](../FOLDER-WORKSPACES-GUIDE.md), [existing Realm contract](OVERVIEW.md), [required system isolation](SYSTEM-ISOLATION.md), [runtime ownership](../AGENT-TASKS.md#runtime-placement-performance-and-security), [implementation checklist](../IMPLEMENTATION-STATUS.md#folder-workspaces-and-project-chats--2026-10-29).

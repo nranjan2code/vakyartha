@@ -196,7 +196,7 @@ Check: `npm run build`, then phase 6.
 - [SECURITY.md](../../SECURITY.md): bundled text is untrusted data; never executed; integrity check.
 - [HANDOVER.md](../HANDOVER.md) and [EVALUATION.md](../EVALUATION.md): what passed and what is still open.
 - `sidecar/skills.ts` header comment: replace "bundled scripts are listed at review and not imported" with the new rule.
-- [MVP-CHECKLIST.md](../MVP-CHECKLIST.md) S1: check only after phase 6 step 3 passes, with evidence.
+- [IMPLEMENTATION-STATUS.md](../IMPLEMENTATION-STATUS.md) S1: check only after phase 6 step 3 passes, with evidence.
 
 ## Acceptance
 

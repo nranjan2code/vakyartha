@@ -77,34 +77,67 @@ export class WorkspacesPanel {
   private onOpenChatHandler: ((id: string) => void) | null = null;
   private onNewProjectChatHandler: ((projectId: string, folder: string) => void) | null = null;
   private onRefreshHandler: (() => Promise<void>) | null = null;
+  private isTaskSessionHandler: ((id: string) => boolean) | null = null;
+  private getSessionHandler: (() => string) | null = null;
+  private updateToken = 0;
+  private bindingsCache = new Map<string, WorkspaceBinding>();
 
   init(options: {
     bar: HTMLElement;
     sidebar: HTMLElement;
+    getSession?: () => string;
+    isTaskSession?: (id: string) => boolean;
     onOpenChat: (id: string) => void;
     onNewProjectChat: (projectId: string, folder: string) => void;
     onRefresh: () => Promise<void>;
   }): void {
     this.barContainer = options.bar;
     this.sidebarContainer = options.sidebar;
+    this.getSessionHandler = options.getSession ?? null;
+    this.isTaskSessionHandler = options.isTaskSession ?? null;
     this.onOpenChatHandler = options.onOpenChat;
     this.onNewProjectChatHandler = options.onNewProjectChat;
     this.onRefreshHandler = options.onRefresh;
   }
 
   async updateForSession(sessionId: string): Promise<void> {
-    this.currentSession = sessionId;
-    if (!sessionId) {
+    const token = ++this.updateToken;
+    this.currentSession = sessionId || (this.getSessionHandler ? this.getSessionHandler() : "");
+
+    // Update active highlight in sidebar project chats
+    for (const row of this.sidebarContainer?.querySelectorAll<HTMLElement>(".project-chat") ?? []) {
+      const active = row.dataset.id === this.currentSession;
+      row.classList.toggle("active", active);
+      row.setAttribute("aria-current", String(active));
+    }
+
+    if (this.currentSession && this.isTaskSessionHandler?.(this.currentSession)) {
+      if (this.barContainer) this.barContainer.hidden = true;
+      return;
+    }
+
+    if (this.bindingsCache.has(this.currentSession)) {
+      this.currentBinding = this.bindingsCache.get(this.currentSession)!;
+      await this.renderWorkspaceBar();
+      return;
+    }
+
+    if (!this.currentSession) {
       this.currentBinding = null;
-      this.renderWorkspaceBar();
+      await this.renderWorkspaceBar();
       return;
     }
 
     try {
-      this.currentBinding = await api<WorkspaceBinding>(`/api/workspaces/bindings/${encodeURIComponent(sessionId)}`);
+      const binding = await api<WorkspaceBinding>(`/api/workspaces/bindings/${encodeURIComponent(this.currentSession)}`);
+      if (token !== this.updateToken) return;
+      this.currentBinding = binding;
+      this.bindingsCache.set(this.currentSession, binding);
     } catch {
+      if (token !== this.updateToken) return;
       this.currentBinding = null;
     }
+    if (token !== this.updateToken) return;
     await this.renderWorkspaceBar();
   }
 
@@ -116,7 +149,7 @@ export class WorkspacesPanel {
     if (!this.barContainer) return;
     this.barContainer.replaceChildren();
 
-    if (!this.currentSession) {
+    if (this.currentSession && this.isTaskSessionHandler?.(this.currentSession)) {
       this.barContainer.hidden = true;
       return;
     }
@@ -236,6 +269,7 @@ export class WorkspacesPanel {
     unbindBtn.addEventListener("click", async () => {
       if (await ask("Disconnect folder workspace from this chat? The original folder is not affected.", "Disconnect")) {
         await api(`/api/workspaces/bindings/${encodeURIComponent(this.currentSession)}`, { method: "DELETE" });
+        this.bindingsCache.delete(this.currentSession);
         this.currentBinding = null;
         await this.updateForSession(this.currentSession);
         if (this.onRefreshHandler) await this.onRefreshHandler();
@@ -251,6 +285,11 @@ export class WorkspacesPanel {
   renderSidebar(projects: Project[], bindings: WorkspaceBinding[], sessions: { id: string; title: string; updated: string }[]): void {
     if (!this.sidebarContainer) return;
     this.sidebarContainer.replaceChildren();
+
+    this.bindingsCache.clear();
+    for (const b of bindings) {
+      this.bindingsCache.set(b.session, b);
+    }
 
     const head = el(
       "div",
@@ -335,9 +374,10 @@ export class WorkspacesPanel {
       for (const sId of boundSessions) {
         const s = sessionMap.get(sId);
         if (!s) continue;
+        const active = s.id === this.currentSession;
         const row = el(
           "div",
-          { className: `chat project-chat${s.id === this.currentSession ? " active" : ""}` },
+          { className: `chat project-chat${active ? " active" : ""}` },
           el(
             "button",
             {
@@ -349,6 +389,8 @@ export class WorkspacesPanel {
             s.title,
           ),
         );
+        row.dataset.id = s.id;
+        row.setAttribute("aria-current", String(active));
         chatList.append(row);
       }
 
@@ -442,11 +484,15 @@ export class WorkspacesPanel {
       e.preventDefault();
       if (!admittedPath) return;
       dialog.close();
+      const targetSession = this.currentSession || (this.getSessionHandler ? this.getSessionHandler() : "");
+      if (!targetSession) return;
       try {
-        this.currentBinding = await api<WorkspaceBinding>(`/api/workspaces/bindings/${encodeURIComponent(this.currentSession)}`, {
+        const binding = await api<WorkspaceBinding>(`/api/workspaces/bindings/${encodeURIComponent(targetSession)}`, {
           method: "POST",
           body: JSON.stringify({ folder: admittedPath, mode: modeSelect.value }),
         });
+        this.currentBinding = binding;
+        this.bindingsCache.set(targetSession, binding);
         await this.renderWorkspaceBar();
         if (this.onRefreshHandler) await this.onRefreshHandler();
       } catch (err: any) {

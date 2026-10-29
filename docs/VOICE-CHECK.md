@@ -1,6 +1,6 @@
 # Remaining live voice checks
 
-Basic sentence endings and spoken replies were tried in the installed 0.2.0 build. The checks below remain pending; on 2026-10-26 the user requested automated work and deferred microphone testing. Unit tests and simulated recordings do not close these gates (MVP-CHECKLIST V3–V6/V8/V12).
+Basic sentence endings and spoken replies were tried in the installed 0.2.0 build. The checks below remain pending; on 2026-10-26 the user requested automated work and deferred microphone testing. Unit tests and simulated recordings do not close these gates (IMPLEMENTATION-STATUS V3–V6/V8/V12).
 
 Use the installed local dictation and read-aloud providers already configured in Settings → Voice. Record app/source build, microphone, speaker/headphone setup, selected models and observations. Do not change paid-provider settings or install anything for this check.
 

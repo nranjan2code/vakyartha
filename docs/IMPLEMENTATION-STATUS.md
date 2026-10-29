@@ -1,14 +1,16 @@
-# Agent MVP checklist
+# Implementation status and acceptance gates
 
-Planning baseline: 2026-10-25. Scope and acceptance contract: [MVP-SPECS.md](MVP-SPECS.md). Current app: [SPECS.md](SPECS.md). This checklist tracks documentation, existing foundations, implementation and later scope separately.
+Maintained tracker, reviewed 2026-10-29. Replaces the former MVP checklist without resetting item IDs, checked states, failed outcomes or historical evidence. Sections distinguish current foundations, active work, proposed architecture and future candidates. A historical checked item proves only its stated scope, not a newer expanded contract.
 
-Check an implementation item only after its acceptance behavior is verified. Append the change reference and evidence to that item. Use `Blocked: <reason>` for a dependency, without checking it. An existing foundation does not mark a new MVP requirement complete. No unchecked item authorizes implementation by itself.
+Original planning baseline: 2026-10-25. Scope and acceptance contract: [AGENT-TASKS.md](AGENT-TASKS.md). Current app: [SPECS.md](SPECS.md). Proposed execution/delegation architecture: [agent-runtime/](agent-runtime/README.md). This tracker keeps documentation, existing foundations, implementation and later scope separate.
+
+Check an implementation item only after its acceptance behavior is verified. Append the change reference and evidence to that item. Use `Blocked: <reason>` for a dependency, without checking it. An existing foundation does not mark an expanded requirement complete. No unchecked item authorizes implementation by itself.
 
 ## Planning and design
 
 - [ ] A1. Implement the [data-first authoring contract](plans/DATA-FIRST-AUTHORING.md): skills guide the agent; records, field mappings and operations replace independently authored table/chart/metric copies. Broad rewrite proposal deleted. No old-code/backward-compatibility requirement; preserve security and product capabilities.
 - [ ] A2. Verify skill-led interactive authoring after cleanup. Shared record mappings, forms and transactional execution remain; source-specific execution and duplicate-array guidance are deleted. Fresh skill-led linked-view/edit/submit/independent-notes outcome and wide/narrow WebKit pass. Broader local intent, source interpretation/continuation and installed outcomes remain open. See [skills](SKILLS.md) and [evidence](EVALUATION.md).
-- [x] D1. Draft MVP scope, existing capability inventory and later boundaries — `MVP-SPECS.md`.
+- [x] D1. Draft task scope, existing capability inventory and later boundaries — `AGENT-TASKS.md` (original planning checkpoint retained).
 - [x] D2. Create this tracker with ownership and acceptance gates.
 - [x] D3. Independent design review completed; findings incorporated into spec sections 3, 4, 6 and 9 and the gates below. See evidence log.
 - [ ] D4. Confirm initial audience, three outcome scenarios and supported inputs.
@@ -36,7 +38,7 @@ These are present today, not newly implemented agent capabilities. Baseline evid
 
 ## P0 — Preserve interaction and establish boundaries
 
-Owner: Vakyartha for product behavior; framework fixes only after D7. Acceptance: MVP-SPECS sections 2, 3 and 6.
+Owner: Vakyartha for product behavior; framework fixes only after D7. Acceptance: AGENT-TASKS sections 2, 3 and 6.
 
 - [x] P0.1. Map the current render → field edit → validation → submission → update path and record which public APIs will be reused.
 - [x] P0.2. Define task/session/run/surface identities and additive linkage for existing conversations and artifacts; no second artifact store.
@@ -108,9 +110,9 @@ Owners: Vakyartha end-to-end; Projection verifies any changed framework contract
 
 ## V — Voice interaction
 
-Owner: Projection for the voice projector; Vakyartha for the `voice/` module. Acceptance: MVP-SPECS M9 and the voice projector framework record in section 6. Phases go in order; each keeps existing read-aloud and dictation behavior working.
+Owner: Projection for the voice projector; Vakyartha for the `voice/` module. Acceptance: AGENT-TASKS M9 and the voice projector framework record in section 6. Phases go in order; each keeps existing read-aloud and dictation behavior working.
 
-- [x] V0. Voice interaction specified: M9, ownership row and framework record in `MVP-SPECS.md`.
+- [x] V0. Voice interaction specified: M9, ownership row and framework record in `AGENT-TASKS.md`.
 - [x] V1. App `voice/` module with no behavior change: read aloud, dictation, speech text, settings page and the sidecar speech routes behind one entry point each in `src/voice/` and `sidecar/voice/`; one master switch over read aloud, dictation and conversation mode; app tests, typecheck and WebKit check. Evidence: 109 app tests (master-switch test added), typecheck, UI build, sidecar bundle, canvas WebKit check, and an off-screen WebKit run of Settings → Voice (off hides the mic and the voice settings; on restores them unchanged). Conversation mode joins the switch in V3.
 - [x] V2. Voice projector in Projection: agenda items, field model, deterministic resolver, constrained-resolution schema and action construction; tested and pushed, then the app pin moved (R2). Evidence: Projection `68faf03` (`@vak/core` `answer.ts`: `agenda`, `resolveAnswer`, `answerSchema`/`readModelAnswer`, `fillAnswer`, `actOn`, `question`/`readBack`), pushed; pin moved; 297 framework and 109 app tests and typecheck pass. Spoken and clicked actions are asserted identical; approvals resolve only to unmixed consent naming the change. English words only until V9.
 - [ ] V3. Conversation mode: local end-of-speech, barge-in, echo safety, stop phrase and Escape, announced states; no microphone use when off. Implemented: `src/voice/conversation.ts`, `endpoint.ts` (noise-floor end of speech; higher bar and longer onset while the app speaks), `commands.ts`; ⌘⇧D or the waves button; replies read aloud in the mode; Esc, "stop listening" or the master switch end it. Endpointing and phrases unit-tested; WebKit shows the button and switches. Live (2026-10-26, installed build): the user held a spoken conversation; sentence endings and replies work. Still to confirm live: talking over a reply, no self-triggering on speakers, "stop listening"/Esc.
@@ -127,7 +129,7 @@ Owner: Projection for the voice projector; Vakyartha for the `voice/` module. Ac
 
 ## Release readiness
 
-- [ ] R1. Every MVP requirement and regression gate has linked evidence; unresolved risks are explicitly reviewed.
+- [ ] R1. Every requirement and regression gate applicable to the release has linked evidence; unresolved risks are explicitly reviewed. Proposed/future scope is not silently declared implemented.
 - [ ] R2. Required framework changes are tested and pushed in Projection; the app pin is deliberately updated and checked. No dependency-checkout edits or internal imports.
 - [ ] R3. Documentation distinguishes current behavior from later scope and explains local execution availability, permissions, data deletion and cost limits.
 - [ ] R4. Follow the existing release procedure; distribution, signing, new dependencies and paid runs retain their existing approval requirements.
@@ -169,7 +171,7 @@ User-requested work, tracked separately from the earlier bounded macOS sandbox c
 - [ ] ISO7. Measure private worker boundary overhead and verify existing desktop, provider, integration, task, channel and multiple-surface behavior through it.
 - [ ] ISO8. Package and verify the exact installed app/framework/helper combination, with truthful capabilities, effective limits and retained failed evidence.
 
-## Later — not required for MVP completion
+## Capability roadmap and future candidates
 
 These boxes track future candidates only. Do not start them simply because they appear here. One-time clock triggers are now implemented; repeating/event triggers remain below.
 
@@ -183,12 +185,39 @@ These boxes track future candidates only. Do not start them simply because they 
 - [ ] L3a. Task chains: verified sequential dependencies, typed artifact handoffs, per-step permissions and budgets, partial failure handling and deletion without cascades.
 - [ ] L4. Additional connectors, authorization methods and document formats.
 - [ ] L5. Browser/computer interaction and full autonomous provider outcomes. The bounded macOS command/Realm tool lifecycle and responsive Settings are verified independently (2026-10-28): approval/denial, containment, durable writes, review, promotion, restart, rollback, conflict refusal and destruction. Broader system/resource/Linux isolation is now explicitly requested work under ISO1–ISO8 above. [Evidence](EVALUATION.md#sandbox-settings-and-realms--2026-10-28).
-- [ ] L6. Multiple agent roles, delegation and concurrent execution.
+- [ ] L6. Multiple agent roles, delegation and concurrent execution. Proposed [architecture, diagrams and runtime contracts](agent-runtime/README.md) are documented; AR-01–AR-09 below remain open. Default is zero children, and implementation/security/outcome gates remain independent.
 - [ ] L7. Remote execution, remote notifications and cross-device channels.
 - [ ] L8. Artifact history, collaboration and publishing.
 - [ ] L9. Additional platforms and automatic updates.
 - [x] L10. Initial independent image, audio and video plugins through existing integrations, shared provider keys, selected models, upload/cost approval, durable assets and recoverable job IDs. Dedicated screen/voice projections use canonical host publication. Supported subset and verification limits: [MEDIA-TOOLS.md](MEDIA-TOOLS.md); [research baseline](MEDIA-TOOLS-RESEARCH.md).
 - [ ] L10a. Approve and run live provider/account quality benchmarks and hands-on microphone/media barge-in evaluation. Mocked API checks and synthetic voice checks do not establish these outcomes; broader media editing operations remain later scope.
+
+## Proposed agent execution and delegation — 2026-10-29
+
+User-requested architecture documentation is in [agent-runtime/](agent-runtime/README.md), including diagrams and [validation/rollout](agent-runtime/VALIDATION-AND-ROLLOUT.md). This section records design/implementation gates, not authorization to implement every proposal. Existing single-agent and multiple-surface behavior remains the baseline. No existing outcome or ISO gate is closed by these documents.
+
+The user selected Rust-first authoritative scheduling/control/persistence and root correction without legacy shims. [Implementation design](agent-runtime/IMPLEMENTATION-DESIGN.md), [removal map](agent-runtime/ROOT-CORRECTIONS.md) and [delivery slices](agent-runtime/DELIVERY-PLAN.md) specify how. Native HTTPS mediation/dependency choice and protected framework persistence/prepare/fence seams remain prerequisites; writing the design does not implement them.
+
+- [ ] AR-01. Confirm delegation policy modes, provisional one-level/four-child limits and eligible task classes against comparative evidence.
+- [ ] AR-02. Specify the sole native execution-control writer, aggregate/transaction boundaries, cross-owner finalization and cutover from current task persistence; no duplicate task truth.
+- [ ] AR-03. Prove public API composition, trust-domain/channel separation, version-bound finalization and hidden-window/headless lifecycle; record only concrete missing capabilities in their owning repository.
+- [ ] AR-04. Freeze budget units, values, reservation/reconciliation semantics, queue/context/output bounds and single-slot scheduling behavior.
+- [ ] AR-05. Specify protected requirement/checker definitions, isolated verifier identity/receipts, evidence invalidation and explicit semantic/user-review limits.
+- [ ] AR-06. Freeze outcomes, sources, forbidden effects, detector labels/error/overhead thresholds, minimum useful delegation benefit, hardware and comparable evaluation budgets.
+- [ ] AR-07. Prove non-bypassable broker admission and required isolation, including descendants, revocation, cancellation, crash uncertainty and resource enforcement; retain ISO1–ISO8 separately.
+- [ ] AR-08. Map child/attempt/stop states onto one typed task lifecycle and preserve interactive continuations, multiple surfaces, local controls and wide/narrow WebKit behavior.
+- [ ] AR-09. Prove [global capacity and observability](agent-runtime/SCALE-AND-OBSERVABILITY.md) across chats/tasks/children/verifiers/apps/integrations: aggregate limits, fair scheduling, overload/backpressure, bounded telemetry and saturation recovery on named hardware.
+
+## Information architecture, storage and identified folders — 2026-10-29
+
+Source-audited [data/storage](agent-runtime/DATA-AND-STORAGE.md) and [IA design](agent-runtime/INFORMATION-ARCHITECTURE.md) preserve existing folder modes and multiple surfaces while correcting root ownership. Isolated registry probes reproduce re-admission after revocation, same-path folder replacement admission and an unassigned Realm ID passing the registry check; later adapter source-path checks limit the last observation. These are open corrections, not outcome passes.
+
+- [ ] IA-01. Adopt explicit project/workspace/binding/working-copy/task/artifact identities and source-versus-target navigation/storage contracts; project membership grants no filesystem authority.
+- [ ] IA-02. Replace the TS registry writer with native controlled registration, physical folder identity, sticky revocation, fixed root/run and narrowed child workspace grants, dispatch-time target checks and explicit Realm membership; rebind invalidates queued/scheduled/waiting descendants without retargeting. Retain platform capability/refusal semantics.
+- [ ] IA-03. Prove protected private namespaces and reference-based discovery; no project-name/path-derived duplicate state or hidden metadata/secrets in source folders.
+- [ ] IA-04. Replace scattered page toggles with one TS navigation owner; Work includes Scheduled as a view, projects may organize without folders, effective workspace remains visible, and link producers update together.
+- [ ] IA-05. Separate project removal, folder detach, working-copy discard, task/chat deletion and original-file changes; preserve shared references, dirty work and uncertain-effect recovery.
+- [ ] IA-06. Prove standalone/project/task/app flows, shared/copy/direct work, replaced/revoked folders, artifact reopening, multiple surfaces, voice/actions, collections and actual wide/narrow WebKit; retain original source/value/interaction/output gates.
 
 ## Evidence log
 

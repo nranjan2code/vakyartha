@@ -1,6 +1,6 @@
 # Architecture decisions
 
-These decisions constrain the agent MVP. Scope: [MVP-SPECS.md](MVP-SPECS.md). Progress: [MVP-CHECKLIST.md](MVP-CHECKLIST.md). No decision authorizes a new dependency or integration installation.
+These decisions constrain the app and agent architecture. Task contract: [AGENT-TASKS.md](AGENT-TASKS.md). Progress and acceptance gates: [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md). Proposed execution/delegation design: [agent-runtime/](agent-runtime/README.md). No decision authorizes a new dependency or integration installation.
 
 ## ADR-027 — Optional media capabilities, one asset/job owner and canonical projection
 

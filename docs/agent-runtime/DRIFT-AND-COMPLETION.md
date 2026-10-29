@@ -23,7 +23,7 @@ Each requirement has an identity, original source, mandatory/optional status, ve
 | Output hash/size/version receipt | Saved bytes match the requested candidate representation | That its contents are correct |
 | Explicit user review | Named person accepted the current evidence/candidate | Automatic or universal correctness |
 
-An agent's `pass` flag is a claim, not an accepted check result. Trusted control accepts results only from the registered check/review path bound to invocation and candidate. Protect checker definitions/expected fixtures from candidate edits. A dedicated check execution has a separate identity and restricted inputs; arbitrary child stdout cannot impersonate it. Semantic checks may remain probabilistic and must disclose that limitation.
+An agent's `pass` flag is a claim, not an accepted check result. Trusted control accepts results only from the registered check/review path bound to invocation and candidate. Protect checker definitions/expected fixtures from candidate edits. A dedicated check execution has a separate identity and restricted inputs; its channels/state must also be inaccessible to compromised authoring workers, not merely differently named inside the same process. Arbitrary child stdout cannot impersonate it. Semantic checks may remain probabilistic and must disclose that limitation.
 
 ```mermaid
 flowchart LR
@@ -75,7 +75,7 @@ Correction restores current requirements and verified facts, narrows stale conte
 
 A proposed starting watchdog is two consecutive diagnostic checkpoints with no new relevant evidence or changed failure cause before one bounded replan. This is a tuning proposal, not a universal proof of stagnation. Checkpoint cadence, replan allowance and exemptions for known long operations must be frozen per task class. All corrective work consumes the existing root limits; restart does not reset the window. One unchanged attempt may be enough to stop when the earliest boundary is already diagnosed and another retry has no justified new information.
 
-Preserve an accepted checkpoint where possible, but do not claim local rollback undoes a remote effect. Uncertain dispatch pauses automatic dependent work under the current conservative task policy. Narrower independent-branch continuation is a later policy requiring effect/read-write dependency proof; it is not assumed safe by this proposal.
+Preserve an accepted checkpoint where possible, but do not claim local rollback undoes a remote effect. Under the initial conservative policy, uncertain dispatch pauses all new ordinary automatic operations in the root and its descendants. Late receipt ingestion, containment cleanup and an explicitly authorized reconciliation path remain available. An untrusted dependency graph omitting an edge is not proof of independence. Narrower branch continuation is a later policy requiring trusted effect/read-write dependency proof; it is not assumed safe by this proposal.
 
 ## 5. Stopping controller
 
@@ -97,6 +97,10 @@ flowchart TD
 ```
 
 Execution ending, a child returning, a surface rendering and a model saying done are not completion predicates. Successful root completion requires all mandatory evidence in the current contract to pass its designated acceptance path, required output receipts, any designated review, and no relevant uncertain or still-active operation. Fail/unknown/invalidated mandatory evidence prevents verified completion.
+
+Completion across native control, canonical content and receipt owners needs an explicit linearization protocol, not just one writer per entity. The proposal is a short finalization fence: trusted control records intent; the canonical owner returns an immutable snapshot/version vector and fences affected canonical commits; trusted control checks matching contract/evidence/output/review versions and compare-and-sets the terminal record; owners then release the fence. Mutable acceptance, review and invalidation state resides in that native task-control aggregate and participates in the same compare-and-set. Receipts are immutable identities; correction/supersession creates a new identity and native invalidation, never an in-place update racing outside the aggregate. Any additional mutable owner must join the ordered fence/version protocol before its state may authorize completion.
+
+Do expensive checks before acquiring the short fence and revalidate their version vector within it. No cached permission or `current` flag substitutes for this handshake. If any version changed, abandon finalization and recheck; do not call stale evidence current. A crash leaves a recoverable finalization intent, and the canonical owner cannot silently expire a fence and accept writes until trusted recovery resolves the attempt. The exact public API, ordered fence acquisition, persistence and recovery need AR-02/03/05 proof. A separately proved immutable-snapshot protocol may replace this proposal, but must preserve the same ordering guarantees. Later canonical user actions become explicit continuations; UI drafts/local view changes do not take this fence. External source/service truth remains a dated observation, not a globally locked transaction; completion discloses that freshness scope.
 
 Optional branches cannot hold the task open indefinitely. Once mandatory work is accepted, cancel unnecessary branches, revoke their dispatch/commit authority and settle or record in-flight effects before terminal completion. Cancellation does not erase an already submitted remote operation.
 

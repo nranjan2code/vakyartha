@@ -127,7 +127,8 @@ Each folder holds `sessions/`, `integrations/`, `integrations.json`, `channels.j
 - [SKILL-AUTHORING.md](docs/SKILL-AUTHORING.md): start here for reusable skills, reports, dashboards, chart selection and visual/spoken composition; [SKILLS.md](docs/SKILLS.md) defines the lifecycle, and [SKILL-AUDIT.md](docs/SKILL-AUDIT.md) retains evidence.
 
 - [SPECS.md](docs/SPECS.md): what the app is, its framework dependency and identity.
-- [MVP-SPECS.md](docs/MVP-SPECS.md), [MVP-CHECKLIST.md](docs/MVP-CHECKLIST.md) and [ADR.md](docs/ADR.md): agent MVP implementation, preserved interactive surfaces, architecture decisions, progress gates and later scope.
+- [AGENT-TASKS.md](docs/AGENT-TASKS.md), [IMPLEMENTATION-STATUS.md](docs/IMPLEMENTATION-STATUS.md) and [ADR.md](docs/ADR.md): ongoing task requirements, preserved interactive surfaces, architecture decisions, verified progress and open acceptance gates.
+- [Agent runtime architecture](docs/agent-runtime/README.md): proposed single-agent/delegated execution, diagrams, drift/stopping, recovery, multi-job resources, QoS and observability.
 - [RELEASING.md](docs/RELEASING.md): releasing the app and updating Projection.
 - [EXTERNAL-CATALOGS.md](docs/EXTERNAL-CATALOGS.md): external discovery, review/import UX, lifecycle ownership, supported runtimes/authentication and verification.
 - [DATABRICKS.md](docs/DATABRICKS.md): workspace MCP endpoint/token setup, supported clouds, permissions, costs and verification limits.

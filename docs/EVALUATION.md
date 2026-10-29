@@ -1,5 +1,13 @@
 # Agent outcome evaluation
 
+## Agent runtime design documentation — 2026-10-29
+
+[Design package](agent-runtime/README.md) records proposed single-agent/delegated architecture, runtime authority, drift/stopping, QoS, aggregate multi-job resource admission/observability and independent acceptance gates, with fifteen Mermaid diagrams and dated primary-source references. It is a documentation artifact, not runtime or installed outcome evidence. AR-01–AR-09, L6 and ISO1–ISO8 remain open; original provider/source/value/interpretation/interaction/output failures are retained.
+
+The user-requested [Astra review and follow-up](agent-runtime/REVIEW-2026-10-29.md) found cancellation-dispatch wording, shared-process trust, uncertainty-pause, cross-owner finalization and storage-enforcement issues. Corrections were independently verified; the final reviewer reports no substantive documentation findings unresolved. Numerical limits, native ownership/API seams, effective quotas and outcome acceptance remain explicit gates.
+
+Documentation checks preserve all 123 previous checklist IDs/states, with nine added unchecked AR gates, and check local paths/anchors, retired filenames, Markdown fences, fifteen Mermaid entry points and `git diff --check`. No app/provider inference, runtime tests, installed verification or security gate was run. No diagram renderer/parser was added; fence/entry-point inspection is not rendered diagram validation. The task contract/status rename preserves failed evidence and historical checkpoints.
+
 ## Prompt cleanup installed delivery — 2026-10-29
 
 Clean remote source `4746d71` / Projection `d017a18` passes 259 app, 410 framework and 3 native tests plus typecheck and private IPC/canonical rendering/binary upload/FinOps/zero TCP listeners/parent cleanup. Fresh app tests initially lacked the hard-coded development helper; original failure is retained, and the unchanged full suite passes with the exact packaged helper supplied. Build and complete installed-tree/skill-update evidence is in [RELEASING.md](RELEASING.md#prompt-and-skill-cleanup--installed-2026-10-29). Native About and required Skills state pass. One free installed qwen3.5:4b-mlx smoke passes in 74.2 seconds: exactly one canonical card with visible title Prompt cleanup installation check and text Ready, preserved in native Canvas and persisted reopening. Post-launch bundle identity, zero engine TCP listeners and no new engine error markers pass. Previous model preference is restored without inference. No original failed outcome or isolation gate is closed by this bounded smoke.

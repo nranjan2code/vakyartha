@@ -41,6 +41,7 @@ const composerFoot = document.createElement("div");
 composerFoot.className = "composer-foot";
 $<HTMLFormElement>("composer").after(composerFoot);
 modelMenu(modelPick, composerFoot);
+fillPicker();
 const chatsNav = $<HTMLElement>("chats");
 
 let client: VakClient;
@@ -93,6 +94,8 @@ const workspacesPanel = new WorkspacesPanel();
 workspacesPanel.init({
   bar: $("chat-workspace-bar"),
   sidebar: $("projects-sidebar"),
+  getSession: () => session,
+  isTaskSession: (id) => tasksPanel.owns(id),
   onOpenChat: (id) => void openChat(id),
   onNewProjectChat: (projectId, folder) => void newProjectChat(projectId, folder),
   onRefresh: () => loadChats(),
@@ -333,11 +336,12 @@ function clearThread(): void {
 }
 
 function newChat(): void {
-  if (isSkillStudioOpen()) void closeSkillStudio();
+  if (isSkillStudioOpen()) void closeSkillStudio(false);
   tasksPanel.page.close();
   artifacts.close();
   appsPage.close();
   setTopNavActive("chats");
+  $("workspace").hidden = false;
   clearThread();
   session = crypto.randomUUID();
   attached = [];
@@ -347,17 +351,18 @@ function newChat(): void {
   watch(session);
   showEmpty();
   tasksPanel.selectionChanged();
-  void workspacesPanel.updateForSession("");
+  void workspacesPanel.updateForSession(session);
   for (const row of chatsNav.querySelectorAll(".chat")) row.setAttribute("aria-current", "false");
   input.focus();
 }
 
 async function newProjectChat(projectId: string, folder: string): Promise<void> {
-  if (isSkillStudioOpen()) void closeSkillStudio();
+  if (isSkillStudioOpen()) void closeSkillStudio(false);
   tasksPanel.page.close();
   artifacts.close();
   appsPage.close();
   setTopNavActive("chats");
+  $("workspace").hidden = false;
   clearThread();
   const newId = crypto.randomUUID();
   session = newId;
@@ -373,19 +378,20 @@ async function newProjectChat(projectId: string, folder: string): Promise<void> 
   showEmpty();
   tasksPanel.selectionChanged();
   void workspacesPanel.updateForSession(session);
-  await loadChats();
+  void loadChats();
   input.focus();
 }
 
 /** Redraw a saved conversation from its timeline and final surfaces. */
 async function openChat(id: string, keepLibrary = false, redraw = false): Promise<void> {
-  if (isSkillStudioOpen()) void closeSkillStudio();
+  if (isSkillStudioOpen()) void closeSkillStudio(false);
   tasksPanel.page.close();
   if (!keepLibrary) {
     artifacts.close();
     appsPage.close();
   }
   setTopNavActive("chats");
+  $("workspace").hidden = false;
   // Returning from a product page must retain live form elements and their controls.
   if (id === session && mounted.size && !redraw) { canvas.restore(); tasksPanel.selectionChanged(); return; }
   clearThread();
@@ -393,7 +399,18 @@ async function openChat(id: string, keepLibrary = false, redraw = false): Promis
   drafts.begin(session);
   prefs.set("session", id);
   void workspacesPanel.updateForSession(id);
-  const view = await api<SessionView>(`/api/sessions/${encodeURIComponent(id)}`);
+  let view: SessionView;
+  try {
+    view = await api<SessionView>(`/api/sessions/${encodeURIComponent(id)}`);
+  } catch (err) {
+    if (session !== id) return;
+    showEmpty();
+    updateSend();
+    tasksPanel.selectionChanged();
+    void loadChats();
+    input.focus();
+    return;
+  }
   if (session !== id) return;
   watch(id);
   for (const snap of view.surfaces) loadSnapshot(snap);
@@ -434,7 +451,7 @@ async function openChat(id: string, keepLibrary = false, redraw = false): Promis
   canvas.restore();
   tasksPanel.selectionChanged();
   thread.scrollTop = thread.scrollHeight;
-  await loadChats();
+  void loadChats();
   input.focus();
 }
 
@@ -1734,6 +1751,7 @@ window.addEventListener("unhandledrejection", (e) => report(`unhandled: ${String
 async function start(): Promise<void> {
   document.body.classList.toggle("notes", opt("notes") === "true");
   void setKeepRunning(opt("keep-running", "true") !== "false");
+  fillPicker();
   updateSend();
   try {
     setBackend(await connect());
@@ -1743,17 +1761,39 @@ async function start(): Promise<void> {
   }
   const { url, token } = engine();
   client = new VakClient(`${url}/api/chat`, undefined, { authorization: `Bearer ${token}` }, engineFetch);
-  try {
-    await loadProviders();
-    await loadLabels();
-    await tasksPanel.refresh();
-    await openChat(session);
-  } catch (err) {
-    showNotice("Could not reach the engine.", (err as Error).message);
-    return;
-  }
-  // First run with nothing usable: Settings is the only next step.
-  if (!current.model) void openSettings(providers.some((p) => p.available && !p.local) ? "models" : "providers");
+
+  // 1. Initial view: render chat and sidebar immediately in parallel
+  const hasSavedSession = Boolean(prefs.get("session") || new URLSearchParams(location.search).get("session"));
+  const chatPromise = (hasSavedSession
+    ? openChat(session)
+    : Promise.resolve().then(() => {
+        $("workspace").hidden = false;
+        showEmpty();
+        void workspacesPanel.updateForSession(session);
+      })
+  ).catch((err) => {
+    report(`initial chat load: ${(err as Error).message}`);
+    showEmpty();
+  });
+
+  const chatsPromise = loadChats().catch((err) => {
+    report(`initial loadChats: ${(err as Error).message}`);
+  });
+
+  // 2. Load providers, labels, and tasks concurrently in background without blocking initial paint
+  const providersPromise = loadProviders().catch((err) => {
+    report(`loadProviders: ${(err as Error).message}`);
+  });
+  const labelsPromise = loadLabels().catch(() => {});
+  const tasksPromise = tasksPanel.refresh().catch(() => {});
+
+  await Promise.all([chatPromise, chatsPromise]);
+
+  void providersPromise.then(() => {
+    if (!current.model) {
+      void openSettings(providers.some((p) => p.available && !p.local) ? "models" : "providers");
+    }
+  });
 }
 
 void start();

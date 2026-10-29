@@ -9,11 +9,18 @@ The design applies to one agent first. Delegation is an optional extension of th
 | Document | Question it answers |
 | --- | --- |
 | [Architecture](ARCHITECTURE.md) | What owns decisions, authority, state and execution? What remains inside each repository? |
+| [Rust-first implementation design](IMPLEMENTATION-DESIGN.md) | Which concrete modules, protocols, state transitions and persistence boundaries implement the architecture? |
+| [Root corrections](ROOT-CORRECTIONS.md) | Which inspected control paths must be replaced or removed instead of wrapped in compatibility layers? |
+| [Data identity and storage](DATA-AND-STORAGE.md) | What exists in source, where is data stored, and how are projects, folders, bindings and working copies identified? |
+| [Information architecture](INFORMATION-ARCHITECTURE.md) | How do Chats, Projects, Work, Artifacts, Apps, Studio and Settings fit together without confusing navigation with authority? |
+| [Implementation delivery plan](DELIVERY-PLAN.md) | In which vertical slices do we replace the old path, and what proves each slice? |
 | [Delegation and runtime contracts](DELEGATION-AND-CONTRACTS.md) | When is another agent justified, and how does admission enforce its boundaries? |
 | [Drift, evidence and stopping](DRIFT-AND-COMPLETION.md) | How do we detect divergence, recover, and distinguish stopping from success? |
 | [Operations, governance and QoS](OPERATIONS-AND-QOS.md) | How do scheduling, accounting, cancellation, restart, privacy and service objectives work? |
+| [Multiple jobs, resources and observability](SCALE-AND-OBSERVABILITY.md) | How do all jobs share finite machine capacity, remain fair under load, and expose system/job health? |
 | [Validation and rollout](VALIDATION-AND-ROLLOUT.md) | What must be decided, implemented and independently proved before enabling this design? |
 | [Research basis](RESEARCH.md) | Which external observations informed the proposal, and what do they not prove? |
+| [Independent review](REVIEW-2026-10-29.md) | What did Astra find, what was corrected, and what proof remains open? |
 
 ## End-to-end view
 
@@ -50,7 +57,7 @@ Source inspection is not a claim of installed behavior or end-to-end security. N
 
 ## Governing contracts
 
-- [Working rules](../../AGENTS.md), [current app](../SPECS.md), [MVP scope](../MVP-SPECS.md) and [implementation tracker](../MVP-CHECKLIST.md).
+- [Working rules](../../AGENTS.md), [current app](../SPECS.md), [task contract](../AGENT-TASKS.md) and [implementation tracker](../IMPLEMENTATION-STATUS.md).
 - [ADR-044](../ADR.md#adr-044-desktop-engine-uses-private-parent-pipes-2026-10-27), [ADR-050](../ADR.md#adr-050-minimal-trusted-broker-and-required-system-isolation-2026-10-29) and [ADR-052](../ADR.md#adr-052-indestructible-rust-engine-and-minimal-trusted-broker-architecture-2026-10-29).
 - [Required isolation](../sandbox/SYSTEM-ISOLATION.md), [workspace lifecycle](../sandbox/FOLDER-WORKSPACES.md), [skill authoring](../SKILL-AUTHORING.md), [skill loading](../SKILLS.md) and [Canvas](../CANVAS.md).
 - [Handover](../HANDOVER.md) and [evaluation](../EVALUATION.md) own implementation and outcome evidence. This directory owns the proposed design, not a duplicate evidence log.

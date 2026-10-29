@@ -31,8 +31,8 @@ This directory contains the comprehensive technical architecture specification f
 - [`src/placement.ts`](../../src/placement.ts): Sizing thresholds and automatic thread vs. canvas placement engine.
 - [`src/app.css`](../../src/app.css): Application design tokens, theme palette series (`--vak-series-1..6`), and the `--vak-font-size: var(--base)` responsive bridge.
 - [`src/voice/read-aloud.ts`](../../src/voice/read-aloud.ts): Spoken voice projection, KPI narration, and speech synthesizer.
-- [`src-tauri/src/canvas.rs`](../../src-tauri/src/canvas.rs): Native sandboxed Markdown canvas export (`save_canvas`).
-- [`sidecar/surface-store.ts`](../../sidecar/surface-store.ts): Canonical in-memory surface state owner and session persistence writer.
+- [`src-tauri/src/lib.rs`](../../src-tauri/src/lib.rs): Native Markdown canvas export (`save_canvas`).
+- [`framework/packages/core/src/surface.ts`](../../framework/packages/core/src/surface.ts): Canonical in-memory `SurfaceStore`; framework host/session ownership governs persistence, not a separate app surface store.
 
 ### 3. Automated Verification Suites
 - [`scripts/canvas-check.ts`](../../scripts/canvas-check.ts): WebKit smoke check validating 14 interactive canvas steps across desktop (1100px) and mobile (620px) viewports.

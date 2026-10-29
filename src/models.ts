@@ -10,7 +10,9 @@ export let providers: ProviderInfo[] = [];
 export const modelsOf = new Map<string, string[]>();
 /** Why a provider could not list models (Ollama not running, a bad key). */
 export const modelErrors = new Map<string, string>();
-export const current = { provider: prefs.get("provider") ?? "", model: "" };
+const initialProvider = prefs.get("provider") ?? "";
+const initialModel = initialProvider ? (prefs.get(`model:${initialProvider}`) ?? "") : "";
+export const current = { provider: initialProvider, model: initialModel };
 
 const RECENT_MAX = 8;
 export function recent(): [string, string][] {

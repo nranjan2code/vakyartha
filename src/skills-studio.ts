@@ -40,7 +40,7 @@ export function isSkillStudioOpen(): boolean {
   return document.body.classList.contains("in-skill-studio");
 }
 
-export async function closeSkillStudio(): Promise<void> {
+export async function closeSkillStudio(showWorkspace = true): Promise<void> {
   const root = document.getElementById("skills-studio-page");
   if (root) {
     root.hidden = true;
@@ -51,6 +51,12 @@ export async function closeSkillStudio(): Promise<void> {
       await flushPendingAutoSave();
     } catch {
       // flush error is non-blocking
+    }
+  }
+  if (showWorkspace) {
+    const workspaceEl = document.getElementById("workspace");
+    if (workspaceEl && !document.body.classList.contains("in-artifacts") && !document.body.classList.contains("in-settings")) {
+      workspaceEl.hidden = false;
     }
   }
   window.dispatchEvent(new Event("vak:studio-closed"));
