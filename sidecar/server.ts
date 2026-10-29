@@ -1209,6 +1209,25 @@ ${skills.index()}`;
         return true;
       }
 
+      if (p === "/api/workspaces/pick-folder" && req.method === "POST") {
+        if (process.platform === "darwin") {
+          try {
+            const { execFile } = await import("node:child_process");
+            const { promisify } = await import("node:util");
+            const run = promisify(execFile);
+            const { stdout } = await run("osascript", ["-e", 'POSIX path of (choose folder with prompt "Select Project Folder")']);
+            const folder = stdout.trim().replace(/\/+$/, "");
+            json(res, 200, { ok: true, folder: folder || null });
+            return true;
+          } catch {
+            json(res, 200, { ok: true, folder: null });
+            return true;
+          }
+        }
+        json(res, 200, { ok: true, folder: null });
+        return true;
+      }
+
       json(res, 404, { error: "Unknown workspace route" });
       return true;
     } catch (err) {

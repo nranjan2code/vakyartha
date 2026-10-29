@@ -2201,15 +2201,18 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 }
 
 /* Folder workspaces and project chats */
-.chat-workspace-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 24px 8px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); font-size: .84rem; min-height: 38px; box-sizing: border-box; }
-.workspace-info { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
-.workspace-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .86rem; font-weight: 600; }
-.workspace-mode-pill { font-size: .72rem; padding: 2px 7px; border-radius: 12px; background: var(--hover); color: var(--muted); white-space: nowrap; flex: none; }
-.workspace-actions { display: flex; align-items: center; gap: 6px; flex: none; }
-.workspace-admit-btn { display: inline-flex; align-items: center; gap: 6px; font-size: .84rem; color: var(--muted); cursor: pointer; padding: 4px 8px; border-radius: 6px; border: 0; background: none; }
+.chat-workspace-bar { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: calc(100% - 150px); margin: 0; padding: 0; border: 0; background: transparent; font-size: .8rem; box-sizing: border-box; }
+.chat-workspace-bar[hidden] { display: none !important; }
+.workspace-info { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; padding: 2px 8px; border-radius: 8px; background: var(--hover); color: var(--fg); font-size: .8rem; }
+.workspace-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .82rem; font-weight: 600; max-width: 130px; }
+.workspace-mode-pill { font-size: .68rem; padding: 1px 6px; border-radius: 10px; background: color-mix(in srgb, var(--border) 50%, transparent); color: var(--muted); white-space: nowrap; flex: none; font-weight: 500; }
+.workspace-actions { display: inline-flex; align-items: center; gap: 3px; flex: none; }
+.workspace-admit-btn { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); cursor: pointer; padding: 4px 8px; border-radius: 8px; border: 0; background: transparent; transition: all 120ms ease; white-space: nowrap; }
 .workspace-admit-btn:hover { color: var(--fg); background: var(--hover); }
-.workspace-review-btn { display: inline-flex; align-items: center; gap: 5px; font-size: .78rem; padding: 3px 8px; }
-.workspace-btn { width: 26px; height: 26px; }
+.workspace-review-btn { display: inline-flex; align-items: center; gap: 4px; font-size: .75rem; padding: 2px 7px; height: 24px; border-radius: 6px; }
+.workspace-btn { width: 24px; height: 24px; padding: 0; border-radius: 6px; border: 0; background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+.workspace-btn:hover { background: var(--hover); color: var(--fg); }
+.workspace-browse-btn { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; height: 36px; padding: 0 12px; border-radius: 8px; flex: none; }
 .projects-sidebar { padding: 4px 10px 8px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
 .projects-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 4px 4px; font-size: .74rem; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
 .projects-add-btn { width: 22px; height: 22px; cursor: pointer; }

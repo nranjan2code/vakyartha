@@ -107,3 +107,21 @@ export async function checkEgress(destination: string | URL, customHosts?: strin
   const port = parsed.port ? Number(parsed.port) : undefined;
   return await invoke<boolean>("check_egress_endpoint", { scheme, host, port, customHosts });
 }
+
+/** Open native folder picker dialog and return selected path, or null if cancelled. */
+export async function pickFolder(): Promise<string | null> {
+  if (inTauri) {
+    try {
+      const res = await invoke<string | null>("pick_folder");
+      return res ? res.replace(/\/+$/, "") : null;
+    } catch (e) {
+      console.warn("Native folder picker invocation failed:", e);
+    }
+  }
+  try {
+    const res = await (await fetch("/api/workspaces/pick-folder", { method: "POST" })).json() as { ok: boolean; folder: string | null };
+    return res.folder ? res.folder.replace(/\/+$/, "") : null;
+  } catch {
+    return null;
+  }
+}

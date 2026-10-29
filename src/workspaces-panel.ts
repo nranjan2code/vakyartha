@@ -1,6 +1,7 @@
 import { api, ask, el, $ } from "./core.ts";
 import { icon } from "./icons.ts";
 import { pill } from "./ui.ts";
+import { pickFolder } from "./backend.ts";
 
 export interface Project {
   id: string;
@@ -143,20 +144,20 @@ export class WorkspacesPanel {
     const b = this.currentBinding;
     const folderName = b.folder.split(/[\\/]/).filter(Boolean).pop() || b.folder;
 
-    let modeText = "isolated copy · review & apply";
+    let modeText = "copy";
     let modeClass = "workspace-mode-pill";
     if (b.mode === "direct") {
-      modeText = "direct · in-place";
+      modeText = "direct";
       modeClass = "workspace-mode-pill direct";
     } else if (b.shared) {
-      modeText = "shared copy · review & apply";
+      modeText = "shared";
       modeClass = "workspace-mode-pill shared";
     }
 
     const folderBadge = el(
       "div",
-      { className: "workspace-info", title: `Canonical path: ${b.folder} (rev ${b.revision})` },
-      icon("folder", 16),
+      { className: "workspace-info", title: `Canonical path: ${b.folder} (rev ${b.revision}) · ${b.mode === "direct" ? "Direct in-place" : "Isolated copy"}` },
+      icon("folder", 14),
       el("strong", { className: "workspace-name", textContent: folderName }),
       el("span", { className: modeClass, textContent: modeText }),
     );
@@ -180,7 +181,7 @@ export class WorkspacesPanel {
             className: "primary small workspace-review-btn",
             title: "Inspect modified candidate files and apply them to the project folder",
           },
-          icon("check", 14),
+          icon("check", 12),
           el("span", { textContent: `${review.total} change${review.total === 1 ? "" : "s"}` }),
         );
         reviewBtn.addEventListener("click", () => void this.showReviewDrawer(review!));
@@ -195,7 +196,7 @@ export class WorkspacesPanel {
         className: "icon-btn workspace-btn",
         title: "Refresh working copy from original project folder",
       },
-      icon("refresh", 15),
+      icon("refresh", 13),
     );
     refreshBtn.addEventListener("click", async () => {
       try {
@@ -230,7 +231,7 @@ export class WorkspacesPanel {
         className: "icon-btn workspace-btn",
         title: "Disconnect folder workspace from this chat",
       },
-      icon("close", 15),
+      icon("close", 13),
     );
     unbindBtn.addEventListener("click", async () => {
       if (await ask("Disconnect folder workspace from this chat? The original folder is not affected.", "Disconnect")) {
@@ -363,9 +364,20 @@ export class WorkspacesPanel {
     const input = el("input", {
       type: "text",
       placeholder: "/Users/name/Projects/my-app",
-      className: "workspace-input",
+      className: "workspace-input flex-1",
       "aria-label": "Absolute folder path",
     });
+    const browseBtn = el(
+      "button",
+      {
+        type: "button",
+        className: "ghost small workspace-browse-btn",
+        title: "Choose folder in Finder",
+      },
+      icon("folder", 14),
+      el("span", { textContent: "Choose…" }),
+    );
+    const folderField = el("div", { className: "field-line" }, input, browseBtn);
     const probeFeedback = el("div", { className: "probe-feedback row-hint" });
     const admitBtn = el("button", { type: "submit", className: "primary", disabled: true, textContent: "Admit to Chat" });
     const cancelBtn = el("button", { type: "button", className: "ghost", textContent: "Cancel" });
@@ -396,6 +408,14 @@ export class WorkspacesPanel {
       }
     };
 
+    browseBtn.addEventListener("click", async () => {
+      const chosen = await pickFolder();
+      if (chosen) {
+        input.value = chosen;
+        await probe();
+      }
+    });
+
     input.addEventListener("input", () => { void probe(); });
 
     cancelBtn.addEventListener("click", () => dialog.close());
@@ -412,7 +432,7 @@ export class WorkspacesPanel {
       { method: "dialog", className: "workspace-form" },
       el("h3", { textContent: "Work in folder" }),
       el("p", { className: "row-hint", textContent: "Admit an accessible local project folder. Commands and edits operate within macOS Seatbelt isolation." }),
-      input,
+      folderField,
       modeSelect,
       probeFeedback,
       el("div", { className: "row-actions" }, cancelBtn, admitBtn),
@@ -445,7 +465,18 @@ export class WorkspacesPanel {
   private async showNewProjectDialog(): Promise<void> {
     const dialog = el("dialog", { className: "workspace-modal" });
     const nameInput = el("input", { type: "text", placeholder: "Project name", className: "workspace-input" });
-    const folderInput = el("input", { type: "text", placeholder: "/path/to/folder", className: "workspace-input" });
+    const folderInput = el("input", { type: "text", placeholder: "/path/to/folder", className: "workspace-input flex-1" });
+    const browseBtn = el(
+      "button",
+      {
+        type: "button",
+        className: "ghost small workspace-browse-btn",
+        title: "Choose folder in Finder",
+      },
+      icon("folder", 14),
+      el("span", { textContent: "Choose…" }),
+    );
+    const folderField = el("div", { className: "field-line" }, folderInput, browseBtn);
     const probeFeedback = el("div", { className: "probe-feedback row-hint" });
     const createBtn = el("button", { type: "submit", className: "primary", disabled: true, textContent: "Create Project" });
     const cancelBtn = el("button", { type: "button", className: "ghost", textContent: "Cancel" });
@@ -473,6 +504,18 @@ export class WorkspacesPanel {
       }
     };
 
+    browseBtn.addEventListener("click", async () => {
+      const chosen = await pickFolder();
+      if (chosen) {
+        folderInput.value = chosen;
+        if (!nameInput.value.trim()) {
+          const parts = chosen.split(/[\\/]/).filter(Boolean);
+          if (parts.length > 0) nameInput.value = parts[parts.length - 1]!;
+        }
+        await probe();
+      }
+    });
+
     nameInput.addEventListener("input", () => { createBtn.disabled = !nameInput.value.trim() || !admittedPath; });
     folderInput.addEventListener("input", () => { void probe(); });
     cancelBtn.addEventListener("click", () => dialog.close());
@@ -491,7 +534,7 @@ export class WorkspacesPanel {
       el("h3", { textContent: "New Project" }),
       el("p", { className: "row-hint", textContent: "Group chats around an admitted project directory." }),
       nameInput,
-      folderInput,
+      folderField,
       shareLabel,
       probeFeedback,
       el("div", { className: "row-actions" }, cancelBtn, createBtn),

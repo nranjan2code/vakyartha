@@ -49,7 +49,6 @@
         <div class="drag" data-tauri-drag-region>
           <button type="button" class="icon-btn" id="expand" title="Show sidebar (⌘\)" aria-label="Show sidebar"></button>
         </div>
-        <div id="chat-workspace-bar" class="chat-workspace-bar" aria-label="Folder workspace" hidden></div>
         <section id="task-bar" class="task-bar" aria-label="Current task" hidden></section>
         <p id="task-error" class="task-error" role="alert" hidden></p>
         <main id="thread" class="thread" aria-live="polite"></main>
@@ -57,6 +56,7 @@
         <form id="composer" class="composer">
           <textarea id="input" rows="1" placeholder="Ask for anything" aria-label="Message"></textarea>
           <div class="composer-row">
+            <div id="chat-workspace-bar" class="chat-workspace-bar" aria-label="Folder workspace" hidden></div>
             <select id="model-pick" class="model-pick" aria-label="Model" title="Model"></select>
             <div class="composer-actions">
               <span id="mic-time" class="mic-time" hidden></span>

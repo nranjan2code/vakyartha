@@ -92,6 +92,67 @@ fn check_egress_endpoint(window: tauri::WebviewWindow, scheme: String, host: Str
     }
 }
 
+/// Native folder picker dialog.
+#[tauri::command]
+fn pick_folder(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+    engine::main_window(&window)?;
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("osascript")
+            .arg("-e")
+            .arg("POSIX path of (choose folder with prompt \"Select Project Folder\")")
+            .output()
+            .map_err(|e| format!("failed to launch folder chooser: {e}"))?;
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                let clean = path.strip_suffix('/').unwrap_or(&path).to_string();
+                return Ok(Some(clean));
+            }
+        }
+        Ok(None)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let output = Command::new("zenity")
+            .arg("--file-selection")
+            .arg("--directory")
+            .output();
+        if let Ok(out) = output {
+            if out.status.success() {
+                let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !path.is_empty() {
+                    let clean = path.strip_suffix('/').unwrap_or(&path).to_string();
+                    return Ok(Some(clean));
+                }
+            }
+        }
+        Ok(None)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let output = Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg("& { Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; if ($f.ShowDialog() -eq 'OK') { $f.SelectedPath } }")
+            .output();
+        if let Ok(out) = output {
+            if out.status.success() {
+                let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !path.is_empty() {
+                    let clean = path.strip_suffix('/').unwrap_or(&path).to_string();
+                    return Ok(Some(clean));
+                }
+            }
+        }
+        Ok(None)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        Ok(None)
+    }
+}
+
 /// The private desktop transport identifier; the webview asks once at start.
 #[tauri::command]
 fn backend(state: tauri::State<Sidecar>) -> Result<Backend, String> {
@@ -337,7 +398,8 @@ pub fn run() {
             vault_get,
             vault_set,
             vault_delete,
-            check_egress_endpoint
+            check_egress_endpoint,
+            pick_folder
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {

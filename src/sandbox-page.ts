@@ -3,7 +3,7 @@ import { api, el } from "./core.ts";
 import { icon } from "./icons.ts";
 import { group, pill, row, title, toggle } from "./ui.ts";
 import { realmSettings } from "./sandbox-realms-page.ts";
-import { checkEgress } from "./backend.ts";
+import { checkEgress, pickFolder } from "./backend.ts";
 import type { SandboxStatus } from "../shared/sandbox.ts";
 
 export async function sandboxPage(openIntegration: () => void, openSkill: () => void): Promise<HTMLElement[]> {
@@ -15,7 +15,17 @@ export async function sandboxPage(openIntegration: () => void, openSkill: () => 
   const button = (label: string, action: () => void, primary = false) => el("button", { type: "button", className: `${primary ? "primary" : "ghost"} small`, textContent: label, onclick: action });
   const health = el("div", { className: "sandbox-health", role: "status" });
   const helperDetails = el("div");
-  const workspace = el("input", { id: "sandbox-workspace", type: "text", value: saved, placeholder: "/Users/you/Projects/example", spellcheck: false, autocomplete: "off", "aria-describedby": "sandbox-workspace-hint" });
+  const workspace = el("input", { id: "sandbox-workspace", type: "text", value: saved, placeholder: "/Users/you/Projects/example", spellcheck: false, autocomplete: "off", "aria-describedby": "sandbox-workspace-hint", className: "flex-1" });
+  const browseBtn = el("button", { type: "button", className: "ghost small workspace-browse-btn", title: "Choose folder in Finder" }, icon("folder", 14), el("span", { textContent: "Choose…" }));
+  browseBtn.addEventListener("click", async () => {
+    const chosen = await pickFolder();
+    if (chosen) {
+      workspace.value = chosen;
+      workspace.removeAttribute("aria-invalid");
+      updateDraft();
+    }
+  });
+  const workspaceField = el("div", { className: "field-line" }, workspace, browseBtn);
   const save = el("button", { type: "submit", className: "primary small", textContent: "Save folder", disabled: true });
   const reset = button("Discard", () => { workspace.value = saved; workspace.removeAttribute("aria-invalid"); updateDraft(); });
   const updateDraft = () => { save.disabled = workspace.value.trim() === saved; reset.hidden = save.disabled; };
@@ -24,7 +34,7 @@ export async function sandboxPage(openIntegration: () => void, openSkill: () => 
   const form = el("form", { className: "sandbox-workspace-form" },
     el("label", { htmlFor: "sandbox-workspace", className: "row-label", textContent: "Project folder" }),
     el("p", { id: "sandbox-workspace-hint", className: "row-hint", textContent: "Use an absolute path to one project. One-shot runs use a fresh copy; Realms keep a separate copy across commands." }),
-    workspace, el("div", { className: "row-actions" }, save, reset));
+    workspaceField, el("div", { className: "row-actions" }, save, reset));
   form.addEventListener("submit", async event => {
     event.preventDefault();
     const value = workspace.value.trim();

@@ -8,6 +8,7 @@ import { externalCatalogs } from "./marketplaces-page.ts";
 import { api, ask, el } from "./core.ts";
 import { icon, tile } from "./icons.ts";
 import { group, pill, row, segmented, title, toggle } from "./ui.ts";
+import { pickFolder } from "./backend.ts";
 import { isMediaKind } from "../shared/media.ts";
 import { mediaResults, mediaSetup } from "./media-page.ts";
 
@@ -210,7 +211,19 @@ export async function integrationPage(id: string, back: () => void, reload: () =
           const input = f.kind === "folders" ? el("textarea", { rows: 3, value, placeholder: "/Users/you/Documents/Project", spellcheck: false }) : el("input", { type: "text", value });
           const save = el("button", { type: "button", className: "primary small", textContent: "Save" });
           save.addEventListener("click", () => void act(() => put({ config: { [f.key]: input.value } }), save));
-          return el("div", { className: "row stack" }, el("div", { className: "field-label", textContent: f.label }), input, el("div", { className: "row-actions" }, save), f.help ? el("p", { className: "row-hint", textContent: f.help }) : null);
+          const rowActions = [save];
+          if (f.kind === "folders") {
+            const browse = el("button", { type: "button", className: "ghost small workspace-browse-btn", title: "Choose folder in Finder" }, icon("folder", 14), el("span", { textContent: "Choose Folder…" }));
+            browse.addEventListener("click", async () => {
+              const chosen = await pickFolder();
+              if (chosen) {
+                const current = (input as HTMLTextAreaElement).value.trim();
+                (input as HTMLTextAreaElement).value = current ? `${current}\n${chosen}` : chosen;
+              }
+            });
+            rowActions.unshift(browse);
+          }
+          return el("div", { className: "row stack" }, el("div", { className: "field-label", textContent: f.label }), input, el("div", { className: "row-actions" }, ...rowActions), f.help ? el("p", { className: "row-hint", textContent: f.help }) : null);
         }),
       )
     : null;
