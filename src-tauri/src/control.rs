@@ -252,6 +252,42 @@ impl CapacityLedger {
         self.active.get(&id).cloned()
     }
 
+    fn workspace_grant_is_current(&self, fixed: &WorkspaceGrant) -> bool {
+        self.registry
+            .grant(&fixed.session_id, fixed.binding_revision)
+            .is_ok_and(|current| &current == fixed)
+    }
+
+    fn invalidate_queued_children_for_session(
+        &mut self,
+        session_id: &str,
+    ) -> Result<(), ControlError> {
+        let affected: Vec<_> = self
+            .roots
+            .iter()
+            .filter(|(_, root)| {
+                root.workspace_grant()
+                    .is_some_and(|grant| grant.session_id == session_id)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for root_id in affected {
+            let lease_ids = self
+                .roots
+                .get_mut(&root_id)
+                .ok_or(ControlError::Admission(AdmissionError::RootNotFound))?
+                .invalidate_queued_children()
+                .map_err(ControlError::TaskState)?;
+            for lease_id in lease_ids {
+                let lease = self
+                    .active_lease(lease_id)
+                    .ok_or(ControlError::Admission(AdmissionError::UnknownLease))?;
+                self.release(&lease).map_err(ControlError::Admission)?;
+            }
+        }
+        Ok(())
+    }
+
     fn snapshot(&self) -> LedgerSnapshot {
         let mut issued: Vec<_> = self.issued.values().cloned().collect();
         issued.sort_by_key(|lease| lease.id);
@@ -1095,6 +1131,15 @@ fn actor_loop(
                         continue;
                     }
                 };
+                if root
+                    .workspace_grant()
+                    .is_some_and(|grant| !ledger.workspace_grant_is_current(grant))
+                {
+                    let _ = reply.send(Err(ControlError::TaskState(
+                        StateError::WorkspaceGrantStale,
+                    )));
+                    continue;
+                }
                 if new_count == 0 {
                     let root = ledger.roots.get_mut(&root_id).expect("root checked above");
                     let result = root.admit_children(expected_revision, proposals, &[]);
@@ -1178,46 +1223,47 @@ fn actor_loop(
                     } else {
                         Vec::new()
                     };
-                    let changed = match mutation {
-                        RootMutation::StartAttempt => {
-                            if root.revision() != expected_revision {
-                                root.start_attempt(expected_revision)
-                            } else if root.workspace_grant().is_some_and(|fixed| {
-                                candidate
-                                    .registry
-                                    .grant(&fixed.session_id, fixed.binding_revision)
-                                    .map_or(true, |current| &current != fixed)
-                            }) {
-                                Err(StateError::WorkspaceGrantStale)
-                            } else {
-                                root.start_attempt(expected_revision)
+                    let workspace_stale = root.workspace_grant().is_some_and(|fixed| {
+                        candidate
+                            .registry
+                            .grant(&fixed.session_id, fixed.binding_revision)
+                            .map_or(true, |current| &current != fixed)
+                    });
+                    let changed = if root.revision() != expected_revision {
+                        Err(StateError::RevisionConflict)
+                    } else if workspace_stale && !matches!(&mutation, RootMutation::Stop { .. }) {
+                        Err(StateError::WorkspaceGrantStale)
+                    } else {
+                        match mutation {
+                            RootMutation::StartAttempt => root.start_attempt(expected_revision),
+                            RootMutation::WaitForInput => root.wait_for_input(expected_revision),
+                            RootMutation::WaitForApproval => {
+                                root.wait_for_approval(expected_revision)
                             }
-                        }
-                        RootMutation::WaitForInput => root.wait_for_input(expected_revision),
-                        RootMutation::WaitForApproval => root.wait_for_approval(expected_revision),
-                        RootMutation::Stop {
-                            status,
-                            cause,
-                            reason,
-                        } => root.stop(expected_revision, status, cause, reason),
-                        RootMutation::ReviseContract { goal, criteria } => {
-                            root.revise_contract(expected_revision, goal, criteria)
-                        }
-                        RootMutation::RecordCheck {
-                            contract_revision,
-                            requirement_id,
-                            outcome,
-                            receipt,
-                        } => root.record_check(
-                            expected_revision,
-                            contract_revision,
-                            &requirement_id,
-                            outcome,
-                            receipt,
-                        ),
-                        RootMutation::RequestReview => root.request_review(expected_revision),
-                        RootMutation::AcceptReview(review) => {
-                            root.accept_review(expected_revision, review)
+                            RootMutation::Stop {
+                                status,
+                                cause,
+                                reason,
+                            } => root.stop(expected_revision, status, cause, reason),
+                            RootMutation::ReviseContract { goal, criteria } => {
+                                root.revise_contract(expected_revision, goal, criteria)
+                            }
+                            RootMutation::RecordCheck {
+                                contract_revision,
+                                requirement_id,
+                                outcome,
+                                receipt,
+                            } => root.record_check(
+                                expected_revision,
+                                contract_revision,
+                                &requirement_id,
+                                outcome,
+                                receipt,
+                            ),
+                            RootMutation::RequestReview => root.request_review(expected_revision),
+                            RootMutation::AcceptReview(review) => {
+                                root.accept_review(expected_revision, review)
+                            }
                         }
                     };
                     (changed, queued)
@@ -1418,6 +1464,10 @@ fn actor_loop(
                         continue;
                     }
                 };
+                if let Err(error) = candidate.invalidate_queued_children_for_session(&session_id) {
+                    let _ = reply.send(Err(error));
+                    continue;
+                }
                 match store.persist(&candidate, &profile) {
                     Ok(_) => {
                         ledger = candidate;
@@ -1451,6 +1501,10 @@ fn actor_loop(
                         continue;
                     }
                 };
+                if let Err(error) = candidate.invalidate_queued_children_for_session(&session_id) {
+                    let _ = reply.send(Err(error));
+                    continue;
+                }
                 match store.persist(&candidate, &profile) {
                     Ok(_) => {
                         ledger = candidate;
@@ -1907,6 +1961,65 @@ mod tests {
             writes: vec![write.into()],
             benefit: delegation::ClaimedBenefit::IndependentJudgment,
         }
+    }
+
+    fn workspace_root(
+        handle: &ControlHandle,
+        id: &str,
+        session_id: &str,
+        binding_revision: u64,
+    ) -> RootTask {
+        handle
+            .create_root_in_workspace(
+                RootCreate {
+                    id: id.into(),
+                    goal: "Inspect the fixed workspace".into(),
+                    criteria: "Return supported findings".into(),
+                    run_limit: 2,
+                    requirements: vec![
+                        Requirement::new(format!("requirement-{id}"), true).unwrap(),
+                    ],
+                    delegation: DelegationPolicy::new(
+                        delegation::DelegationMode::BoundedAdaptive,
+                        4,
+                    )
+                    .unwrap(),
+                },
+                session_id.into(),
+                binding_revision,
+            )
+            .unwrap()
+    }
+
+    fn start_with_two_children(
+        handle: &ControlHandle,
+        root: RootTask,
+        identity_prefix: &str,
+    ) -> RootTask {
+        let running = handle
+            .mutate_root(
+                root.id().into(),
+                root.revision(),
+                RootMutation::StartAttempt,
+            )
+            .unwrap();
+        handle
+            .admit_children(
+                running.id().into(),
+                running.revision(),
+                vec![
+                    child_proposal(
+                        &format!("{identity_prefix}-a"),
+                        &format!("{identity_prefix}-write-a"),
+                    ),
+                    child_proposal(
+                        &format!("{identity_prefix}-b"),
+                        &format!("{identity_prefix}-write-b"),
+                    ),
+                ],
+            )
+            .unwrap();
+        handle.read_root(running.id().into()).unwrap()
     }
 
     fn ask(resource: Resource, amount: u32) -> BTreeMap<Resource, u32> {
@@ -2800,6 +2913,14 @@ mod tests {
             Err(ControlError::TaskState(StateError::WorkspaceGrantStale))
         );
         assert_eq!(
+            restarted_handle.mutate_root(
+                persisted_root.id().into(),
+                persisted_root.revision(),
+                RootMutation::RequestReview,
+            ),
+            Err(ControlError::TaskState(StateError::WorkspaceGrantStale))
+        );
+        assert_eq!(
             restarted_handle.read_workspace_grant(revoked.session_id().into(), revoked.revision()),
             Err(ControlError::Registry(RegistryError::RevisionConflict))
         );
@@ -2807,6 +2928,124 @@ mod tests {
         drop(restarted);
         fs::remove_dir_all(second_source).unwrap();
         fs::remove_dir_all(source).unwrap();
+        fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
+    fn workspace_rebind_and_revoke_atomically_invalidate_queued_children_and_release_capacity() {
+        let data = temp_data_dir();
+        let first_source = temp_data_dir();
+        let second_source = temp_data_dir();
+        fs::create_dir(&first_source).unwrap();
+        fs::create_dir(&second_source).unwrap();
+        let timeout = Duration::from_secs(2);
+        let profile = profile_with_queued_children(2);
+        let actor = ControlActor::open(&data, "profile-1", profile, 16, timeout).unwrap();
+        let handle = actor.handle();
+        let first = handle
+            .register_workspace("workspace-rebind-a".into(), first_source.clone())
+            .unwrap();
+        let second = handle
+            .register_workspace("workspace-rebind-b".into(), second_source.clone())
+            .unwrap();
+        let binding = handle
+            .bind_workspace(
+                "binding-rebind".into(),
+                "session-rebind".into(),
+                first.id().into(),
+                None,
+                WorkspaceMode::CopyReview,
+            )
+            .unwrap();
+
+        let first_root = start_with_two_children(
+            &handle,
+            workspace_root(
+                &handle,
+                "root-rebind-a",
+                "session-rebind",
+                binding.revision(),
+            ),
+            "first-child",
+        );
+        let rebound = handle
+            .rebind_workspace(
+                binding.session_id().into(),
+                binding.revision(),
+                second.id().into(),
+                None,
+                WorkspaceMode::CopyReview,
+            )
+            .unwrap();
+        let invalidated_first = handle.read_root(first_root.id().into()).unwrap();
+        assert!(
+            invalidated_first
+                .children()
+                .values()
+                .all(|child| child.status() == state::ChildStatus::Invalidated)
+        );
+        assert_eq!(
+            handle.admit_children(
+                invalidated_first.id().into(),
+                invalidated_first.revision(),
+                vec![
+                    child_proposal("stale-child-a", "stale-write-a"),
+                    child_proposal("stale-child-b", "stale-write-b"),
+                ],
+            ),
+            Err(ControlError::TaskState(StateError::WorkspaceGrantStale))
+        );
+
+        let second_root = start_with_two_children(
+            &handle,
+            workspace_root(
+                &handle,
+                "root-rebind-b",
+                "session-rebind",
+                rebound.revision(),
+            ),
+            "second-child",
+        );
+        let revoked = handle
+            .revoke_workspace(rebound.session_id().into(), rebound.revision())
+            .unwrap();
+        let invalidated_second = handle.read_root(second_root.id().into()).unwrap();
+        assert!(
+            invalidated_second
+                .children()
+                .values()
+                .all(|child| child.status() == state::ChildStatus::Invalidated)
+        );
+        let rebound_again = handle
+            .rebind_workspace(
+                revoked.session_id().into(),
+                revoked.revision(),
+                first.id().into(),
+                None,
+                WorkspaceMode::CopyReview,
+            )
+            .unwrap();
+        let third_root = start_with_two_children(
+            &handle,
+            workspace_root(
+                &handle,
+                "root-rebind-c",
+                "session-rebind",
+                rebound_again.revision(),
+            ),
+            "third-child",
+        );
+        assert!(
+            third_root
+                .children()
+                .values()
+                .all(|child| child.status() == state::ChildStatus::Queued)
+        );
+
+        drop(handle);
+        drop(actor);
+        fs::remove_dir_all(first_source).unwrap();
+        fs::remove_dir_all(second_source).unwrap();
         fs::remove_dir_all(data).unwrap();
     }
 
