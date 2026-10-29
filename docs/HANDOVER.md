@@ -1,5 +1,9 @@
 # Vakyartha handover — 2026-10-30
 
+## Active provider path audit — 2026-10-30
+
+The product call path is still unmediated: `sidecar/settings.ts` loads keys into `process.env`; desktop `src/ui.ts` writes each changed secret to the Rust vault and then `/api/settings`, which writes it again through the TypeScript Keychain/file store; `sidecar/server.ts:modelProviders()` builds from `providersFromEnv()` and supplies no `ProviderTransport`. The pinned Projection host calls `entry.make()` or `entry.make({ think })`, so model calls use the provider's default global `fetch`. TS task approvals, scheduling and journal writes remain in `sidecar/tasks.ts`. Enabling only the native transport seam would retain the other authority paths. The settings, task, approval, capacity and provider call path need one vertical cutover before the broker is activated. This was a source trace only; no runtime path was changed. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#active-provider-and-credential-path-audit--2026-10-30).
+
 ## Provider broker confined to the control boundary — 2026-10-30
 
 The broker moved under `src-tauri/src/control/broker.rs`; its permit/client/dispatch types and constructors are visible only to the private native control module. This prevents unrelated Rust modules from constructing permits or invoking the transport. The actor still does not issue an approval-bound, task-fenced dispatch, and product provider calls still use TypeScript. Focused broker tests pass 16/16, strict macOS Clippy passes, and the pinned Rust 1.99.1 Linux Docker suite passes 80/80 with strict Clippy. This change is ready for commit/push. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#confine-provider-broker-api-to-native-control--2026-10-30).

@@ -2,6 +2,12 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Active provider and credential path audit — 2026-10-30
+
+Rechecked the live source after confining the Rust broker. `Settings.load()` still reads provider secrets into the sidecar's `process.env`; on desktop, `src/ui.ts` calls native `vault_set`/`vault_delete` and then PUTs the same secret to `/api/settings`, whose TypeScript `Settings` store writes Keychain or the settings file. `modelProviders()` still calls `providersFromEnv()` and wraps its provider instances, but supplies no `ProviderTransport`; the pinned Projection host calls `entry.make()` or `entry.make({ think })`, so the provider default remains global `fetch`, while `tasks.beforeModelRequest()` and FinOps wrap it. Task approvals and task persistence also remain in `sidecar/tasks.ts`.
+
+This confirms the broker cannot be activated by wiring only the transport seam: that would still leave sidecar-held credentials and TS-owned approval/task authority. The replacement must move settings ownership, task authorization, provider dispatch, cancellation and receipts together, with one native control writer and a trusted user decision path. Until that complete vertical cutover passes the local-provider and original-outcome gates, provider traffic remains on the existing TypeScript path. Source trace: `src/ui.ts`, `sidecar/settings.ts`, `sidecar/server.ts`, `sidecar/tasks.ts`, and the public `ProviderTransport` seam in pinned Projection.
+
 ## Confine provider broker API to native control — 2026-10-30
 
 Moved the provider broker from the native crate root to `src-tauri/src/control/broker.rs`. Permit, request, client and stream APIs are now visible only to the `control` parent, so unrelated Rust modules cannot mint a generation permit or invoke the transport. This is an API boundary tightening only: the control actor still has no approval-bound, task-fenced dispatch command; no provider traffic is routed through the broker. Focused tests pass 16/16, strict macOS Clippy passes, and the pinned Rust 1.99.1 Linux Docker suite passes 80/80 with strict Clippy.
