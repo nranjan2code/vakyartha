@@ -1,5 +1,9 @@
 # Agent outcome evaluation
 
+## Native model transport boundary checkpoint — 2026-10-30
+
+The app's native HTTP primitive now restricts model dispatch candidates to a distinct model-API origin set, refuses endpoint user-info/query strings and redirects, disables ambient proxies, bounds request/response bytes and returns transport errors without URL details. Regressions reject messaging, package-registry and MCP hosts even though they remain separate egress destinations. The digest-pinned Linux Rust 1.99.1 gate passes 56/56 plus strict Clippy. This is mechanism evidence only: the primitive remains inactive and unconnected to workers/providers. There is no native operation/credential/approval contract, destination pinning, atomic permit handoff, product task/workspace cutover or user-outcome evidence from this change. AR-07 and ISO1–ISO8 remain open; see [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md).
+
 ## Agent runtime design documentation — 2026-10-29
 
 [Design package](agent-runtime/README.md) records proposed single-agent/delegated architecture, Rust-first implementation/removal/delivery design, folder/storage/IA, drift/stopping, QoS, aggregate resource admission/observability and independent acceptance gates, with twenty-two Mermaid diagrams and dated primary-source references. It includes a standalone [implementation prompt](agent-runtime/IMPLEMENTATION-PROMPT.md). This is a documentation artifact, not implemented runtime evidence. AR-01–AR-09, IA-01–IA-06, L6 and ISO1–ISO8 remain open; original failed outcomes are retained.
