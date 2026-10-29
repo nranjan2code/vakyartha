@@ -1,5 +1,27 @@
 # RELEASING.md: Vakyartha
 
+## Documented reference apps and analytics — installed 2026-10-29
+
+Pushed executable source `0fdd990b8387c5f04161b7e5be840ff3662136ea` on main, pinning pushed Projection `b28c31762068b2e4133518a58d1cdd2ea998120a`. A fresh recursive clone and script-free npm install in `vakyartha-reference-install-y8x5eeor/source` preserve committed lockfiles and report zero vulnerabilities. An initially absent Rust release target produced a new optimized app (249.36 MiB) and DMG (79.26 MiB). This remains local version 0.2.0, unsigned/unnotarized; no tag or public release.
+
+The bundler correctly rejected Node 24.22.1 after the official release index identified 24.22.2. The build uses Node 24.22.2 downloaded from nodejs.org into the isolated build workspace. Its archive matches official SHASUMS256.txt (`aa9549349e47dffaa42dcf95d6e06ade8c4bdafc980979883b88767670df385a`), and codesign verifies the Node.js Foundation signature/team. No PGP checksum signature check was performed; the global Node installation was left unchanged. The runtime receipt records clean app and sandbox source (`475ae9851bb30fe45ff62d011480235eac13817b`), exact Node/npm and all sidecar, skill, app and native DuckDB tree hashes.
+
+Final shipped-runtime checks: 229 app tests, 405 framework tests/replay, typecheck, 3 native Rust tests, UI build, native private IPC/canonical rendering/binary upload/FinOps/zero TCP listeners/parent-exit cleanup, and the Canvas, nine-chart surface-design, reviewed Skills and app-authoring WebKit suites pass. The initial Rust test was attempted before bundling its required helper and failed that prerequisite; it passes after bundle generation. One concurrent full test run using the development helper failed with `anchor group: Operation not permitted`; the exact failing handler case and the final full suite using the shipped helper pass without changed assertions. That intermittent development-helper setup cause remains unclosed, and its original log is retained. Earlier model/source/value/interpretation/interaction outcomes remain open; installation does not certify general model app authoring or sustained unattended refresh.
+
+Installed the complete `/Applications/Vakyartha.app` bundle and refreshed the standard app/DMG artifacts. All 2,605 files, links, directories and modes match the fresh build before and after launch; installed-tree manifest SHA-256 `bec9edfb53c0f03377cb344ee068b440d6d0f1608e19d356ee1ec1475c7a140d` is recorded in the local receipt. The previous app, standard artifacts, app records/drafts and skills are recoverable under the build-owned backup. No existing chat, credential or custom instruction was removed. The installed library exposes Market Terminal, News Desk, Project Activity Desk and Personal Finance Workbench, all with scheduling off.
+
+Six reviewed built-in updates were applied through `Skills.updateBuiltin` with current/proposed fingerprints: surface-design, market-dashboard, app-authoring, app-maintainer, app-operator and app-admin. The first two exactly matched the previous bundle; the four app skills exactly matched the historical 1.0 default content, with only terminal-whitespace serialization differences, and had no custom supporting files. Their original copies and comparison evidence are backed up. Existing enabled/removal preferences remain preserved; new defaults seed once, the debugger and supporting templates are present, and no built-in update remains pending. This is not a silent overwrite of custom instructions.
+
+Native About confirms 0.2.0, Node 24.22.2, macOS Keychain and the existing data path. A real installed finance action completes with a persisted sandbox DuckDB snapshot and zero imported transactions; no personal or synthetic financial rows were added to the installed ledger. The engine has no TCP listener and no new runtime-log error marker since installation. One free primary-local qwen3.5:4b-mlx smoke completes in 113.2 seconds: one card, visible title Reference installation check and text Ready, preserved when opened in Canvas. Its canonical graph carries the title on the surface and body in the card's text child; an initial inspection incorrectly assumed card title/body props and retained its KeyError before checking the actual graph and unchanged literal values. No provider rerun or paid inference. The original openai/gpt-6-luna preference is restored without inference; the app is left on the reference library.
+
+Ignored receipt: `.vak/builds/2026-10-29-reference-app-install.json`. The receipt records the full temporary workspace/backup paths, manifests, source checks, raw smoke session, reviewed updates and retained setup failures. Later documentation commits do not change the compiled executable source.
+
+Artifact SHA-256:
+
+- Native: `702e9c4656cd3d00da00e5b4ffd0a22db1aa5884143b9d9830da7fada5943c43`.
+- DMG: `a1fc2c9d803822a31d2dcdee62d1a294f2b9dbc759eaf68f5d39e17271efbb7f`.
+
+
 ## Canvas liquid layout & multi-surface local install — 2026-10-28
 
 Pushed app `8051560` on `main` pins pushed Projection `479323e`. Following the deep audit of `interactive-ui`, `surface-design`, the 18 built-in canvas skills and multi-surface projection documentation (`docs/SURFACES.md`), a fresh local release build (`npm run desktop:build`) was compiled and installed at `/Applications/Vakyartha.app`.

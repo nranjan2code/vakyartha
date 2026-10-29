@@ -1,5 +1,12 @@
 # Vakyartha handover — 2026-10-28
 
+## Reference suite installed — 2026-10-29
+
+Pushed source `0fdd990` is freshly built and installed at `/Applications/Vakyartha.app`, with Projection `b28c317`, sandbox `475ae98` and verified bundled Node 24.22.2. All four documented references are visible, scheduling stays off, reviewed built-in skill/template updates are applied with preferences preserved, and installed DuckDB execution completes without seeded financial rows. The prior bundle/data subsets are backed up. 229 app / 405 framework / 3 Rust tests, native private IPC and the required WebKit suites pass. One free primary-local rendering smoke displays the requested exact heading and Ready text and opens in Canvas; the previous hosted-model preference is restored without inference. [Installation provenance, retained setup failures and backup](RELEASING.md#documented-reference-apps-and-analytics--installed-2026-10-29); ignored receipt `.vak/builds/2026-10-29-reference-app-install.json`.
+
+This supersedes earlier source-only installation notes below. No public release, tag, signing/notarization, paid inference or closure of general model-authoring/source/reliability gates. The intermittent development-helper process-group setup failure remains retained and unclosed despite passing exact shipped-helper and final shipped-runtime checks. Documentation follow-ups do not change the executable snapshot.
+
+
 ## Reference suite acceptance follow-up — 2026-10-29
 
 Committed the reference/runtime/method checkpoint as `94a15c4`, then completed the three new references' targeted live and native UI acceptance. [Reference suite guide](REFERENCE-APPS.md) maps all four packages, sources, data owners, views, supported layouts and extension boundaries. Add Reference App now discovers actual manifests and offers a chooser in both app entry points. Each package contains the four required documents; Studio source and draft saving preserve generated documentation.
