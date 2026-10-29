@@ -57,6 +57,7 @@ No unchecked gate authorizes a new dependency, paid inference, release, installa
 | Canonical commit acknowledgement loss | Only durable acknowledged snapshots become visible; recovery reloads/re-publishes exact committed revision without model/tool replay |
 | Folder/IA corrections | Sticky revocation, same-path replacement refusal, no unassigned Realm grant, membership change without rebinding, detach without silent discard, and current effective scope in all views |
 | Rebind with queued/scheduled/waiting descendants | Fixed execution grants retain original folder/mode/Realm scope; rebind invalidates them; no dispatch adopts a later session binding; child scratch/shared membership is explicitly derived |
+| Installed-run failure regressions | Ended stream with failed tools is not success; repeated unchanged failures trigger bounded diagnosis; abort after Realm creation retains its receipt/copy; typed stop causes and deletion/missing-evidence status remain attributable |
 | Untrusted file growth and audit storage exhaustion | Concurrent native workspace/temp writes obey any claimed effective quota; unsupported hard caps refused; app record bounds and recovery-disk exhaustion tested separately |
 | Resource and platform enforcement | Native CPU/touched-memory/descendant tests and unsupported-mode refusal; no inference-based quota claim |
 | Existing interactive behavior | Wide/narrow actual WebKit, independent surfaces, drafts, local filtering/paging and voice/action equivalence |

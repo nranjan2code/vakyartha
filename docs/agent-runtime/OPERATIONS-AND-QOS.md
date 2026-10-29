@@ -112,4 +112,6 @@ Show the root goal, status, current useful activity, pending input/approval, lim
 
 Correlate root → child → attempt → request/tool operation → candidate → check → output/review. Track queue/active/wait time separately; include retries and merge overhead. Duplicate progress can be coalesced. Notify only for meaningful changes, completion, failure or required action; consolidate repeated child questions through the root.
 
+The [latest local-run audit](LOCAL-FAILURE-LESSONS.md) requires stream completion, task acceptance and stop initiator/cause to be distinct fields. A final `end` or successful projection can coexist with failed tools or missing outcome evidence. Retain typed error/dispatch categories and operation/Realm receipts across abort; diagnostic-content deletion leaves explicit missing-evidence/tombstone status, not inferred historical success.
+
 Use the existing workspace, Canvas and task controls. This package does not define a new dashboard/report compiler or rendering workflow. Any later UI implementation follows the maintained skill-authoring and WebKit contracts.

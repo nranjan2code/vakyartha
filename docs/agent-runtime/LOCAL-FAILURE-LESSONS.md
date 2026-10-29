@@ -1,0 +1,46 @@
+# Lessons from retained local runs
+
+Read-only audit: 2026-10-29. The user requested checking failures in the last three runs against the new design. This document records inspected evidence and limits; no provider run was repeated, task state changed, channel restarted or private log committed. Source audit and installed numeric evidence are different scopes.
+
+## 1. Which three runs were available
+
+The latest three numeric turn records in the installed app's private `logs/finops.jsonl` were selected by their recorded UTC start time. The engine lifecycle log and tool audit log corroborate timing/outcomes below. The latest source evaluation files are separate selection/offline probes and must not be confused with these installed runs.
+
+| Start, UTC on 2026-10-29 | Recorded local model | Observation | What cannot be concluded |
+| --- | --- | --- | --- |
+| 09:25:39.963 | `lfm3:latest` | 121.7 s; 14 provider steps; numeric `complete: true`; 12 external-tool attempts, five recorded errors, zero surface publications. Engine ended with `end`. Tool audit includes failed Realm snapshot/read and command attempts mixed with successful commands. | A complete stream or ended response does not establish the requested task succeeded. Missing raw session/tool responses prevent a complete semantic/root-cause diagnosis. |
+| 09:28:30.918 | `qwen3.5:4b-mlx` | 121.3 s; three provider steps; one external call and one surface publication; numeric `complete: true`, zero recorded tool errors. Engine ended with `projected`. | Publication is not acceptance or proof of original source/value/interaction/output correctness. No retained task acceptance evidence was found for this turn. |
+| 09:30:41.018 | `qwen3.5:4b-mlx` | 27.1 s; three provider steps, final step incomplete; one external call, zero surface publications; numeric `complete: false`. Engine ended with `aborted`; the tool audit records a successful Realm creation shortly before the end. | Available records do not establish who initiated abort or whether an intended task was fulfilled. Do not label it a timeout, user cancellation or provider defect without evidence. |
+
+These are not asserted to be three identical failures. They are the latest observable runs with different lifecycle evidence. The raw canonical sessions/transcripts for their recorded session IDs were absent at inspection; logs outlived those records. No inference is made about why they are absent. The tool audit lacks the root/attempt/operation correlation needed to prove each cross-log association solely by identity; timing and counters are corroboration, not a replacement for those IDs.
+
+## 2. Concrete lessons and required handling
+
+| Lesson | New design requirement | Frozen regression scenario |
+| --- | --- | --- |
+| Provider `complete` can coexist with tool failures and no delivered result | Separate stream completion, run stop, requirement status and user acceptance in stored state and UI; numeric telemetry cannot authorize completion | A normal-ended response after failed tools retains failures/unknown requirements and cannot become verified complete |
+| Many short tool attempts can accumulate without useful accepted evidence | Classify errors from trusted adapters: argument/schema, stale/missing resource, denied/revoked authority, unsupported capability, transient transport, resource exhaustion and uncertain dispatch; repeated unchanged failures consume one root diagnosis window | Repeated missing/stale Realm/schema failures trigger relevant state refresh/diagnosis or stop, not blind retry, automatic child creation or paid escalation |
+| Aborting reasoning may leave a successfully created working copy | Preserve operation receipt and owned Realm identity independently of stream/session lifetime; show retained/detached work and require explicit discard | Cancel after create succeeds but before answer publication; recover copy/receipt after restart without repeating creation or silently deleting it |
+| Current audit records cannot reconstruct the entire failure path | Native events carry root/run/attempt/request/operation IDs, typed cause and initiator where actually known; unknown stays unknown | Inject abort at UI, deadline, resource, parent-death, transport and provider boundaries; each produces attributable durable cause or explicit unknown |
+| Session/transcript removal can leave usage/tool records | Keep bounded non-content recovery/outcome references under their declared retention scope; deletion names what remains, and leaves a tombstone/missing-evidence status rather than an apparently verified historical result | Delete allowed diagnostic content, then inspect usage/job outcome and uncertainty without restoring raw content or falsely inferring success |
+| Request assembly can dominate latency without external calls | Measure skill-selection, assembly/context admission, provider wait/generation, tools, checking, commit and delivery separately, including actual provider request identity | Use a frozen scripted assembly fixture and primary-local contract to locate earliest boundary; no prompt variants/timeout increase to manufacture a pass |
+
+Selected steps in these installed records report 75,751 schema characters and 24,349–35,010 system characters; one recorded provider step took about 79.1 seconds. These are character counts and observed durations, not token counts or proof that schema size caused the delay. Source/installed/profile/request-envelope identity must be recorded before comparing against other captures with different schema sizes. Do not attribute latency to model size or solve it by spawning more agents.
+
+Error categories must come from actual typed adapter/transport outcomes where possible. `ok: false` alone does not distinguish a rejected argument from a dispatched uncertain mutation. All attempts consume applicable root allowance; only a proven pre-dispatch failure avoids external-effect uncertainty. Classification cannot silently relabel an unknown dispatched write as safe to retry.
+
+## 3. Independent retained provider-contract failure
+
+The source-side record-view receipt `record-view-2026-10-29T05-02-16.884Z.json` in Projection's private contract evidence has two passing cases and one failed case: values `[100,70]`, `aborted` at 60.018 seconds, no diagnostics. The maintained evaluation places the earliest observed boundary at provider generation before dispatch. This is separate from the three installed runs above.
+
+Required handling: preserve the exact request/case and deadline, stop without canonical publication or fabricated output, distinguish provider-generation expiry from tool/effect uncertainty, and diagnose offline. Additional agents, parser variants or a larger timeout do not close the frozen failure. Matching primary-provider and original source/value/interpretation/interaction/output gates remain open.
+
+## 4. Additional audit constraints
+
+The latest three engine records marked `error` before these local runs used a hosted provider and retained only high-level lifecycle evidence in the inspected log. They were not rerun, credentials were not read, and this audit does not assign an API/auth/schema cause from an `error` label. Typed native error records and exact provider-operation attribution are needed for that diagnosis too.
+
+Private evidence paths remain under installed app data or ignored evaluation directories; only this sanitized summary is public. Do not copy prompt text, command arguments, source files, credentials or raw logs into the repo. Retaining necessary recovery metadata is not permission for unlimited diagnostic-content retention.
+
+## 5. Scope of completion
+
+This audit adds acceptance cases to the implementation prompt and validation plan. It does not repair the current runtime, establish the original user outcomes, certify a new provider, or close AR/IA/ISO gates. The agent implementing the design must reproduce the smallest relevant boundary and then the original outcome under frozen checks.

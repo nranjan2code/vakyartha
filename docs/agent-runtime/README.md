@@ -21,6 +21,8 @@ The design applies to one agent first. Delegation is an optional extension of th
 | [Validation and rollout](VALIDATION-AND-ROLLOUT.md) | What must be decided, implemented and independently proved before enabling this design? |
 | [Research basis](RESEARCH.md) | Which external observations informed the proposal, and what do they not prove? |
 | [Independent review](REVIEW-2026-10-29.md) | What did Astra find, what was corrected, and what proof remains open? |
+| [Local failure lessons](LOCAL-FAILURE-LESSONS.md) | What did the latest three installed run records reveal, and which regression cases must the implementation retain? |
+| [End-to-end implementation prompt](IMPLEMENTATION-PROMPT.md) | What complete instruction should an implementing agent follow? |
 
 ## End-to-end view
 
