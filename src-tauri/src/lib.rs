@@ -113,13 +113,13 @@ fn pick_folder(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
             .arg("--file-selection")
             .arg("--directory")
             .output();
-        if let Ok(out) = output {
-            if out.status.success() {
-                let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !path.is_empty() {
-                    let clean = path.strip_suffix('/').unwrap_or(&path).to_string();
-                    return Ok(Some(clean));
-                }
+        if let Ok(out) = output
+            && out.status.success()
+        {
+            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !path.is_empty() {
+                let clean = path.strip_suffix('/').unwrap_or(&path).to_string();
+                return Ok(Some(clean));
             }
         }
         Ok(None)
@@ -396,11 +396,11 @@ pub fn run() {
             pick_folder
         ])
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if KEEP_RUNNING.load(Ordering::Relaxed) {
-                    api.prevent_close();
-                    let _ = window.hide();
-                }
+            if let WindowEvent::CloseRequested { api, .. } = event
+                && KEEP_RUNNING.load(Ordering::Relaxed)
+            {
+                api.prevent_close();
+                let _ = window.hide();
             }
         })
         .setup(|app| {
@@ -412,16 +412,16 @@ pub fn run() {
             app.manage(sidecar);
             // Debug builds only: run a script inside the window (UI probes, no screen needed).
             #[cfg(debug_assertions)]
-            if let Ok(path) = std::env::var("VAK_DEBUG_JS") {
-                if let Ok(js) = std::fs::read_to_string(&path) {
-                    let handle = app.handle().clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_secs(4));
-                        if let Some(w) = handle.get_webview_window("main") {
-                            let _ = w.eval(&js);
-                        }
-                    });
-                }
+            if let Ok(path) = std::env::var("VAK_DEBUG_JS")
+                && let Ok(js) = std::fs::read_to_string(&path)
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(4));
+                    if let Some(w) = handle.get_webview_window("main") {
+                        let _ = w.eval(&js);
+                    }
+                });
             }
             Ok(())
         })

@@ -17,4 +17,7 @@ docker run --rm \
   --workdir /work \
   --env 'TAURI_CONFIG={"bundle":{"externalBin":[]}}' \
   "$image_name" \
-  cargo test --locked --manifest-path src-tauri/Cargo.toml
+  sh -eu -c '
+    cargo test --locked --manifest-path src-tauri/Cargo.toml
+    cargo clippy --locked --manifest-path src-tauri/Cargo.toml --lib --tests -- -D warnings
+  '

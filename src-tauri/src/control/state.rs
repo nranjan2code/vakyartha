@@ -758,13 +758,12 @@ impl RootTask {
         if let Some(reason) = &self.stop_reason {
             validate_text(reason, 1_000)?;
         }
-        if let Some(review) = &self.review {
-            if !valid_timestamp(&review.at)
+        if let Some(review) = &self.review
+            && (!valid_timestamp(&review.at)
                 || !valid_identity(&review.evidence_ref)
-                || validate_text(&review.note, 4_000).is_err()
-            {
-                return Err(StateError::Corrupt);
-            }
+                || validate_text(&review.note, 4_000).is_err())
+        {
+            return Err(StateError::Corrupt);
         }
         Ok(())
     }

@@ -111,8 +111,9 @@ pub fn start(mut cmd: Command) -> Engine {
                     responses.lock().unwrap().remove(&id);
                     let mut bytes = serde_json::to_vec(&serde_json::json!({"v":1,"id":id,"type":"cancel"})).unwrap(); bytes.push(b'\n');
                     let size = bytes.len();
-                    if response_queue.try_update(Ordering::AcqRel, Ordering::Relaxed, |n| n.checked_add(size).filter(|sum| *sum <= MAX_QUEUE)).is_ok() {
-                        if connection.lock().unwrap().as_ref().is_none_or(|input| input.try_send(bytes).is_err()) { response_queue.fetch_sub(size, Ordering::AcqRel); }
+                    if response_queue.try_update(Ordering::AcqRel, Ordering::Relaxed, |n| n.checked_add(size).filter(|sum| *sum <= MAX_QUEUE)).is_ok()
+                        && connection.lock().unwrap().as_ref().is_none_or(|input| input.try_send(bytes).is_err()) {
+                        response_queue.fetch_sub(size, Ordering::AcqRel);
                     }
                 }
             }
@@ -133,6 +134,7 @@ pub fn main_window(window: &tauri::WebviewWindow) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[expect(clippy::too_many_arguments, reason = "Tauri maps this flat named IPC schema to command parameters")]
 pub async fn engine_request(window: tauri::WebviewWindow, state: tauri::State<'_, Engine>, id: String, method: String, path: String, headers: BTreeMap<String, String>, body: Option<String>, channel: Channel<Frame>) -> Result<(), String> {
     main_window(&window)?;
     if !valid_id(&id) || !["GET", "POST", "PUT", "DELETE"].contains(&method.as_str()) || !path.starts_with("/api/") || path.len() > 8192 || path.contains(['\r', '\n', '#']) || body.as_ref().is_some_and(|b| b.len() > MAX_BODY || method == "GET") || headers.len() > 2 || headers.iter().any(|(k,v)| !["content-type", "range"].contains(&k.as_str()) || v.len() > 256 || v.contains(['\r', '\n'])) { return Err("Invalid engine request".into()); }

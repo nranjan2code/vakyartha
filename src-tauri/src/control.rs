@@ -174,16 +174,15 @@ impl CapacityLedger {
             {
                 return Err(AdmissionError::CapacityUnavailable(*resource));
             }
-            if let Some(root_limit) = profile.per_root.get(resource) {
-                if root_used
+            if let Some(root_limit) = profile.per_root.get(resource)
+                && root_used
                     .and_then(|used| used.get(resource))
                     .copied()
                     .unwrap_or(0)
                     .saturating_add(*amount)
                     > *root_limit
-                {
-                    return Err(AdmissionError::RootLimit(*resource));
-                }
+            {
+                return Err(AdmissionError::RootLimit(*resource));
             }
         }
 

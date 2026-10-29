@@ -101,18 +101,17 @@ impl WorkspaceAdmissionPolicy {
             "/proc",
             "/sys",
         ] {
-            if let Ok(canonical) = fs::canonicalize(path) {
-                if !denied_roots.contains(&canonical) {
-                    denied_roots.push(canonical);
-                }
+            if let Ok(canonical) = fs::canonicalize(path)
+                && !denied_roots.contains(&canonical)
+            {
+                denied_roots.push(canonical);
             }
         }
-        if let Some(home) = std::env::var_os("HOME") {
-            if let Ok(canonical) = fs::canonicalize(home) {
-                if !denied_roots.contains(&canonical) {
-                    denied_roots.push(canonical);
-                }
-            }
+        if let Some(home) = std::env::var_os("HOME")
+            && let Ok(canonical) = fs::canonicalize(home)
+            && !denied_roots.contains(&canonical)
+        {
+            denied_roots.push(canonical);
         }
         Ok(Self {
             data_root,

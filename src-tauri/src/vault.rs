@@ -131,6 +131,7 @@ fn write_vault_file(path: &Path, map: &BTreeMap<String, String>) -> Result<(), S
     result
 }
 
+#[cfg_attr(not(test), expect(dead_code, reason = "Secret reads are reserved for the native credential broker, which is not wired yet"))]
 fn file_vault_get(data_dir: &Path, account: &str) -> Result<Option<String>, String> {
     let path = vault_file_path(data_dir);
     Ok(read_vault_file(&path)?.get(account).cloned())
@@ -162,6 +163,7 @@ mod macos {
     use std::io::Write;
     use std::process::Stdio;
 
+    #[expect(dead_code, reason = "Secret reads are reserved for the native credential broker, which is not wired yet")]
     pub fn get(service: &str, account: &str) -> Result<Option<String>, String> {
         let output = Command::new("/usr/bin/security")
             .args(["find-generic-password", "-s", service, "-a", account, "-w"])
@@ -229,19 +231,19 @@ mod macos {
 mod linux {
     use super::*;
 
+    #[expect(dead_code, reason = "Secret reads are reserved for the native credential broker, which is not wired yet")]
     pub fn get(service: &str, account: &str, data_dir: &Path) -> Result<Option<String>, String> {
         // Try secret-tool if available in desktop environment.
         if let Ok(output) = Command::new("secret-tool")
             .args(["lookup", "service", service, "account", account])
             .output()
+            && output.status.success()
         {
-            if output.status.success() {
-                let s = String::from_utf8_lossy(&output.stdout)
-                    .trim_end_matches(['\r', '\n'])
-                    .to_string();
-                if !s.is_empty() {
-                    return Ok(Some(s));
-                }
+            let s = String::from_utf8_lossy(&output.stdout)
+                .trim_end_matches(['\r', '\n'])
+                .to_string();
+            if !s.is_empty() {
+                return Ok(Some(s));
             }
         }
         // Fallback to secure 0600 file store in app data dir.
@@ -261,10 +263,10 @@ mod linux {
             ])
             .output();
 
-        if let Ok(output) = secret_tool_result {
-            if output.status.success() {
-                return Ok(());
-            }
+        if let Ok(output) = secret_tool_result
+            && output.status.success()
+        {
+            return Ok(());
         }
 
         // Fallback to owner-only 0600 file store.
@@ -283,6 +285,7 @@ mod linux {
 // Public Unified Vault Interface (macOS, Linux, Windows)
 // ---------------------------------------------------------------------------
 
+#[expect(dead_code, reason = "Secret reads are reserved for the native credential broker, which is not wired yet")]
 pub fn get(service: &str, account: &str, data_dir: &Path) -> Result<Option<String>, String> {
     if !is_valid_service(service) {
         return Err("Invalid service identifier".into());
@@ -293,29 +296,29 @@ pub fn get(service: &str, account: &str, data_dir: &Path) -> Result<Option<Strin
 
     #[cfg(target_os = "macos")]
     {
-        if let Ok(val) = macos::get(service, account) {
-            if val.is_some() {
-                return Ok(val);
-            }
+        if let Ok(val) = macos::get(service, account)
+            && val.is_some()
+        {
+            return Ok(val);
         }
         // Fallback to local data dir vault if keychain item not found.
-        return file_vault_get(data_dir, account);
+        file_vault_get(data_dir, account)
     }
 
     #[cfg(target_os = "linux")]
     {
-        return linux::get(service, account, data_dir);
+        linux::get(service, account, data_dir)
     }
 
     #[cfg(target_os = "windows")]
     {
         // On Windows, the AppData directory is protected by user SID ACLs.
-        return file_vault_get(data_dir, account);
+        file_vault_get(data_dir, account)
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
-        return file_vault_get(data_dir, account);
+        file_vault_get(data_dir, account)
     }
 }
 
@@ -336,22 +339,22 @@ pub fn set(service: &str, account: &str, value: &str, data_dir: &Path) -> Result
             eprintln!("[vault] Keychain write warning: {e}, using local secure vault");
             return file_vault_set(data_dir, account, value);
         }
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(target_os = "linux")]
     {
-        return linux::set(service, account, value, data_dir);
+        linux::set(service, account, value, data_dir)
     }
 
     #[cfg(target_os = "windows")]
     {
-        return file_vault_set(data_dir, account, value);
+        file_vault_set(data_dir, account, value)
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
-        return file_vault_set(data_dir, account, value);
+        file_vault_set(data_dir, account, value)
     }
 }
 

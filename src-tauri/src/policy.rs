@@ -111,12 +111,14 @@ pub fn evaluate_egress_with_custom(scheme: &str, host: &str, port: Option<u16>, 
 }
 
 /// Validates whether an outbound request destination is permitted by the default egress policy.
+#[cfg(test)]
 pub fn evaluate_egress(scheme: &str, host: &str, port: Option<u16>) -> EgressDecision {
     evaluate_egress_with_custom(scheme, host, port, &[])
 }
 
 /// Integration version pin policy: ensures that every integration specifies an exact version,
 /// refusing floating versions, ranges, or latest tags.
+#[cfg(test)]
 pub fn validate_integration_version(version: &str) -> Result<(), &'static str> {
     if version.is_empty() {
         return Err("Version cannot be empty");
@@ -150,6 +152,7 @@ pub fn validate_integration_version(version: &str) -> Result<(), &'static str> {
 
 /// User approval policy defaults: verifies whether an operation category requires explicit confirmation.
 #[derive(Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub enum OperationImpact {
     ReadOnly,
     FileSystemWrite,
@@ -158,6 +161,7 @@ pub enum OperationImpact {
     DestructiveDelete,
 }
 
+#[cfg(test)]
 pub fn requires_user_approval(impact: OperationImpact) -> bool {
     match impact {
         OperationImpact::ReadOnly => false,
