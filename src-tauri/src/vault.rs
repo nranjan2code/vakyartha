@@ -51,28 +51,31 @@ fn vault_file_path(data_dir: &Path) -> PathBuf {
     data_dir.join(".vault.secrets")
 }
 
-fn read_vault_file(path: &Path) -> BTreeMap<String, String> {
+fn read_vault_file(path: &Path) -> Result<BTreeMap<String, String>, String> {
     let mut map = BTreeMap::new();
-    if let Ok(content) = std::fs::read_to_string(path) {
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                continue;
-            }
-            if let Some((k, v)) = line.split_once('=') {
-                let k = k.trim();
-                let unquoted = if (v.starts_with('"') && v.ends_with('"'))
-                    || (v.starts_with('\'') && v.ends_with('\''))
-                {
-                    if v.len() >= 2 { &v[1..v.len() - 1] } else { v }
-                } else {
-                    v
-                };
-                map.insert(k.to_string(), unquoted.to_string());
-            }
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(map),
+        Err(error) => return Err(format!("Failed to read vault file: {error}")),
+    };
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some((k, v)) = line.split_once('=') {
+            let k = k.trim();
+            let unquoted = if (v.starts_with('"') && v.ends_with('"'))
+                || (v.starts_with('\'') && v.ends_with('\''))
+            {
+                if v.len() >= 2 { &v[1..v.len() - 1] } else { v }
+            } else {
+                v
+            };
+            map.insert(k.to_string(), unquoted.to_string());
         }
     }
-    map
+    Ok(map)
 }
 
 fn write_vault_file(path: &Path, map: &BTreeMap<String, String>) -> Result<(), String> {
@@ -128,21 +131,21 @@ fn write_vault_file(path: &Path, map: &BTreeMap<String, String>) -> Result<(), S
     result
 }
 
-fn file_vault_get(data_dir: &Path, account: &str) -> Option<String> {
+fn file_vault_get(data_dir: &Path, account: &str) -> Result<Option<String>, String> {
     let path = vault_file_path(data_dir);
-    read_vault_file(&path).get(account).cloned()
+    Ok(read_vault_file(&path)?.get(account).cloned())
 }
 
 fn file_vault_set(data_dir: &Path, account: &str, value: &str) -> Result<(), String> {
     let path = vault_file_path(data_dir);
-    let mut map = read_vault_file(&path);
+    let mut map = read_vault_file(&path)?;
     map.insert(account.to_string(), value.to_string());
     write_vault_file(&path, &map)
 }
 
 fn file_vault_delete(data_dir: &Path, account: &str) -> Result<(), String> {
     let path = vault_file_path(data_dir);
-    let mut map = read_vault_file(&path);
+    let mut map = read_vault_file(&path)?;
     if map.remove(account).is_some() {
         write_vault_file(&path, &map)?;
     }
@@ -242,7 +245,7 @@ mod linux {
             }
         }
         // Fallback to secure 0600 file store in app data dir.
-        Ok(file_vault_get(data_dir, account))
+        file_vault_get(data_dir, account)
     }
 
     pub fn set(service: &str, account: &str, value: &str, data_dir: &Path) -> Result<(), String> {
@@ -296,7 +299,7 @@ pub fn get(service: &str, account: &str, data_dir: &Path) -> Result<Option<Strin
             }
         }
         // Fallback to local data dir vault if keychain item not found.
-        return Ok(file_vault_get(data_dir, account));
+        return file_vault_get(data_dir, account);
     }
 
     #[cfg(target_os = "linux")]
@@ -307,12 +310,12 @@ pub fn get(service: &str, account: &str, data_dir: &Path) -> Result<Option<Strin
     #[cfg(target_os = "windows")]
     {
         // On Windows, the AppData directory is protected by user SID ACLs.
-        return Ok(file_vault_get(data_dir, account));
+        return file_vault_get(data_dir, account);
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
-        return Ok(file_vault_get(data_dir, account));
+        return file_vault_get(data_dir, account);
     }
 }
 
@@ -403,15 +406,15 @@ mod tests {
         ));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
-        assert_eq!(file_vault_get(&temp_dir, "TEST_KEY"), None);
+        assert_eq!(file_vault_get(&temp_dir, "TEST_KEY").unwrap(), None);
         file_vault_set(&temp_dir, "TEST_KEY", "secret-123").unwrap();
         assert_eq!(
-            file_vault_get(&temp_dir, "TEST_KEY"),
+            file_vault_get(&temp_dir, "TEST_KEY").unwrap(),
             Some("secret-123".into())
         );
         file_vault_set(&temp_dir, "SPACED_KEY", "  secret with spaces  ").unwrap();
         assert_eq!(
-            file_vault_get(&temp_dir, "SPACED_KEY"),
+            file_vault_get(&temp_dir, "SPACED_KEY").unwrap(),
             Some("  secret with spaces  ".into())
         );
         #[cfg(unix)]
@@ -425,7 +428,13 @@ mod tests {
         }
 
         file_vault_delete(&temp_dir, "TEST_KEY").unwrap();
-        assert_eq!(file_vault_get(&temp_dir, "TEST_KEY"), None);
+        assert_eq!(file_vault_get(&temp_dir, "TEST_KEY").unwrap(), None);
+
+        let vault_path = vault_file_path(&temp_dir);
+        let corrupt = b"not valid utf-8: \xff\n";
+        std::fs::write(&vault_path, corrupt).unwrap();
+        assert!(file_vault_set(&temp_dir, "ANOTHER_KEY", "value").is_err());
+        assert_eq!(std::fs::read(vault_path).unwrap(), corrupt);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
