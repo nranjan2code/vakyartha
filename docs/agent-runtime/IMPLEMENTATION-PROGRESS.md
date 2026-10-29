@@ -10,6 +10,8 @@ Evidence: Rust 1.99.1 macOS library suite passes 67/67 and digest-pinned Linux D
 
 Scope limit: the protocol has no task, workspace, approval, lease, provider, sandbox, or arbitrary-command operation. The actor's stores and capacity remain unused by product paths, and TypeScript remains the authoritative task/workspace writer. No I1/I2/I3 gate or user outcome closes here. Subsequent control operations must be added as distinct native command variants with identity/revision/authority validation and independent canaries; do not widen this health message into a generic RPC tunnel.
 
+Follow-up regression receipts: serial Node 26.13.0 app tests pass 275/275, the pinned Projection suite passes 412/412, and `npm run typecheck` passes. This broad run follows the protocol migration; it is not a multi-root saturation test and does not close any original task-output or authority acceptance gate.
+
 ## Native control actor lifecycle wired — 2026-10-30
 
 On macOS and Linux, Tauri application setup resolves and creates its app-data directory, opens the native control store under its private `control/` directory, and manages the actor for the application lifetime. Startup fails closed on these targets if the native store or its durable single-writer lock cannot be established. Windows keeps starting the app but leaves the actor disabled until its directory-sync durability contract is implemented and verified. `CapacityProfile::unconfigured()` is a valid metadata-only profile; because it contains no execution dimensions, reservations fail as `UnconfiguredResource`. A regression starts two actors against one store, verifies single-writer refusal, then drops and reopens cleanly.
