@@ -2,6 +2,30 @@
 
 Status: active implementation, 2026-10-29. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Linux sandbox containment backend — 2026-10-30
+
+Implemented in the owning `vak-sandbox` repository and pushed as `d621f51` on `codex/linux-runtime-fail-closed`; no files under Vakyartha's `framework/` submodule were changed. The backend combines Landlock ABI 5+ path rules, seccomp restrictions, capability dropping, supervised process groups, cancellation, bounded command/output inputs and cleanup receipts. Linux CLI execution requires an existing specific workspace and refuses protected system roots. Unsupported kernel/policy features fail closed. No third-party dependency was added.
+
+Evidence: Rust 1.99.1 macOS workspace tests pass 58/58 with strict Clippy and formatting; digest-pinned Linux Docker tests pass 58/58 with strict Clippy and a locked CLI build. The CLI reports `execution_available: true` in the supported container; a workspace write/read canary succeeds and an `/etc` write canary is denied. The earlier `/etc/passwd` read canary is denied as well. These checks exercise the standalone sandbox project only.
+
+Limits: this does not add CPU, memory, process-count or disk quotas; same-user host processes and kernel attacks remain outside the containment claim. Vakyartha does not yet package or pin this helper, start its native control actor, consume atomic workspace grants at execution dispatch, or route app jobs through common admission. Consequently it closes no app-side I2/ISO gate and enables no Linux app execution path.
+
+## Remaining end-to-end closure work — 2026-10-30
+
+The task objective remains active; these are blocking implementation and acceptance steps, not optional polish:
+
+1. **Native control transport and lifecycle:** typed, identity-bounded and cancellable sidecar-to-Rust protocol; start and supervise the actor from Tauri; bind commands to the caller role and enforce backpressure.
+2. **Mediation and isolation:** issuer-backed single-use dispatch for exact provider payloads, credentials, approvals and approved egress; cancellation/revocation races, DNS/IP controls, bounded stream decoding and durable redacted receipts; package and pin the sandbox at an exact reviewed revision.
+3. **One authoritative task/workspace path:** replace the TypeScript task, workspace registry, reservation, scheduler and approval writers in one cutover; carry project/workspace/binding identities through typed navigation and preserve modes without compatibility shims.
+4. **Canonical outcome closure:** expected-version canonical commits, durable acknowledgement/publication, existing mandatory checks and user review, recovery after lost acknowledgements, and terminal fencing. Keep the original source/value/interpretation/interaction/output checks as the acceptance gate.
+5. **Drift, recovery and stop:** registered independent checks; unknown, stale or failed evidence blocks completion; bounded diagnosis; explicit recovery choices; no automatic repair loops; distinguish user stop, policy block, interruption, failure and budget exhaustion.
+6. **Delegation:** default to one agent/zero children. Admit a child only when the task contract names a separable bounded work unit, dependency/write scopes do not conflict, and expected quality/latency benefit exceeds queue, context, verification and resource cost. Bound attempts, depth, fan-out and root-wide time/tool/compute budgets; propagate cancellation and accept only validated results. Prove the smallest child contract before any multi-child policy.
+7. **Multi-job QoS and operations:** one shared scheduler for every enabled workload; fair queues, leases, resource reservations and cleanup; measured CPU/memory/process/disk/provider limits; pressure and overload behavior; bounded-cardinality telemetry, trace propagation, queue age, saturation, cost and failure attribution; restart and noisy-neighbor evidence. Never claim a hard quota that the runtime cannot enforce.
+8. **Storage and information architecture:** execute the documented project/workspace/folder/binding ownership and navigation cutover; make workspace-local versus app-global storage explicit; migration/retention/deletion and restart evidence; preserve multiple surfaces.
+9. **Delivery and independent review:** latest-stack macOS/Linux builds, exact helper/framework pins, installed WebKit end-to-end canaries and original task outcomes; update [implementation status](../IMPLEMENTATION-STATUS.md), [handover](../HANDOVER.md) and [evaluation](../EVALUATION.md); then request the user's previously requested Astra third-party review and resolve findings.
+
+See [delivery plan](DELIVERY-PLAN.md) for dependency ordering and frozen slice exit conditions. The sandbox backend commit above is a prerequisite contribution only; the native actor and TypeScript stores are still not connected or cut over. Do not report the architecture implementation complete until all applicable outcome, isolation and installed-state gates pass.
+
 ## Native HTTP transport primitive — 2026-10-30
 
 Added the first native HTTP transport primitive using the previously approved exact-pinned reqwest 0.13.5 dependency. The client disables automatic proxy discovery, refuses redirects, sets connect/total timeouts, accepts only HTTPS URLs on the static provider-origin allowlist, rejects endpoint user-info and query strings to prevent URL-carried credentials, bounds endpoint and request sizes, and caps streamed response bodies even when the server omits `Content-Length`. Transport errors are stable categories and do not include reqwest's potentially URL-bearing error text. The module is compiled but remains explicitly inactive and is not exposed to TypeScript or a provider request path. A review of its redirect test found that a single nonblocking accept could miss delayed connections; the test now polls for one second and confirms the second listener receives no redirected request.
