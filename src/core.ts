@@ -21,6 +21,13 @@ export const prefs = {
       /* storage unavailable */
     }
   },
+  remove(k: string): void {
+    try {
+      localStorage.removeItem(`vak:${k}`);
+    } catch {
+      /* storage unavailable */
+    }
+  },
 };
 
 let backend: Backend;

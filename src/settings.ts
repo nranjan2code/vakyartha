@@ -155,6 +155,7 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     provider,
     (v) => {
       provider = v;
+      updateLimits();
       void fillModels(prefs.get(`model:${v}`) ?? providers.find((p) => p.id === v)?.defaultModel ?? "").then(() => {
         // A preselected local model is already displayed, so choosing it again
         // does not fire change. Commit the visible choice when switching providers.
@@ -173,6 +174,16 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
   const calibrate = el("button", { type: "button", className: "ghost small", textContent: "Calibrate" });
   const calibration = el("p", { className: "row-hint" });
   const OTHER = "__other";
+  const limitsGroup = el("div", { className: "group" });
+  function updateLimits(): void {
+    const pLabel = providers.find((p) => p.id === provider)?.label ?? provider;
+    limitsGroup.replaceChildren(
+      el("div", { className: "group-title", textContent: `Execution limits (${pLabel})` }),
+      row("Step limit", "Bounds non-tool rounds (answers, canvas authoring, repair).", select([["", "Inherit general setting"], ["6", "6 steps"], ["8", "8 steps"], ["12", "12 steps"], ["16", "16 steps"], ["24", "24 steps"], ["32", "32 steps"]], prefs.get(`opt:${provider}:maxSteps`) ?? "", (v) => v ? prefs.set(`opt:${provider}:maxSteps`, v) : prefs.remove(`opt:${provider}:maxSteps`))),
+      row("Tool budget", "Bounds external MCP tool rounds per turn.", select([["", "Inherit general setting"], ["6", "6 rounds"], ["10", "10 rounds"], ["12", "12 rounds"], ["16", "16 rounds"], ["24", "24 rounds"]], prefs.get(`opt:${provider}:toolRounds`) ?? "", (v) => v ? prefs.set(`opt:${provider}:toolRounds`, v) : prefs.remove(`opt:${provider}:toolRounds`))),
+    );
+  }
+  updateLimits();
 
   const use = (model: string) => {
     if (!model) return;
@@ -270,6 +281,7 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
       el("div", { className: "row" }, el("div", { className: "row-text" }, el("div", { className: "row-label", textContent: "Model" }), status), el("div", { className: "row-control column" }, modelSearch, modelMatches, modelSel, other)),
     ),
     group("How vak asks this model", el("div", { className: "row stack" }, plan, el("div", { className: "row-actions" }, calibrate, calibration))),
+    limitsGroup,
   ];
 }
 
@@ -473,6 +485,8 @@ async function generalPage(): Promise<HTMLElement[]> {
       row("Thinking", "Let local models think before answering (Ollama). Slower, sometimes better.", toggle(opt("think", "false") === "true", (on) => prefs.set("opt:think", String(on)))),
       row("Generation", "auto lets the capability plan decide.", select([["auto", "auto"], ["tools", "tools"], ["constrained", "constrained"]], opt("generation", "auto"), (v) => prefs.set("opt:generation", v))),
       row("Reasoning effort", "For models that take one.", select([["", "default"], ["low", "low"], ["medium", "medium"], ["high", "high"]], opt("effort", ""), (v) => prefs.set("opt:effort", v))),
+      row("Step limit", "Default step limit across all providers. Bounds answers, canvas authoring and repairs. Auto uses the model capability plan (8–12 steps).", select([["0", "Auto (Plan default)"], ["6", "6 steps"], ["8", "8 steps"], ["12", "12 steps"], ["16", "16 steps"], ["24", "24 steps"], ["32", "32 steps"]], opt("maxSteps", "0"), (v) => prefs.set("opt:maxSteps", v))),
+      row("Tool budget", "Default tool budget across all providers. Bounds external MCP tool calls per turn. Auto uses 12 rounds.", select([["0", "Auto (12 rounds)"], ["6", "6 rounds"], ["10", "10 rounds"], ["12", "12 rounds"], ["16", "16 rounds"], ["24", "24 rounds"]], opt("toolRounds", "0"), (v) => prefs.set("opt:toolRounds", v))),
     ),
   ].filter(Boolean) as HTMLElement[];
 }

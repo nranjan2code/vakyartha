@@ -799,6 +799,8 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         effort: opt("effort") || undefined,
         // Long everyday chats would otherwise send every turn and overflow a small model's context.
         history: Number(opt("history", "10")) || undefined,
+        maxSteps: Number(prefs.get(`opt:${provider}:maxSteps`) || opt("maxSteps", "0")) || undefined,
+        toolRounds: Number(prefs.get(`opt:${provider}:toolRounds`) || opt("toolRounds", "0")) || undefined,
         ...req,
       },
       onEvent,

@@ -2,6 +2,13 @@
 
 What changed in the app, newest first. Each release names the [Projection](https://github.com/nranjan2code/Projection) version it was built on; framework changes themselves are in Projection's CHANGELOG. Procedure: [RELEASING.md](docs/RELEASING.md).
 
+## Configurable step limits and relaxed baseline execution limits — 2026-10-29
+
+Built on pushed Projection `13bf249`.
+- Added user-configurable **Step limit** and **Tool budget** settings in Settings → General (under Model behaviour) and per provider in Settings → Models.
+- Passed client-configured `maxSteps` and `toolRounds` through `/api/chat` and `client.turn`, with fallback to provider-specific preferences and general defaults.
+- Modernized baseline execution limits in the Projection framework: edge/small models (< 15B) receive 8 steps (was 4), standard/hosted models receive 12 steps (was 4), weak calibrated models receive 6 steps (was 2), and default integration tool rounds (`TOOL_ROUNDS`) is expanded to 12 (was 6).
+
 ## Prompt and skill context cleanup — 2026-10-29
 
 Built on pushed Projection `d017a18`. Selected procedures arrive whole and once in current-run system context; references/external results remain data. Required design guidance applies across native/decoded authoring without duplicate bodies. Remove copied wire manuals, fixed dashboard tiers and old schema aliases; retain domain facts, calculations, multiple surfaces, guards and reviewed update preferences. Studio starters preserve requested scope, selection tests use an explicit model and positive/negative cases, and preview/DAG/resource labels state their actual limits. Studio controls and editor panes wrap at narrow widths.
