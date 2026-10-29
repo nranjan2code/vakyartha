@@ -75,7 +75,6 @@ impl CapacityProfile {
         max_request_identities: usize,
     ) -> Result<Self, AdmissionError> {
         if max_request_identities == 0
-            || global.is_empty()
             || global.values().any(|limit| *limit == 0)
             || per_root.iter().any(|(resource, limit)| {
                 *limit == 0
@@ -91,6 +90,12 @@ impl CapacityProfile {
             per_root,
             max_request_identities,
         })
+    }
+
+    /// A metadata-only profile. Every execution resource remains unavailable
+    /// until a measured profile explicitly configures it.
+    pub fn unconfigured() -> Result<Self, AdmissionError> {
+        Self::new(BTreeMap::new(), BTreeMap::new(), MAX_ROOTS)
     }
 }
 
@@ -1972,6 +1977,43 @@ mod tests {
             8,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn unconfigured_profile_keeps_metadata_available_but_refuses_all_capacity() {
+        let profile = CapacityProfile::unconfigured().unwrap();
+        let mut ledger = CapacityLedger::default();
+        assert_eq!(
+            ledger.reserve(
+                &profile,
+                "request-1",
+                "root-1",
+                BTreeMap::from([(Resource::Generation, 1)]),
+            ),
+            Err(AdmissionError::UnconfiguredResource(Resource::Generation))
+        );
+        assert_eq!(ledger.active_leases(), 0);
+    }
+
+    #[test]
+    fn metadata_only_actor_owns_and_releases_its_single_writer_store() {
+        let data = temp_data_dir();
+        fs::create_dir_all(&data).unwrap();
+        let open = || {
+            ControlActor::open(
+                &data,
+                "unconfigured-v1",
+                CapacityProfile::unconfigured().unwrap(),
+                32,
+                Duration::from_secs(1),
+            )
+        };
+        let actor = open().unwrap();
+        assert!(matches!(open(), Err(StoreError::WriterAlreadyOpen)));
+        drop(actor);
+        let reopened = open().unwrap();
+        drop(reopened);
+        fs::remove_dir_all(data).unwrap();
     }
 
     fn profile_with_queued_children(limit: u32) -> CapacityProfile {

@@ -2,6 +2,12 @@
 
 Status: active implementation, 2026-10-29. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Native control actor lifecycle wired — 2026-10-30
+
+On macOS and Linux, Tauri application setup resolves and creates its app-data directory, opens the native control store under its private `control/` directory, and manages the actor for the application lifetime. Startup fails closed on these targets if the native store or its durable single-writer lock cannot be established. Windows keeps starting the app but leaves the actor disabled until its directory-sync durability contract is implemented and verified. `CapacityProfile::unconfigured()` is a valid metadata-only profile; because it contains no execution dimensions, reservations fail as `UnconfiguredResource`. A regression starts two actors against one store, verifies single-writer refusal, then drops and reopens cleanly.
+
+Evidence: Rust 1.99.1 macOS `cargo test --lib` passes 63/63 and strict Clippy passes. The digest-pinned Linux Docker full manifest test passes 65/65 and strict Clippy passes. No new dependencies were introduced. The actor has not yet been given an IPC command surface: the existing private pipe remains UI-to-sidecar request/response only, and TypeScript task/workspace mutations remain the active writers. No product workload is admitted by the empty profile; this closes only startup lifecycle and empty-profile fail-closed behavior, not I1/I2/I3 or any original outcome gate.
+
 ## Linux sandbox containment backend — 2026-10-30
 
 Implemented in the owning `vak-sandbox` repository and pushed as `d621f51` on `codex/linux-runtime-fail-closed`; no files under Vakyartha's `framework/` submodule were changed. The backend combines Landlock ABI 5+ path rules, seccomp restrictions, capability dropping, supervised process groups, cancellation, bounded command/output inputs and cleanup receipts. Linux CLI execution requires an existing specific workspace and refuses protected system roots. Unsupported kernel/policy features fail closed. No third-party dependency was added.

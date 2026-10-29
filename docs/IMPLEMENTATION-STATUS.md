@@ -10,6 +10,8 @@ Check an implementation item only after its acceptance behavior is verified. App
 
 Rust now has an inactive native HTTP generation primitive with fixed model-provider routes and payload-permit validation. Digest-pinned Linux Rust 1.99.1 Docker passes 63/63 native library tests and strict Clippy. This does not close the runtime boundary: TypeScript provider traffic still does not use Rust mediation, the control actor is not started by the app, TS task/workspace stores remain authoritative, and shared scheduler coverage, effective Linux containment/resources, canonical durable commit and original outcome gates remain open. See [handover](HANDOVER.md), [evaluation](EVALUATION.md) and the [delivery plan](agent-runtime/DELIVERY-PLAN.md). No AR, IA or ISO acceptance item is closed by this mechanism checkpoint.
 
+Tauri now starts and owns the Rust control actor with a metadata-only empty capacity profile. Rust 1.99.1 macOS tests pass 63/63 and strict Clippy; pinned Linux Docker tests pass 65/65 and strict Clippy. All execution-resource reservations remain unavailable. The actor has no sidecar IPC surface and no product task/workspace path uses it; this bootstrap does not close an acceptance gate. Detailed evidence is in [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-control-actor-lifecycle-wired--2026-10-30).
+
 ## Planning and design
 
 - [ ] A1. Implement the [data-first authoring contract](plans/DATA-FIRST-AUTHORING.md): skills guide the agent; records, field mappings and operations replace independently authored table/chart/metric copies. Broad rewrite proposal deleted. No old-code/backward-compatibility requirement; preserve security and product capabilities.

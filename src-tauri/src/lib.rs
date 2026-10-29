@@ -30,10 +30,16 @@ mod vault;
 // dispatch must be completed before this client is used for product traffic.
 #[allow(dead_code)]
 mod broker;
-// Native admission primitives remain inactive until the single control actor
-// can govern every protected workload through one cutover.
-#[allow(dead_code)]
+// The native control actor and store start with an empty execution profile.
+// No workload class is routed through them until its measured profile and
+// mediated execution cutover are ready.
+#[allow(
+    dead_code,
+    reason = "typed actor operations are enabled only with the protected workload cutover"
+)]
 mod control;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use control::{CapacityProfile, ControlActor};
 use engine::{Engine as Sidecar, engine_request, engine_ack, engine_cancel};
 
 /// Closing the window hides it while this is set, so the engine and its
@@ -60,6 +66,23 @@ fn app_data_dir(app: &AppHandle) -> PathBuf {
     } else {
         app.path().app_data_dir().unwrap_or_else(|_| PathBuf::from("."))
     }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn control_data_dir(app: &AppHandle) -> std::io::Result<PathBuf> {
+    let path = if cfg!(debug_assertions) {
+        std::env::var_os("VAK_DATA_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("..")
+                    .join(".vak/desktop")
+            })
+    } else {
+        app.path().app_data_dir().map_err(std::io::Error::other)?
+    };
+    std::fs::create_dir_all(&path)?;
+    std::fs::canonicalize(path)
 }
 
 /// Store a secret into the cross-platform Vault through the trusted engine broker.
@@ -409,6 +432,26 @@ pub fn run() {
         })
         .setup(|app| {
             tray(app)?;
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            {
+                let data_dir = control_data_dir(app.handle())?;
+                let profile = CapacityProfile::unconfigured().map_err(|error| {
+                    std::io::Error::other(format!("control profile: {error:?}"))
+                })?;
+                let control = ControlActor::open(
+                    &data_dir,
+                    "unconfigured-v1",
+                    profile,
+                    32,
+                    std::time::Duration::from_secs(1),
+                )
+                .map_err(|error| {
+                    std::io::Error::other(format!("native control startup: {error:?}"))
+                })?;
+                app.manage(control);
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            eprintln!("[control] unavailable: durable native store is not verified on this platform");
             let sidecar = start(app.handle());
             if let Err(e) = &sidecar.backend {
                 eprintln!("[engine] {e}");
