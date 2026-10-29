@@ -10,13 +10,13 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 7;
+const STORE_VERSION: u16 = 8;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-pub mod delegation;
 pub mod bridge;
+pub mod delegation;
 pub mod folder;
 pub mod registry;
 pub mod state;
@@ -421,15 +421,15 @@ impl CapacityLedger {
         }
         ledger.request_ids = snapshot.request_ids.into_iter().collect();
         let mut child_queue_lease_ids = std::collections::HashSet::new();
+        let mut child_execution_lease_ids = std::collections::HashSet::new();
         for root in ledger.roots.values() {
             for child in root.children().values() {
-                let active = ledger.active.get(&child.queue_lease_id());
                 match child.status() {
                     state::ChildStatus::Queued => {
                         if !child_queue_lease_ids.insert(child.queue_lease_id()) {
                             return Err(StoreError::Corrupt);
                         }
-                        let Some(lease) = active else {
+                        let Some(lease) = ledger.active.get(&child.queue_lease_id()) else {
                             return Err(StoreError::Corrupt);
                         };
                         if lease.root_id() != root.id()
@@ -438,16 +438,50 @@ impl CapacityLedger {
                             return Err(StoreError::Corrupt);
                         }
                     }
-                    state::ChildStatus::Invalidated if active.is_some() => {
+                    state::ChildStatus::Invalidated
+                        if ledger.active.contains_key(&child.queue_lease_id()) =>
+                    {
                         return Err(StoreError::Corrupt);
                     }
                     state::ChildStatus::Invalidated => {}
+                    state::ChildStatus::Starting
+                    | state::ChildStatus::Running
+                    | state::ChildStatus::Interrupted => {
+                        let Some(attempt) = child.attempt() else {
+                            return Err(StoreError::Corrupt);
+                        };
+                        if !child_execution_lease_ids.insert(attempt.execution_lease_id()) {
+                            return Err(StoreError::Corrupt);
+                        }
+                        let Some(lease) = ledger.active.get(&attempt.execution_lease_id()) else {
+                            return Err(StoreError::Corrupt);
+                        };
+                        if lease.root_id() != root.id()
+                            || lease.amounts() != &BTreeMap::from([(Resource::ChildExecution, 1)])
+                        {
+                            return Err(StoreError::Corrupt);
+                        }
+                    }
+                    state::ChildStatus::Returned
+                    | state::ChildStatus::Accepted
+                    | state::ChildStatus::Rejected
+                    | state::ChildStatus::Cancelled
+                    | state::ChildStatus::Failed => {
+                        let Some(attempt) = child.attempt() else {
+                            return Err(StoreError::Corrupt);
+                        };
+                        if ledger.active.contains_key(&attempt.execution_lease_id()) {
+                            return Err(StoreError::Corrupt);
+                        }
+                    }
                 }
             }
         }
         if ledger.active.values().any(|lease| {
             lease.amounts().contains_key(&Resource::QueuedChild)
                 && !child_queue_lease_ids.contains(&lease.id)
+                || lease.amounts().contains_key(&Resource::ChildExecution)
+                    && !child_execution_lease_ids.contains(&lease.id)
         }) {
             return Err(StoreError::Corrupt);
         }
@@ -558,6 +592,29 @@ enum ActorCommand {
         proposals: Vec<ChildProposal>,
         reply: SyncSender<Result<Vec<ChildTask>, ControlError>>,
     },
+    StartChildAttempt {
+        root_id: String,
+        expected_root_revision: u64,
+        child_id: String,
+        expected_child_revision: u64,
+        start_request_id: String,
+        reply: SyncSender<Result<ChildTask, ControlError>>,
+    },
+    ConfirmChildStarted {
+        root_id: String,
+        expected_root_revision: u64,
+        child_id: String,
+        expected_child_revision: u64,
+        supervisor_receipt: String,
+        reply: SyncSender<Result<ChildTask, ControlError>>,
+    },
+    ReturnChildAttempt {
+        root_id: String,
+        child_id: String,
+        expected_child_revision: u64,
+        result_ref: String,
+        reply: SyncSender<Result<ChildTask, ControlError>>,
+    },
     MutateRoot {
         id: String,
         expected_revision: u64,
@@ -639,7 +696,9 @@ impl ControlHandle {
         self.commands
             .try_send(ActorCommand::Ping { reply })
             .map_err(queue_error)?;
-        response.recv_timeout(self.response_timeout).map_err(response_error)
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)
     }
 
     pub fn reserve(
@@ -746,6 +805,83 @@ impl ControlHandle {
                 root_id,
                 expected_revision,
                 proposals,
+                reply,
+            })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    /// Atomically trades a queued-child lease for a child-execution lease and
+    /// persists the attempt identity before returning it to a dispatcher.
+    pub fn start_child_attempt(
+        &self,
+        root_id: String,
+        expected_root_revision: u64,
+        child_id: String,
+        expected_child_revision: u64,
+        start_request_id: String,
+    ) -> Result<ChildTask, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::StartChildAttempt {
+                root_id,
+                expected_root_revision,
+                child_id,
+                expected_child_revision,
+                start_request_id,
+                reply,
+            })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    /// Confirms the prepared attempt only after the trusted process supervisor
+    /// reports an exact launched invocation. This handle is not exposed to TS.
+    pub fn confirm_child_started(
+        &self,
+        root_id: String,
+        expected_root_revision: u64,
+        child_id: String,
+        expected_child_revision: u64,
+        supervisor_receipt: String,
+    ) -> Result<ChildTask, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::ConfirmChildStarted {
+                root_id,
+                expected_root_revision,
+                child_id,
+                expected_child_revision,
+                supervisor_receipt,
+                reply,
+            })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    /// Records a child result claim after a trusted supervisor confirms exit,
+    /// releasing execution capacity in the same durable transition. The result
+    /// remains pending parent verification and parent review.
+    pub fn return_child_attempt(
+        &self,
+        root_id: String,
+        child_id: String,
+        expected_child_revision: u64,
+        result_ref: String,
+    ) -> Result<ChildTask, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::ReturnChildAttempt {
+                root_id,
+                child_id,
+                expected_child_revision,
+                result_ref,
                 reply,
             })
             .map_err(queue_error)?;
@@ -988,6 +1124,9 @@ impl ControlActor {
             recovered |= root
                 .recover_after_restart()
                 .map_err(|_| StoreError::Corrupt)?;
+            recovered |= root
+                .interrupt_running_children()
+                .map_err(|_| StoreError::Corrupt)?;
         }
         for lease_id in invalidated_child_leases {
             let lease = ledger.active_lease(lease_id).ok_or(StoreError::Corrupt)?;
@@ -1044,9 +1183,13 @@ fn actor_loop(
                 amounts,
                 reply,
             } => {
-                if amounts.contains_key(&Resource::QueuedChild) {
+                if let Some(resource @ (Resource::QueuedChild | Resource::ChildExecution)) =
+                    amounts.keys().find(|resource| {
+                        matches!(resource, Resource::QueuedChild | Resource::ChildExecution)
+                    })
+                {
                     let _ = reply.send(Err(ControlError::Admission(
-                        AdmissionError::ReservedForControl(Resource::QueuedChild),
+                        AdmissionError::ReservedForControl(*resource),
                     )));
                     continue;
                 }
@@ -1223,6 +1366,255 @@ fn actor_loop(
                     Ok(_) => {
                         ledger = candidate;
                         let _ = reply.send(Ok(children));
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Store(error)));
+                        break;
+                    }
+                }
+            }
+            ActorCommand::StartChildAttempt {
+                root_id,
+                expected_root_revision,
+                child_id,
+                expected_child_revision,
+                start_request_id,
+                reply,
+            } => {
+                let Some(root) = ledger.roots.get(&root_id) else {
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::RootNotFound)));
+                    continue;
+                };
+                let Some(child) = root.children().get(&child_id) else {
+                    let _ = reply.send(Err(ControlError::TaskState(
+                        StateError::ChildAttemptUnavailable,
+                    )));
+                    continue;
+                };
+                if let Some(attempt) = child.attempt() {
+                    if attempt.start_request_id() == start_request_id {
+                        let _ = reply.send(Ok(child.clone()));
+                    } else {
+                        let _ = reply.send(Err(ControlError::TaskState(
+                            StateError::ChildAttemptUnavailable,
+                        )));
+                    }
+                    continue;
+                }
+                if root.revision() != expected_root_revision {
+                    let _ = reply.send(Err(ControlError::TaskState(StateError::RevisionConflict)));
+                    continue;
+                }
+                if root.status() != RootStatus::Running {
+                    let _ = reply.send(Err(ControlError::TaskState(
+                        StateError::InvalidTransition(root.status()),
+                    )));
+                    continue;
+                }
+                if root
+                    .workspace_grant()
+                    .is_some_and(|grant| !ledger.workspace_grant_is_current(grant))
+                {
+                    let _ = reply.send(Err(ControlError::TaskState(
+                        StateError::WorkspaceGrantStale,
+                    )));
+                    continue;
+                }
+                if child.revision() != expected_child_revision
+                    || child.status() != state::ChildStatus::Queued
+                {
+                    let _ = reply.send(Err(ControlError::TaskState(StateError::RevisionConflict)));
+                    continue;
+                }
+                let mut candidate = ledger.clone();
+                let queue_lease = match candidate.active_lease(child.queue_lease_id()) {
+                    Some(lease) => lease,
+                    None => {
+                        let _ =
+                            reply.send(Err(ControlError::Admission(AdmissionError::UnknownLease)));
+                        continue;
+                    }
+                };
+                if let Err(error) = candidate.release(&queue_lease) {
+                    let _ = reply.send(Err(ControlError::Admission(error)));
+                    continue;
+                }
+                let Some(next_lease) = candidate.next_lease.checked_add(1) else {
+                    let _ =
+                        reply.send(Err(ControlError::Admission(AdmissionError::InvalidProfile)));
+                    continue;
+                };
+                let execution_request = format!("child-exec-{next_lease}");
+                let execution = match candidate.reserve(
+                    &profile,
+                    &execution_request,
+                    &root_id,
+                    BTreeMap::from([(Resource::ChildExecution, 1)]),
+                ) {
+                    Ok(lease) => lease,
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Admission(error)));
+                        continue;
+                    }
+                };
+                let result = candidate
+                    .roots
+                    .get_mut(&root_id)
+                    .expect("root checked above")
+                    .start_child_attempt(
+                        expected_root_revision,
+                        &child_id,
+                        expected_child_revision,
+                        start_request_id,
+                        execution.id,
+                    )
+                    .map_err(ControlError::TaskState);
+                match result {
+                    Err(error) => {
+                        let _ = reply.send(Err(error));
+                    }
+                    Ok(child) => match store.persist(&candidate, &profile) {
+                        Ok(_) => {
+                            ledger = candidate;
+                            let _ = reply.send(Ok(child));
+                        }
+                        Err(error) => {
+                            let _ = reply.send(Err(ControlError::Store(error)));
+                            break;
+                        }
+                    },
+                }
+            }
+            ActorCommand::ConfirmChildStarted {
+                root_id,
+                expected_root_revision,
+                child_id,
+                expected_child_revision,
+                supervisor_receipt,
+                reply,
+            } => {
+                let Some(root) = ledger.roots.get(&root_id) else {
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::RootNotFound)));
+                    continue;
+                };
+                let Some(child) = root.children().get(&child_id) else {
+                    let _ = reply.send(Err(ControlError::TaskState(
+                        StateError::ChildAttemptUnavailable,
+                    )));
+                    continue;
+                };
+                if child.status() == state::ChildStatus::Running
+                    && child
+                        .attempt()
+                        .and_then(state::ChildAttempt::supervisor_receipt)
+                        == Some(supervisor_receipt.as_str())
+                {
+                    let _ = reply.send(Ok(child.clone()));
+                    continue;
+                }
+                if root.revision() != expected_root_revision {
+                    let _ = reply.send(Err(ControlError::TaskState(StateError::RevisionConflict)));
+                    continue;
+                }
+                if root.status() != RootStatus::Running {
+                    let _ = reply.send(Err(ControlError::TaskState(
+                        StateError::InvalidTransition(root.status()),
+                    )));
+                    continue;
+                }
+                if root
+                    .workspace_grant()
+                    .is_some_and(|grant| !ledger.workspace_grant_is_current(grant))
+                {
+                    let _ = reply.send(Err(ControlError::TaskState(
+                        StateError::WorkspaceGrantStale,
+                    )));
+                    continue;
+                }
+                let mut candidate = ledger.clone();
+                let result = candidate
+                    .roots
+                    .get_mut(&root_id)
+                    .expect("root checked above")
+                    .confirm_child_started(
+                        expected_root_revision,
+                        &child_id,
+                        expected_child_revision,
+                        supervisor_receipt,
+                    )
+                    .map_err(ControlError::TaskState);
+                match result {
+                    Err(error) => {
+                        let _ = reply.send(Err(error));
+                    }
+                    Ok(child) => match store.persist(&candidate, &profile) {
+                        Ok(_) => {
+                            ledger = candidate;
+                            let _ = reply.send(Ok(child));
+                        }
+                        Err(error) => {
+                            let _ = reply.send(Err(ControlError::Store(error)));
+                            break;
+                        }
+                    },
+                }
+            }
+            ActorCommand::ReturnChildAttempt {
+                root_id,
+                child_id,
+                expected_child_revision,
+                result_ref,
+                reply,
+            } => {
+                let mut candidate = ledger.clone();
+                let Some(root) = candidate.roots.get(&root_id) else {
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::RootNotFound)));
+                    continue;
+                };
+                let Some(child) = root.children().get(&child_id) else {
+                    let _ = reply.send(Err(ControlError::TaskState(
+                        StateError::ChildAttemptUnavailable,
+                    )));
+                    continue;
+                };
+                if child.status() == state::ChildStatus::Returned
+                    && child.attempt().and_then(state::ChildAttempt::result_ref)
+                        == Some(result_ref.as_str())
+                {
+                    let _ = reply.send(Ok(child.clone()));
+                    continue;
+                }
+                let Some(attempt) = child.attempt() else {
+                    let _ = reply.send(Err(ControlError::TaskState(
+                        StateError::ChildAttemptUnavailable,
+                    )));
+                    continue;
+                };
+                let Some(execution_lease) = candidate.active_lease(attempt.execution_lease_id())
+                else {
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::UnknownLease)));
+                    continue;
+                };
+                let changed = match candidate
+                    .roots
+                    .get_mut(&root_id)
+                    .expect("root checked above")
+                    .return_child_attempt(&child_id, expected_child_revision, result_ref)
+                {
+                    Ok(child) => child,
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::TaskState(error)));
+                        continue;
+                    }
+                };
+                if let Err(error) = candidate.release(&execution_lease) {
+                    let _ = reply.send(Err(ControlError::Admission(error)));
+                    continue;
+                }
+                match store.persist(&candidate, &profile) {
+                    Ok(_) => {
+                        ledger = candidate;
+                        let _ = reply.send(Ok(changed));
                     }
                     Err(error) => {
                         let _ = reply.send(Err(ControlError::Store(error)));
@@ -2038,11 +2430,13 @@ mod tests {
                 (Resource::Generation, 2),
                 (Resource::ContainedProcess, 4),
                 (Resource::QueuedChild, limit),
+                (Resource::ChildExecution, 1),
             ]),
             BTreeMap::from([
                 (Resource::Generation, 1),
                 (Resource::ContainedProcess, 2),
                 (Resource::QueuedChild, limit),
+                (Resource::ChildExecution, 1),
             ]),
             16,
         )
@@ -2371,6 +2765,295 @@ mod tests {
                 .all(|child| child.status() == state::ChildStatus::Invalidated)
         );
         drop(recovered_actor);
+        fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
+    fn child_dispatch_atomically_trades_queue_capacity_and_persists_return_receipt() {
+        let data = temp_data_dir();
+        let timeout = Duration::from_secs(2);
+        let profile = profile_with_queued_children(2);
+        let actor = ControlActor::open(&data, "profile-1", profile.clone(), 8, timeout).unwrap();
+        let handle = actor.handle();
+        assert_eq!(
+            handle.reserve(
+                "external-child-exec".into(),
+                "task-child-run".into(),
+                ask(Resource::ChildExecution, 1),
+            ),
+            Err(ControlError::Admission(AdmissionError::ReservedForControl(
+                Resource::ChildExecution
+            )))
+        );
+        let root = handle
+            .create_root_with_delegation(
+                "task-child-run".into(),
+                "Deliver the checked result".into(),
+                "Meet the child acceptance contract".into(),
+                2,
+                vec![Requirement::new("outcome-child-run".into(), true).unwrap()],
+                DelegationPolicy::new(delegation::DelegationMode::BoundedAdaptive, 2).unwrap(),
+            )
+            .unwrap();
+        let running_root = handle
+            .mutate_root(
+                root.id().into(),
+                root.revision(),
+                RootMutation::StartAttempt,
+            )
+            .unwrap();
+        let queued = handle
+            .admit_children(
+                running_root.id().into(),
+                running_root.revision(),
+                vec![
+                    child_proposal("child-run-request", "child-run-output"),
+                    child_proposal("child-run-request-2", "child-run-output-2"),
+                ],
+            )
+            .unwrap()
+            .remove(0);
+        let current_root = handle.read_root(running_root.id().into()).unwrap();
+        let started = handle
+            .start_child_attempt(
+                current_root.id().into(),
+                current_root.revision(),
+                queued.id().into(),
+                queued.revision(),
+                "dispatch-child-run".into(),
+            )
+            .unwrap();
+        assert_eq!(started.status(), state::ChildStatus::Starting);
+        let retry = handle
+            .start_child_attempt(
+                running_root.id().into(),
+                running_root.revision(),
+                queued.id().into(),
+                queued.revision(),
+                "dispatch-child-run".into(),
+            )
+            .unwrap();
+        assert_eq!(
+            retry, started,
+            "lost acknowledgement retries return the same attempt"
+        );
+        let waiting_child = handle
+            .read_root(running_root.id().into())
+            .unwrap()
+            .children()
+            .values()
+            .find(|child| child.id() != started.id())
+            .unwrap()
+            .clone();
+        assert_eq!(
+            handle.start_child_attempt(
+                running_root.id().into(),
+                handle
+                    .read_root(running_root.id().into())
+                    .unwrap()
+                    .revision(),
+                waiting_child.id().into(),
+                waiting_child.revision(),
+                "dispatch-child-run-second".into(),
+            ),
+            Err(ControlError::Admission(
+                AdmissionError::CapacityUnavailable(Resource::ChildExecution)
+            ))
+        );
+        let current_root = handle.read_root(running_root.id().into()).unwrap();
+        let running = handle
+            .confirm_child_started(
+                current_root.id().into(),
+                current_root.revision(),
+                started.id().into(),
+                started.revision(),
+                "supervisor-child-run".into(),
+            )
+            .unwrap();
+        assert_eq!(running.status(), state::ChildStatus::Running);
+        assert_eq!(
+            handle
+                .confirm_child_started(
+                    running_root.id().into(),
+                    running_root.revision(),
+                    started.id().into(),
+                    started.revision(),
+                    "supervisor-child-run".into(),
+                )
+                .unwrap(),
+            running,
+            "lost supervisor acknowledgement retries return the same started attempt"
+        );
+        let returned = handle
+            .return_child_attempt(
+                running_root.id().into(),
+                running.id().into(),
+                running.revision(),
+                "immutable-child-receipt".into(),
+            )
+            .unwrap();
+        assert_eq!(returned.status(), state::ChildStatus::Returned);
+        assert_eq!(
+            handle
+                .return_child_attempt(
+                    running_root.id().into(),
+                    running.id().into(),
+                    running.revision(),
+                    "immutable-child-receipt".into(),
+                )
+                .unwrap(),
+            returned,
+            "lost return acknowledgement must not duplicate state or receipts"
+        );
+        let current_root = handle.read_root(running_root.id().into()).unwrap();
+        let next_started = handle
+            .start_child_attempt(
+                current_root.id().into(),
+                current_root.revision(),
+                waiting_child.id().into(),
+                waiting_child.revision(),
+                "dispatch-child-run-second".into(),
+            )
+            .unwrap();
+        assert_eq!(next_started.status(), state::ChildStatus::Starting);
+        let current_root = handle.read_root(running_root.id().into()).unwrap();
+        let next_running = handle
+            .confirm_child_started(
+                current_root.id().into(),
+                current_root.revision(),
+                next_started.id().into(),
+                next_started.revision(),
+                "supervisor-child-run-second".into(),
+            )
+            .unwrap();
+        handle
+            .return_child_attempt(
+                current_root.id().into(),
+                next_running.id().into(),
+                next_running.revision(),
+                "immutable-child-receipt-second".into(),
+            )
+            .unwrap();
+        drop(handle);
+        drop(actor);
+
+        let restarted = ControlActor::open(&data, "profile-1", profile, 8, timeout).unwrap();
+        let recovered = restarted
+            .handle()
+            .read_root("task-child-run".into())
+            .unwrap();
+        let recovered_child = recovered.children().values().next().unwrap();
+        assert_eq!(recovered_child, &returned);
+        fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
+    fn restart_marks_unsettled_child_interrupted_and_keeps_unknown_execution_charge() {
+        let data = temp_data_dir();
+        let timeout = Duration::from_secs(2);
+        let profile = profile_with_queued_children(2);
+        let actor = ControlActor::open(&data, "profile-1", profile.clone(), 8, timeout).unwrap();
+        let handle = actor.handle();
+        let root = handle
+            .create_root_with_delegation(
+                "task-child-interrupt".into(),
+                "Deliver the checked result".into(),
+                "Meet the child acceptance contract".into(),
+                2,
+                vec![Requirement::new("outcome-child-interrupt".into(), true).unwrap()],
+                DelegationPolicy::new(delegation::DelegationMode::BoundedAdaptive, 2).unwrap(),
+            )
+            .unwrap();
+        let running_root = handle
+            .mutate_root(
+                root.id().into(),
+                root.revision(),
+                RootMutation::StartAttempt,
+            )
+            .unwrap();
+        let queued = handle
+            .admit_children(
+                running_root.id().into(),
+                running_root.revision(),
+                vec![
+                    child_proposal("child-interrupt-request", "child-interrupt-output"),
+                    child_proposal("child-interrupt-request-2", "child-interrupt-output-2"),
+                ],
+            )
+            .unwrap()
+            .remove(0);
+        let current_root = handle.read_root(running_root.id().into()).unwrap();
+        let started = handle
+            .start_child_attempt(
+                current_root.id().into(),
+                current_root.revision(),
+                queued.id().into(),
+                queued.revision(),
+                "dispatch-child-interrupt".into(),
+            )
+            .unwrap();
+        drop(handle);
+        drop(actor);
+
+        let restarted = ControlActor::open(&data, "profile-1", profile, 8, timeout).unwrap();
+        let recovered_handle = restarted.handle();
+        let recovered = recovered_handle
+            .read_root("task-child-interrupt".into())
+            .unwrap();
+        let interrupted = recovered.children().values().next().unwrap();
+        assert_eq!(interrupted.status(), state::ChildStatus::Interrupted);
+        assert_eq!(
+            interrupted.attempt().unwrap().status(),
+            state::ChildAttemptStatus::Interrupted
+        );
+        let other_root = recovered_handle
+            .create_root_with_delegation(
+                "task-after-restart".into(),
+                "Inspect a separate result".into(),
+                "Keep the job bounded".into(),
+                1,
+                vec![Requirement::new("outcome-after-restart".into(), true).unwrap()],
+                DelegationPolicy::new(delegation::DelegationMode::BoundedAdaptive, 2).unwrap(),
+            )
+            .unwrap();
+        let other_running = recovered_handle
+            .mutate_root(
+                other_root.id().into(),
+                other_root.revision(),
+                RootMutation::StartAttempt,
+            )
+            .unwrap();
+        let other_children = recovered_handle
+            .admit_children(
+                other_running.id().into(),
+                other_running.revision(),
+                vec![
+                    child_proposal("after-restart-a", "after-restart-write-a"),
+                    child_proposal("after-restart-b", "after-restart-write-b"),
+                ],
+            )
+            .unwrap();
+        let queued = &other_children[0];
+        let current_other = recovered_handle
+            .read_root(other_running.id().into())
+            .unwrap();
+        assert_eq!(
+            recovered_handle.start_child_attempt(
+                current_other.id().into(),
+                current_other.revision(),
+                queued.id().into(),
+                queued.revision(),
+                "dispatch-after-restart".into(),
+            ),
+            Err(ControlError::Admission(
+                AdmissionError::CapacityUnavailable(Resource::ChildExecution)
+            )),
+            "an uncertain process cleanup does not refund the active execution lease"
+        );
+        assert_eq!(
+            started.attempt().unwrap().id(),
+            interrupted.attempt().unwrap().id()
+        );
         fs::remove_dir_all(data).unwrap();
     }
 

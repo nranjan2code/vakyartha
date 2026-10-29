@@ -1,6 +1,6 @@
 # Implementation progress
 
-Status: active implementation, 2026-10-29. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
+Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
 ## Typed private native-control health bridge — 2026-10-30
 
@@ -11,6 +11,16 @@ Evidence: Rust 1.99.1 macOS library suite passes 67/67 and digest-pinned Linux D
 Scope limit: the protocol has no task, workspace, approval, lease, provider, sandbox, or arbitrary-command operation. The actor's stores and capacity remain unused by product paths, and TypeScript remains the authoritative task/workspace writer. No I1/I2/I3 gate or user outcome closes here. Subsequent control operations must be added as distinct native command variants with identity/revision/authority validation and independent canaries; do not widen this health message into a generic RPC tunnel.
 
 Follow-up regression receipts: serial Node 26.13.0 app tests pass 275/275, the pinned Projection suite passes 412/412, and `npm run typecheck` passes. This broad run follows the protocol migration; it is not a multi-root saturation test and does not close any original task-output or authority acceptance gate.
+
+## Native child-attempt lifecycle foundation — 2026-10-30
+
+The native root aggregate now persists one child attempt with a stable attempt/start identity and a reserved `ChildExecution` lease. Preparing an attempt requires the root and child revisions plus a running root, checks the captured workspace grant when present, atomically releases the queued-child lease and obtains one child-execution lease, advances the root cancellation epoch, then persists `Starting` before returning the attempt. A separate supervisor-start receipt is required to transition it to `Running`; that receipt check is idempotent. A repeated prepare identity returns the same persisted attempt; conflicting identities fail without poisoning the store. Generic actor resource reservations cannot create `QueuedChild` or `ChildExecution` leases. A trusted-supervisor result return stores a bounded opaque result reference, releases the execution lease and advances the root/child revisions as one durable candidate; this reference is still an unverified claim, not accepted evidence. A duplicate return with the same identity is idempotent, and an attempt cannot reuse another child's result, start identity or supervisor receipt.
+
+On actor restart, queued children are invalidated and their queue leases released. Starting and running children become `Interrupted`, their cancellation epoch/revision advances, and their `ChildExecution` leases remain held because this actor cannot prove that the supervised process tree exited. This makes uncertain resource cleanup visible rather than refunding capacity on assumption. The control snapshot schema is now 8, with no old-schema reader. The checked development and installed-app paths contained no native control store requiring an offline conversion.
+
+Evidence: Rust 1.99.1 macOS library tests pass 70/70 with strict Clippy; the digest-pinned Linux Docker full Rust gate passes 72/72 with strict Clippy. Focused rustfmt checks pass for `control.rs` and `control/state.rs`. Actor tests cover stale revisions, identity replay/conflict, atomic queue-to-execution conversion, serialized capacity contention, result return/replay, persistence/reopen, restart interruption and retention of an uncertain execution charge.
+
+Limits: the `ControlHandle` methods are not exposed on the private protocol or used by a product path. The supervisor receipts and exit reports are test-supplied identities, not proof from a running process supervisor. No trusted process supervisor starts the child, sends a framed result, verifies/accepts the returned result or integrates it into the parent candidate. There are no native attempt time/deadline budgets, child cancellation/settlement acknowledgements, scoped worker channels, fair ready queue, or common chat/task/integration capacity profile. The empty app profile still refuses all execution.
 
 ## Native control actor lifecycle wired — 2026-10-30
 
@@ -128,7 +138,7 @@ This is native domain/storage work only. The actor remains inactive in the app, 
 ## Still required
 
 - Replace the TypeScript registry/task/scheduler/approval writers with one native durable control actor and a single cutover; do not run duplicate writers.
-- Implement child attempts, atomic queued-to-running capacity conversion, supervised dispatch, bounded output/evidence and parent integration on top of the new queued child records.
+- Connect the child-attempt foundation to a trusted supervisor, scoped worker channel, bounded result/evidence verification, parent integration/acceptance, deadline/cancellation/cleanup acknowledgements and shared ready-queue scheduling. The current handle methods are not exposed or used by product work.
 - Capture fixed workspace grants in queued and scheduled root records, derive child grants, invalidate affected descendants on rebind, and recheck the target at native dispatch.
 - Implement native provider and integration mediation, exact payload contracts, effective isolation/resource enforcement, common multi-job admission, recovery, version-fenced canonical commit, evidence and terminal finalization.
 - Implement the planned navigation owner and storage IA changes without breaking existing interactive surfaces.

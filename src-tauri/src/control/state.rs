@@ -168,6 +168,74 @@ pub struct RootTask {
 pub enum ChildStatus {
     Queued,
     Invalidated,
+    Starting,
+    Running,
+    Returned,
+    Accepted,
+    Rejected,
+    Cancelled,
+    Interrupted,
+    Failed,
+}
+
+impl ChildStatus {
+    fn blocks_completion(self) -> bool {
+        matches!(
+            self,
+            Self::Queued
+                | Self::Starting
+                | Self::Running
+                | Self::Returned
+                | Self::Cancelled
+                | Self::Interrupted
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChildAttemptStatus {
+    Starting,
+    Running,
+    Returned,
+    Accepted,
+    Rejected,
+    Cancelled,
+    Interrupted,
+    Failed,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChildAttempt {
+    id: String,
+    start_request_id: String,
+    revision: u64,
+    execution_lease_id: u64,
+    status: ChildAttemptStatus,
+    supervisor_receipt: Option<String>,
+    result_ref: Option<String>,
+}
+
+impl ChildAttempt {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+    pub fn start_request_id(&self) -> &str {
+        &self.start_request_id
+    }
+    pub fn status(&self) -> ChildAttemptStatus {
+        self.status
+    }
+    pub fn supervisor_receipt(&self) -> Option<&str> {
+        self.supervisor_receipt.as_deref()
+    }
+    pub fn execution_lease_id(&self) -> u64 {
+        self.execution_lease_id
+    }
+    pub fn result_ref(&self) -> Option<&str> {
+        self.result_ref.as_deref()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -185,6 +253,7 @@ pub struct ChildTask {
     writes: Vec<String>,
     benefit: ClaimedBenefit,
     queue_lease_id: u64,
+    attempt: Option<ChildAttempt>,
 }
 
 impl ChildTask {
@@ -197,8 +266,103 @@ impl ChildTask {
     pub fn status(&self) -> ChildStatus {
         self.status
     }
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
     pub fn queue_lease_id(&self) -> u64 {
         self.queue_lease_id
+    }
+    pub fn attempt(&self) -> Option<&ChildAttempt> {
+        self.attempt.as_ref()
+    }
+
+    pub fn start_attempt(
+        &mut self,
+        expected_revision: u64,
+        start_request_id: String,
+        execution_lease_id: u64,
+    ) -> Result<ChildAttempt, StateError> {
+        if self.revision != expected_revision {
+            return Err(StateError::RevisionConflict);
+        }
+        if self.status != ChildStatus::Queued || execution_lease_id == 0 {
+            return Err(StateError::ChildAttemptUnavailable);
+        }
+        if !valid_identity(&start_request_id) {
+            return Err(StateError::InvalidIdentity);
+        }
+        let attempt = ChildAttempt {
+            id: format!("attempt-{}-1", self.id),
+            start_request_id,
+            revision: 1,
+            execution_lease_id,
+            status: ChildAttemptStatus::Starting,
+            supervisor_receipt: None,
+            result_ref: None,
+        };
+        self.attempt = Some(attempt.clone());
+        self.status = ChildStatus::Starting;
+        self.revision = self.revision.checked_add(1).ok_or(StateError::Corrupt)?;
+        Ok(attempt)
+    }
+
+    pub fn confirm_started(
+        &mut self,
+        expected_revision: u64,
+        supervisor_receipt: String,
+    ) -> Result<ChildAttempt, StateError> {
+        if self.revision != expected_revision {
+            return Err(StateError::RevisionConflict);
+        }
+        if !valid_identity(&supervisor_receipt) {
+            return Err(StateError::InvalidIdentity);
+        }
+        let attempt = self
+            .attempt
+            .as_mut()
+            .ok_or(StateError::ChildAttemptUnavailable)?;
+        if attempt.status == ChildAttemptStatus::Running
+            && attempt.supervisor_receipt.as_deref() == Some(&supervisor_receipt)
+        {
+            return Ok(attempt.clone());
+        }
+        if attempt.status != ChildAttemptStatus::Starting {
+            return Err(StateError::ChildAttemptUnavailable);
+        }
+        attempt.status = ChildAttemptStatus::Running;
+        attempt.supervisor_receipt = Some(supervisor_receipt);
+        attempt.revision = attempt.revision.checked_add(1).ok_or(StateError::Corrupt)?;
+        self.status = ChildStatus::Running;
+        self.revision = self.revision.checked_add(1).ok_or(StateError::Corrupt)?;
+        Ok(attempt.clone())
+    }
+
+    pub fn return_attempt(
+        &mut self,
+        expected_revision: u64,
+        // The caller must be the trusted supervisor after child exit is
+        // confirmed; the opaque reference remains a claim pending parent review.
+        result_ref: String,
+    ) -> Result<ChildAttempt, StateError> {
+        if self.revision != expected_revision {
+            return Err(StateError::RevisionConflict);
+        }
+        if !valid_identity(&result_ref) {
+            return Err(StateError::InvalidIdentity);
+        }
+        let attempt = self
+            .attempt
+            .as_mut()
+            .ok_or(StateError::ChildAttemptUnavailable)?;
+        if attempt.status != ChildAttemptStatus::Running {
+            return Err(StateError::ChildAttemptUnavailable);
+        }
+        attempt.status = ChildAttemptStatus::Returned;
+        attempt.result_ref = Some(result_ref);
+        attempt.revision = attempt.revision.checked_add(1).ok_or(StateError::Corrupt)?;
+        self.status = ChildStatus::Returned;
+        self.revision = self.revision.checked_add(1).ok_or(StateError::Corrupt)?;
+        Ok(attempt.clone())
     }
 
     fn matches(&self, proposal: &ChildProposal) -> bool {
@@ -228,6 +392,7 @@ pub enum StateError {
     Delegation(ProposalReason),
     ChildLimitReached,
     ChildIdentityConflict,
+    ChildAttemptUnavailable,
     ChildrenOutstanding,
     ExecutionFenceStale,
     WorkspaceGrantStale,
@@ -393,6 +558,27 @@ impl RootTask {
         Ok(queue_leases)
     }
 
+    pub fn interrupt_running_children(&mut self) -> Result<bool, StateError> {
+        let mut changed = false;
+        for child in self.children.values_mut() {
+            if matches!(child.status, ChildStatus::Starting | ChildStatus::Running) {
+                let attempt = child
+                    .attempt
+                    .as_mut()
+                    .ok_or(StateError::ChildAttemptUnavailable)?;
+                attempt.status = ChildAttemptStatus::Interrupted;
+                attempt.revision = attempt.revision.checked_add(1).ok_or(StateError::Corrupt)?;
+                child.status = ChildStatus::Interrupted;
+                child.revision = child.revision.checked_add(1).ok_or(StateError::Corrupt)?;
+                changed = true;
+            }
+        }
+        if changed {
+            self.bump_revision()?;
+        }
+        Ok(changed)
+    }
+
     fn drain_queued_children(&mut self) -> Result<Vec<u64>, StateError> {
         let mut queue_leases = Vec::new();
         for child in self.children.values_mut() {
@@ -509,12 +695,112 @@ impl RootTask {
                 writes: proposal.writes,
                 benefit: proposal.benefit,
                 queue_lease_id,
+                attempt: None,
             };
             self.children.insert(id, child.clone());
             result.push(child);
         }
         self.bump_revision()?;
         Ok(result)
+    }
+
+    pub fn start_child_attempt(
+        &mut self,
+        expected_root_revision: u64,
+        child_id: &str,
+        expected_child_revision: u64,
+        start_request_id: String,
+        execution_lease_id: u64,
+    ) -> Result<ChildTask, StateError> {
+        self.check_revision(expected_root_revision)?;
+        if self.status != RootStatus::Running {
+            return Err(StateError::InvalidTransition(self.status));
+        }
+        if self.children.values().any(|child| {
+            child.id != child_id
+                && child
+                    .attempt
+                    .as_ref()
+                    .is_some_and(|attempt| attempt.start_request_id == start_request_id)
+        }) {
+            return Err(StateError::ChildIdentityConflict);
+        }
+        let changed = {
+            let child = self
+                .children
+                .get_mut(child_id)
+                .ok_or(StateError::ChildAttemptUnavailable)?;
+            child.start_attempt(
+                expected_child_revision,
+                start_request_id,
+                execution_lease_id,
+            )?;
+            child.clone()
+        };
+        self.bump_cancellation_epoch()?;
+        self.bump_revision()?;
+        Ok(changed)
+    }
+
+    pub fn return_child_attempt(
+        &mut self,
+        child_id: &str,
+        expected_child_revision: u64,
+        result_ref: String,
+    ) -> Result<ChildTask, StateError> {
+        if self.children.values().any(|child| {
+            child.id != child_id
+                && child
+                    .attempt
+                    .as_ref()
+                    .and_then(|attempt| attempt.result_ref.as_deref())
+                    == Some(result_ref.as_str())
+        }) {
+            return Err(StateError::ChildIdentityConflict);
+        }
+        let changed = {
+            let child = self
+                .children
+                .get_mut(child_id)
+                .ok_or(StateError::ChildAttemptUnavailable)?;
+            child.return_attempt(expected_child_revision, result_ref)?;
+            child.clone()
+        };
+        self.bump_revision()?;
+        Ok(changed)
+    }
+
+    pub fn confirm_child_started(
+        &mut self,
+        expected_root_revision: u64,
+        child_id: &str,
+        expected_child_revision: u64,
+        supervisor_receipt: String,
+    ) -> Result<ChildTask, StateError> {
+        self.check_revision(expected_root_revision)?;
+        if self.status != RootStatus::Running {
+            return Err(StateError::InvalidTransition(self.status));
+        }
+        if self.children.values().any(|child| {
+            child.id != child_id
+                && child
+                    .attempt
+                    .as_ref()
+                    .and_then(|attempt| attempt.supervisor_receipt.as_deref())
+                    == Some(supervisor_receipt.as_str())
+        }) {
+            return Err(StateError::ChildIdentityConflict);
+        }
+        let changed = {
+            let child = self
+                .children
+                .get_mut(child_id)
+                .ok_or(StateError::ChildAttemptUnavailable)?;
+            child.confirm_started(expected_child_revision, supervisor_receipt)?;
+            child.clone()
+        };
+        self.bump_revision()?;
+        Ok(changed)
     }
 
     pub fn recover_after_restart(&mut self) -> Result<bool, StateError> {
@@ -696,7 +982,7 @@ impl RootTask {
         if self
             .children
             .values()
-            .any(|child| child.status == ChildStatus::Queued)
+            .any(|child| child.status.blocks_completion())
         {
             return Err(StateError::ChildrenOutstanding);
         }
@@ -721,7 +1007,7 @@ impl RootTask {
             || self
                 .children
                 .values()
-                .any(|child| child.status == ChildStatus::Queued)
+                .any(|child| child.status.blocks_completion())
             || self
                 .requirements
                 .values()
@@ -838,6 +1124,7 @@ impl RootTask {
                     || child.contract_revision > self.contract_revision
                     || child.revision == 0
                     || child.queue_lease_id == 0
+                    || !valid_child_attempt(child)
                     || (child.status == ChildStatus::Queued
                         && child.contract_revision != self.contract_revision)
                     || validate_text(&child.objective, MAX_TEXT).is_err()
@@ -850,11 +1137,12 @@ impl RootTask {
                     || !unique_references(&child.reads)
                     || !unique_references(&child.writes)
             })
+            || !child_attempt_identities_unique(&self.children)
             || (matches!(self.status, RootStatus::NeedsReview | RootStatus::Completed)
                 && self
                     .children
                     .values()
-                    .any(|child| child.status == ChildStatus::Queued))
+                    .any(|child| child.status.blocks_completion()))
             || (self.status == RootStatus::Completed) != self.review.is_some()
             || (self.status == RootStatus::Completed
                 && self
@@ -954,6 +1242,86 @@ fn valid_identity(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
+fn valid_child_attempt(child: &ChildTask) -> bool {
+    (match (&child.status, &child.attempt) {
+        (ChildStatus::Queued | ChildStatus::Invalidated, None) => true,
+        (ChildStatus::Starting, Some(attempt)) => {
+            attempt.status == ChildAttemptStatus::Starting
+                && attempt.supervisor_receipt.is_none()
+                && attempt.result_ref.is_none()
+        }
+        (ChildStatus::Running, Some(attempt)) => {
+            attempt.status == ChildAttemptStatus::Running
+                && attempt.supervisor_receipt.is_some()
+                && attempt.result_ref.is_none()
+        }
+        (ChildStatus::Returned, Some(attempt)) => {
+            attempt.status == ChildAttemptStatus::Returned
+                && attempt.supervisor_receipt.is_some()
+                && attempt.result_ref.is_some()
+        }
+        (ChildStatus::Accepted, Some(attempt)) => {
+            attempt.status == ChildAttemptStatus::Accepted
+                && attempt.supervisor_receipt.is_some()
+                && attempt.result_ref.is_some()
+        }
+        (ChildStatus::Rejected, Some(attempt)) => {
+            attempt.status == ChildAttemptStatus::Rejected
+                && attempt.supervisor_receipt.is_some()
+                && attempt.result_ref.is_some()
+        }
+        (ChildStatus::Cancelled, Some(attempt)) => attempt.status == ChildAttemptStatus::Cancelled,
+        (ChildStatus::Interrupted, Some(attempt)) => {
+            attempt.status == ChildAttemptStatus::Interrupted
+        }
+        (ChildStatus::Failed, Some(attempt)) => attempt.status == ChildAttemptStatus::Failed,
+        _ => false,
+    }) && child.attempt.as_ref().is_none_or(|attempt| {
+        valid_identity(&attempt.id)
+            && valid_identity(&attempt.start_request_id)
+            && attempt.revision > 0
+            && attempt.execution_lease_id > 0
+            && attempt
+                .supervisor_receipt
+                .as_deref()
+                .is_none_or(valid_identity)
+            && attempt.result_ref.as_deref().is_none_or(valid_identity)
+    })
+}
+
+fn child_attempt_identities_unique(children: &BTreeMap<String, ChildTask>) -> bool {
+    let attempts = children
+        .values()
+        .filter_map(|child| child.attempt.as_ref())
+        .collect::<Vec<_>>();
+    let unique = |values: Vec<&str>| {
+        values
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            == values.len()
+    };
+    unique(attempts.iter().map(|attempt| attempt.id.as_str()).collect())
+        && unique(
+            attempts
+                .iter()
+                .map(|attempt| attempt.start_request_id.as_str())
+                .collect(),
+        )
+        && unique(
+            attempts
+                .iter()
+                .filter_map(|attempt| attempt.result_ref.as_deref())
+                .collect(),
+        )
+        && unique(
+            attempts
+                .iter()
+                .filter_map(|attempt| attempt.supervisor_receipt.as_deref())
+                .collect(),
+        )
+}
+
 fn unique_references(values: &[String]) -> bool {
     values.iter().all(|value| valid_identity(value))
         && values
@@ -1048,6 +1416,67 @@ mod tests {
             "a retry returns prior children even after the root revision advanced"
         );
         assert_eq!(task.revision(), revision);
+        assert_eq!(
+            task.request_review(task.revision()),
+            Err(StateError::ChildrenOutstanding)
+        );
+        task.validate().unwrap();
+    }
+
+    #[test]
+    fn child_attempt_start_and_return_are_revision_fenced_and_preserve_result_identity() {
+        let mut task = delegating_root();
+        task.start_attempt(task.revision()).unwrap();
+        let queued = task
+            .admit_children(
+                task.revision(),
+                vec![
+                    child_proposal("request-a", "candidate-a"),
+                    child_proposal("request-b", "candidate-b"),
+                ],
+                &[11, 12],
+            )
+            .unwrap()
+            .remove(0);
+        let root_revision = task.revision();
+        let cancellation_epoch = task.cancellation_epoch();
+        let starting = task
+            .start_child_attempt(
+                root_revision,
+                queued.id(),
+                queued.revision(),
+                "start-a".into(),
+                12,
+            )
+            .unwrap();
+        assert_eq!(starting.status(), ChildStatus::Starting);
+        assert_eq!(starting.attempt().unwrap().execution_lease_id(), 12);
+        assert_eq!(task.cancellation_epoch(), cancellation_epoch + 1);
+        assert_eq!(
+            task.start_child_attempt(
+                root_revision,
+                queued.id(),
+                queued.revision(),
+                "start-b".into(),
+                13,
+            ),
+            Err(StateError::RevisionConflict)
+        );
+        let running = task
+            .confirm_child_started(
+                task.revision(),
+                starting.id(),
+                starting.revision(),
+                "supervisor-a".into(),
+            )
+            .unwrap();
+        assert_eq!(running.status(), ChildStatus::Running);
+        let returned = task
+            .return_child_attempt(running.id(), running.revision(), "receipt-a".into())
+            .unwrap();
+        assert_eq!(returned.status(), ChildStatus::Returned);
+        assert_eq!(returned.attempt().unwrap().result_ref(), Some("receipt-a"));
+        task.invalidate_queued_children().unwrap();
         assert_eq!(
             task.request_review(task.revision()),
             Err(StateError::ChildrenOutstanding)
