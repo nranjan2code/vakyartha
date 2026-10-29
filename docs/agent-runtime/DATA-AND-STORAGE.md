@@ -35,6 +35,8 @@ Inspected `sidecar/workspace-registry.ts`, `sidecar/sandbox-realms.ts`, `sidecar
 
 Direct editing writes admitted originals; copy/review operates in a Realm. Shared project Realms exist already. The target must preserve these capabilities while correcting authority and ownership. Do not describe stable folder identity, native registry control or fully unified navigation as already implemented.
 
+The inactive Rust control prototype now models Project, Workspace, WorkspaceBinding and ProjectMembership as separate records, captures canonical folder identity and includes them in the same schema-3 control snapshot as native root/capacity state. Its actor can register workspaces, bind/revoke a session, change project membership and revalidate a grant before returning it. The TypeScript registry remains the product writer, the native actor is not enabled, and no sandbox command receives the grant; native dispatch-time workspace enforcement is still open. See [implementation progress](IMPLEMENTATION-PROGRESS.md) for evidence and limits.
+
 ## 3. Target entity relationships
 
 ```mermaid

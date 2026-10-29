@@ -10,12 +10,18 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 2;
+const STORE_VERSION: u16 = 3;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+pub mod folder;
+pub mod registry;
 pub mod state;
+use registry::{
+    ProjectMembership, ProjectRecord, RegistryError, RegistryState, WorkspaceBinding,
+    WorkspaceGrant, WorkspaceMode, WorkspaceRecord,
+};
 use state::{CheckOutcome, Requirement, RootStatus, RootTask, StateError, UserReview};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -104,6 +110,7 @@ pub struct CapacityLedger {
     used: BTreeMap<Resource, u32>,
     used_by_root: HashMap<String, BTreeMap<Resource, u32>>,
     roots: BTreeMap<String, RootTask>,
+    registry: RegistryState,
 }
 
 impl CapacityLedger {
@@ -241,6 +248,7 @@ impl CapacityLedger {
                 .map(|(id, lease)| (id.clone(), *lease))
                 .collect(),
             roots: self.roots.clone(),
+            registry: self.registry.clone(),
         }
     }
 
@@ -255,11 +263,21 @@ impl CapacityLedger {
         let mut ledger = Self {
             next_lease: snapshot.next_lease,
             roots: snapshot.roots,
+            registry: snapshot.registry,
             ..Self::default()
         };
-        if ledger.roots.len() > MAX_ROOTS || ledger.roots.iter().any(|(id, root)| id != root.id() || root.validate().is_err()) {
+        if ledger.roots.len() > MAX_ROOTS
+            || ledger
+                .roots
+                .iter()
+                .any(|(id, root)| id != root.id() || root.validate().is_err())
+        {
             return Err(StoreError::Corrupt);
         }
+        ledger
+            .registry
+            .validate()
+            .map_err(|_| StoreError::Corrupt)?;
         for lease in snapshot.issued {
             if lease.id == 0
                 || lease.id > snapshot.next_lease
@@ -352,6 +370,7 @@ struct LedgerSnapshot {
     active_ids: Vec<u64>,
     request_ids: BTreeMap<String, u64>,
     roots: BTreeMap<String, RootTask>,
+    registry: RegistryState,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -395,6 +414,7 @@ pub enum ControlError {
     Closed,
     TimedOut,
     TaskState(StateError),
+    Registry(RegistryError),
 }
 
 #[derive(Clone, Debug)]
@@ -402,8 +422,14 @@ pub enum RootMutation {
     StartAttempt,
     WaitForInput,
     WaitForApproval,
-    Stop { status: RootStatus, reason: String },
-    ReviseContract { goal: String, criteria: String },
+    Stop {
+        status: RootStatus,
+        reason: String,
+    },
+    ReviseContract {
+        goal: String,
+        criteria: String,
+    },
     RecordCheck {
         contract_revision: u64,
         requirement_id: String,
@@ -442,6 +468,52 @@ enum ActorCommand {
     ReadRoot {
         id: String,
         reply: SyncSender<Result<RootTask, ControlError>>,
+    },
+    CreateProject {
+        id: String,
+        name: String,
+        reply: SyncSender<Result<ProjectRecord, ControlError>>,
+    },
+    RegisterWorkspace {
+        id: String,
+        path: PathBuf,
+        reply: SyncSender<Result<WorkspaceRecord, ControlError>>,
+    },
+    BindWorkspace {
+        id: String,
+        session_id: String,
+        workspace_id: String,
+        realm_id: Option<String>,
+        mode: WorkspaceMode,
+        reply: SyncSender<Result<WorkspaceBinding, ControlError>>,
+    },
+    SetProjectMembership {
+        session_id: String,
+        project_id: Option<String>,
+        expected_revision: Option<u64>,
+        reply: SyncSender<Result<ProjectMembership, ControlError>>,
+    },
+    ReadProjectMembership {
+        session_id: String,
+        reply: SyncSender<Option<ProjectMembership>>,
+    },
+    RevokeWorkspace {
+        session_id: String,
+        expected_revision: u64,
+        reply: SyncSender<Result<WorkspaceBinding, ControlError>>,
+    },
+    RebindWorkspace {
+        session_id: String,
+        expected_revision: u64,
+        workspace_id: String,
+        realm_id: Option<String>,
+        mode: WorkspaceMode,
+        reply: SyncSender<Result<WorkspaceBinding, ControlError>>,
+    },
+    ReadWorkspaceGrant {
+        session_id: String,
+        expected_revision: u64,
+        reply: SyncSender<Result<WorkspaceGrant, ControlError>>,
     },
     Shutdown,
 }
@@ -507,7 +579,12 @@ impl ControlHandle {
             .map_err(response_error)?
     }
 
-    pub fn mutate_root(&self, id: String, expected_revision: u64, mutation: RootMutation) -> Result<RootTask, ControlError> {
+    pub fn mutate_root(
+        &self,
+        id: String,
+        expected_revision: u64,
+        mutation: RootMutation,
+    ) -> Result<RootTask, ControlError> {
         let (reply, response) = sync_channel(1);
         self.commands
             .try_send(ActorCommand::MutateRoot {
@@ -530,6 +607,147 @@ impl ControlHandle {
         response
             .recv_timeout(self.response_timeout)
             .map_err(response_error)?
+    }
+
+    pub fn create_project(&self, id: String, name: String) -> Result<ProjectRecord, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::CreateProject { id, name, reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    pub fn register_workspace(
+        &self,
+        id: String,
+        path: PathBuf,
+    ) -> Result<WorkspaceRecord, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::RegisterWorkspace { id, path, reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    pub fn bind_workspace(
+        &self,
+        id: String,
+        session_id: String,
+        workspace_id: String,
+        realm_id: Option<String>,
+        mode: WorkspaceMode,
+    ) -> Result<WorkspaceBinding, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::BindWorkspace {
+                id,
+                session_id,
+                workspace_id,
+                realm_id,
+                mode,
+                reply,
+            })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    pub fn revoke_workspace(
+        &self,
+        session_id: String,
+        expected_revision: u64,
+    ) -> Result<WorkspaceBinding, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::RevokeWorkspace {
+                session_id,
+                expected_revision,
+                reply,
+            })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    pub fn rebind_workspace(
+        &self,
+        session_id: String,
+        expected_revision: u64,
+        workspace_id: String,
+        realm_id: Option<String>,
+        mode: WorkspaceMode,
+    ) -> Result<WorkspaceBinding, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::RebindWorkspace {
+                session_id,
+                expected_revision,
+                workspace_id,
+                realm_id,
+                mode,
+                reply,
+            })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    pub fn read_workspace_grant(
+        &self,
+        session_id: String,
+        expected_revision: u64,
+    ) -> Result<WorkspaceGrant, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::ReadWorkspaceGrant {
+                session_id,
+                expected_revision,
+                reply,
+            })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    pub fn set_project_membership(
+        &self,
+        session_id: String,
+        project_id: Option<String>,
+        expected_revision: Option<u64>,
+    ) -> Result<ProjectMembership, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::SetProjectMembership {
+                session_id,
+                project_id,
+                expected_revision,
+                reply,
+            })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    pub fn read_project_membership(
+        &self,
+        session_id: String,
+    ) -> Result<Option<ProjectMembership>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::ReadProjectMembership { session_id, reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)
     }
 }
 
@@ -651,15 +869,12 @@ fn actor_loop(
                 reply,
             } => {
                 if ledger.roots.contains_key(&id) {
-                    let _ = reply.send(Err(ControlError::Admission(
-                        AdmissionError::DuplicateRoot,
-                    )));
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::DuplicateRoot)));
                     continue;
                 }
                 if ledger.roots.len() >= MAX_ROOTS {
-                    let _ = reply.send(Err(ControlError::Admission(
-                        AdmissionError::RootLedgerFull,
-                    )));
+                    let _ =
+                        reply.send(Err(ControlError::Admission(AdmissionError::RootLedgerFull)));
                     continue;
                 }
                 let root = match RootTask::create(id, goal, criteria, run_limit, requirements) {
@@ -697,8 +912,12 @@ fn actor_loop(
                     RootMutation::StartAttempt => root.start_attempt(expected_revision),
                     RootMutation::WaitForInput => root.wait_for_input(expected_revision),
                     RootMutation::WaitForApproval => root.wait_for_approval(expected_revision),
-                    RootMutation::Stop { status, reason } => root.stop(expected_revision, status, reason),
-                    RootMutation::ReviseContract { goal, criteria } => root.revise_contract(expected_revision, goal, criteria),
+                    RootMutation::Stop { status, reason } => {
+                        root.stop(expected_revision, status, reason)
+                    }
+                    RootMutation::ReviseContract { goal, criteria } => {
+                        root.revise_contract(expected_revision, goal, criteria)
+                    }
                     RootMutation::RecordCheck {
                         contract_revision,
                         requirement_id,
@@ -712,7 +931,9 @@ fn actor_loop(
                         receipt,
                     ),
                     RootMutation::RequestReview => root.request_review(expected_revision),
-                    RootMutation::AcceptReview(review) => root.accept_review(expected_revision, review),
+                    RootMutation::AcceptReview(review) => {
+                        root.accept_review(expected_revision, review)
+                    }
                 };
                 if let Err(error) = changed {
                     let _ = reply.send(Err(ControlError::TaskState(error)));
@@ -737,6 +958,181 @@ fn actor_loop(
                     .cloned()
                     .ok_or(ControlError::Admission(AdmissionError::RootNotFound));
                 let _ = reply.send(result);
+            }
+            ActorCommand::CreateProject { id, name, reply } => {
+                let project = match ProjectRecord::new(id, name) {
+                    Ok(project) => project,
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Registry(error)));
+                        continue;
+                    }
+                };
+                let mut candidate = ledger.clone();
+                if let Err(error) = candidate.registry.create_project(project.clone()) {
+                    let _ = reply.send(Err(ControlError::Registry(error)));
+                    continue;
+                }
+                match store.persist(&candidate, &profile) {
+                    Ok(_) => {
+                        ledger = candidate;
+                        let _ = reply.send(Ok(project));
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Store(error)));
+                        break;
+                    }
+                }
+            }
+            ActorCommand::RegisterWorkspace { id, path, reply } => {
+                let mut candidate = ledger.clone();
+                let workspace = match candidate.registry.register_workspace(id, &path) {
+                    Ok(workspace) => workspace,
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Registry(error)));
+                        continue;
+                    }
+                };
+                match store.persist(&candidate, &profile) {
+                    Ok(_) => {
+                        ledger = candidate;
+                        let _ = reply.send(Ok(workspace));
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Store(error)));
+                        break;
+                    }
+                }
+            }
+            ActorCommand::BindWorkspace {
+                id,
+                session_id,
+                workspace_id,
+                realm_id,
+                mode,
+                reply,
+            } => {
+                let mut candidate = ledger.clone();
+                let binding =
+                    match candidate
+                        .registry
+                        .bind(id, session_id, workspace_id, realm_id, mode)
+                    {
+                        Ok(binding) => binding,
+                        Err(error) => {
+                            let _ = reply.send(Err(ControlError::Registry(error)));
+                            continue;
+                        }
+                    };
+                match store.persist(&candidate, &profile) {
+                    Ok(_) => {
+                        ledger = candidate;
+                        let _ = reply.send(Ok(binding));
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Store(error)));
+                        break;
+                    }
+                }
+            }
+            ActorCommand::SetProjectMembership {
+                session_id,
+                project_id,
+                expected_revision,
+                reply,
+            } => {
+                let mut candidate = ledger.clone();
+                let membership = match candidate.registry.set_membership(
+                    session_id,
+                    project_id,
+                    expected_revision,
+                ) {
+                    Ok(membership) => membership,
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Registry(error)));
+                        continue;
+                    }
+                };
+                match store.persist(&candidate, &profile) {
+                    Ok(_) => {
+                        ledger = candidate;
+                        let _ = reply.send(Ok(membership));
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Store(error)));
+                        break;
+                    }
+                }
+            }
+            ActorCommand::ReadProjectMembership { session_id, reply } => {
+                let _ = reply.send(ledger.registry.membership(&session_id));
+            }
+            ActorCommand::RevokeWorkspace {
+                session_id,
+                expected_revision,
+                reply,
+            } => {
+                let mut candidate = ledger.clone();
+                let binding = match candidate.registry.revoke(&session_id, expected_revision) {
+                    Ok(binding) => binding,
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Registry(error)));
+                        continue;
+                    }
+                };
+                match store.persist(&candidate, &profile) {
+                    Ok(_) => {
+                        ledger = candidate;
+                        let _ = reply.send(Ok(binding));
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Store(error)));
+                        break;
+                    }
+                }
+            }
+            ActorCommand::RebindWorkspace {
+                session_id,
+                expected_revision,
+                workspace_id,
+                realm_id,
+                mode,
+                reply,
+            } => {
+                let mut candidate = ledger.clone();
+                let binding = match candidate.registry.rebind(
+                    &session_id,
+                    expected_revision,
+                    workspace_id,
+                    realm_id,
+                    mode,
+                ) {
+                    Ok(binding) => binding,
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Registry(error)));
+                        continue;
+                    }
+                };
+                match store.persist(&candidate, &profile) {
+                    Ok(_) => {
+                        ledger = candidate;
+                        let _ = reply.send(Ok(binding));
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Store(error)));
+                        break;
+                    }
+                }
+            }
+            ActorCommand::ReadWorkspaceGrant {
+                session_id,
+                expected_revision,
+                reply,
+            } => {
+                let grant = ledger
+                    .registry
+                    .grant(&session_id, expected_revision)
+                    .map_err(ControlError::Registry);
+                let _ = reply.send(grant);
             }
         }
     }
@@ -1606,29 +2002,57 @@ mod tests {
         let timeout = Duration::from_secs(2);
         let actor = ControlActor::open(&data, "profile-1", profile(), 4, timeout).unwrap();
         let handle = actor.handle();
-        let root = handle.create_root(
-            "task-1".into(),
-            "Produce a verified result".into(),
-            "Meet the declared requirements".into(),
-            3,
-            vec![Requirement::new("outcome".into(), true).unwrap()],
-        ).unwrap();
-        let running = handle.mutate_root(root.id().into(), root.revision(), RootMutation::StartAttempt).unwrap();
-        let checked = handle.mutate_root(running.id().into(), running.revision(), RootMutation::RecordCheck {
-            contract_revision: running.contract_revision(),
-            requirement_id: "outcome".into(),
-            outcome: CheckOutcome::Pass,
-            receipt: Some("receipt-1".into()),
-        }).unwrap();
-        let ready = handle.mutate_root(checked.id().into(), checked.revision(), RootMutation::RequestReview).unwrap();
-        let active = handle.create_root(
-            "task-live".into(),
-            "An interrupted task".into(),
-            "Review uncertain effects".into(),
-            3,
-            vec![Requirement::new("outcome".into(), true).unwrap()],
-        ).unwrap();
-        let active = handle.mutate_root(active.id().into(), active.revision(), RootMutation::StartAttempt).unwrap();
+        let root = handle
+            .create_root(
+                "task-1".into(),
+                "Produce a verified result".into(),
+                "Meet the declared requirements".into(),
+                3,
+                vec![Requirement::new("outcome".into(), true).unwrap()],
+            )
+            .unwrap();
+        let running = handle
+            .mutate_root(
+                root.id().into(),
+                root.revision(),
+                RootMutation::StartAttempt,
+            )
+            .unwrap();
+        let checked = handle
+            .mutate_root(
+                running.id().into(),
+                running.revision(),
+                RootMutation::RecordCheck {
+                    contract_revision: running.contract_revision(),
+                    requirement_id: "outcome".into(),
+                    outcome: CheckOutcome::Pass,
+                    receipt: Some("receipt-1".into()),
+                },
+            )
+            .unwrap();
+        let ready = handle
+            .mutate_root(
+                checked.id().into(),
+                checked.revision(),
+                RootMutation::RequestReview,
+            )
+            .unwrap();
+        let active = handle
+            .create_root(
+                "task-live".into(),
+                "An interrupted task".into(),
+                "Review uncertain effects".into(),
+                3,
+                vec![Requirement::new("outcome".into(), true).unwrap()],
+            )
+            .unwrap();
+        let active = handle
+            .mutate_root(
+                active.id().into(),
+                active.revision(),
+                RootMutation::StartAttempt,
+            )
+            .unwrap();
         let lease = handle
             .reserve(
                 "request-1".into(),
@@ -1657,7 +2081,12 @@ mod tests {
         let recovered = handle.read_root("task-live".into()).unwrap();
         assert_eq!(recovered.status(), RootStatus::Interrupted);
         assert_eq!(recovered.revision(), active.revision() + 1);
-        assert!(recovered.stop_reason().unwrap().contains("in-flight effects"));
+        assert!(
+            recovered
+                .stop_reason()
+                .unwrap()
+                .contains("in-flight effects")
+        );
         assert!(matches!(
             handle.reserve(
                 "request-1".into(),
@@ -1679,6 +2108,61 @@ mod tests {
         );
         drop(handle);
         drop(restarted);
+        fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
+    fn workspace_grants_share_native_durability_and_revocation_survives_restart() {
+        let data = temp_data_dir();
+        let source = temp_data_dir();
+        fs::create_dir(&source).unwrap();
+        let timeout = Duration::from_secs(2);
+        let actor = ControlActor::open(&data, "profile-1", profile(), 8, timeout).unwrap();
+        let handle = actor.handle();
+        let project = handle
+            .create_project("project-0001".into(), "Research".into())
+            .unwrap();
+        assert_eq!(project.id(), "project-0001");
+        let workspace = handle
+            .register_workspace("workspace-001".into(), source.clone())
+            .unwrap();
+        assert_eq!(workspace.canonical_path(), source.canonicalize().unwrap());
+        let binding = handle
+            .bind_workspace(
+                "binding-0001".into(),
+                "session-0001".into(),
+                workspace.id().into(),
+                None,
+                WorkspaceMode::CopyReview,
+            )
+            .unwrap();
+        handle
+            .set_project_membership(binding.session_id().into(), Some(project.id().into()), None)
+            .unwrap();
+        let grant = handle
+            .read_workspace_grant(binding.session_id().into(), binding.revision())
+            .unwrap();
+        assert_eq!(grant.binding_revision, binding.revision());
+        let revoked = handle
+            .revoke_workspace(binding.session_id().into(), binding.revision())
+            .unwrap();
+        drop(handle);
+        drop(actor);
+
+        let restarted = ControlActor::open(&data, "profile-1", profile(), 8, timeout).unwrap();
+        let restarted_handle = restarted.handle();
+        let persisted_membership = restarted_handle
+            .read_project_membership("session-0001".into())
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted_membership.project_id(), Some("project-0001"));
+        assert_eq!(
+            restarted_handle.read_workspace_grant(revoked.session_id().into(), revoked.revision()),
+            Err(ControlError::Registry(RegistryError::BindingRevoked))
+        );
+        drop(restarted_handle);
+        drop(restarted);
+        fs::remove_dir_all(source).unwrap();
         fs::remove_dir_all(data).unwrap();
     }
 
