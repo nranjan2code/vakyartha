@@ -3,7 +3,7 @@
 // Denies arbitrary exfiltration, unapproved destinations, and raw IP requests.
 import { COMPATIBLE_PRESETS } from "@vak/providers";
 
-export const ALLOWED_PROVIDER_HOSTS = new Set([
+export const ALLOWED_EGRESS_HOSTS = new Set([
   "api.openai.com",
   "api.anthropic.com",
   "generativelanguage.googleapis.com",
@@ -85,8 +85,8 @@ export function evaluateEgressUrl(
       return { allowed: false, reason: "Public outbound network egress must use HTTPS" };
     }
 
-    // Allowlisted provider hosts
-    if (ALLOWED_PROVIDER_HOSTS.has(host)) {
+    // Allowlisted public service hosts
+    if (ALLOWED_EGRESS_HOSTS.has(host)) {
       return { allowed: true };
     }
 
@@ -95,7 +95,7 @@ export function evaluateEgressUrl(
       return { allowed: true };
     }
 
-    return { allowed: false, reason: `Destination host ${host} is not in the authorized provider catalog` };
+    return { allowed: false, reason: `Destination host ${host} is not in the authorized egress catalog` };
   } catch (err) {
     return { allowed: false, reason: `Invalid destination URL: ${(err as Error).message}` };
   }

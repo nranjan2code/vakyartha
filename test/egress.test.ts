@@ -17,7 +17,7 @@ test("evaluateEgressUrl admits approved provider endpoints over HTTPS", () => {
   assert.equal(evaluateEgressUrl("https://my-company.cloud.databricks.com/ai-gateway/mcp-services/demo", false).allowed, true);
 });
 
-test("Rust and TypeScript provider egress lists cover the same built-in endpoint hosts", () => {
+test("Rust and TypeScript egress lists cover the same built-in endpoint hosts", () => {
   const nativePolicy = readFileSync(new URL("../src-tauri/src/policy.rs", import.meta.url), "utf8");
   const nativeHosts = new Set(Array.from(nativePolicy.matchAll(/^\s*"([^\"]+)",$/gm), match => match[1]));
   for (const preset of COMPATIBLE_PRESETS) {
@@ -30,7 +30,7 @@ test("Rust and TypeScript provider egress lists cover the same built-in endpoint
 test("evaluateEgressUrl rejects unapproved public destinations and HTTP", () => {
   const evil = evaluateEgressUrl("https://evil-attacker.com/exfiltrate", false);
   assert.equal(evil.allowed, false);
-  assert.match(evil.reason ?? "", /not in the authorized provider catalog/);
+  assert.match(evil.reason ?? "", /not in the authorized egress catalog/);
 
   const insecure = evaluateEgressUrl("http://api.openai.com/v1/chat/completions", false);
   assert.equal(insecure.allowed, false);

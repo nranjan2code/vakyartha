@@ -2,8 +2,8 @@
 // The Rust shell owns security invariants that must remain immutable
 // even if the TypeScript worker is compromised or executes untrusted model output.
 
-/// Admitted provider hosts that the app is authorized to communicate with.
-pub const ALLOWED_PROVIDER_HOSTS: &[&str] = &[
+/// Static public service origins that the app may contact over HTTPS.
+pub const ALLOWED_EGRESS_HOSTS: &[&str] = &[
     "api.openai.com",
     "api.anthropic.com",
     "generativelanguage.googleapis.com",
@@ -124,7 +124,7 @@ pub fn evaluate_egress_with_custom(
     }
 
     // Check host allowlist.
-    if ALLOWED_PROVIDER_HOSTS.contains(&host_lower.as_str()) {
+    if ALLOWED_EGRESS_HOSTS.contains(&host_lower.as_str()) {
         return EgressDecision::Allowed;
     }
 
@@ -137,7 +137,7 @@ pub fn evaluate_egress_with_custom(
     }
 
     // Explicitly deny raw IP addresses or arbitrary domains.
-    EgressDecision::Denied("Destination host is not in the authorized provider catalog")
+    EgressDecision::Denied("Destination host is not in the authorized egress catalog")
 }
 
 /// Validates whether an outbound request destination is permitted by the default egress policy.
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn egress_admits_known_providers() {
-        for host in ALLOWED_PROVIDER_HOSTS {
+        for host in ALLOWED_EGRESS_HOSTS {
             assert_eq!(
                 evaluate_egress("https", host, None),
                 EgressDecision::Allowed,
