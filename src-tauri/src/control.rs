@@ -904,7 +904,10 @@ fn sync_directory(path: &Path) -> Result<(), StoreError> {
 
 #[cfg(windows)]
 fn sync_directory(_path: &Path) -> Result<(), StoreError> {
-    Ok(())
+    // Windows has no standard-library directory-sync primitive. Do not
+    // acknowledge snapshot selection or cleanup as durable until a supported
+    // filesystem contract is implemented and verified for this platform.
+    Err(StoreError::UnsupportedDurability)
 }
 
 fn store_io(error: std::io::Error) -> StoreError {
