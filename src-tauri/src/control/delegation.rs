@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 const MAX_CHILDREN_PER_PROPOSAL: usize = 4;
 const MAX_REFERENCES_PER_CHILD: usize = 64;
 const MAX_FIELD_BYTES: usize = 8_000;
+const MAX_ACCEPTANCE_BYTES: usize = 4_000;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -139,8 +140,8 @@ pub fn validate_proposal(mode: DelegationMode, proposals: &[ChildProposal]) -> P
     for proposal in proposals {
         if !valid_id(&proposal.request_id)
             || !request_ids.insert(proposal.request_id.as_str())
-            || !valid_text(&proposal.objective)
-            || !valid_text(&proposal.acceptance)
+            || !valid_text(&proposal.objective, MAX_FIELD_BYTES)
+            || !valid_text(&proposal.acceptance, MAX_ACCEPTANCE_BYTES)
             || proposal.inputs.is_empty()
             || proposal.inputs.len() > MAX_REFERENCES_PER_CHILD
             || proposal.reads.len() > MAX_REFERENCES_PER_CHILD
@@ -193,8 +194,8 @@ fn valid_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
-fn valid_text(value: &str) -> bool {
-    !value.trim().is_empty() && value.len() <= MAX_FIELD_BYTES && !value.contains('\0')
+fn valid_text(value: &str, max_bytes: usize) -> bool {
+    !value.trim().is_empty() && value.len() <= max_bytes && !value.contains('\0')
 }
 
 fn unique_ids(values: &[String]) -> bool {
@@ -305,6 +306,17 @@ mod tests {
             )
             .disposition,
             ProposalDisposition::EligibleForTrustedAdmission
+        );
+
+        let mut oversized = proposal("child-3", "candidate-3");
+        oversized.acceptance = "x".repeat(MAX_ACCEPTANCE_BYTES + 1);
+        assert_eq!(
+            validate_proposal(
+                DelegationMode::BoundedAdaptive,
+                &[oversized, proposal("child-4", "candidate-4")]
+            )
+            .reason,
+            ProposalReason::InvalidContract
         );
     }
 }
