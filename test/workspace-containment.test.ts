@@ -352,13 +352,19 @@ test("network connection is denied inside seatbelt sandbox execution", { skip: !
 test("missing or invalid sandbox helper fails closed without executing", async () => {
   const missingBin = path.join(tmpdir(), "nonexistent-vaksb-binary");
   const dummyDir = mkdtempSync(path.join(tmpdir(), "vak-sec-missing-"));
+  const refusal = process.platform === "darwin"
+    ? /supervised sandbox helper is required/i
+    : /OS-isolated command execution requires macOS\. No command was run\./i;
+  const realmRefusal = process.platform === "darwin"
+    ? /supervised sandbox helper is required|ENOENT/i
+    : /Realm execution requires macOS Seatbelt\./i;
 
   try {
     await assert.rejects(
       async () => {
         await runSandboxCommand(missingBin, dummyDir, "/bin/echo", ["hello"]);
       },
-      /supervised sandbox helper is required/i,
+      refusal,
     );
 
     const realms = new SandboxRealms({
@@ -372,7 +378,7 @@ test("missing or invalid sandbox helper fails closed without executing", async (
       async () => {
         await realms.list();
       },
-      /supervised sandbox helper is required|ENOENT/i,
+      realmRefusal,
     );
   } finally {
     rmSync(dummyDir, { recursive: true, force: true });

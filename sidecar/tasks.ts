@@ -170,7 +170,6 @@ export class Tasks {
         if (typeof raw.realm_id === "string" && REALM_UUID.test(raw.realm_id)) {
           const receipt: TaskOperationReceipt = { kind: "sandbox_realm_created", realmId: raw.realm_id, at: new Date().toISOString() };
           tool.operation.receipt = receipt;
-          void this.persist(e.task).catch((error: unknown) => this.deps.warn(`Operation receipt could not be checkpointed: ${String(error)}`));
         }
       } catch { /* An invalid helper response cannot create a recovery receipt. */ }
     }
@@ -533,6 +532,9 @@ export class Tasks {
               // A returned response resolves dispatch uncertainty even when the
               // parent run was cancelled while the tool was in flight.
               Object.assign(op, { state: "returned" });
+              // observeResult records validated receipts synchronously; this
+              // single settlement checkpoint commits both the receipt and the
+              // returned state before cancellation can unwind the run.
               await this.persist(t);
               if (tool.spec.name === "web__fetch_page") {
                 const read = e.sources.get(new URL(String(args.url)).href);
