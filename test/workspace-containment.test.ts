@@ -387,7 +387,7 @@ test("workspace scope is conveyed to folder-workspace skill and instructions in 
     transcriptsDir: path.join(dir, "transcripts"),
     access: "open",
     port: 0,
-    transport: "loopback",
+    transport: "http",
   });
 
   const api = async (route: string, method = "GET", value?: unknown) => {
@@ -423,7 +423,7 @@ test("workspace scope is conveyed to folder-workspace skill and instructions in 
     assert.ok(useSkill);
 
     // Call use_skill with folder-workspace
-    const outBound = await useSkill.execute({ names: ["folder-workspace"] });
+    const outBound = await useSkill.execute({ names: ["folder-workspace"] }, { callId: "c1" });
     assert.match(String(outBound), /Admitted project folder/);
     assert.match(String(outBound), new RegExp(projDir));
     assert.match(String(outBound), /copy_review/);
@@ -438,7 +438,7 @@ test("workspace scope is conveyed to folder-workspace skill and instructions in 
       },
     });
     const useSkillUnbound = toolsUnbound.find((t) => t.spec.name === "use_skill");
-    const outUnbound = await useSkillUnbound!.execute({ names: ["folder-workspace"] });
+    const outUnbound = await useSkillUnbound!.execute({ names: ["folder-workspace"] }, { callId: "c2" });
     assert.match(String(outUnbound), /No project folder is admitted/);
   } finally {
     await app.shutdown();
