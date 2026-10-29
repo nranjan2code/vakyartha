@@ -22,6 +22,8 @@ export interface WorkspaceBinding {
   session: string;
   projectId?: string;
   folder: string;
+  /** Filesystem object identity captured when the user explicitly binds this folder. */
+  folderIdentity?: string;
   mode: WorkspaceMode;
   realmId?: string;
   shared?: boolean;
@@ -148,26 +150,36 @@ function realpathSyncSafe(p: string): string {
   }
 }
 
+function physicalIdentityOf(dev: bigint, ino: bigint, birthtimeNs: bigint): string | undefined {
+  // Include object creation time so deleting and recreating a directory cannot
+  // inherit a grant if its filesystem later reuses an inode number.
+  if (dev === 0n || ino === 0n || birthtimeNs === 0n) return undefined;
+  return `${dev.toString(16)}:${ino.toString(16)}:${birthtimeNs.toString(16)}`;
+}
+
 export class WorkspaceRegistry {
   private readonly dataDir: string;
   private readonly file: string;
   private projects = new Map<string, Project>();
   private bindings = new Map<string, WorkspaceBinding>();
-  private sessionContext = new AsyncLocalStorage<{ session: string; revision?: number }>();
+  private committedProjects = new Map<string, Project>();
+  private committedBindings = new Map<string, WorkspaceBinding>();
+  private sessionContext = new AsyncLocalStorage<{ session: string; revision?: number | null }>();
 
   constructor(dataDir: string) {
     this.dataDir = dataDir;
     this.file = path.join(dataDir, "workspaces.json");
     this.load();
+    this.snapshotCommitted();
   }
 
   /** Run asynchronous work within a specific session and revision context. */
-  withSession<T>(session: string, work: () => T, revision?: number): T {
+  withSession<T>(session: string, work: () => T, revision?: number | null): T {
     return this.sessionContext.run({ session, revision }, work);
   }
 
   /** Get the current session and revision from AsyncLocalStorage, if active. */
-  currentSession(): { session: string; revision?: number } | undefined {
+  currentSession(): { session: string; revision?: number | null } | undefined {
     return this.sessionContext.getStore();
   }
 
@@ -176,28 +188,44 @@ export class WorkspaceRegistry {
     try {
       const raw = readFileSync(this.file, "utf8");
       const parsed = JSON.parse(raw) as WorkspaceRegistryData;
-      if (parsed.version !== 1) return;
-      if (Array.isArray(parsed.projects)) {
-        for (const p of parsed.projects) {
-          if (p && typeof p.id === "string" && typeof p.folder === "string") {
-            this.projects.set(p.id, p);
-          }
-        }
+      if (parsed.version !== 1 || !Array.isArray(parsed.projects) || !parsed.bindings || typeof parsed.bindings !== "object") {
+        throw new Error("unsupported registry shape");
       }
-      if (parsed.bindings && typeof parsed.bindings === "object") {
-        for (const [s, b] of Object.entries(parsed.bindings)) {
-          if (b && typeof b.session === "string" && typeof b.folder === "string") {
-            this.bindings.set(s, b);
-          }
+      for (const p of parsed.projects) {
+        if (!p || typeof p.id !== "string" || typeof p.folder !== "string" || typeof p.name !== "string" || !Number.isSafeInteger(p.revision) || p.revision < 1) {
+          throw new Error("invalid project entry");
         }
+        this.projects.set(p.id, p);
+      }
+      for (const [s, value] of Object.entries(parsed.bindings)) {
+        if (!value || typeof value !== "object") throw new Error("invalid binding entry");
+        const b = value as WorkspaceBinding;
+        if (typeof b.session !== "string" || b.session !== s || typeof b.folder !== "string" || !["copy_review", "direct"].includes(b.mode)
+          || !Number.isSafeInteger(b.revision) || b.revision < 1
+          || !["admitted", "revoked", "missing", "inaccessible"].includes(b.accessState)
+          || (b.folderIdentity !== undefined && (typeof b.folderIdentity !== "string" || !/^[a-f0-9]+:[a-f0-9]+:[a-f0-9]+$/.test(b.folderIdentity)))) {
+          throw new Error("invalid binding entry");
+        }
+        // A path-only record predates physical identity binding. Preserve the
+        // record, but require a fresh explicit grant before dispatch.
+        if (!b.folderIdentity) {
+          b.accessState = "revoked";
+          b.revision += 1;
+          b.updatedAt = new Date().toISOString();
+        }
+        this.bindings.set(s, b);
       }
     } catch {
-      // Corrupt or unreadable registry starts empty
+      throw new Error("Workspace registry is corrupt or unreadable. Workspace access is disabled until its data is repaired.");
     }
   }
 
+  private snapshotCommitted(): void {
+    this.committedProjects = new Map(Array.from(this.projects, ([id, value]) => [id, structuredClone(value)]));
+    this.committedBindings = new Map(Array.from(this.bindings, ([id, value]) => [id, structuredClone(value)]));
+  }
+
   private persist(): void {
-    mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
     const data: WorkspaceRegistryData = {
       version: 1,
       projects: Array.from(this.projects.values()),
@@ -205,10 +233,14 @@ export class WorkspaceRegistry {
     };
     const tmp = `${this.file}.${randomUUID()}.tmp`;
     try {
+      mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
       writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
       renameSync(tmp, this.file);
+      this.snapshotCommitted();
     } catch (err) {
       try { unlinkSync(tmp); } catch {}
+      this.projects = new Map(Array.from(this.committedProjects, ([id, value]) => [id, structuredClone(value)]));
+      this.bindings = new Map(Array.from(this.committedBindings, ([id, value]) => [id, structuredClone(value)]));
       throw err;
     }
   }
@@ -333,11 +365,21 @@ export class WorkspaceRegistry {
     }
 
     const { canonical } = validateWorkspaceFolder(opts.folder, this.dataDir);
+    const physicalStat = statSync(canonical, { bigint: true });
+    const physicalIdentity = physicalIdentityOf(physicalStat.dev, physicalStat.ino, physicalStat.birthtimeNs);
+    if (!physicalIdentity) throw new Error("This filesystem cannot provide a stable folder identity. Workspace access is unavailable here.");
     const existing = this.bindings.get(session);
     const now = new Date().toISOString();
 
-    let targetRealmId = opts.realmId ?? (existing?.folder === canonical ? existing.realmId : undefined);
     const shared = mode === "direct" ? false : Boolean(opts.shareProjectRealm ?? projectRecord?.sharedRealm);
+    if (shared && projectRecord) {
+      const projectStat = statSync(projectRecord.folder, { bigint: true });
+      const projectIdentity = physicalIdentityOf(projectStat.dev, projectStat.ino, projectStat.birthtimeNs);
+      if (!projectIdentity || projectIdentity !== physicalIdentity) {
+        throw new Error("A shared project Realm requires a binding to the project's current physical folder.");
+      }
+    }
+    let targetRealmId = opts.realmId ?? (existing?.folderIdentity === physicalIdentity ? existing.realmId : undefined);
 
     // If sharing project Realm and project already has a realmId, adopt it
     if (shared && projectRecord?.sharedRealmId && mode !== "direct") {
@@ -349,6 +391,7 @@ export class WorkspaceRegistry {
       session,
       projectId: opts.projectId,
       folder: canonical,
+      folderIdentity: physicalIdentity,
       mode,
       realmId: mode === "direct" ? undefined : targetRealmId,
       shared,
@@ -368,6 +411,11 @@ export class WorkspaceRegistry {
     return b ? structuredClone(b) : undefined;
   }
 
+  /** Capture the exact folder-binding state when an operation is admitted. */
+  captureBindingRevision(session: string): number | null {
+    return this.bindings.get(session)?.revision ?? null;
+  }
+
   listBindings(): WorkspaceBinding[] {
     return Array.from(this.bindings.values()).map(b => structuredClone(b));
   }
@@ -381,22 +429,40 @@ export class WorkspaceRegistry {
     const b = this.bindings.get(session);
     if (!b) return undefined;
 
+    // Loss of authority is sticky. A missing or revoked folder can only be
+    // admitted again by an explicit bindSession operation from the user.
+    if (b.accessState !== "admitted") return structuredClone(b);
+
     let newState: WorkspaceAccessState = b.accessState;
     try {
       const canonical = realpathSync(b.folder);
       if (canonical !== b.folder) {
         newState = "revoked";
       } else {
-        const stat = statSync(canonical);
+        const stat = statSync(canonical, { bigint: true });
         if (!stat.isDirectory()) {
           newState = "missing";
         } else {
-          accessSync(canonical, constants.R_OK | constants.X_OK);
-          newState = "admitted";
+          const identity = physicalIdentityOf(stat.dev, stat.ino, stat.birthtimeNs);
+          if (!b.folderIdentity || identity !== b.folderIdentity) {
+            newState = "revoked";
+          } else {
+            try {
+              accessSync(canonical, constants.R_OK | constants.X_OK);
+              newState = "admitted";
+            } catch {
+              newState = "inaccessible";
+            }
+          }
         }
       }
     } catch {
-      newState = "missing";
+      try {
+        statSync(b.folder);
+        newState = "inaccessible";
+      } catch {
+        newState = "missing";
+      }
     }
 
     if (newState !== b.accessState) {
@@ -427,6 +493,11 @@ export class WorkspaceRegistry {
   async setRealmId(session: string, realmId: string): Promise<WorkspaceBinding | undefined> {
     const b = this.bindings.get(session);
     if (!b) return undefined;
+    if (b.mode === "direct") throw new Error("Direct workspace bindings cannot own a Realm.");
+    if (typeof realmId !== "string" || !realmId.trim()) throw new Error("Realm ID is required.");
+    if (b.realmId && b.realmId !== realmId) {
+      throw new Error("This workspace is already assigned to another Realm. Detach it explicitly before assigning a new Realm.");
+    }
     b.realmId = realmId;
     b.updatedAt = new Date().toISOString();
 
@@ -457,20 +528,21 @@ export class WorkspaceRegistry {
    * belongs to this session's binding or its project's shared Realm.
    */
   verifySessionRealmAccess(session: string, requestedRealmId: string): { ok: true } | { ok: false; error: string } {
-    const b = this.getBinding(session);
+    const b = this.revalidateBinding(session);
     if (!b) {
       return { ok: false, error: "No workspace binding found for this session." };
+    }
+    if (b.accessState !== "admitted") {
+      return { ok: false, error: `Workspace access is ${b.accessState}; Realm access is suspended.` };
     }
     let allowed = false;
     if (b.realmId && b.realmId === requestedRealmId) {
       allowed = true;
-    } else if (b.projectId && b.shared) {
+    } else if (b.projectId && b.shared && (!b.realmId || b.realmId === requestedRealmId)) {
       const proj = this.getProject(b.projectId);
       if (proj?.sharedRealmId && proj.sharedRealmId === requestedRealmId) {
         allowed = true;
       }
-    } else if (!b.realmId) {
-      allowed = true;
     }
     if (!allowed) {
       return { ok: false, error: `Access denied: Realm '${requestedRealmId}' does not belong to session '${session}'.` };
@@ -502,7 +574,7 @@ export class WorkspaceRegistry {
    * If expectedRevision is provided, validates that the binding has not changed
    * (e.g. while awaiting approval).
    */
-  verifyDispatchScope(session: string, expectedRevision?: number): { ok: true; binding: WorkspaceBinding } | { ok: false; error: string } {
+  verifyDispatchScope(session: string, expectedRevision?: number | null): { ok: true; binding: WorkspaceBinding } | { ok: false; error: string } {
     const b = this.revalidateBinding(session);
     if (!b) {
       return { ok: false, error: "No folder workspace is bound to this chat session." };
@@ -510,7 +582,7 @@ export class WorkspaceRegistry {
     if (b.accessState !== "admitted") {
       return { ok: false, error: `Folder workspace access is ${b.accessState}. Re-select an accessible folder.` };
     }
-    if (expectedRevision !== undefined && b.revision !== expectedRevision) {
+    if (expectedRevision !== undefined && (expectedRevision === null || b.revision !== expectedRevision)) {
       return { ok: false, error: "The workspace binding revision changed since this operation was authorized. Re-authorize the operation." };
     }
     return { ok: true, binding: b };

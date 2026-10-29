@@ -8,11 +8,13 @@
     "framework/packages/*"
   ],
   "engines": {
-    "node": ">=24"
+    "node": ">=26"
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.ts\"",
     "test:framework": "node --test \"framework/packages/*/test/**/*.test.ts\"",
+    "test:linux-rust": "sh scripts/linux-rust-check.sh",
+    "test:linux-duckdb": "sh scripts/linux-duckdb-check.sh",
     "typecheck": "tsc -p tsconfig.json",
     "desktop": "tauri dev",
     "desktop:build": "npm run build:app --",
@@ -25,13 +27,13 @@
     "build:app": "tauri build --config src-tauri/tauri.release.conf.json"
   },
   "dependencies": {
-    "@duckdb/node-api": "1.5.6-r.1",
+    "@duckdb/node-api": "2.0.0-r.1",
     "@tauri-apps/api": "2.12.4",
     "@tauri-apps/plugin-opener": "2.7.2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.6",
     "typescript": "7.0.2",
     "vite": "8.3.5"
   }

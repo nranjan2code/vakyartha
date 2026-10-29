@@ -37,7 +37,6 @@ export class ArtifactsPage {
     this.#newChat = newChat;
     this.#toggleSidebar = toggleSidebar;
     $("open-artifacts").append(icon("canvas", 17), "Artifacts");
-    $("open-artifacts").addEventListener("click", () => void this.open());
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && !this.#page.hidden && $("settings").hidden && !document.querySelector("dialog[open]") && !(e.target instanceof HTMLSelectElement)) {
         e.preventDefault();

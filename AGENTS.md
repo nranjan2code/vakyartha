@@ -62,9 +62,11 @@ node scripts/canvas-check.ts     # WebKit smoke of the canvas (after npm run bui
 node scripts/surface-design-check.ts # mixed layouts + every standard chart kind in WebKit
 node scripts/skills-check.ts     # reviewed built-in updates, wide/narrow WebKit
 cargo test --manifest-path src-tauri/Cargo.toml --lib
+npm run test:linux-rust           # Docker-based Linux Rust targets; not a packaged Linux app build
+npm run test:linux-duckdb         # Docker-based Node 26 / DuckDB native binding check
 ```
 
-Node 24 runs `.ts` directly; the UI is bundled by Vite, the sidecar by `scripts/bundle-sidecar.ts` for release.
+Node 26 LTS runs `.ts` directly; the UI is bundled by Vite, the sidecar by `scripts/bundle-sidecar.ts` for release. Release packaging requires the newest official LTS line and newest patch on that line.
 
 ## Running the app while the user tests
 

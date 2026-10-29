@@ -67,8 +67,7 @@ export class SchedulePage {
       $<HTMLInputElement>("task-spending-ack").checked = false;
       if (this.visible() && this.view.kind === "create") $("task-create-model").textContent = current.model || "Choose a model before saving";
     });
-    $("open-schedule").append(icon("calendar", 18), "Schedule");
-    $("open-schedule").addEventListener("click", () => void this.openPage());
+    $("open-schedule").append(icon("calendar", 18), "Work");
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape" || this.page.hidden || !$("settings").hidden || document.querySelector("dialog[open]") || event.defaultPrevented || this.creationBusy) return;
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
@@ -119,26 +118,26 @@ export class SchedulePage {
   private shell(title: string, subtitle: string, back: () => void): HTMLElement {
     this.parkComposer();
     const sidebar = button("", this.toggleSidebar); sidebar.className = "icon-btn schedule-sidebar"; sidebar.setAttribute("aria-label", "Show sidebar"); sidebar.append(icon("sidebar"));
-    const top = el("div", { className: "schedule-top", "data-tauri-drag-region": "" }, sidebar, button(this.view.kind === "list" ? "Back to conversation" : "Back to Schedule", back));
+    const top = el("div", { className: "schedule-top", "data-tauri-drag-region": "" }, sidebar, button(this.view.kind === "list" ? "Back to conversation" : "Back to Work", back));
     const body = el("div", { className: "schedule-body" }, el("header", { className: "schedule-intro" }, el("div", { className: "schedule-eyebrow" }, icon("calendar", 16), "WORKSPACE"), el("h1", { id: "schedule-title", tabIndex: -1, textContent: title }), el("p", { textContent: subtitle })));
     this.page.replaceChildren(top, body); return body;
   }
   private list(): void {
     this.request++; this.view = { kind: "list" }; this.key = "";
-    const body = this.shell("Schedule", "Your upcoming work, progress, and results in one place.", () => this.close(true));
-    const tabs = el("div", { className: "schedule-tabs", role: "group", "aria-label": "Schedule views" });
+    const body = this.shell("Work", "Your active, scheduled and finished work in one place.", () => this.close(true));
+    const tabs = el("div", { className: "schedule-tabs", role: "group", "aria-label": "Work views" });
     for (const [id, label] of [["yours", "Yours"], ["templates", "Ideas to start"]] as const) {
       const b = button(label, () => { this.tab = id; this.key = ""; this.drawList(); }); b.dataset.tab = id; tabs.append(b);
     }
-    const create = button("Create schedule", () => void this.create(), true); create.id = "create-schedule"; create.prepend(icon("plus", 16));
+    const create = button("Create task", () => void this.create(), true); create.id = "create-schedule"; create.prepend(icon("plus", 16));
     body.append(el("div", { className: "schedule-toolbar" }, tabs, create));
-    const search = el("input", { type: "search", placeholder: "Search your work", value: this.query, "aria-label": "Search schedules" });
+    const search = el("input", { type: "search", placeholder: "Search your work", value: this.query, "aria-label": "Search work" });
     search.addEventListener("input", () => { this.query = search.value; this.key = ""; this.drawList(); });
-    const sort = el("select", { "aria-label": "Sort schedules" }, new Option("Recently updated", "recent"), new Option("Next scheduled", "next")); sort.value = this.sort;
+    const sort = el("select", { "aria-label": "Sort work" }, new Option("Recently updated", "recent"), new Option("Next scheduled", "next")); sort.value = this.sort;
     sort.addEventListener("change", () => { this.sort = sort.value === "next" ? "next" : "recent"; this.key = ""; this.drawList(); });
     body.append(el("div", { id: "schedule-search-row", className: "schedule-search-row" }, el("div", { className: "artifact-search" }, icon("search", 17), search), sort));
     const filters = el("div", { id: "schedule-filters", className: "schedule-filters", role: "group", "aria-label": "Filter by lifecycle" });
-    for (const [id, label] of [["all", "All work"], ["upcoming", "Upcoming"], ["attention", "Needs attention"], ["active", "In progress"], ["history", "History"]] as const) {
+    for (const [id, label] of [["all", "All work"], ["upcoming", "Scheduled"], ["attention", "Needs attention"], ["active", "In progress"], ["history", "History"]] as const) {
       const b = button(label, () => { this.filter = id; this.key = ""; this.drawList(); }); b.dataset.filter = id; filters.append(b);
     }
     body.append(filters, el("div", { id: "schedule-count", className: "schedule-count", role: "status" }), el("div", { id: "schedule-results" }), el("p", { className: "schedule-availability" }, icon("shield", 15), "Runs on this computer. Keep the app running and your computer awake. Missed times are held for review."));
@@ -159,10 +158,10 @@ export class SchedulePage {
     shown.sort((a, b) => this.sort === "next" ? (a.state === "scheduled" ? Date.parse(a.schedule!.at) : Infinity) - (b.state === "scheduled" ? Date.parse(b.schedule!.at) : Infinity) || b.updated.localeCompare(a.updated) : b.updated.localeCompare(a.updated));
     $("schedule-count").textContent = shown.length ? `${shown.length} ${shown.length === 1 ? "item" : "items"}` : "";
     if (shown.length) {
-      results.append(el("div", { className: "schedule-grid" }, ...this.paging.slice(shown, `${this.query}:${this.filter}:${this.sort}`).map(t => this.card(t))), pageControls(this.paging, shown.length, "Schedules", () => { this.key = ""; this.drawList(); }));
+      results.append(el("div", { className: "schedule-grid" }, ...this.paging.slice(shown, `${this.query}:${this.filter}:${this.sort}`).map(t => this.card(t))), pageControls(this.paging, shown.length, "Work items", () => { this.key = ""; this.drawList(); }));
     }
     else if (this.summaries.length) results.append(el("div", { className: "schedule-empty" }, icon("search", 34), el("h2", { textContent: "Nothing matches just yet" }), el("p", { textContent: "Try another search or lifecycle filter." }), button("Clear filters", () => { this.query = ""; this.filter = "all"; this.list(); })));
-    else results.append(el("div", { className: "schedule-empty" }, el("div", { className: "schedule-empty-icon" }, icon("calendar", 44)), el("h2", { textContent: "Nothing scheduled yet" }), el("p", { textContent: "Start now or choose a time. Follow the work here, then open the result when it is ready." })), el("section", { className: "schedule-inspiration" }, el("h2", { textContent: "What would you like to make time for?" }), this.templates()));
+    else results.append(el("div", { className: "schedule-empty" }, el("div", { className: "schedule-empty-icon" }, icon("calendar", 44)), el("h2", { textContent: "No work yet" }), el("p", { textContent: "Start now or choose a time. Follow progress here, then open the result when it is ready." })), el("section", { className: "schedule-inspiration" }, el("h2", { textContent: "What would you like to work on?" }), this.templates()));
   }
   private card(t: TaskSummary): HTMLElement {
     const b = button("", () => void this.showDetail(t.id)); b.className = "schedule-card"; b.dataset.task = t.id;
@@ -230,7 +229,7 @@ export class SchedulePage {
       if (request !== this.request || this.page.hidden) return;
       this.detail = task; this.view = { kind: "detail", id };
       const body = this.shell(task.goal.length > 160 ? task.goal.slice(0, 157) + "…" : task.goal, "The full picture, from the first instruction to the result.", () => this.list());
-      body.querySelector(".schedule-eyebrow")!.textContent = "SCHEDULE / OVERVIEW";
+      body.querySelector(".schedule-eyebrow")!.textContent = "WORK / TASK DETAILS";
       const actions = el("div", { className: "schedule-detail-actions" }, this.badge(task.state), button("Open workspace", () => { this.close(); void this.navigate(id).catch((err: unknown) => this.error(String(err))); }, true));
       const change = (operation: "pause" | "resume" | "run") => void this.mutate(task, "schedule", { operation, revision: task.revision });
       if (task.state === "scheduled" || task.state === "paused") {

@@ -1,0 +1,77 @@
+# Implementation progress
+
+Status: active implementation, 2026-10-29. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
+
+## Workspace-boundary correction in progress
+
+The current TypeScript registry remains the only workspace-registry writer until a native replacement is ready for one cutover. The active change set hardens that existing boundary while implementation continues:
+
+- New explicit bindings capture the canonical path and a physical folder identity (`device`, `inode`, and birth time). Dispatch refuses filesystems that cannot provide that identity.
+- Revoked, missing, and inaccessible grants remain non-admitted until the user explicitly binds again. A replacement directory at the same path does not inherit the previous grant.
+- Path-only v1 bindings are retained but revoked on load, requiring explicit rebinding. Malformed or unreadable registry data now stops workspace initialization instead of becoming an empty grant store.
+- Realm access requires explicit assignment or current shared-project membership. A binding with no Realm cannot authorize an arbitrary identifier; a changed physical folder does not inherit its previous Realm ID.
+- Realm routes revalidate the captured binding revision before acting. Tool dispatch carries the binding revision captured when that turn's tools were created, so a rebind cannot silently retarget a later tool call in the same turn.
+- Chat detach preserves the retained Realm. Explicit Realm discard remains separate, refuses project-shared Realms, and reports helper destruction failure. Forced refresh destroys and clears the old assignment before creating the replacement.
+- Registry mutations restore the last committed in-memory snapshot if a persistence write fails.
+- Removed the unused general-purpose Tauri `vault_get` command and TypeScript wrapper so frontend code cannot retrieve stored secret values. Secret insertion into provider requests remains an open native-broker requirement.
+
+These checks narrow current bugs but do not provide a hostile-worker trust boundary. Node filesystem checks remain subject to process compromise and filesystem time-of-check/time-of-use races. The planned native owner must repeat the checks at actual dispatch and use platform-supported handle/capability operations; this TypeScript work is not a substitute.
+
+## Verification performed
+
+- `node --test test/workspace-registry.test.ts test/workspace-containment.test.ts test/workspace-realms.test.ts`: 26 passed, 0 failed at the recorded checkpoint, including same-path replacement, sticky revocation, unassigned Realm access, legacy grant revocation, corrupt registry refusal, dirty refresh and detach preservation. A separate registry run passed 13/13 after the persistence rollback case was added; the latest serialized full app suite passed 271 tests including these cases and the provider-policy parity regression.
+- `npm run typecheck`: passed.
+- No live provider request, paid model run, release build, installation, channel restart, or Astra development/review call was performed for this implementation slice. Tests used fixture transports only.
+
+## Native capacity core started — 2026-10-29
+
+Added `src-tauri/src/control.rs` with a bounded single-threaded actor for an isolated native capacity ledger and generation snapshot store. Callers provide non-zero global/per-root limits and a profile revision; no machine profile or supported scale is inferred. It rejects global/per-root overcommit, makes live request retries idempotent, rejects conflicting/replayed settled identities, bounds retained identities from the supplied profile, and releases only the exact issued lease; repeated release is idempotent. The actor serializes commands, persists candidate reservations/releases before replying, and returns queue-full/closed/timeout errors distinctly. Snapshots preserve live holds and settled request identities; recovery revalidates accounting, rejects selected-generation corruption/profile drift, and never falls back to older generations. A failed persistence attempt poisons that store handle because the selected commit may be uncertain. The actor is not wired to UI, sidecar, chat, task, child, verifier, app or integration execution; it does not own task/workspace authority, fair queues or dispatch. Cross-platform crash/durability proof remains open. AR-01–AR-09 remain open.
+
+Initial verification checkpoint before the writer-lock and latest-toolchain follow-ups: `cargo test --manifest-path src-tauri/Cargo.toml --lib` passed 24/24 on the development platform and in Docker ARM64 Debian 12 (Rust 1.90, GTK 3.24, WebKitGTK 4.1). The container test used a build-only Tauri override to omit external binaries; it verifies Linux Rust compilation/tests but not a packaged desktop app. The normal Linux Tauri build requires target-specific Node and `vaksb` binaries. The separate sandbox workspace currently cannot build its control binary for Linux: its runtime imports a macOS-only `SeatbeltBackend`, while its own support guide says Linux process containment is unavailable. I made no change to that repository and did not substitute a fake helper. At that checkpoint, Windows/Linux durability, process-kill/power-loss behavior and inter-process writer exclusion were open. The unused vault-read warnings remain because the broker that would consume them is not implemented.
+
+Repeatable Linux Rust check: `npm run test:linux-rust` builds `scripts/linux-rust-check.Dockerfile` from the digest-pinned Rust 1.99.1 Debian image (latest stable as of 2026-10-29), installs the Tauri Linux development headers, and runs all locked Cargo test targets with the external-binary bundle override. `Cargo.toml` declares 1.95 as the minimum because the current atomic queue API stabilized there; the pinned Tauri stack's floor is 1.90. This check does not build or launch the desktop app; Linux sandbox containment and target-specific Node/helper bundling remain unsupported/open.
+
+## Bounded control snapshot retention — 2026-10-29
+
+The native control store previously retained every committed generation indefinitely, so routine reserve/release traffic caused unbounded snapshot-file growth. After the selected pointer and directory metadata are committed, the writer now removes older generations and syncs the directory; recovery removes every unselected generation only after the selected snapshot passes validation. No older-generation fallback is introduced. A repeated-commit regression check proves one selected generation remains after four commits. Host and Docker Rust suites pass 28/28; Docker also compiles the desktop entry target. This does not establish a hard disk quota, cleanup behavior under injected filesystem failure or platform power-loss semantics.
+
+## Exclusive native writer and Rust toolchain floor — 2026-10-29
+
+`ControlStore` now holds an OS-managed exclusive lock on `control/writer.lock` for the store lifetime and refuses a second writer with `WriterAlreadyOpen`. The lock file is created owner-only on Unix and the OS releases the lock when its handle/process closes. Separate-process contention and release tests pass on macOS and Linux; abrupt-crash behavior, Windows runtime behavior and network-filesystem semantics remain unproved. Testing with Rust 1.89 exposed that the pinned Tauri 2.12.5 dependency set requires Rust 1.90, and the latest Rust run exposed queue calls deprecated in 1.99. Cargo now declares 1.95, when the replacement atomic API stabilized; Docker validates the source on latest stable Rust 1.99.1. No runtime task path is wired to this store yet.
+
+## Still required
+
+- Replace the TypeScript registry/task/scheduler/approval writers with one native durable control actor and a single cutover; do not run duplicate writers.
+- Capture fixed workspace grants in queued and scheduled root records, derive child grants, invalidate affected descendants on rebind, and recheck the target at native dispatch.
+- Implement native provider and integration mediation, exact payload contracts, effective isolation/resource enforcement, common multi-job admission, recovery, version-fenced canonical commit, evidence and terminal finalization.
+- Implement the planned navigation owner and storage IA changes without breaking existing interactive surfaces.
+- The user approved exact reqwest 0.13.5 (`blocking`, `stream`, `rustls`) for native HTTPS. The dependency tree resolves `aws-lc-rs`/`aws-lc-sys` and a platform trust verifier; the native broker implementation and its restricted builder configuration are still open. Do not enable provider calls through it before endpoint, credential, approval, payload and stream controls are enforced.
+- Run the design's hostile-worker, race, crash, saturation, canonical-acknowledgement and exact-installed checks. Preserve the known local/provider outcome failures; this change does not close them.
+
+AR-01–AR-09, IA-01–IA-06, ISO-1–ISO-8 and all original output acceptance gates remain open unless a later dated evidence entry says otherwise.
+
+## 2026-10-29 — provider transport seam and workspace guard checkpoint
+
+Projection commit `65f183cb73c45d5335e7cc41cf6000520f1b77fe` adds optional public `ProviderTransport` injection through all model provider constructors and `ProviderEntry.make`. It carries provider identity and covers discovery and streaming requests while preserving default fetch behavior. Projection full suite/replay: 412 passed; typecheck and package generation passed. Vakyartha now pins this pushed change. The app suite passes 270, framework suite 412, typecheck, production UI build, 11 native tests, and Task WebKit checks at 1100px/620px. The seam is not a secure broker by itself; Vakyartha still uses its existing direct provider path pending the protected native operation contract.
+
+The app’s `reqwest = 0.13.5` dependency was approved and pinned with default features off. Crates.io source metadata and checksum lock entries were inspected; the active tree includes rustls-platform-verifier and `aws-lc-sys 0.45.0`, whose build script compiles bundled C through the Rust native build toolchain (and can use CMake when configured). The selected rustls feature adds native compile time and toolchain requirements. Blocking requests must run on bounded dedicated workers, not an async/control thread. Enforce no automatic redirects and no ambient proxies in future broker construction. The native provider host allowlist now includes every built-in hosted inference endpoint in the pinned Projection catalog; this is a static policy correction and does not mediate or authorize actual provider requests. No native provider dispatch was enabled. No Astra agent was used for implementation.
+
+Normal parallel app-suite runs intermittently failed with sandbox supervisor exit 126 and, once, a local FinOps chat response 400. The implicated suites passed in isolation and the latest serial-file run passed 271/271. The failures and serial pass are retained in [local failure lessons](LOCAL-FAILURE-LESSONS.md); concurrency/resource contention is an inference, not a production capacity pass.
+# Latest stack checkpoint — 2026-10-29
+
+- Docker Rust checks use Rust 1.99.1, the newest stable Rust release verified for this date.
+- Tauri remains on the latest stable 2.x release. Tauri 3 is alpha and is not suitable for the app's current release line.
+- The release packager now rejects Node versions outside the newest official LTS major and rejects any patch older than that line's current release. The package requires Node 26 or newer and pins `@types/node` to 26.6.6. The newest official LTS release on this date is Node 26.13.0.
+- DuckDB was upgraded to the exact latest LTS Node client `2.0.0-r.1`; its official package docs describe the stable 2.0 client. The old client can read 1.5 snapshots; the user explicitly waived rollback compatibility, and the new default storage version is used for new database files. Existing local records are retained and will be read by DuckDB 2.
+- The runtime dependency's direct/transitive graph and platform variants were checked; `npm audit signatures` reports 27 verified registry signatures and 17 verified attestations, and no package lifecycle scripts were enabled.
+- A compressed synthetic DuckDB 1.5.6 database fixture proves DuckDB 2 can read, append, close and reopen prior-format data. App integration tests cover fresh storage, restart, bounded snapshots, external-access refusal and failed-action rollback. The full app suite passes 273/273 under Node 26.
+- The pinned Linux ARM64 Docker check installs from the app lockfile with scripts disabled, opens and writes the old-format fixture, and creates a new DuckDB 2.0 database. It passes on Node 26.13.0 / linux-arm64 with zero reported vulnerabilities.
+- A release-mode macOS app bundle builds at `src-tauri/target/release/bundle/macos/Vakyartha.app` (224.19 MiB) with bundled Node 26.13.0 and DuckDB 2.0.0-r.1. The packaged node binary executed the packaged native DuckDB binding and returned `v2.0.0`. This bundle is not installed. A prior all-bundles attempt failed only while `bundle_dmg.sh` tried to unmount its temporary `/dev/disk5`; the app-only bundle succeeded after that temporary image was ejected. No DMG is verified.
+- Verified Node 26.13.0 from the official `nodejs.org` archive: SHA-256 matched its published `SHASUMS256.txt`; macOS codesign verified and reported the Node.js Foundation team identifier `HX7739G8FX`. Node 26's npm is 11.20.0.
+- Ran the actual release sidecar packager under Node 26.13.0. Its live newest-LTS check accepted Node 26.13.0, the sidecar bundle completed, and the sandbox helper rebuilt successfully. This verifies the sidecar packaging step only; it does not build or install a desktop release, and the generated runtime manifest is build output.
+- Under Node 26.13.0, `npm run typecheck` passes, the complete app suite passes (272/272), and the pinned Projection suite passes (412/412). `npm install --ignore-scripts --engine-strict=false` reported 0 known vulnerabilities while first run under the old local Node 24; a lock-only install under Node 26 also reported 0 known vulnerabilities.
+- Linux Rust package verification remains the already recorded 28/28 Docker tests under Rust 1.99.1; this Node-only checkpoint does not change that Rust result or prove a Linux app package.
+
+## Workspace dispatch snapshot correction — 2026-10-29
+
+The tool wrapper captured a workspace revision only when a binding existed. If a chat had no binding while its tool set was constructed, then a folder was bound before that already-created tool ran, `undefined` meant “do not check a revision”; the tool could observe the newly bound folder. The wrapper now captures `null` for the unbound state, and dispatch treats that sentinel as a stale snapshot if a binding now exists. A regression test covers bind-after-capture. The latest full app suite passes 273/273 plus typecheck under Node 26. This corrects the existing TypeScript boundary only; native dispatch still must repeat the captured grant check at cutover.

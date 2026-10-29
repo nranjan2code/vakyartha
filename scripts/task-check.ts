@@ -56,13 +56,13 @@ const setup = `
 `;
 const steps = [
   `document.documentElement.dataset.mode=innerWidth>720?'light':'dark';document.getElementById('settings-back').click();document.getElementById('open-schedule').click();
-   await wait(()=>document.getElementById('schedule-title')?.textContent==='Schedule');
+   await wait(()=>document.getElementById('schedule-title')?.textContent==='Work');
    check(document.querySelector('#open-schedule svg'),'missing calendar icon');
-   check(document.getElementById('workspace').hidden,'workspace visible under Schedule');
+   check(document.getElementById('workspace').hidden,'workspace visible under Work');
    check(!document.querySelector('#task-create'),'old creation modal remains');
    check(document.querySelectorAll('.schedule-template').length===3 || document.querySelector('.schedule-card'),'missing overview');
-   check(document.documentElement.scrollWidth<=innerWidth,'Schedule overview overflow');
-   return 'Schedule overview and icon';`,
+   check(document.documentElement.scrollWidth<=innerWidth,'Work overview overflow');
+   return 'Work overview and icon';`,
   `document.getElementById('settings-back').click();
    const p=document.getElementById('model-pick'),v=JSON.stringify(['compatible','scripted']);p.add(new Option('Scripted',v));p.value=v;p.dispatchEvent(new Event('change'));
    document.getElementById('open-schedule').click();document.getElementById('create-schedule').click();
@@ -175,7 +175,7 @@ const steps = [
    await wait(()=>document.querySelector('#schedule-page .schedule-badge.paused'));
    check(document.querySelector('.schedule-reschedule'),'rescheduling controls missing');
    document.querySelector('.schedule-delete').click();await wait(()=>document.getElementById('ask').open);document.getElementById('ask-ok').click();
-   await wait(()=>document.getElementById('schedule-title')?.textContent==='Schedule');
+   await wait(()=>document.getElementById('schedule-title')?.textContent==='Work');
    check(!(await(await fetch('/api/tasks')).json()).some(t=>t.id===window.qaScheduled),'paused schedule not deleted');
    check(document.documentElement.scrollWidth<=innerWidth,'schedule detail overflow');
    return 'one-time setup, paused lifecycle and guarded deletion';`,
@@ -184,7 +184,7 @@ const steps = [
    await wait(()=>document.querySelector('dialog.schedule-reconcile[open]'));const dialog=document.querySelector('dialog.schedule-reconcile');check(dialog.textContent.includes('effect-'+innerWidth),'exact operation ID missing');check(!dialog.querySelector('form').checkValidity(),'reconciliation accepts no evidence');check(dialog.getBoundingClientRect().width<=innerWidth,'reconciliation overflow');return 'exact operation reconciliation and required evidence note';`,
   `const dialog=document.querySelector('dialog.schedule-reconcile');dialog.querySelector('input[type="checkbox"]').checked=true;dialog.querySelector('textarea').value='Checked the service and confirmed the prior operation effect; no repeat requested.';dialog.querySelector('button[value="reviewed"]').click();
    await wait(async()=>(await(await fetch('/api/tasks/recovery-'+innerWidth)).json()).state==='needs_input');const checked=await(await fetch('/api/tasks/recovery-'+innerWidth)).json();check(checked.operations[0].state==='reviewed'&&checked.operations[0].reconciliation.note.includes('Checked the service'),'reconciliation evidence not persisted');check(checked.runs===2,'reconciliation did not continue exactly once');return 'reviewed operation evidence persists and continuation stays bounded';`,
-  `document.getElementById('open-schedule').click();await wait(()=>document.getElementById('schedule-title')?.textContent==='Schedule');check(document.activeElement.id==='schedule-title','Schedule did not receive heading focus');document.getElementById('create-schedule').focus();return 'keyboard start';`,
+  `document.getElementById('open-schedule').click();await wait(()=>document.getElementById('schedule-title')?.textContent==='Work');check(document.activeElement.id==='schedule-title','Work did not receive heading focus');document.getElementById('create-schedule').focus();return 'keyboard start';`,
   "key:Space",
   `await wait(()=>!document.getElementById('schedule-compose').hidden&&!document.getElementById('task-create-start').disabled);check(document.activeElement.id==='task-goal','keyboard creation did not focus goal');return 'native Space activates creation';`,
   "key:Tab",
@@ -192,7 +192,7 @@ const steps = [
   "key:ShiftTab",
   `check(document.activeElement.id==='task-goal','native Shift-Tab did not return to goal');document.getElementById('task-create-cancel').focus();return 'native reverse traversal';`,
   "key:Escape",
-  `check(document.getElementById('schedule-title').textContent==='Schedule'&&document.activeElement.id==='schedule-title','Escape did not return focus to Schedule');return 'Escape returns to Schedule';`,
+  `check(document.getElementById('schedule-title').textContent==='Work'&&document.activeElement.id==='schedule-title','Escape did not return focus to Work');return 'Escape returns to Work';`,
   "key:Escape",
   `check(document.getElementById('schedule-page').hidden&&['open-schedule','input','canvas-close','expand'].includes(document.activeElement.id)&&document.activeElement.getClientRects().length&&getComputedStyle(document.activeElement).visibility==='visible','Escape did not restore a visible workspace control');document.getElementById('open-schedule').click();await wait(()=>document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]'));document.querySelector('.schedule-card[data-task="'+window.qaTask+'"]').click();await wait(()=>document.querySelector('.schedule-delete'));document.querySelector('.schedule-delete').focus();document.querySelector('.schedule-delete').click();await wait(()=>document.getElementById('ask').open);check(document.getElementById('ask').getAttribute('aria-labelledby')==='ask-text','delete dialog has no accessible name');check(document.getElementById('ask').contains(document.activeElement),'delete dialog did not take focus');return 'named delete dialog and initial focus';`,
   "key:Escape",

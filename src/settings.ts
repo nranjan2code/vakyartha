@@ -44,7 +44,7 @@ const NAV: [Section, string, string, string?][] = [
   ["voice", "Voice", "voice"],
   ["appearance", "Appearance", "palette"],
   ["chats", "Chats", "bubble"],
-  ["tasks", "Schedule", "calendar"],
+  ["tasks", "Work & schedule", "calendar"],
   ["finops", "FinOps", "chart"],
   ["general", "General", "sliders"],
   ["about", "About", "info"],

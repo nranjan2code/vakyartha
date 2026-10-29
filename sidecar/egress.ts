@@ -1,6 +1,7 @@
 // Outbound network egress policy enforcement in the TypeScript worker.
 // Mirrors the indestructible Rust engine's egress policy (src-tauri/src/policy.rs, ADR-052).
 // Denies arbitrary exfiltration, unapproved destinations, and raw IP requests.
+import { COMPATIBLE_PRESETS } from "@vak/providers";
 
 export const ALLOWED_PROVIDER_HOSTS = new Set([
   "api.openai.com",
@@ -12,6 +13,7 @@ export const ALLOWED_PROVIDER_HOSTS = new Set([
   "registry.npmjs.org",
   "mcp.kite.trade",
   "mcp.nseindia.in",
+  ...COMPATIBLE_PRESETS.map((preset) => new URL(preset.baseUrl).hostname),
 ]);
 
 export const ALLOWED_WORKSPACE_HOST_SUFFIXES = [

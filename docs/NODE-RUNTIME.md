@@ -1,5 +1,11 @@
 # Desktop runtime audit — 2026-10-27
 
+## Runtime currency — 2026-10-29
+
+The release packager now requires the newest official Node.js LTS major and its newest patch. On this date that is Node 26.13.0; Node 24 remains an LTS maintenance line but is no longer the newest LTS line. Release builds must use Node 26.13.0, verify the Node.js Foundation signature on macOS, and match the live official release index. The app's package engine and Node type definitions now target Node 26. The checked-in historical install receipts below accurately record their Node 24 builds and are not changed retroactively.
+
+Tauri remains on the latest stable 2.x line (2.12.5 / CLI 2.12.4); the available Tauri 3 release is alpha and is not selected for production. The app now pins the DuckDB 2.0 LTS Node client exactly at `2.0.0-r.1`. DuckDB 2 reads existing 1.5 databases, and new databases use storage version 69 by default; 1.5 cannot read those new-format files. The user directed a clean forward-only stack because there are no active users, so no 1.5 rollback guarantee or compatibility storage setting is required. Existing app records remain intact and are opened through the DuckDB 2 client; new snapshots use the current default format. The runtime version receipt and authoring contract name DuckDB 2.0.
+
 Vakyartha keeps one Node engine child owned by the Tauri shell. Desktop opens no HTTP listener. The main window uses native IPC channels; the shell relays versioned messages over anonymous stdin/stdout pipes. The `vak://localhost` value is an internal routing identifier, not a network endpoint. Closing the parent pipe shuts down the engine; the shell retains its four-second quit deadline. A ten-second handshake deadline prevents a stuck child from hanging startup.
 
 This is the user's selected process boundary. Node is not embedded into the native process, and execution/data ownership remains in the engine. General request/response streaming lives in Projection's public `createFetchHandler` and injectable `VakClient` transport, pinned to pushed `479323e`. Browser mode remains an explicit loopback development adapter. Provider calls and user-selected integrations still need their existing outgoing network/process capabilities.

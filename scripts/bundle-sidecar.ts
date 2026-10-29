@@ -4,7 +4,7 @@
 // - copies the Node binary running this script to
 //   src-tauri/binaries/node-<target triple>, Tauri's externalBin naming,
 //   and its npm to src-tauri/resources/npm (installing integrations).
-// Node 24+ is required: the bundle uses the same built-ins as the source.
+// Node 26+ is required: the bundle uses the same built-ins as the source.
 // The release refuses a Node that is not signed by the Node.js Foundation, not
 // an LTS line, or not that line's newest patch on nodejs.org (security fixes).
 // VAK_NODE_CHECK=offline skips only the nodejs.org lookup, with a warning.
@@ -29,11 +29,13 @@ async function checkNode(): Promise<void> {
   const res = await fetch("https://nodejs.org/dist/index.json", { signal: AbortSignal.timeout(20_000) });
   if (!res.ok) throw new Error(`nodejs.org release index unavailable (${res.status}); retry, or set VAK_NODE_CHECK=offline knowingly`);
   const releases = await res.json() as { version: string; lts: string | false; security: boolean }[];
-  const major = process.version.split(".")[0] + ".";
-  const newest = releases.find(r => r.version.startsWith(major));
-  if (!newest?.lts) throw new Error(`Node ${process.version} is not on an LTS line; bundle an LTS release`);
+  const ltsReleases = releases.filter((release) => release.lts);
+  const newestMajor = Math.max(...ltsReleases.map((release) => Number(/^v(\d+)\./.exec(release.version)?.[1] ?? 0)));
+  const newest = ltsReleases.find((release) => release.version.startsWith(`v${newestMajor}.`));
+  if (!newest) throw new Error("Could not determine the newest Node.js LTS release");
+  if (!process.version.startsWith(`v${newestMajor}.`)) throw new Error(`Node ${process.version} is not on the newest LTS line: Node ${newestMajor} (${newest.lts}); install its newest release ${newest.version} from nodejs.org.`);
   if (newest.version !== process.version) throw new Error(`Node ${process.version} is outdated: ${newest.version} is the newest ${newest.lts} release${newest.security ? " and contains security fixes" : ""}. Install it from nodejs.org and verify it before releasing.`);
-  console.log(`node ${process.version}: Node.js Foundation signature, newest ${newest.lts} LTS release`);
+  console.log(`node ${process.version}: Node.js Foundation signature, newest LTS line (${newest.lts}) and release`);
 }
 await checkNode();
 
@@ -80,7 +82,7 @@ const receipt = {
   sidecar: treeReceipt(path.join(resources, "sidecar.mjs")),
   skills: treeReceipt(path.join(resources, "builtin-skills")),
   apps: treeReceipt(path.join(resources, "builtin-apps")),
-  duckdb: { version: "1.5.6-r.1", ...treeReceipt(path.join(resources, "duckdb-runtime")) },
+  duckdb: { version: "2.0.0-r.1", ...treeReceipt(path.join(resources, "duckdb-runtime")) },
   sandbox: { commit: git(sandboxRepo, "rev-parse", "HEAD"), dirty: Boolean(git(sandboxRepo, "status", "--porcelain")), ...treeReceipt(vaksbBin) },
 };
 writeFileSync(path.join(resources, "runtime-manifest.json"), JSON.stringify(receipt, null, 2) + "\n");

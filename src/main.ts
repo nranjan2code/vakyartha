@@ -100,39 +100,6 @@ workspacesPanel.init({
   onNewProjectChat: (projectId, folder) => void newProjectChat(projectId, folder),
   onRefresh: () => loadChats(),
 });
-document.getElementById("open-artifacts")!.addEventListener(
-  "click",
-  () => {
-    tasksPanel.page.close(false, false);
-    appsPage.close(false);
-    if (isSkillStudioOpen()) void closeSkillStudio();
-    const st = document.getElementById("skills-studio-page");
-    if (st) st.hidden = true;
-  },
-  { capture: true }
-);
-document.getElementById("open-apps")?.addEventListener(
-  "click",
-  () => {
-    artifacts.close(false, false);
-    tasksPanel.page.close(false, false);
-    if (isSkillStudioOpen()) void closeSkillStudio();
-    const st = document.getElementById("skills-studio-page");
-    if (st) st.hidden = true;
-  },
-  { capture: true }
-);
-document.getElementById("open-schedule")?.addEventListener(
-  "click",
-  () => {
-    artifacts.close(false, false);
-    appsPage.close(false);
-    if (isSkillStudioOpen()) void closeSkillStudio();
-    const st = document.getElementById("skills-studio-page");
-    if (st) st.hidden = true;
-  },
-  { capture: true }
-);
 const drafts = new Drafts(localStorage, (message) => tasksPanel.error(message));
 document.addEventListener("vak-change", (e) => {
   const detail = (e as CustomEvent<{ surface: string; path: string; value: unknown }>).detail;
@@ -917,7 +884,7 @@ $<HTMLFormElement>("composer").addEventListener("submit", (e) => {
   else submit(input.value);
 });
 $<HTMLButtonElement>("new-chat").addEventListener("click", newChat);
-$<HTMLButtonElement>("open-settings").addEventListener("click", () => void openSettings());
+$<HTMLButtonElement>("open-settings").addEventListener("click", () => void switchNavTab("settings"));
 // "New chat" from the tray menu.
 window.addEventListener("vak:new-chat", newChat);
 
@@ -927,12 +894,12 @@ $<HTMLButtonElement>("collapse").addEventListener("click", toggleSidebar);
 $<HTMLButtonElement>("expand").addEventListener("click", toggleSidebar);
 
 // --- Persistent App Navigation State ---
-type NavTab = "chats" | "artifacts" | "apps" | "schedule" | "studio" | "settings";
+type NavTab = "chats" | "artifacts" | "apps" | "work" | "studio" | "settings";
 
 function setTopNavActive(active: NavTab): void {
   $("open-artifacts")?.setAttribute("aria-current", active === "artifacts" ? "page" : "false");
   $("open-apps")?.setAttribute("aria-current", active === "apps" ? "page" : "false");
-  $("open-schedule")?.setAttribute("aria-current", active === "schedule" ? "page" : "false");
+  $("open-schedule")?.setAttribute("aria-current", active === "work" ? "page" : "false");
   $("open-studio")?.setAttribute("aria-current", active === "studio" ? "page" : "false");
   $("open-settings")?.setAttribute("aria-current", active === "settings" ? "page" : "false");
 }
@@ -947,6 +914,10 @@ const topbarSidebarToggle = document.getElementById("topbar-sidebar-toggle");
 if (topbarSidebarToggle) {
   topbarSidebarToggle.append(icon("sidebar", 18));
   topbarSidebarToggle.addEventListener("click", toggleSidebar);
+}
+
+for (const [id, tab] of [["open-artifacts", "artifacts"], ["open-apps", "apps"], ["open-schedule", "work"]] as const) {
+  document.getElementById(id)?.addEventListener("click", () => void switchNavTab(tab));
 }
 
 async function switchNavTab(target: NavTab): Promise<void> {
@@ -994,7 +965,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
     return;
   }
 
-  if (target === "schedule") {
+  if (target === "work") {
     if (isSkillStudioOpen()) await closeSkillStudio();
     if (settingsOpen()) closeSettings();
     if (document.body.classList.contains("in-artifacts")) artifacts.close(false, false);
@@ -1003,7 +974,7 @@ async function switchNavTab(target: NavTab): Promise<void> {
     $("artifacts-page").hidden = true;
     $("apps-page").hidden = true;
     $("skills-studio-page").hidden = true;
-    setTopNavActive("schedule");
+    setTopNavActive("work");
     await tasksPanel.page.openPage();
     return;
   }
@@ -1104,7 +1075,7 @@ window.addEventListener("vak:schedule-opened", () => {
   $("artifacts-page").hidden = true;
   $("apps-page").hidden = true;
   $("skills-studio-page").hidden = true;
-  setTopNavActive("schedule");
+  setTopNavActive("work");
 });
 window.addEventListener("vak:schedule-closed", () => {
   if (!isSkillStudioOpen() && !settingsOpen() && !document.body.classList.contains("in-artifacts") && !appsPage.visible()) {
@@ -1132,7 +1103,7 @@ window.addEventListener("vak:studio-closed", () => {
   if (settingsOpen()) setTopNavActive("settings");
   else if (document.body.classList.contains("in-artifacts")) setTopNavActive("artifacts");
   else if (document.body.classList.contains("in-apps")) setTopNavActive("apps");
-  else if (tasksPanel.page.visible()) setTopNavActive("schedule");
+  else if (tasksPanel.page.visible()) setTopNavActive("work");
   else {
     $("workspace").hidden = false;
     setTopNavActive("chats");

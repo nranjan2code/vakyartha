@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { gunzipSync } from 'node:zlib';
+import { DuckDBInstance } from '@duckdb/node-api';
 import { AppRegistry } from '../sidecar/sandbox-pool/app-registry.ts';
 import { SandboxPoolManager } from '../sidecar/sandbox-pool/pool-manager.ts';
 import { databaseSnapshot, MAX_DATABASE_BYTES } from '../sidecar/sandbox-pool/database.ts';
@@ -19,6 +21,28 @@ test('machine source receipts retain full JSON while refusing errors, absent rec
 test('database snapshot rejects malformed and oversized data',()=>{
   assert.equal(databaseSnapshot(undefined),undefined);
   for(const value of ['',{},'a===','YQ','YQ=','!!!!',Buffer.alloc(MAX_DATABASE_BYTES+1).toString('base64')])assert.throws(()=>databaseSnapshot(value));
+});
+test('DuckDB 2 reads and writes a persisted DuckDB 1.5 snapshot', async()=>{
+  const dir=mkdtempSync(path.join(tmpdir(),'vak-db-forward-migration-'));
+  const file=path.join(dir,'existing.duckdb');
+  const fixture=path.join(import.meta.dirname,'fixtures','duckdb-v1.5.6-forward-read.duckdb.gz');
+  writeFileSync(file,gunzipSync(readFileSync(fixture)),{mode:0o600});
+  const options={threads:'1',memory_limit:'128MB',enable_external_access:'false',autoinstall_known_extensions:'false',autoload_known_extensions:'false'};
+  try{
+    const instance=await DuckDBInstance.create(file,options),connection=await instance.connect();
+    const initial=await connection.runAndReadAll('SELECT label, amount FROM migration_probe');
+    assert.deepEqual(initial.getRowObjectsJson(),[{label:'synthetic-fixture',amount:17}]);
+    await connection.run('INSERT INTO migration_probe VALUES (?, ?)', ['forward-write',25]);
+    connection.closeSync();instance.closeSync();
+
+    const reopened=await DuckDBInstance.create(file,options),reopenedConnection=await reopened.connect();
+    const rows=await reopenedConnection.runAndReadAll('SELECT label, amount FROM migration_probe ORDER BY amount');
+    assert.deepEqual(rows.getRowObjectsJson(),[
+      {label:'synthetic-fixture',amount:17},
+      {label:'forward-write',amount:25},
+    ]);
+    reopenedConnection.closeSync();reopened.closeSync();
+  }finally{rmSync(dir,{recursive:true,force:true});}
 });
 test('DuckDB persists across sandbox invocations and restart; failed SQL and file reads cannot commit', {skip:process.platform!=='darwin'}, async()=>{
   const dir=mkdtempSync(path.join(tmpdir(),'vak-db-test-'));

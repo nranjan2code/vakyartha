@@ -78,12 +78,6 @@ export async function downloadMarkdown(filename: string, content: string): Promi
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
-/** Retrieve a secret from the trusted engine vault. */
-export async function vaultGet(account: string, service?: string): Promise<string | null> {
-  if (!inTauri) return null;
-  return (await invoke<string | null>("vault_get", { account, service })) ?? null;
-}
-
 /** Store a secret into the trusted engine vault. */
 export async function vaultSet(account: string, value: string, service?: string): Promise<void> {
   if (inTauri) {

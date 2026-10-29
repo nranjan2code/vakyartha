@@ -1,15 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { COMPATIBLE_PRESETS } from "@vak/providers";
 import { evaluateEgressUrl, createGuardedFetch } from "../sidecar/egress.ts";
 
 test("evaluateEgressUrl admits approved provider endpoints over HTTPS", () => {
   assert.equal(evaluateEgressUrl("https://api.openai.com/v1/chat/completions", false).allowed, true);
   assert.equal(evaluateEgressUrl("https://api.anthropic.com/v1/messages", false).allowed, true);
   assert.equal(evaluateEgressUrl("https://generativelanguage.googleapis.com/v1beta/models", false).allowed, true);
+  for (const preset of COMPATIBLE_PRESETS) {
+    assert.equal(evaluateEgressUrl(preset.baseUrl, false).allowed, true, preset.id);
+  }
   assert.equal(evaluateEgressUrl("https://api.telegram.org/bot123/getUpdates", false).allowed, true);
   assert.equal(evaluateEgressUrl("https://mcp.kite.trade/mcp", false).allowed, true);
   assert.equal(evaluateEgressUrl("https://mcp.nseindia.in/cmmkt/mcp", false).allowed, true);
   assert.equal(evaluateEgressUrl("https://my-company.cloud.databricks.com/ai-gateway/mcp-services/demo", false).allowed, true);
+});
+
+test("Rust and TypeScript provider egress lists cover the same built-in endpoint hosts", () => {
+  const nativePolicy = readFileSync(new URL("../src-tauri/src/policy.rs", import.meta.url), "utf8");
+  const nativeHosts = new Set(Array.from(nativePolicy.matchAll(/^\s*"([^\"]+)",$/gm), match => match[1]));
+  for (const preset of COMPATIBLE_PRESETS) {
+    if (preset.local) continue;
+    const host = new URL(preset.baseUrl).hostname;
+    assert.ok(nativeHosts.has(host), `${preset.id}: Rust native allowlist is missing ${host}`);
+  }
 });
 
 test("evaluateEgressUrl rejects unapproved public destinations and HTTP", () => {

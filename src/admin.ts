@@ -292,7 +292,7 @@ function renderAppsTable(apps: AppSummary[]): void {
         </div>
       </td>
       <td><span class="admin-badge">${escapeHtml(app.category)}</span></td>
-      <td>Node.js 24 (ESM)</td>
+      <td>Node.js 26 (ESM)</td>
       <td>${formatBytes(app.storageBytes)}</td>
       <td>${app.triggerCount} trigger${app.triggerCount === 1 ? "" : "s"}</td>
       <td>

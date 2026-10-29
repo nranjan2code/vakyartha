@@ -1,6 +1,6 @@
 # Rust-first implementation design
 
-Status: detailed proposal, 2026-10-29. The user selected Rust for durable authority and system control, TypeScript for runtime-flexible model/presentation work, and root corrections without legacy compatibility layers. This document makes that direction concrete; it does not claim the target is implemented or approve new dependencies. Read with [root corrections](ROOT-CORRECTIONS.md), [delivery plan](DELIVERY-PLAN.md) and the [architecture](ARCHITECTURE.md).
+Status: detailed proposal, active implementation 2026-10-29. The user selected Rust for durable authority and system control, TypeScript for runtime-flexible model/presentation work, and root corrections without legacy compatibility layers. A blocking native HTTP/TLS client with streaming support has been explicitly approved at an exact version with default features disabled. Its existence does not certify a broker or make it safe to enable before endpoint, credential, approval, payload and streaming controls are implemented. Read with [root corrections](ROOT-CORRECTIONS.md), [delivery plan](DELIVERY-PLAN.md) and the [architecture](ARCHITECTURE.md).
 
 ## 1. Language and ownership rule
 
@@ -57,6 +57,8 @@ sidecar/
 ```
 
 Prefer fewer modules initially if the implementation remains small; the table assigns responsibilities, not a file-count goal. Keep the existing single native library and approved dependencies. No second native relay, public port or background daemon is introduced.
+
+The current `src-tauri/src/control.rs` implements a single-threaded actor around an isolated capacity ledger and bounded generation snapshot store. Its command queue and request/reply waits are bounded. It persists candidate reservations/releases before acknowledging, recovers active holds while rejecting selected-generation corruption and profile drift, retains only the selected generation after commit, and acquires an OS-managed exclusive writer lock for the store lifetime. The actor does not yet own tasks/workspaces, fair queues, dispatch or any product workload; it is not wired to the app. Separate-process crash behavior, Windows/network-filesystem durability proof and common capacity coverage remain open.
 
 ## 3. Process and trust-domain topology
 
@@ -216,6 +218,8 @@ The native actor performs deterministic permission/state/staleness/progress chec
 
 ## 10. Dependency and implementation gate
 
-No dependency is added by this design. Begin with the existing approved serialization/shell stack and standard libraries. Explicit gates remain for native HTTP/TLS, protected persistence/platform atomicity, integrity hashing through established APIs, persistent contained MCP transport, canonical prepare/fence/persistence seams, and actual CPU/memory/storage enforcement. Choose a needed library through approval rather than implement cryptography or an increasingly complex transactional store in-house.
+The approved blocking HTTP/TLS client uses only its blocking, streaming and rustls features. Its resolved path includes a native cryptographic provider compiled from C sources and a platform trust verifier. Configure redirect refusal and disable ambient proxy discovery in the broker; validate the selected host and resolved address on every connection. Audit exact source/release, build scripts and target-specific lockfile entries before shipping.
+
+Other gates remain for protected persistence/platform atomicity, integrity hashing through established APIs, persistent contained MCP transport, canonical prepare/fence/persistence seams, and actual CPU/memory/storage enforcement. Do not invent cryptography or an increasingly complex transactional store in-house. A dependency's presence never substitutes for these controls.
 
 The zero-user cutover removes superseded writers, permission paths and schedulers in the same enabled source state. It does not authorize deleting local chats, keys or workspaces. Stop existing execution, retain private backups/export, perform an explicit offline conversion if required, and fail clearly on unsupported state; no automatic destructive reset, dual write or runtime compatibility shim.

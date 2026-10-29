@@ -48,7 +48,6 @@ export class AppsPage {
     const navBtn = $("open-apps");
     if (navBtn) {
       navBtn.replaceChildren(icon("cpu", 17), document.createTextNode("Apps"));
-      navBtn.addEventListener("click", () => void this.open());
     }
 
     document.addEventListener("keydown", (e) => {

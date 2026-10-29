@@ -44,7 +44,7 @@ impl Engine {
         let mut bytes = serde_json::to_vec(&message).map_err(|e| e.to_string())?;
         bytes.push(b'\n');
         let size = bytes.len();
-        self.queued.fetch_update(Ordering::AcqRel, Ordering::Relaxed, |n| n.checked_add(size).filter(|sum| *sum <= MAX_QUEUE)).map_err(|_| "Engine input queue is full")?;
+        self.queued.try_update(Ordering::AcqRel, Ordering::Relaxed, |n| n.checked_add(size).filter(|sum| *sum <= MAX_QUEUE)).map_err(|_| "Engine input queue is full")?;
         let result = self.input.lock().unwrap().as_ref().ok_or("Engine connection closed".to_string()).and_then(|input| input.try_send(bytes).map_err(|_| "Engine input queue is full or closed".to_string()));
         if result.is_err() { self.queued.fetch_sub(size, Ordering::AcqRel); }
         result
@@ -111,7 +111,7 @@ pub fn start(mut cmd: Command) -> Engine {
                     responses.lock().unwrap().remove(&id);
                     let mut bytes = serde_json::to_vec(&serde_json::json!({"v":1,"id":id,"type":"cancel"})).unwrap(); bytes.push(b'\n');
                     let size = bytes.len();
-                    if response_queue.fetch_update(Ordering::AcqRel, Ordering::Relaxed, |n| n.checked_add(size).filter(|sum| *sum <= MAX_QUEUE)).is_ok() {
+                    if response_queue.try_update(Ordering::AcqRel, Ordering::Relaxed, |n| n.checked_add(size).filter(|sum| *sum <= MAX_QUEUE)).is_ok() {
                         if connection.lock().unwrap().as_ref().is_none_or(|input| input.try_send(bytes).is_err()) { response_queue.fetch_sub(size, Ordering::AcqRel); }
                     }
                 }

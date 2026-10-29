@@ -184,7 +184,7 @@ test("concurrent chats in same project have independent Realms and conflict on a
   }
 });
 
-test("dirty Realm refresh refuses silent overwrite, and unbind cleans up Realm safely", { skip: !native }, async () => {
+test("dirty Realm refresh requires force, and detaching a chat preserves its Realm", { skip: !native }, async () => {
   const dataDir = mkdtempSync(path.join(tmpdir(), "vak-dirty-data-"));
   const projectDir = mkdtempSync(path.join(tmpdir(), "vak-dirty-proj-"));
   writeFileSync(path.join(projectDir, "init.txt"), "hello\n");
@@ -226,9 +226,11 @@ test("dirty Realm refresh refuses silent overwrite, and unbind cleans up Realm s
     const newRealmId = refreshForced.body.realmId;
     assert.notEqual(newRealmId, realmId);
 
-    // Unbinding session cleans up its Realm
+    // Detaching workspace authority does not implicitly discard a retained copy.
     const unbind = await api("/api/workspaces/bindings/session-dirty", "DELETE");
     assert.equal(unbind.status, 200);
+    assert.equal(app.workspaces?.getBinding("session-dirty"), undefined);
+    assert.ok((await app.realms?.list())?.some((realm) => realm.realm_id === newRealmId));
 
     // Original project files are still intact!
     assert.equal(readFileSync(path.join(projectDir, "init.txt"), "utf8"), "hello\n");

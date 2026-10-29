@@ -1,6 +1,6 @@
 # Implementation delivery plan
 
-Status: proposed, 2026-10-29. Implements the [Rust-first design](IMPLEMENTATION-DESIGN.md) through clean vertical replacements. User direction establishes language/ownership preference and root correction; each dependency, security proof and original task outcome still needs its own gate. This file is a delivery design, not a claim that implementation has begun.
+Status: active implementation plan, 2026-10-29. Implements the [Rust-first design](IMPLEMENTATION-DESIGN.md) through clean vertical replacements. User direction establishes language/ownership preference and root correction; each dependency, security proof and original task outcome still needs its own gate. Preliminary I1 work now exists as an inactive native capacity actor/store and focused TypeScript workspace hardening. No delivery slice has passed its full exit conditions; the current limits and evidence are in [implementation progress](IMPLEMENTATION-PROGRESS.md).
 
 The [source-audited storage](DATA-AND-STORAGE.md) and [information architecture](INFORMATION-ARCHITECTURE.md) contracts are in scope. Implement native project/workspace/binding identities with I1/I2, then the single navigation owner, Work/Scheduled distinction and safe storage actions with I3. UI claims cannot precede their underlying authority/storage mechanism.
 

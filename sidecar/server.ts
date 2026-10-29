@@ -283,9 +283,10 @@ ${skills.index()}`;
     tools: async ({ session }) => {
       finops.session(session);
       activeTurnSession = session;
+      const workspaceRevision = workspaces.captureBindingRevision(session);
       return withSkill([...appAuthoringTools(), ...(await integrations?.toolsFor(session) ?? [])].map((tool) => ({
         ...tool,
-        execute: (args, ctx) => workspaces.withSession(session, () => media.withSession(session, () => tool.execute(args, ctx))),
+        execute: (args, ctx) => workspaces.withSession(session, () => media.withSession(session, () => tool.execute(args, ctx)), workspaceRevision),
       })), session);
     },
     providers: () => modelProviders(),
@@ -338,10 +339,13 @@ ${skills.index()}`;
   tasks = await Tasks.open({
     files: new TaskFiles(path.join(dataDir, "outputs"), opts.transcriptsDir ?? path.join(dataDir, "transcripts")),
     dir: path.join(dataDir, "tasks"), run: host.run, view: host.view, remove: host.remove,
-    tools: async (session) => withSkill((await integrations!.toolsFor(session)).map((tool) => ({
-      ...tool,
-      execute: (args, ctx) => workspaces.withSession(session, () => media.withSession(session, () => tool.execute(args, ctx))),
-    })), session), instructions: INSTRUCTIONS,
+    tools: async (session) => {
+      const workspaceRevision = workspaces.captureBindingRevision(session);
+      return withSkill((await integrations!.toolsFor(session)).map((tool) => ({
+        ...tool,
+        execute: (args, ctx) => workspaces.withSession(session, () => media.withSession(session, () => tool.execute(args, ctx)), workspaceRevision),
+      })), session);
+    }, instructions: INSTRUCTIONS,
     observe: (session, work, run) => finops.chat(async () => { finops.session(session); await work(); }, run), warn: log,
     permissionRevision: (server) => integrationRevisions.get(server) ?? 0,
     permitted: (server, tool) => integrations!.view().some((i) => i.entry.id === server && i.enabled && i.status === "ready" && i.tools.some((t) => t.name === tool && t.policy !== "off")),
@@ -850,11 +854,17 @@ ${skills.index()}`;
       if (realmActionMatch) {
         const session = decodeURIComponent(realmActionMatch[1]!);
         const action = realmActionMatch[2];
-        const binding = workspaces.getBinding(session);
-        if (!binding) {
+        const storedBinding = workspaces.getBinding(session);
+        if (!storedBinding) {
           json(res, 404, { error: `No workspace binding for session '${session}'` });
           return true;
         }
+        const dispatchScope = workspaces.verifyDispatchScope(session, storedBinding.revision);
+        if (!dispatchScope.ok) {
+          json(res, 409, { error: dispatchScope.error });
+          return true;
+        }
+        const binding = dispatchScope.binding;
 
         if (binding.mode === "direct") {
           if (!action && req.method === "GET") {
@@ -1000,7 +1010,12 @@ ${skills.index()}`;
             });
             return true;
           }
-          await realms.destroy(id).catch(() => {});
+          if (binding.shared) {
+            json(res, 409, { error: "This Realm is shared by its project. Detach each chat, then discard the shared Realm explicitly from workspace management." });
+            return true;
+          }
+          await realms.destroy(id);
+          await workspaces.clearRealmId(session);
           const fresh = await realms.create(binding.folder);
           await workspaces.setRealmId(session, fresh.realm_id);
           json(res, 200, { refreshed: true, realmId: fresh.realm_id });
@@ -1008,13 +1023,13 @@ ${skills.index()}`;
         }
 
         if (!action && req.method === "DELETE") {
-          const id = resolveRealmId();
-          if (id && !binding.shared) {
-            await realms.destroy(id).catch(() => {});
-            await workspaces.clearRealmId(session);
-          } else if (binding.shared) {
-            await workspaces.clearRealmId(session);
+          if (binding.shared) {
+            json(res, 409, { error: "This Realm is shared by its project. Remove its shared membership before discarding it." });
+            return true;
           }
+          const id = resolveRealmId();
+          if (id) await realms.destroy(id);
+          await workspaces.clearRealmId(session);
           json(res, 200, { ok: true });
           return true;
         }
@@ -1215,10 +1230,7 @@ ${skills.index()}`;
           return true;
         }
         if (req.method === "DELETE") {
-          const binding = workspaces.getBinding(session);
-          if (binding?.realmId && !binding.shared) {
-            await realms.destroy(binding.realmId).catch(() => {});
-          }
+          // Detach authority while preserving any retained working copy.
           const ok = await workspaces.unbindSession(session);
           json(res, 200, { ok });
           return true;

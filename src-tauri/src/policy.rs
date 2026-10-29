@@ -7,6 +7,16 @@ pub const ALLOWED_PROVIDER_HOSTS: &[&str] = &[
     "api.openai.com",
     "api.anthropic.com",
     "generativelanguage.googleapis.com",
+    "api.mistral.ai",
+    "api.x.ai",
+    "api.deepseek.com",
+    "api.groq.com",
+    "api.cerebras.ai",
+    "openrouter.ai",
+    "api.together.xyz",
+    "api.fireworks.ai",
+    "api.moonshot.ai",
+    "dashscope-intl.aliyuncs.com",
     "api.elevenlabs.io",
     "api.telegram.org",
     "huggingface.co",
@@ -199,18 +209,9 @@ mod tests {
 
     #[test]
     fn egress_admits_known_providers() {
-        assert_eq!(
-            evaluate_egress("https", "api.openai.com", None),
-            EgressDecision::Allowed
-        );
-        assert_eq!(
-            evaluate_egress("https", "api.anthropic.com", Some(443)),
-            EgressDecision::Allowed
-        );
-        assert_eq!(
-            evaluate_egress("https", "generativelanguage.googleapis.com", None),
-            EgressDecision::Allowed
-        );
+        for host in ALLOWED_PROVIDER_HOSTS {
+            assert_eq!(evaluate_egress("https", host, None), EgressDecision::Allowed, "{host}");
+        }
     }
 
     #[test]

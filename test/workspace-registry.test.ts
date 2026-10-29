@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import path from "node:path";
 import { validateWorkspaceFolder, WorkspaceRegistry } from "../sidecar/workspace-registry.ts";
@@ -193,6 +193,126 @@ test("WorkspaceRegistry detects missing/inaccessible folders and blocks stale ap
     }
     assert.equal(reg.getBinding("chat-stale")?.accessState, "missing");
     assert.equal(reg.getBinding("chat-stale")?.revision, 3);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("a tool set captured without a folder cannot inherit a later workspace binding", async () => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), "vak-unbound-snapshot-data-"));
+  const folder = mkdtempSync(path.join(tmpdir(), "vak-unbound-snapshot-target-"));
+
+  try {
+    const reg = new WorkspaceRegistry(dataDir);
+    const capturedRevision = reg.captureBindingRevision("chat-unbound");
+    assert.equal(capturedRevision, null);
+
+    await reg.bindSession("chat-unbound", { folder });
+
+    assert.throws(
+      () => reg.withSession("chat-unbound", () => reg.resolveEffectiveWorkspace(), capturedRevision),
+      /revision changed since this operation was authorized/,
+    );
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("workspace revocation is sticky and same-path folder replacement gets no inherited grant", async () => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), "vak-replaced-data-"));
+  const parent = mkdtempSync(path.join(tmpdir(), "vak-replaced-parent-"));
+  const folder = path.join(parent, "workspace");
+  const moved = path.join(parent, "workspace-old");
+  mkdirSync(folder);
+
+  try {
+    const reg = new WorkspaceRegistry(dataDir);
+    await reg.bindSession("chat-replaced", { folder });
+
+    // A different directory at the same path is a different physical grant.
+    renameSync(folder, moved);
+    mkdirSync(folder);
+    const replaced = reg.verifyDispatchScope("chat-replaced");
+    assert.equal(replaced.ok, false);
+    assert.equal(reg.getBinding("chat-replaced")?.accessState, "revoked");
+
+    // Restoring the old directory does not silently restore revoked authority.
+    rmSync(folder, { recursive: true, force: true });
+    renameSync(moved, folder);
+    assert.equal(reg.revalidateBinding("chat-replaced")?.accessState, "revoked");
+    assert.equal(reg.verifyDispatchScope("chat-replaced").ok, false);
+
+    // Only a new explicit bind captures a fresh identity and admits access.
+    await reg.bindSession("chat-replaced", { folder });
+    assert.equal(reg.verifyDispatchScope("chat-replaced").ok, true);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test("a binding without an assigned Realm cannot access an arbitrary Realm", async () => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), "vak-unassigned-realm-data-"));
+  const folder = mkdtempSync(path.join(tmpdir(), "vak-unassigned-realm-folder-"));
+  try {
+    const reg = new WorkspaceRegistry(dataDir);
+    await reg.bindSession("chat-unassigned", { folder });
+    const access = reg.verifySessionRealmAccess("chat-unassigned", "realm-not-assigned");
+    assert.equal(access.ok, false);
+    if (!access.ok) assert.match(access.error, /does not belong to session/);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("legacy path-only grants are preserved but revoked until explicit rebinding", async () => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), "vak-legacy-binding-data-"));
+  const folder = mkdtempSync(path.join(tmpdir(), "vak-legacy-binding-folder-"));
+  try {
+    writeFileSync(path.join(dataDir, "workspaces.json"), JSON.stringify({
+      version: 1,
+      projects: [],
+      bindings: { "legacy-chat": {
+        session: "legacy-chat", folder, mode: "copy_review", revision: 4,
+        accessState: "admitted", boundAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+      } },
+    }));
+    const reg = new WorkspaceRegistry(dataDir);
+    assert.equal(reg.getBinding("legacy-chat")?.accessState, "revoked");
+    assert.equal(reg.verifyDispatchScope("legacy-chat").ok, false);
+    await reg.bindSession("legacy-chat", { folder });
+    assert.equal(reg.verifyDispatchScope("legacy-chat").ok, true);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("corrupt workspace registry does not silently become an empty authority store", () => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), "vak-corrupt-registry-data-"));
+  try {
+    writeFileSync(path.join(dataDir, "workspaces.json"), "{not-json");
+    assert.throws(() => new WorkspaceRegistry(dataDir), /corrupt or unreadable/);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("failed registry persistence rolls back in-memory authority changes", async () => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), "vak-write-failure-data-"));
+  const folder = mkdtempSync(path.join(tmpdir(), "vak-write-failure-folder-"));
+  const registryFile = path.join(dataDir, "workspaces.json");
+  try {
+    const reg = new WorkspaceRegistry(dataDir);
+    await reg.bindSession("chat-before-failure", { folder });
+    rmSync(registryFile);
+    mkdirSync(registryFile);
+    await assert.rejects(() => reg.bindSession("chat-after-failure", { folder }));
+    assert.equal(reg.getBinding("chat-before-failure")?.accessState, "admitted");
+    assert.equal(reg.getBinding("chat-after-failure"), undefined);
   } finally {
     rmSync(dataDir, { recursive: true, force: true });
     rmSync(folder, { recursive: true, force: true });

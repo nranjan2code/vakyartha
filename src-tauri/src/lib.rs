@@ -26,6 +26,10 @@ struct Backend {
 mod engine;
 mod policy;
 mod vault;
+// Native admission primitives remain inactive until the single control actor
+// can govern every protected workload through one cutover.
+#[allow(dead_code)]
+mod control;
 use engine::{Engine as Sidecar, engine_request, engine_ack, engine_cancel};
 
 /// Closing the window hides it while this is set, so the engine and its
@@ -52,15 +56,6 @@ fn app_data_dir(app: &AppHandle) -> PathBuf {
     } else {
         app.path().app_data_dir().unwrap_or_else(|_| PathBuf::from("."))
     }
-}
-
-/// Retrieve a secret from the cross-platform Vault through the trusted engine broker.
-#[tauri::command]
-fn vault_get(window: tauri::WebviewWindow, service: Option<String>, account: String) -> Result<Option<String>, String> {
-    engine::main_window(&window)?;
-    let svc = service.unwrap_or_else(default_service);
-    let data_dir = app_data_dir(window.app_handle());
-    vault::get(&svc, &account, &data_dir)
 }
 
 /// Store a secret into the cross-platform Vault through the trusted engine broker.
@@ -395,7 +390,6 @@ pub fn run() {
             autostart,
             save_canvas,
             show_admin,
-            vault_get,
             vault_set,
             vault_delete,
             check_egress_endpoint,
