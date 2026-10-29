@@ -1,5 +1,13 @@
 # Vakyartha handover — 2026-10-28
 
+## Folder workspace research and design — 2026-10-29
+
+Follow-up scope: the user explicitly includes coding, document creation/editing and image/audio/video work. The design now specifies general-purpose capability composition, format-aware review, exact binary candidate identity, guarded handoff to existing media assets/jobs and honest format/large-file admission. FOLDER7 tracks those outcomes. No runtime feature, new dependency or hosted media call is introduced by this clarification.
+
+The user requested folder-scoped chats, optional sidebar Projects containing chats, shell execution and safety, informed by the sibling source and web research. [Proposed design](sandbox/FOLDER-WORKSPACES.md) records shared file/shell scope, retained per-chat copies with reviewed promotion as the user-selected default, binding revisions, stale-approval prevention, integration ownership and independent acceptance gates. The user selected isolated copies with review and explicit Apply; direct editing is outside the initial scope. FOLDER1–FOLDER7 remains unchecked; this checkpoint adds research/design only, with no feature implementation, source execution, framework change, installation or expanded authority.
+
+Inspected sibling workspace lists, Bash cwd/sandbox dispatch and the task-environment design's explicit incomplete acceptance status. Vakyartha's current global sandbox folder and one-shot copies cannot implement persistent per-chat work by themselves. Projection already admits tools per session but its built-in dispatch omits session context; identify and test the minimal public seam in its owning repo. Current `.git` exclusions, Realm symlink rejection, bounded copies/commands and spawn restrictions require compatibility tests before promising arbitrary development workflows. Research references are linked in the design; product requirements use capability language.
+
 ## Required system isolation — 2026-10-29
 
 The user requested extending isolation beyond app code to host execution, provider requests and host-mediated integrations, plus CPU/memory limits and Linux support, and explicitly selected a minimal trusted broker. [ADR-050](ADR.md#adr-050-minimal-trusted-broker-and-required-system-isolation-2026-10-29) records the decision. [System isolation contract](sandbox/SYSTEM-ISOLATION.md) freezes ownership, broker grants, platform/resource semantics, implementation ordering and independent acceptance scenarios. Checklist ISO1–ISO8 remains entirely open. These are requirements and architecture records only; no runtime, helper, framework pin, installed data or running service changed.

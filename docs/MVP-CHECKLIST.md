@@ -133,6 +133,18 @@ Owner: Projection for the voice projector; Vakyartha for the `voice/` module. Ac
 - [ ] R4. Follow the existing release procedure; distribution, signing, new dependencies and paid runs retain their existing approval requirements.
 - [ ] R5. Review dependency and lockfile diffs, including transitive additions, provenance, integrity and install/build scripts. Record approval for every exception; no floating/ad hoc installs, unreviewed vendoring or remote executable downloads. Existing pins and package-age rules alone do not close this gate.
 
+## Folder workspaces and project chats — 2026-10-29
+
+User-requested feature; [researched design, existing seams and acceptance plan](sandbox/FOLDER-WORKSPACES.md). The user selected isolated copies with review and explicit Apply as the default. Direct editing is outside the initial scope. All implementation and real-provider gates remain open.
+
+- [ ] FOLDER1. Private revisioned project/session bindings, explicit folder admission and revocation, safe missing/replaced-folder handling; no global cwd or setting mutation on chat switches.
+- [ ] FOLDER2. Session-scoped file/shell access through the existing integration lifecycle, with binding-aware approvals and no broader connector escape.
+- [ ] FOLDER3. Retained per-chat working files, review/Apply/Undo, restart/recovery, concurrency and conflict handling through the existing sandbox owner.
+- [ ] FOLDER4. Chat folder controls and sidebar Projects with visible scope/mode/readiness, bounded browsing, safe removal and preserved tasks/drafts/multiple surfaces; wide/narrow WebKit verification.
+- [ ] FOLDER5. Actual containment tests for traversal/symlinks, stale approvals, cross-chat IDs, broad filesystem tools, shell environment/network and missing helper; supported runtime/repository limitations disclosed.
+- [ ] FOLDER6. Real primary-local file inspect/edit/verify/review/apply outcome with independent original bytes and receipts; packaging/installed verification recorded separately.
+- [ ] FOLDER7. General-purpose document/data/image/audio/video capability composition, governed workspace/media import/export, format-aware previews and binary review/apply identity; verify supported formats, actual file content/playback and size/resource limits without claiming unrestricted format support.
+
 ## Required system isolation — 2026-10-29
 
 User-requested work, tracked separately from the earlier bounded macOS sandbox checkpoint. The chosen architecture keeps a minimal trusted broker and isolates execution workers. [Scope, ownership and acceptance gates](sandbox/SYSTEM-ISOLATION.md). All items below are open; existing command/app receipts do not establish completion.

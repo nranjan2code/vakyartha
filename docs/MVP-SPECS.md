@@ -42,6 +42,8 @@ The reviewed paths are `src/main.ts` (surface mounting and action dispatch), `sr
 
 ## 3. Task workspace and interaction
 
+Requested extension (2026-10-29): standalone chats can bind to a selected folder, and sidebar Projects can group chats around a folder. Binding is runtime authority distinct from sidebar membership. File tools and shell commands must share the admitted working tree through the existing integration/sandbox lifecycle, without changing global cwd or expanding other chats' access. [Proposed workflow and safety/acceptance contract](sandbox/FOLDER-WORKSPACES.md); implementation remains open under FOLDER1–FOLDER7. This extension preserves the task/surface requirements below.
+
 The app adds task discovery and task status to the existing workspace. Conversation remains the place for instructions and feedback; activity is a compact, expandable account of work; the existing canvas displays the selected live surface. Three permanently visible columns are not required.
 
 Each task shows its goal, status, current step, requested input or approval, results and limits. Task lists distinguish work needing attention from running and finished work. Existing conversations and artifacts remain discoverable; historical conversations are not silently marked as completed agent tasks.
