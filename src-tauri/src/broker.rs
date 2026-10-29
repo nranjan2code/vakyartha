@@ -140,11 +140,13 @@ impl NativeHttpClient {
     /// POST JSON to one registered model generation route. Callers cannot
     /// supply an origin, path, headers or proxy policy. The permit validates
     /// the request envelope before it crosses the network boundary.
-    pub(crate) fn post_provider_json(
+    /// Dispatches one admitted request and exposes its bounded response body
+    /// incrementally so a future broker bridge can apply backpressure.
+    pub(crate) fn post_provider_json_stream(
         &self,
         permit: &GenerationPermit,
         body: &[u8],
-    ) -> Result<BrokerResponse, BrokerError> {
+    ) -> Result<BrokerStreamResponse, BrokerError> {
         let url = model_endpoint(permit.provider, permit.operation.clone())?;
         if body.len() > permit.max_request_bytes {
             return Err(BrokerError::RequestTooLarge);
@@ -157,7 +159,7 @@ impl NativeHttpClient {
             .body(body)
             .send()
             .map_err(|_| BrokerError::Transport)?;
-        bounded_response(response)
+        bounded_stream_response(response)
     }
 }
 
@@ -503,9 +505,36 @@ fn valid_model_segment(model: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
-pub(crate) struct BrokerResponse {
+pub(crate) struct BrokerStreamResponse {
     pub(crate) status: StatusCode,
-    pub(crate) body: Vec<u8>,
+    body: Response,
+    delivered: u64,
+}
+
+impl BrokerStreamResponse {
+    /// Reads at most one caller-provided chunk and never exposes bytes beyond
+    /// the response ceiling. A one-byte probe detects an undeclared overflow.
+    pub(crate) fn read_chunk(&mut self, buffer: &mut [u8]) -> Result<usize, BrokerError> {
+        if buffer.is_empty() {
+            return Ok(0);
+        }
+        let remaining = MAX_RESPONSE_BYTES.saturating_sub(self.delivered);
+        if remaining == 0 {
+            let mut probe = [0_u8; 1];
+            return match self.body.read(&mut probe) {
+                Ok(0) => Ok(0),
+                Ok(_) => Err(BrokerError::ResponseTooLarge),
+                Err(_) => Err(BrokerError::Transport),
+            };
+        }
+        let limit = buffer.len().min(remaining as usize);
+        let read = self
+            .body
+            .read(&mut buffer[..limit])
+            .map_err(|_| BrokerError::Transport)?;
+        self.delivered = self.delivered.saturating_add(read as u64);
+        Ok(read)
+    }
 }
 
 fn validate_endpoint(endpoint: &str) -> Result<Url, BrokerError> {
@@ -539,7 +568,7 @@ fn validate_endpoint_query(
     Ok(url)
 }
 
-fn bounded_response(mut response: Response) -> Result<BrokerResponse, BrokerError> {
+fn bounded_stream_response(response: Response) -> Result<BrokerStreamResponse, BrokerError> {
     if response
         .content_length()
         .is_some_and(|length| length > MAX_RESPONSE_BYTES)
@@ -547,16 +576,11 @@ fn bounded_response(mut response: Response) -> Result<BrokerResponse, BrokerErro
         return Err(BrokerError::ResponseTooLarge);
     }
     let status = response.status();
-    let mut body = Vec::new();
-    response
-        .by_ref()
-        .take(MAX_RESPONSE_BYTES + 1)
-        .read_to_end(&mut body)
-        .map_err(|_| BrokerError::Transport)?;
-    if body.len() as u64 > MAX_RESPONSE_BYTES {
-        return Err(BrokerError::ResponseTooLarge);
-    }
-    Ok(BrokerResponse { status, body })
+    Ok(BrokerStreamResponse {
+        status,
+        body: response,
+        delivered: 0,
+    })
 }
 
 #[cfg(test)]
@@ -911,7 +935,7 @@ mod tests {
     }
 
     #[test]
-    fn response_body_limit_is_enforced_when_length_is_not_declared() {
+    fn streamed_response_limit_is_enforced_when_length_is_not_declared() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
@@ -934,10 +958,64 @@ mod tests {
             .body("{}")
             .send()
             .unwrap();
-        assert!(matches!(
-            bounded_response(response),
-            Err(BrokerError::ResponseTooLarge)
-        ));
+        let mut response = bounded_stream_response(response).unwrap();
+        let mut total = 0_u64;
+        let mut chunk = [0_u8; 128 * 1024];
+        loop {
+            match response.read_chunk(&mut chunk) {
+                Ok(0) => panic!("oversized response unexpectedly reached EOF"),
+                Ok(read) => total += read as u64,
+                Err(BrokerError::ResponseTooLarge) => break,
+                Err(error) => panic!("unexpected response error: {error:?}"),
+            }
+        }
+        assert_eq!(total, MAX_RESPONSE_BYTES);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn bounded_stream_response_is_available_before_the_body_finishes() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (sent_tx, sent_rx) = std::sync::mpsc::channel();
+        let (continue_tx, continue_rx) = std::sync::mpsc::channel();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 4096];
+            let _ = stream.read(&mut request);
+            use std::io::Write;
+            write!(stream, "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\nfirst").unwrap();
+            stream.flush().unwrap();
+            sent_tx.send(()).unwrap();
+            continue_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            stream.write_all(b"-second").unwrap();
+        });
+
+        let client = NativeHttpClient::new().unwrap();
+        let (response_tx, response_rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            let response = client
+                .client
+                .post(Url::parse(&format!("http://{address}/stream")).unwrap())
+                .body("{}")
+                .send()
+                .unwrap();
+            response_tx.send(bounded_stream_response(response)).unwrap();
+        });
+        sent_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        let mut response = response_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("headers and an unfinished body should be available incrementally")
+            .unwrap();
+        assert_eq!(response.status, StatusCode::OK);
+        let mut first = [0_u8; 5];
+        assert_eq!(response.read_chunk(&mut first).unwrap(), 5);
+        assert_eq!(&first, b"first");
+        continue_tx.send(()).unwrap();
+        let mut second = [0_u8; 7];
+        assert_eq!(response.read_chunk(&mut second).unwrap(), 7);
+        assert_eq!(&second, b"-second");
+        assert_eq!(response.read_chunk(&mut second).unwrap(), 0);
         server.join().unwrap();
     }
 }
