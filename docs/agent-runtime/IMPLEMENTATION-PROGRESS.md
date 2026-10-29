@@ -8,6 +8,8 @@ The native root aggregate now stores bounded cumulative model-request and tool-c
 
 This is accounting substrate only: it does not authorize an external effect, dispatch a provider/tool request, provide per-run caps or active-time reservation/settlement, or replace the current TypeScript task budget and task writer. Duplicate charge acknowledgement is not permission to replay the operation. The product cutover and complete ADR-013 semantics remain open.
 
+The existing Node 26 app suite was rerun serially under the official Node 26.13.0 macOS ARM64 archive (SHA-256 verified against Node's published `SHASUMS256.txt`): 275/275 pass; TypeScript typecheck passes; pinned Projection suite passes 412/412. These are regression checks and do not close the task/outcome gates.
+
 ## Active provider and credential path audit — 2026-10-30
 
 Rechecked the live source after confining the Rust broker. `Settings.load()` still reads provider secrets into the sidecar's `process.env`; on desktop, `src/ui.ts` calls native `vault_set`/`vault_delete` and then PUTs the same secret to `/api/settings`, whose TypeScript `Settings` store writes Keychain or the settings file. `modelProviders()` still calls `providersFromEnv()` and wraps its provider instances, but supplies no `ProviderTransport`; the pinned Projection host calls `entry.make()` or `entry.make({ think })`, so the provider default remains global `fetch`, while `tasks.beforeModelRequest()` and FinOps wrap it. Task approvals and task persistence also remain in `sidecar/tasks.ts`.
