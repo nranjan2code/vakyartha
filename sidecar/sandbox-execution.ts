@@ -12,7 +12,26 @@ const MAX_WORKSPACE_FILES = 50_000;
 const MAX_OUTPUT_BYTES = 256 * 1024; // Bounded up to 256 KiB
 const MAX_RUNTIME_MS = 300_000; // Bounded up to 300 seconds (5 minutes) for long builds
 const MAX_ARGUMENT_BYTES = 16 * 1024;
-const PATH_VALUE = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+
+export function sandboxExecutionPath(): string {
+  const base = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+  const out: string[] = [];
+  const hostPath = process.env.PATH || "";
+  for (const entry of hostPath.split(path.delimiter).filter(Boolean)) {
+    if (
+      (entry.includes(".local/bin") ||
+        entry.includes(".cargo/bin") ||
+        entry.includes(".nvm") ||
+        entry.includes(".pyenv") ||
+        entry.includes("homebrew")) &&
+      !base.includes(entry) &&
+      !out.includes(entry)
+    ) {
+      out.push(entry);
+    }
+  }
+  return [...out, ...base].join(path.delimiter);
+}
 
 interface ToolInfo {
   name: string;
@@ -29,7 +48,7 @@ interface SandboxToolServer {
 
 function runProcess(command: string, args: string[], cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env: { PATH: PATH_VALUE, HOME: cwd, TMPDIR: cwd }, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { cwd, env: { PATH: sandboxExecutionPath(), HOME: cwd, TMPDIR: cwd }, detached: true, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "", bytes = 0, settled = false;
     let stopping: Error | undefined;
     const stop = (reason: Error) => {

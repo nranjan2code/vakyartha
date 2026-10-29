@@ -758,7 +758,17 @@ kbd { font: 0.8rem ui-monospace, SFMono-Regular, Menlo, monospace; min-width: 34
 .approval { border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--panel); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; max-width: 640px; }
 .approval-head { display: flex; gap: 12px; align-items: center; }
 .approval-sub { font-size: 0.8rem; color: var(--muted); }
-.approval-args { margin: 0; max-height: 200px; overflow: auto; white-space: pre-wrap; font-size: 0.78rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.approval-body { display: flex; flex-direction: column; gap: 8px; }
+.approval-cmd { display: flex; flex-direction: column; gap: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; }
+.approval-cmd-line { display: flex; align-items: baseline; gap: 8px; color: var(--text); overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+.approval-cmd-prompt { color: var(--accent); font-weight: 600; user-select: none; }
+.approval-cmd-meta { font-size: 0.75rem; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+.approval-paths-list { display: flex; flex-direction: column; gap: 3px; font-size: 0.78rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.approval-details { margin-top: 2px; font-size: 0.78rem; color: var(--muted); }
+.approval-details summary { cursor: pointer; user-select: none; padding: 2px 0; }
+.approval-details summary:hover { color: var(--text); }
+.approval-args { margin: 4px 0 0; max-height: 200px; overflow: auto; white-space: pre-wrap; font-size: 0.78rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.status .retry { margin-left: 8px; }
 .approval-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .approval.settled { border-color: var(--border); padding: 8px 12px; flex-direction: row; align-items: center; justify-content: space-between; }
 .approval.settled .approval-sub { display: none; }

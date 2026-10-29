@@ -577,12 +577,26 @@ function limited(turn: Turn, limit: "steps" | "tools"): void {
 
 function setStatus(turn: Turn, text: string, state?: "done" | "error"): void {
   turn.status.className = `status ${state ?? ""}`;
-  turn.status.querySelector(".label")!.textContent = text;
+  let displayText = text;
+  if (text.includes("Provider generation did not finish successfully")) {
+    displayText = "Turn was interrupted before completion (Provider stream ended or timed out)";
+  }
+  turn.status.querySelector(".label")!.textContent = displayText;
   if (state === "done" && !turn.status.querySelector(".msg-actions") && turnText(turn)) {
     const buttons = [copyAction(() => turnText(turn), "Copy reply"), speakButton(turn)];
     const inline = turnSurfaces(turn).filter((id) => canvas.isInline(id));
     if (inline.length) buttons.push(action("maximize", "Open in canvas", () => canvas.open(inline.at(-1)!, true)));
     turn.status.prepend(messageActions(buttons));
+  } else if (state === "error" && !turn.status.querySelector(".retry")) {
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "ghost small retry";
+    retry.textContent = "Retry turn";
+    retry.addEventListener("click", () => {
+      retry.remove();
+      void runTurn({ continue: true });
+    });
+    turn.status.append(retry);
   }
   paintSpeak();
 }
@@ -1496,6 +1510,101 @@ function recordVersions(turn: Turn, saved?: SurfaceSnapshot[]): void {
 // A surface action is answered by the next turn: it becomes that turn's first step.
 let pendingSteps: string[] = [];
 
+function formatApprovalBody(e: Extract<AgentEvent, { type: "approval" }>): { body: HTMLElement; subText: string } {
+  const container = document.createElement("div");
+  container.className = "approval-body";
+
+  const raw = e.args;
+  const isObj = raw !== null && typeof raw === "object";
+  const hasCommand = isObj && "command" in (raw as Record<string, unknown>) && typeof (raw as Record<string, unknown>).command === "string";
+  const hasPaths = isObj && "paths" in (raw as Record<string, unknown>) && Array.isArray((raw as Record<string, unknown>).paths);
+  let subText = "The model wants to run this tool with:";
+
+  if (hasCommand) {
+    subText = "Command requested by model:";
+    const cmdBox = document.createElement("div");
+    cmdBox.className = "approval-cmd";
+    const line = document.createElement("div");
+    line.className = "approval-cmd-line";
+    const prompt = document.createElement("span");
+    prompt.className = "approval-cmd-prompt";
+    prompt.textContent = "$";
+    const code = document.createElement("code");
+    const cmdStr = String((raw as Record<string, unknown>).command);
+    const argv = (raw as Record<string, unknown>).args;
+    const argsStr = Array.isArray(argv) ? argv.map(a => String(a).includes(" ") ? `"${a}"` : String(a)).join(" ") : "";
+    code.textContent = `${cmdStr} ${argsStr}`.trim();
+    line.append(prompt, code);
+    cmdBox.append(line);
+
+    const meta = document.createElement("div");
+    meta.className = "approval-cmd-meta";
+    const cwd = (raw as Record<string, unknown>).workingDirectory;
+    if (typeof cwd === "string" && cwd !== ".") {
+      const c = document.createElement("span");
+      c.textContent = `Directory: ${cwd}`;
+      meta.append(c);
+    }
+    if ((raw as Record<string, unknown>).realmId) {
+      const r = document.createElement("span");
+      r.textContent = "Isolated Sandbox Copy";
+      meta.append(r);
+    }
+    if (meta.children.length) cmdBox.append(meta);
+    container.append(cmdBox);
+  } else if (hasPaths) {
+    subText = "Workspace changes to apply:";
+    const pathsBox = document.createElement("div");
+    pathsBox.className = "approval-cmd";
+    const title = document.createElement("div");
+    title.className = "approval-cmd-meta";
+    const paths = (raw as Record<string, unknown>).paths as string[];
+    title.textContent = `Target files (${paths.length}):`;
+    pathsBox.append(title);
+    const list = document.createElement("div");
+    list.className = "approval-paths-list";
+    for (const p of paths.slice(0, 8)) {
+      const item = document.createElement("div");
+      item.textContent = `• ${p}`;
+      list.append(item);
+    }
+    if (paths.length > 8) {
+      const more = document.createElement("div");
+      more.className = "row-hint";
+      more.textContent = `… and ${paths.length - 8} more`;
+      list.append(more);
+    }
+    pathsBox.append(list);
+    container.append(pathsBox);
+  } else if (isObj && Object.keys(raw as object).length === 0) {
+    subText = "Setup requested by model:";
+    const emptyBox = document.createElement("div");
+    emptyBox.className = "approval-cmd-meta";
+    emptyBox.textContent = "Initializes an isolated project workspace copy.";
+    container.append(emptyBox);
+  }
+
+  // Collapsible technical parameters
+  if (isObj && Object.keys(raw as object).length > 0) {
+    const details = document.createElement("details");
+    details.className = "approval-details";
+    const summary = document.createElement("summary");
+    summary.textContent = "Technical parameters";
+    const pre = document.createElement("pre");
+    pre.className = "approval-args";
+    pre.textContent = JSON.stringify(e.args, null, 2);
+    details.append(summary, pre);
+    container.append(details);
+  } else if (!isObj) {
+    const pre = document.createElement("pre");
+    pre.className = "approval-args";
+    pre.textContent = JSON.stringify(e.args, null, 2);
+    container.append(pre);
+  }
+
+  return { body: container, subText };
+}
+
 /** "May I?" for a tool on Ask: what it is, what it will be given, and three answers. */
 function approvalCard(turn: Turn, e: Extract<AgentEvent, { type: "approval" }>): void {
   const l = labels[e.server.replace(/[^a-zA-Z0-9_-]+/g, "_")];
@@ -1509,20 +1618,18 @@ function approvalCard(turn: Turn, e: Extract<AgentEvent, { type: "approval" }>):
   b.textContent = `Use ${l?.name ?? e.server}: ${e.title}?`;
   const sub = document.createElement("div");
   sub.className = "approval-sub";
-  sub.textContent = "The model wants to run this tool with:";
+  const { body, subText } = formatApprovalBody(e);
+  sub.textContent = subText;
   words.append(b, sub);
   head.append(tile(l?.icon ?? "tool", 32), words);
-  const args = document.createElement("pre");
-  args.className = "approval-args";
-  const text = JSON.stringify(e.args, null, 2);
-  args.textContent = text;
+
   const actions = document.createElement("div");
   actions.className = "approval-actions";
   const answer = (decision: "allow" | "allow-chat" | "deny") => async () => {
     for (const x of actions.querySelectorAll("button")) (x as HTMLButtonElement).disabled = true;
     await api(`/api/approvals/${encodeURIComponent(e.id)}`, { method: "POST", body: JSON.stringify({ decision }) }).catch(() => settleApproval(e.id, "deny"));
   };
-  for (const [label, decision, cls] of [["Deny", "deny", "ghost small"], ["Allow for this chat", "allow-chat", "ghost small"], ["Allow once", "allow", "primary small"]] as const) {
+  for (const [label, decision, cls] of [["Deny", "deny", "ghost small"], ["Allow for this chat", "allow-chat", "primary small"], ["Allow once", "allow", "ghost small"]] as const) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = cls;
@@ -1530,7 +1637,7 @@ function approvalCard(turn: Turn, e: Extract<AgentEvent, { type: "approval" }>):
     btn.addEventListener("click", answer(decision));
     actions.append(btn);
   }
-  card.append(head, args, actions);
+  card.append(head, body, actions);
   // Where it happened: before what the model makes of the result.
   turn.root.insertBefore(card, turn.surfaces);
   setStatus(turn, "Waiting for your answer…");
@@ -1545,6 +1652,7 @@ function settleApproval(id: string, decision: "allow" | "deny"): void {
   if (!card) return;
   card.classList.add("settled", decision);
   card.querySelector(".approval-actions")?.replaceChildren(Object.assign(document.createElement("span"), { className: "approval-result", textContent: decision === "allow" ? "Allowed" : "Declined" }));
+  card.querySelector(".approval-body")?.remove();
   card.querySelector(".approval-args")?.remove();
 }
 
