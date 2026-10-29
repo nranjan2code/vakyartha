@@ -2117,3 +2117,17 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
   .app-surface-nav { padding: 0 8px; }
   .app-surface-nav > button { padding: 10px 12px; }
 }
+
+.app-connection-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 12px 18px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.app-connection-notice[hidden] { display: none; }
+.app-connection-notice p { margin: 4px 0 0; color: var(--muted); font-size: .85rem; max-width: 70ch; }
+.app-settings-dialog { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; color: var(--fg); background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+.app-settings-dialog::backdrop { background: rgb(0 0 0 / .4); }
+.app-settings-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border); }
+.app-settings-dialog h2 { margin: 0; font-size: 1.05rem; }
+.app-settings-body { display: grid; gap: 10px; padding: 16px; }
+.app-settings-body h3 { margin: 12px 0 0; font-size: .95rem; }
+.app-settings-body p { margin: 0; line-height: 1.5; font-size: .85rem; overflow-wrap: anywhere; }
+.app-settings-body button { justify-self: start; }
+.app-settings-connection { display: grid; gap: 8px; padding: 12px; background: var(--hover); border-radius: 8px; }
+.canvas-progress.error { color: var(--danger); }

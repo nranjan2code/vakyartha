@@ -26,3 +26,6 @@ From repository root, run `node --test test/reference-apps.test.ts`, `npm run ty
 No remote issue edits, assignment, delivery prediction, exhaustive pagination, CI-health claim, private token forwarding or full backlog/throughput analytics. Native board moves are local app state.
 
 Native projections use the ordinary Projection catalog and wide/narrow layouts. Source/record values and visible explanations also feed spoken projection; there is no separate narration store. No additional SDK, package or raw network path is introduced.
+
+## App settings and action status
+Open Settings in the app header for connection readiness, integration setup links, schedules, last-run status and package/data details. Integration policy changes apply globally; this page grants no access. Source/criteria preferences stay in the app’s own views. Ordinary actions execute through this app’s sandbox owner and report in its top status area; local table search/sorting stays local and does not invoke a model.

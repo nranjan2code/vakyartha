@@ -22,6 +22,7 @@ export class Canvas {
   #text = false;
   #last?: string;
   #inTurn = false;
+  #actionNotice?: { surface: string; message: string; error: boolean };
   #dismissed = false;
   #feedbackTimer?: ReturnType<typeof setTimeout>;
   #panel = $<HTMLElement>("canvas");
@@ -35,7 +36,18 @@ export class Canvas {
   /** An earlier version on show: its own store and a read-only element, the live one stays untouched. */
   #old?: { id: string; version: number; store: SurfaceStore; el: HTMLElement };
 
-  beginTurn(): void {
+  actionStatus(surface: string, message: string, error = false): void {
+    if (this.#active !== surface || this.#panel.hidden || !this.#entries.has(surface)) return;
+    this.#actionNotice = { surface, message, error };
+    const status = $("canvas-progress");
+    status.textContent = message; status.hidden = false;
+    status.setAttribute("role", error ? "alert" : "status");
+    status.classList.toggle("error", error);
+  }
+
+  beginTurn(actionSurface?: string): void {
+    if (!actionSurface) { this.#actionNotice = undefined; $("canvas-progress").hidden = true; }
+    if (!this.#actionNotice) { const status = $("canvas-progress"); status.textContent = "Updating canvas…"; status.classList.remove("error"); status.setAttribute("role", "status"); }
     this.#inTurn = true;
     this.#dismissed = false;
   }
@@ -56,7 +68,7 @@ export class Canvas {
     this.#inTurn = false;
     this.#dismissed = false;
     this.#panel.removeAttribute("aria-busy");
-    $("canvas-progress").hidden = true;
+    $("canvas-progress").hidden = !this.#actionNotice;
     if (!this.#active) this.close(false, false);
   }
 
@@ -415,6 +427,7 @@ export class Canvas {
     if (this.#active !== id) {
       this.#returnHome();
       this.#active = id;
+      if (this.#actionNotice?.surface !== id) { this.#actionNotice = undefined; $("canvas-progress").hidden = true; $("canvas-progress").textContent = "Updating canvas…"; $("canvas-progress").classList.remove("error"); }
       this.#last = id;
       entry.surface.hidden = false;
       this.#content.append(entry.surface);
@@ -479,6 +492,9 @@ export class Canvas {
   }
 
   reset(): void {
+    this.#actionNotice = undefined;
+    $("canvas-progress").textContent = "Updating canvas…";
+    $("canvas-progress").classList.remove("error");
     this.#inTurn = false;
     this.#dismissed = false;
     this.close(false, false);

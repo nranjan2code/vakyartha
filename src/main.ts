@@ -1,3 +1,4 @@
+import { ownsSurfaceEvent } from './surface-ownership.ts';
 import { engineFetch } from "./backend.ts";
 // Vakyartha UI: chats in a sidebar, a thread of turns, surfaces rendered by
 // <vak-surface>. Everything model-related runs in the engine sidecar; this
@@ -123,7 +124,7 @@ document.getElementById("open-schedule")?.addEventListener(
 const drafts = new Drafts(localStorage, (message) => tasksPanel.error(message));
 document.addEventListener("vak-change", (e) => {
   const detail = (e as CustomEvent<{ surface: string; path: string; value: unknown }>).detail;
-  drafts.record(detail.surface, detail.path, detail.value);
+  if (ownsSurfaceEvent(e, mounted, detail.surface)) drafts.record(detail.surface, detail.path, detail.value);
 });
 window.addEventListener("pagehide", () => drafts.flush());
 window.addEventListener("vak:task-deleted", (e) => {
@@ -637,7 +638,8 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
   }
   const ctrl = new AbortController();
   streams.set(session, ctrl);
-  canvas.beginTurn();
+  canvas.beginTurn(req.action?.surface);
+  if (req.action) canvas.actionStatus(req.action.surface, "Running action…");
   // The sidebar marks the chat as running at once (refreshed again when it ends).
   setTimeout(() => void loadChats(), 300);
   updateSend();
@@ -700,9 +702,11 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         else if (e.isError || e.result !== "ok") addNote(turn, e.name, e.result);
         break;
       case "error":
+        if (req.action) canvas.actionStatus(req.action.surface, e.message, true);
         setStatus(turn, e.message, "error");
         break;
       case "run_end":
+        if (req.action && !turn.status.classList.contains("error")) canvas.actionStatus(req.action.surface, e.limit ? `Action stopped: ${e.limit} limit` : "Action completed", Boolean(e.limit));
         if (!turn.status.classList.contains("error")) {
           setStatus(turn, `${model} · ${((performance.now() - started) / 1000).toFixed(1)}s${e.limit === "steps" ? " · step limit" : e.limit === "tools" ? " · tool budget" : ""}`, "done");
         }
@@ -739,6 +743,7 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
     );
   } catch (err) {
     if (detaching.has(ctrl)) return void clearInterval(ticker);
+    if (req.action) canvas.actionStatus(req.action.surface, ctrl.signal.aborted ? "Action stopped" : (err as Error).message, !ctrl.signal.aborted);
     if (ctrl.signal.aborted) setStatus(turn, "Stopped", "done");
     else setStatus(turn, (err as Error).message, "error");
   } finally {
@@ -782,18 +787,21 @@ function submit(text: string): void {
   void runTurn({ message: t });
 }
 
-// UI actions from any surface go back to the model.
+// Only surfaces mounted by this chat/task may use its model continuation.
 document.addEventListener("vak-action", (e) => {
   const detail = (e as CustomEvent<VakActionDetail>).detail;
   const { action } = detail;
+  if (!ownsSurfaceEvent(e, mounted, action.surface)) return;
   // The surface's data model, plus what the control itself carries (which
   // option of a compare, a button's payload): replacing one with the other lost
   // which item was chosen.
   const data = { ...detail.data, ...action.data };
   if (tasksPanel.owns(session)) {
     const surface = mounted.get(action.surface);
+    canvas.actionStatus(action.surface, "Running action…");
     void tasksPanel.input(undefined, { surface: action.surface, source: action.source, data }, remoteVersions.get(action.surface))
-      .catch((err) => tasksPanel.error((err as Error).message)).finally(() => surface?.releaseAction());
+      .then(() => canvas.actionStatus(action.surface, "Action submitted"))
+      .catch((err) => { canvas.actionStatus(action.surface, (err as Error).message, true); tasksPanel.error((err as Error).message); }).finally(() => surface?.releaseAction());
     return;
   }
   if (!isRunning(session)) pendingSteps.push(action.action);

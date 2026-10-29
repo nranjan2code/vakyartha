@@ -5,7 +5,7 @@ license: MIT
 compatibility: Core required Vakyartha capability; active across desktop and web runtimes.
 metadata:
   author: nranjan2code
-  version: "1.4"
+  version: "1.5"
 allowed-tools: vak_render vak_update vak_submit
 ---
 
@@ -22,7 +22,11 @@ Design guidelines and layout architecture for crafting responsive, minimalistic,
 
 ## Liquid & Adaptive Layout Architecture
 
-Surfaces adapt dynamically to container widths (from 375px mobile to 1400px+ desktop). Never author a static, single-column vertical stack where every element stretches full-width:
+Compose around the content and its reading order, not a fixed screen template. A single-column form or reading flow can be correct. Do not force every app/report into the same metric/chart/table tiers. Surfaces respond to their actual container (a side panel can be narrow on a wide screen).
+
+Prefer `grid` with `columns: "auto"` and an appropriate `minItemWidth` for repeated peer content. Use explicit column counts only for an intentional grouping or comparison; they still collapse as space decreases. Use wrapping horizontal stacks for related actions. Ordinary buttons size to their content; reserve explicit `maxWidth: "full"` or stretch alignment for intentional full-width actions. Compact density reduces control spacing without shrinking labels or coarse-pointer targets.
+
+Choose the following patterns only when the content needs them:
 
 1. **Fluid Grid Rhythm (`grid`)**:
    - **Metric Strips**: Place 2 to 4 key indicators at the top using `grid` with `columns: 2`, `3`, or `4` and `minItemWidth: "sm"`. On wide desktop screens this creates a balanced horizontal row; on narrow viewports it automatically wraps without horizontal clipping.
@@ -39,11 +43,11 @@ Surfaces adapt dynamically to container widths (from 375px mobile to 1400px+ des
 3. **Linear Flow & Toolbars (`stack`)**:
    - Use `stack` for vertical reading order (`direction: "vertical"`) or horizontal toolbars/actions (`direction: "horizontal"`, `align: "start" | "center" | "end"`, `gap: "sm" | "md" | "lg"`).
 4. **Clamped Measures (`maxWidth`) — Preventing 100% Chart Stretch**:
-   - **Rule**: Single charts, forms, and cards must **never** span 100% width across a wide canvas. A chart stretching 1400px looks distorted with extreme aspect ratios.
+   - Use readable measures for individual forms, charts and cards. Full width is an explicit content decision, not the default for every element.
    - **`sm` (320px)**: Compact summary cards, confirmation receipts, single-card alerts.
    - **`md` (720px)**: **Default standard for single analytical charts and interactive forms.** Keeps controls and charts ergonomically readable.
    - **`lg` (1040px)**: Paired analytics, multi-metric dashboard sections.
-   - **`full` (100%)**: **Reserved strictly for dense data tables** (4+ columns) and multi-track timelines/Gantt charts that genuinely require wide horizontal space.
+   - **`full` (100%)**: Content that needs the available measure, such as dense tables, multi-track timelines or explicitly full-width actions. Preserve responsive wrapping and appropriate chart aspect ratio.
 5. **Sections vs Cards (Eliminating Card Soup)**:
    - **`section`**: Use `section` (`props: { title: "...", description: "..." }`) for primary visual divisions. It provides a clean heading and description with open breathing room and no bounding border box.
    - **`card`**: Use `card` deliberately for focal items, distinct actionable cards, or summary receipts. **Never wrap every single metric or paragraph in its own separate card, and never nest cards inside cards.**

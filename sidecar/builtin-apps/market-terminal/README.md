@@ -70,3 +70,6 @@ node scripts/market-terminal-check.ts --live
 ```
 
 The live check uses isolated temporary settings, real official MCP tools and real `vaksb`. It independently fetches reference history/quotes, checks exact rows and independently computed metrics, reloads persistence, then checks all three views and a real SQL action in WebKit at 1440/1100/620/375 px. Evidence paths and failures are retained. Unit tests and source runs do not certify installed builds or primary-model app authoring. Current results belong in the repository's `docs/EVALUATION.md` and `docs/HANDOVER.md`.
+
+## App settings and action status
+Open Settings in the app header for connection readiness, integration setup links, schedules, last-run status and package/data details. Integration policy changes apply globally; this page grants no access. Source/criteria preferences stay in the app’s own views. Ordinary actions execute through this app’s sandbox owner and report in its top status area; local table search/sorting stays local and does not invoke a model.

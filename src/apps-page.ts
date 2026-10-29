@@ -1,3 +1,4 @@
+import type { AppConnection } from '../shared/app-connections.ts';
 // Sandboxed Dynamic Applications Workbench Page.
 // Manages application lifecycle in isolated child runtimes with dedicated full-view execution.
 
@@ -23,6 +24,7 @@ export class AppsPage {
   #query = "";
   #apps: AppSummary[] = [];
   #activeApp: AppDetails | null = null;
+  #opening = 0;
   #activeStore: SurfaceStore | null = null;
   #viewCache = new Map<string, { store: SurfaceStore; element: VakSurfaceElement; scroll: number }>();
   #poll?: ReturnType<typeof setInterval>;
@@ -30,6 +32,8 @@ export class AppsPage {
   #pending = Promise.resolve();
   #toggleSidebar: () => void;
   #onClose?: () => void;
+  #connections: AppConnection[] = [];
+  #resumeSettings?: { appId: string; surface: string };
   #feedbackTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
@@ -61,6 +65,11 @@ export class AppsPage {
       }
     });
 
+    window.addEventListener("vak:settings-closed", () => {
+      const resume = this.#resumeSettings; this.#resumeSettings = undefined;
+      if (resume) void Promise.resolve().then(async () => { await this.open(); await this.runApp(resume.appId, resume.surface); }).catch(error => this.#feedback(`Could not return to app: ${(error as Error).message}`, true));
+      else if (this.#activeApp) void this.#refreshConnections();
+    });
     window.addEventListener("vak:app-installed", () => {
       if (!this.#page.hidden && !this.#activeApp) void this.refresh();
     });
@@ -77,6 +86,7 @@ export class AppsPage {
   }
 
   close(showWorkspace = true): void {
+    this.#opening++;
     clearInterval(this.#poll);
     if (this.#page.hidden) return;
     this.#activeApp = null;
@@ -90,6 +100,7 @@ export class AppsPage {
   }
 
   async open(): Promise<void> {
+    this.#opening++;
     clearInterval(this.#poll);
     const studioEl = document.getElementById("skills-studio-page");
     if (studioEl) studioEl.hidden = true;
@@ -274,20 +285,29 @@ export class AppsPage {
     }, 3500);
   }
 
-  async runApp(appId: string): Promise<void> {
+  async runApp(appId: string, surface?: string): Promise<void> {
+    const opening = ++this.#opening;
     try {
-      const details = await api<AppDetails>(`/api/apps/${encodeURIComponent(appId)}`);
+      const [details, connections] = await Promise.all([api<AppDetails>(`/api/apps/${encodeURIComponent(appId)}`), api<AppConnection[]>(`/api/apps/${encodeURIComponent(appId)}/connections`)]);
+      if (opening !== this.#opening) return;
       this.#viewCache.clear();
+      this.#connections = connections;
+      if (surface && details.surfaces?.[surface]) details.surface = details.surfaces[surface] as unknown as Record<string, unknown>;
       this.#activeApp = details; this.#dirty = false;
       this.#renderRunnerView(details);
       clearInterval(this.#poll);
       this.#poll = setInterval(() => { void this.#refreshActive(); }, 2000);
     } catch (err) {
-      this.#feedback(`Could not launch app: ${(err as Error).message}`, true);
+      if (opening !== this.#opening) return;
+      const message = `Could not launch app: ${(err as Error).message}`;
+      const status = document.getElementById("app-run-status");
+      if (status) status.textContent = message;
+      this.#feedback(message, true);
     }
   }
 
   #closeActiveApp(): void {
+    this.#opening++;
     clearInterval(this.#poll);
     this.#activeApp = null;
     this.#activeStore = null;
@@ -352,7 +372,7 @@ export class AppsPage {
     const operations = el("details", { className: "app-runner-operations" },
       el("summary", { textContent: "Manage" }),
       el("div", { className: "app-runner-menu" }, consoleBtn, ...(app.manifest.triggers.length ? [schedule] : [])));
-    actions.append(operations);
+    actions.append(el("button", { type: "button", className: "ghost small", textContent: "Settings", onclick: () => void this.#openAppSettings() }), operations);
     const navigation = el("nav", { className: "app-surface-nav", "aria-label": "App views" });
     if (Object.keys(app.surfaces ?? {}).length > 1) {
       const navigate = (id: string) => {
@@ -371,7 +391,9 @@ export class AppsPage {
       }));
     }
 
-    this.#page.replaceChildren(header, navigation, status, surfaceMount);
+    const connectionNotice = el("div", { id: "app-connection-notice", className: "app-connection-notice" });
+    this.#page.replaceChildren(header, navigation, connectionNotice, status, surfaceMount);
+    this.#renderConnections();
 
     if (app.surface) {
       const cached = this.#viewCache.get(String(app.surface.id));
@@ -400,6 +422,7 @@ export class AppsPage {
           const liveStatus = document.getElementById("app-run-status")!;
           liveStatus.textContent = "Running…";
           try {
+            if (app.manifest.triggers.some(t => t.action === body.action) && !await this.#dataReady(app.manifest.id)) return;
             const res = await api<{ revision: number; surfaces: Record<string, SurfaceSnapshot>; focusSurface?: string }>(`/api/apps/${encodeURIComponent(app.manifest.id)}/action`, {
               method: "POST", body: JSON.stringify({ ...body, surface: snapshot.id, revision: this.#activeApp?.revision })
             });
@@ -419,13 +442,16 @@ export class AppsPage {
               this.#renderRunnerView(this.#activeApp);
             }
           } catch (error) { liveStatus.textContent = `${(error as Error).message}. Your local edits are retained; reopen to load saved state.`; }
+          finally { this.#dirty = false; surfaceEl.releaseAction(); }
         });
       };
       if (!cached) surfaceEl.addEventListener("vak-change", (event: Event) => {
+        event.stopPropagation();
         const detail = (event as CustomEvent<{ path: string; value: unknown }>).detail;
         dispatch({ controlId: detail.path, value: detail.value });
       });
       if (!cached) surfaceEl.addEventListener("vak-action", (event: Event) => {
+        event.stopPropagation();
         const detail = (event as CustomEvent<VakActionDetail>).detail;
         dispatch({ controlId: detail.action.source, value: detail.action.data ?? detail.data, action: detail.action.action });
       });
@@ -439,6 +465,55 @@ export class AppsPage {
         el("p", { textContent: "This application runs as a background process daemon without a visual canvas." })
       ));
     }
+  }
+
+  #renderConnections(): void {
+    const notice = document.getElementById("app-connection-notice");
+    if (!notice) return;
+    const blocked = this.#connections.filter(c => !c.ready);
+    notice.hidden = !blocked.length;
+    notice.replaceChildren(...(blocked.length ? [
+      el("div", {}, el("strong", { textContent: "Data connection needs setup" }), el("p", { textContent: blocked.map(c => `${c.integrationName}: ${c.reason}`).join(" ") })),
+      el("button", { type: "button", className: "ghost small", textContent: "Open app settings", onclick: () => void this.#openAppSettings() }),
+    ] : []));
+  }
+  async #dataReady(id: string): Promise<boolean> {
+    const rows = await api<AppConnection[]>(`/api/apps/${encodeURIComponent(id)}/connections`);
+    if (rows.every(c => c.ready)) return true;
+    if (this.#activeApp?.manifest.id !== id) await this.runApp(id);
+    this.#connections = rows; this.#renderConnections();
+    const status = document.getElementById("app-run-status");
+    if (status) status.textContent = "Refresh needs connection setup. No data was fetched.";
+    await this.#openAppSettings();
+    return false;
+  }
+  async #refreshConnections(): Promise<void> {
+    const id = this.#activeApp?.manifest.id;
+    if (!id) return;
+    try { const rows = await api<AppConnection[]>(`/api/apps/${encodeURIComponent(id)}/connections`); if (this.#activeApp?.manifest.id === id) { this.#connections = rows; this.#renderConnections(); } } catch { /* Retry when settings opens. */ }
+  }
+  async #openAppSettings(): Promise<void> {
+    const app = this.#activeApp;
+    if (!app) return;
+    await this.#refreshConnections();
+    const dialog = el("dialog", { className: "app-settings-dialog", "aria-label": `${app.manifest.name} settings` });
+    const close = () => { dialog.close(); dialog.remove(); };
+    const body = el("div", { className: "app-settings-body" });
+    body.append(el("h3", { textContent: "Connections and access" }), el("p", { className: "muted", textContent: "This app can request only its declared tools. Integration permissions apply globally; this page does not grant access. Ask/off tools cannot run unattended." }));
+    if (!this.#connections.length) body.append(el("p", { textContent: "No external connections required." }));
+    for (const c of this.#connections) body.append(el("section", { className: "app-settings-connection" },
+      el("strong", { textContent: `${c.integrationName} · ${c.title}` }), el("p", { textContent: `${c.ready ? "Ready" : "Needs setup"} · ${c.policy}. ${c.reason}` }),
+      el("button", { type: "button", className: "ghost small", textContent: "Configure integration", onclick: async () => { this.#resumeSettings = { appId: app.manifest.id, surface: String(app.surface?.id ?? "") }; close(); const {openSettings} = await import("./settings.ts"); await openSettings(c.integrationId ? `integration:${c.integrationId}` : "integrations"); } })));
+    body.append(el("h3", { textContent: "Refresh and operation" }), el("p", { textContent: app.manifest.triggers.length ? `Scheduling ${app.scheduling ? "on" : "off"}. Requires an awake, running host and permitted data tools. Missed intervals are skipped.` : "No background schedule declared." }));
+    for (const t of app.manifest.triggers) body.append(el("p", { textContent: `${t.id}: ${t.expression} · ${t.action}` }));
+    if (app.manifest.triggers.length) body.append(el("button", { type: "button", className: "ghost small", textContent: app.scheduling ? "Pause scheduling" : "Enable scheduling", disabled: !app.scheduling && this.#connections.some(c => !c.ready), onclick: async () => { try { this.#activeApp = await api<AppDetails>(`/api/apps/${app.manifest.id}/schedule`, { method: "POST", body: JSON.stringify({ enabled: !app.scheduling }) }); close(); this.#renderRunnerView(this.#activeApp); } catch (e) { operationStatus.textContent = (e as Error).message; } } }));
+    const operationStatus = el("p", { role: "status", textContent: app.run ? `Last run: ${app.run.status}${app.run.error ? ` · ${app.run.error}` : ""}` : "No run recorded." }); body.append(operationStatus);
+    body.append(el("h3", { textContent: "Data and package" }), el("p", { textContent: `Version ${app.manifest.version} · ${formatBytes(app.storageBytes)} saved · ${app.manifest.entitlements.storage.duckdb ? "bounded DuckDB snapshot and app state" : "app state"}. Existing data is preserved during reviewed updates.` }));
+    body.append(el("button", { type: "button", className: "ghost small", textContent: "Review source and documentation", onclick: async () => { close(); const {openSkillStudio} = await import("./skills-studio.ts"); this.close(false); await openSkillStudio(app.manifest.id, () => this.runApp(app.manifest.id), async () => { await this.refresh(); }, "app"); } }));
+    body.append(el("h3", { textContent: "App preferences" }), el("p", { textContent: "Source lists, reporting criteria and other domain preferences are maintained in the app's own views." }));
+    for (const [id, view] of Object.entries(app.surfaces ?? {})) body.append(el("button", { type: "button", className: "ghost small", textContent: `Open ${view.title || id}`, onclick: () => { close(); const current = this.#activeApp; if (current?.surfaces?.[id]) { current.surface = current.surfaces[id] as unknown as Record<string, unknown>; this.#renderRunnerView(current); } } }));
+    dialog.append(el("header", {}, el("h2", { textContent: `${app.manifest.name} settings` }), el("button", { type: "button", className: "ghost small", textContent: "Close", onclick: close })), body);
+    dialog.addEventListener("cancel", e => { e.preventDefault(); close(); }); document.body.append(dialog); dialog.showModal();
   }
 
   async #refreshActive(): Promise<void> {
@@ -458,6 +533,7 @@ export class AppsPage {
     const status = document.getElementById("app-run-status");
     if (status) status.textContent = "Refreshing…";
     try {
+      if (!await this.#dataReady(appId)) return;
       this.#feedback("Running background poll…");
       const details = await api<AppDetails>(`/api/apps/${encodeURIComponent(appId)}`);
       const triggerId = details.manifest.triggers[0]?.id ?? "market-poll";

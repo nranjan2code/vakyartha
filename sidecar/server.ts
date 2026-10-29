@@ -626,6 +626,24 @@ ${skills.index()}`;
 
     try {
       if (p === "/api/apps/builtin" && req.method === "GET") { json(res, 200, apps.listBuiltins()); return true; }
+      const connections = /^\/api\/apps\/([a-z0-9][a-z0-9_-]{1,63})\/connections$/.exec(p);
+      if (connections && req.method === "GET") {
+        const app = apps.getApp(connections[1]!);
+        if (!app) throw new Error("App not found");
+        const view = integrations!.view();
+        const access = app.manifest.entitlements.mcpTools.map(name => {
+          const candidates = view.flatMap(i => i.tools.filter(t => toolName(i.entry.id, t.name) === name).map(t => ({ i, t })));
+          if (candidates.length !== 1) {
+            const known = view.filter(i => name.startsWith(toolName(i.entry.id, "")));
+            const hint = known.length === 1 ? known[0] : undefined;
+            return { name, integrationId: hint?.entry.id, integrationName: hint?.entry.name ?? "Data connection", title: "Required tool", policy: "unavailable", ready: false, reason: "Required tool is not available. Configure its integration." };
+          }
+          const {i,t} = candidates[0]!; const ready = i.enabled && i.status === "ready" && t.policy === "allow";
+          return { name, integrationId: i.entry.id, integrationName: i.entry.name, title: t.title ?? t.name, policy: t.policy, ready,
+            reason: ready ? "Ready" : !i.enabled || i.status !== "ready" ? "Enable and configure this integration." : t.policy === "ask" ? "Ask is enabled. App refresh currently needs explicit Allow; interactive app approvals are not supported yet." : "This tool is turned off." };
+        });
+        json(res, 200, access); return true;
+      }
       const builtin = /^\/api\/apps\/builtin\/([a-z0-9][a-z0-9_-]{1,63})$/.exec(p);
       if (builtin && req.method === "POST") { json(res, 201, await apps.installBuiltin(builtin[1]!)); return true; }
       if (p === "/api/apps/drafts" && req.method === "GET") { json(res, 200, apps.listDrafts()); return true; }

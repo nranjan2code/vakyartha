@@ -4,7 +4,7 @@ description: Diagnose a sandboxed executable app with broken actions, stale refr
 license: MIT
 metadata:
   author: Vakyartha
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Diagnose executable app failures
@@ -17,6 +17,7 @@ Load enabled `debug-error` for general root-cause analysis and `app-maintainer` 
 4. A declared trigger is not streaming or proof of unattended refresh. Check scheduling opt-in, actual due-minute claims, app/computer awake/running state and last completed/failed/uncertain run. Never replay uncertain external effects or clear uncertainty without user inspection.
 5. Correct app/domain code in a reviewed draft through `app-maintainer`. A general rendering/binding/catalog defect belongs in Projection's owning repository, not an app-side SVG/CSS/data rewrite; containment defects belong in the sandbox owner. Do not install dependencies or weaken security/limits to make a diagnostic pass.
 6. Independently check original sources, values, calculations, controls, wide/narrow WebKit behavior and reopening/persistence after the fix. A safe rejection, valid surface, test pass or publication receipt alone does not prove the original outcome.
-7. Update the app's four documentation files where behavior/contracts changed; write reproduction, root cause, verification and remaining limits. Report partial mechanism improvements separately from an unresolved user outcome.
+7. Check event ownership when app/page/form/table controls reach an unrelated chat: surface IDs are owner-scoped; verify the emitting instance, action/edit propagation, local table controls and zero unintended chat requests. Check host App Settings readiness before diagnosing source parsing.
+8. Update the app's four documentation files where behavior/contracts changed; write reproduction, root cause, verification and remaining limits. Report partial mechanism improvements separately from an unresolved user outcome.
 
 Skills guide procedures only. Existing draft/publication fingerprints, integration approvals and app recovery authority remain enforced by their owners.

@@ -129,18 +129,11 @@ Local table sorting/search/paging affects that table, not the chart or aggregate
 
 Web measures are 320 (`sm`), 720 (`md`), 1040 (`lg`) pixels or available container width (`full`). Charts default to the medium measure (`md`). These are semantic props, never arbitrary model-supplied CSS.
 
-### Liquid & Adaptive Layout Rules
-1. **Never stretch single charts or cards across 100% width**: A single chart given `maxWidth: "full"` stretches 1400px+ across wide desktop screens, distorting bar aspect ratios and flattening trend lines. Single charts and forms must be clamped to `maxWidth: "md"` or `"lg"`.
-2. **Three-Tier Architecture**:
-   - *Tier 1*: Executive headline & 4-column metric strip (`columns: 4, minItemWidth: "xs"`).
-   - *Tier 2*: Paired 2-column analytics grid (`columns: 2, minItemWidth: "sm"`) or split ratio (`split` with `ratio: "2:1"`).
-   - *Tier 3*: Full-width dense detail table (`maxWidth: "full"`) and clamped actions (`maxWidth: "md"`).
-3. **Eliminate Card Soup**: Use `section` for thematic grouping with titles and descriptions; reserve `card` for standalone distinct focal units.
-4. **Color & Typography Guide**:
-   - **No Raw CSS or Hex Values**: Never inject inline CSS or hex codes (`#123456`). Use semantic tones: `"positive"` (green), `"caution"` (amber), `"critical"` (red), `"neutral"` / `"info"` (blue/slate).
-   - **Inter Typography Scale**: `heading` (page titles), `subheading` (section titles), `body` (reading prose), `caption` (citations and timestamps).
-   - **Theme Series**: Multi-series charts automatically inherit the system theme palette (`--vak-series-1` through `--vak-series-8`).
-5. **Multi-Surface Awareness**: Surfaces authored here also project to Telegram, Slack, Discord, and Voice audio. See [SURFACES.md](SURFACES.md) for the exact platform degradation matrices and 2026 platform limits. App placement/canvas/library behavior stays unchanged; see [CANVAS.md](CANVAS.md).
+### Content-driven adaptive composition
+
+Start with the task, content population and stable reading order. Do not impose a fixed three-tier dashboard recipe on every app, form or report. A single reading column can be appropriate. Use automatic grids with semantic minimum item widths for repeated peers, explicit columns only for meaningful grouping, and wrapping horizontal stacks for related actions. Container width governs reflow; a desktop side panel can need a narrow layout. Track count, content measure and action size are independent decisions.
+
+Ordinary actions keep their content width. Explicit maxWidth measures and stretch alignment are intentional overrides, including full-width actions. Compact density must affect inputs, choices, filters and buttons consistently, with readable text and coarse-pointer targets retained. Check normal, narrow and long-label states rather than relying only on page-overflow assertions. Forms/charts should have readable measures, while tables/timelines may need available width. Use sections for structure and cards for distinct content units; preserve shared theme and spoken semantics.
 
 ## Chart choice and actual support
 
@@ -215,3 +208,5 @@ Chat can stage complete executable packages with `save_app_draft`; Canvas promot
 Every newly authored app package includes `README.md`, `AGENTS.md`, `SKILLS.md` and `ARCHITECTURE.md` alongside `app.json`, its backend and surfaces. `app-authoring` explicitly loads `references/package-template.md`; it specifies content and completion checks for each file. The Studio starter uses `shared/app-scaffold.ts` to create coherent documents plus an honestly labelled executable local counter, not synthetic health scores or a pretend external refresh. A domain app is not complete until those documents describe its actual behavior and verified limits.
 
 `app-maintainer` reads all four docs and loads `references/change-checklist.md` to align source/tool/schema/layout/schedule/recovery changes with their affected documents. `app-debugger` chains to enabled `debug-error` and `app-maintainer`, freezes the failure and inspects input/admission/source/SQL/projection/commit boundaries before repair. `app-operator` and `app-admin` also read the package documents before operating or diagnosing it. These are procedural requirements, not new authority or a claim that arbitrary model output is automatically correct. Existing reviewed skill update/removal preferences remain preserved.
+
+App controls execute through the app owner and must consume their action/change events. Chat/task continuations admit only events from their mounted surface instances; a matching surface ID alone is insufficient. Show app action status in the app runner and Canvas action status in the existing Canvas status region. App settings expose connections, effective global integration policy, schedules, package/data details and domain views without granting authority or copying credential storage.
