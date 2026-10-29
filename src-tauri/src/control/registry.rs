@@ -4,7 +4,7 @@
 //! source folder. A session binding grants a revision-fenced workspace/mode.
 //! Keep this state inside the control actor's durable snapshot when wiring it;
 //! do not add a second registry file or leave a TypeScript writer active.
-use super::folder::FolderIdentity;
+use super::folder::{FolderIdentity, WorkspaceAdmissionPolicy};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io;
@@ -228,6 +228,7 @@ impl RegistryState {
         &mut self,
         id: String,
         path: &Path,
+        admission: &WorkspaceAdmissionPolicy,
     ) -> Result<WorkspaceRecord, RegistryError> {
         valid_id(&id)?;
         if self.workspaces.len() >= MAX_WORKSPACES {
@@ -236,7 +237,7 @@ impl RegistryState {
         if self.workspaces.contains_key(&id) {
             return Err(RegistryError::DuplicateIdentity);
         }
-        let (canonical_path, identity) = FolderIdentity::capture(path)?;
+        let (canonical_path, identity) = admission.admit(path)?;
         if self
             .workspaces
             .values()
@@ -514,8 +515,10 @@ mod tests {
             .unwrap();
         state.validate().unwrap();
         let path = temp_dir();
+        let protected = temp_dir();
+        let admission = WorkspaceAdmissionPolicy::new(&protected).unwrap();
         state
-            .register_workspace("workspace-01".into(), &path)
+            .register_workspace("workspace-01".into(), &path, &admission)
             .unwrap();
         let binding = state
             .bind(
@@ -548,14 +551,17 @@ mod tests {
             Err(RegistryError::BindingRevoked)
         );
         fs::remove_dir_all(path).unwrap();
+        fs::remove_dir_all(protected).unwrap();
     }
 
     #[test]
     fn a_path_replacement_does_not_inherit_a_bound_workspace_identity() {
         let mut state = RegistryState::default();
         let path = temp_dir();
+        let protected = temp_dir();
+        let admission = WorkspaceAdmissionPolicy::new(&protected).unwrap();
         let workspace = state
-            .register_workspace("workspace-02".into(), &path)
+            .register_workspace("workspace-02".into(), &path, &admission)
             .unwrap();
         fs::remove_dir_all(&path).unwrap();
         fs::create_dir(&path).unwrap();
@@ -563,6 +569,7 @@ mod tests {
             workspace.identity,
             FolderIdentity::capture(&path).unwrap().1
         );
+        fs::remove_dir_all(protected).unwrap();
     }
 
     #[test]
@@ -570,11 +577,13 @@ mod tests {
         let mut state = RegistryState::default();
         let first = temp_dir();
         let second = temp_dir();
+        let protected = temp_dir();
+        let admission = WorkspaceAdmissionPolicy::new(&protected).unwrap();
         state
-            .register_workspace("workspace-03".into(), &first)
+            .register_workspace("workspace-03".into(), &first, &admission)
             .unwrap();
         state
-            .register_workspace("workspace-04".into(), &second)
+            .register_workspace("workspace-04".into(), &second, &admission)
             .unwrap();
         let binding = state
             .bind(
@@ -619,5 +628,6 @@ mod tests {
         );
         fs::remove_dir_all(first).unwrap();
         fs::remove_dir_all(second).unwrap();
+        fs::remove_dir_all(protected).unwrap();
     }
 }

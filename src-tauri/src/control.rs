@@ -18,6 +18,7 @@ static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 pub mod folder;
 pub mod registry;
 pub mod state;
+use folder::WorkspaceAdmissionPolicy;
 use registry::{
     ProjectMembership, ProjectRecord, RegistryError, RegistryState, WorkspaceBinding,
     WorkspaceGrant, WorkspaceMode, WorkspaceRecord,
@@ -796,6 +797,7 @@ impl ControlActor {
             return Err(StoreError::InvalidProfile);
         }
         let (mut store, mut ledger) = ControlStore::open(data_dir, profile_revision, &profile)?;
+        let workspace_admission = WorkspaceAdmissionPolicy::new(data_dir).map_err(store_io)?;
         let mut recovered = false;
         for root in ledger.roots.values_mut() {
             recovered |= root
@@ -808,7 +810,7 @@ impl ControlActor {
         let (commands, receiver) = sync_channel(queue_capacity);
         let join = thread::Builder::new()
             .name("vak-control".into())
-            .spawn(move || actor_loop(receiver, &mut store, profile, ledger))
+            .spawn(move || actor_loop(receiver, &mut store, profile, ledger, workspace_admission))
             .map_err(store_io)?;
         Ok(Self {
             handle: ControlHandle {
@@ -838,6 +840,7 @@ fn actor_loop(
     store: &mut ControlStore,
     profile: CapacityProfile,
     mut ledger: CapacityLedger,
+    workspace_admission: WorkspaceAdmissionPolicy,
 ) {
     while let Ok(command) = receiver.recv() {
         match command {
@@ -1011,13 +1014,17 @@ fn actor_loop(
             }
             ActorCommand::RegisterWorkspace { id, path, reply } => {
                 let mut candidate = ledger.clone();
-                let workspace = match candidate.registry.register_workspace(id, &path) {
-                    Ok(workspace) => workspace,
-                    Err(error) => {
-                        let _ = reply.send(Err(ControlError::Registry(error)));
-                        continue;
-                    }
-                };
+                let workspace =
+                    match candidate
+                        .registry
+                        .register_workspace(id, &path, &workspace_admission)
+                    {
+                        Ok(workspace) => workspace,
+                        Err(error) => {
+                            let _ = reply.send(Err(ControlError::Registry(error)));
+                            continue;
+                        }
+                    };
                 match store.persist(&candidate, &profile) {
                     Ok(_) => {
                         ledger = candidate;

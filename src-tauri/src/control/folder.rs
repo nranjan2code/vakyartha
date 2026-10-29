@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::SystemTime;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -67,6 +67,80 @@ impl FolderIdentity {
         let (_, current) = Self::capture(path)?;
         Ok(self == &current)
     }
+}
+
+/// Trusted folder selection policy initialized from the native app-data root.
+#[derive(Clone, Debug)]
+pub struct WorkspaceAdmissionPolicy {
+    data_root: PathBuf,
+    denied_roots: Vec<PathBuf>,
+}
+
+impl WorkspaceAdmissionPolicy {
+    pub fn new(data_root: &Path) -> io::Result<Self> {
+        let data_root = fs::canonicalize(data_root)?;
+        let mut denied_roots = Vec::new();
+        for path in [
+            "/",
+            "/System",
+            "/Library",
+            "/Applications",
+            "/usr",
+            "/bin",
+            "/sbin",
+            "/etc",
+            "/var",
+            "/tmp",
+            "/private",
+            "/private/etc",
+            "/private/var",
+            "/private/tmp",
+            "/Users",
+            "/home",
+            "/dev",
+            "/proc",
+            "/sys",
+        ] {
+            if let Ok(canonical) = fs::canonicalize(path) {
+                if !denied_roots.contains(&canonical) {
+                    denied_roots.push(canonical);
+                }
+            }
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            if let Ok(canonical) = fs::canonicalize(home) {
+                if !denied_roots.contains(&canonical) {
+                    denied_roots.push(canonical);
+                }
+            }
+        }
+        Ok(Self {
+            data_root,
+            denied_roots,
+        })
+    }
+
+    pub fn admit(&self, path: &Path) -> io::Result<(PathBuf, FolderIdentity)> {
+        let (canonical, identity) = FolderIdentity::capture(path)?;
+        if self.denied_roots.contains(&canonical)
+            || canonical.starts_with(&self.data_root)
+            || self.data_root.starts_with(&canonical)
+            || canonical.components().any(is_reserved_component)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "System, private or reserved folders cannot be workspaces",
+            ));
+        }
+        Ok((canonical, identity))
+    }
+}
+
+fn is_reserved_component(component: Component<'_>) -> bool {
+    let name = component.as_os_str().to_string_lossy();
+    [".vak", ".git", ".ssh", ".aws", ".azure", ".kube", ".docker"]
+        .iter()
+        .any(|reserved| name.eq_ignore_ascii_case(reserved))
 }
 
 fn system_time_parts(value: SystemTime) -> io::Result<(u64, u32)> {
@@ -133,5 +207,27 @@ mod tests {
             io::ErrorKind::InvalidInput
         );
         fs::remove_dir_all(path).expect("temporary directory can be removed");
+    }
+
+    #[test]
+    fn admission_rejects_private_roots_and_reserved_path_components() {
+        let base = temp_dir();
+        let data = base.join("private-data");
+        let work = base.join("work");
+        let reserved = work.join(".git").join("nested");
+        fs::create_dir(&data).expect("private directory can be created");
+        fs::create_dir_all(&reserved).expect("reserved path can be created");
+        let policy = WorkspaceAdmissionPolicy::new(&data).expect("admission policy");
+        assert!(policy.admit(&base).is_err());
+        assert!(policy.admit(&data).is_err());
+        assert!(policy.admit(&reserved).is_err());
+        assert_eq!(
+            policy
+                .admit(Path::new("/"))
+                .expect_err("system root denied")
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        fs::remove_dir_all(base).expect("temporary tree can be removed");
     }
 }
