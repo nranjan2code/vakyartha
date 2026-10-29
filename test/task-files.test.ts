@@ -128,3 +128,27 @@ test("duplicate operation identities are not dispatched again and uncertain effe
     } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
   }
 });
+
+test("cancelling during a dispatched operation preserves its returned receipt state", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-cancelled-return-"));
+  let tasks!: Tasks, started!: () => void, release!: () => void, calls = 0;
+  const entered = new Promise<void>((resolve) => { started = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  tasks = await Tasks.open({
+    dir, ready: () => {}, warn: () => {}, instructions: () => "test", observe: async (_id, work) => work(),
+    view: async (id) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }),
+    tools: async () => [{ spec: { name: "realm__create", description: "Create a working copy", inputSchema: { type: "object" } }, execute: async () => { calls++; started(); await gate; return "created realm receipt"; } }],
+    run: async (_input, options) => { await options.tools![0]!.execute({}, { signal: options.signal, callId: "create-once" }); return { stop: "end" }; },
+  });
+  try {
+    const task = await tasks.create({ goal: "Create a working copy", criteria: "Review its receipt", provider: "scripted", model: "test", integrations: ["realm"], spending: { kind: "local_only" } });
+    await entered;
+    await tasks.cancel(task.id);
+    release();
+    await until(() => tasks.get(task.id).state === "cancelled");
+    await until(() => tasks.get(task.id).runHistory[0]?.ended !== undefined);
+    assert.equal(calls, 1);
+    assert.equal(tasks.get(task.id).operations[0]!.state, "returned");
+    assert.equal(tasks.get(task.id).runHistory[0]!.stopCause, "user_cancelled");
+  } finally { release(); await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});

@@ -510,7 +510,9 @@ export class Tasks {
               dispatched = true;
               const previousRead = tool.spec.name === "web__fetch_page" ? e.sources.get(new URL(String(args.url)).href) : undefined;
               const result = await tool.execute(args, ctx);
-              Object.assign(op, { state: e.ctrl.signal.aborted ? "uncertain" : "returned" });
+              // A returned response resolves dispatch uncertainty even when the
+              // parent run was cancelled while the tool was in flight.
+              Object.assign(op, { state: "returned" });
               await this.persist(t);
               if (tool.spec.name === "web__fetch_page") {
                 const read = e.sources.get(new URL(String(args.url)).href);
