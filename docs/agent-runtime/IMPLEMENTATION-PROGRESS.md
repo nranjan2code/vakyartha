@@ -2,6 +2,12 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Native broker credential lookup and authentication — 2026-10-30
+
+The inactive Rust provider transport now retrieves credentials directly from the app vault using a fixed provider-to-account mapping and inserts provider-specific authentication headers in Rust. OpenAI-compatible providers use Bearer auth; Anthropic and Gemini use their required dedicated headers. The credential is never part of the request body, URL, or returned error. The mapping covers every currently declared native provider route. Focused broker tests pass 15/15, strict macOS Clippy passes, and the pinned Rust 1.99.1 Linux Docker suite passes 79/79 with strict Clippy.
+
+This does not yet remove the active TypeScript `process.env` credential path or mediate product requests. The broker still has no trusted single-use authorization bound atomically to task/workspace revision, user approval, cancellation, durable redacted receipt, or product caller.
+
 ## Sandbox resource-policy refusal correction — 2026-10-30
 
 The sandbox repository is pushed at `fe184ee` following Linux containment `d621f51`. `ResourcePolicy::default()` no longer advertises numeric limits that neither OS backend enforced. Both macOS Seatbelt and Linux Landlock backends reject explicit CPU, memory, wall-time, process-count or file-size policy requests before target launch. The CLI/runtime's own wall/output bounds remain distinct. macOS serial workspace tests pass 59/59, strict Clippy and formatting pass; the pinned Rust 1.99.1 Linux Docker suite passes 59/59 with strict Clippy, formatting and workspace build. The Linux suite exercised real Landlock/seccomp execution and the new resource-refusal canary.

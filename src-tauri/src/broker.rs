@@ -1,8 +1,8 @@
 //! Native HTTP transport primitive for the provider broker.
 //!
 //! This is intentionally not wired to worker requests yet. Provider operation
-//! schemas, credential binding, approval and bounded stream receipts must be
-//! composed before this client can dispatch product traffic.
+//! schemas, task authorization, approval, cancellation and operation receipts
+//! must be composed before this client can dispatch product traffic.
 
 use reqwest::blocking::{Client, Response};
 use reqwest::redirect::Policy;
@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
+use std::path::PathBuf;
 use std::time::Duration;
 
 const MAX_ENDPOINT_BYTES: usize = 2_048;
@@ -52,6 +53,7 @@ pub(crate) enum BrokerError {
     ModelMismatch,
     OutputLimitExceeded,
     ToolNotAllowed,
+    CredentialUnavailable,
     RequestTooLarge,
     ResponseTooLarge,
     Transport,
@@ -122,11 +124,14 @@ impl GenerationPermit {
     }
 }
 
-pub(crate) struct NativeHttpClient;
+pub(crate) struct NativeHttpClient {
+    service: String,
+    data_dir: PathBuf,
+}
 
 impl NativeHttpClient {
-    pub(crate) fn new() -> Self {
-        Self
+    pub(crate) fn new(service: String, data_dir: PathBuf) -> Self {
+        Self { service, data_dir }
     }
 
     /// POST JSON to one registered model generation route. Callers cannot
@@ -147,14 +152,65 @@ impl NativeHttpClient {
         let host = url.host_str().ok_or(BrokerError::InvalidEndpoint)?;
         let addresses = resolve_public_addresses(host)?;
         let client = build_client(Some((host, &addresses)))?;
-        let response = client
-            .post(url)
+        let credential = self.credential(permit.provider)?;
+        let response = apply_provider_auth(client.post(url), permit.provider, &credential)?
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(body)
             .send()
             .map_err(|_| BrokerError::Transport)?;
         bounded_stream_response(response)
     }
+
+    fn credential(&self, provider: ModelApi) -> Result<String, BrokerError> {
+        crate::vault::get(&self.service, credential_account(provider), &self.data_dir)
+            .map_err(|_| BrokerError::CredentialUnavailable)?
+            .filter(|value| !value.is_empty())
+            .ok_or(BrokerError::CredentialUnavailable)
+    }
+}
+
+fn credential_account(provider: ModelApi) -> &'static str {
+    match provider {
+        ModelApi::OpenAi => "OPENAI_API_KEY",
+        ModelApi::Anthropic => "ANTHROPIC_API_KEY",
+        ModelApi::Gemini => "GEMINI_API_KEY",
+        ModelApi::Mistral => "MISTRAL_API_KEY",
+        ModelApi::Xai => "XAI_API_KEY",
+        ModelApi::DeepSeek => "DEEPSEEK_API_KEY",
+        ModelApi::Groq => "GROQ_API_KEY",
+        ModelApi::Cerebras => "CEREBRAS_API_KEY",
+        ModelApi::OpenRouter => "OPENROUTER_API_KEY",
+        ModelApi::Together => "TOGETHER_API_KEY",
+        ModelApi::Fireworks => "FIREWORKS_API_KEY",
+        ModelApi::Moonshot => "MOONSHOT_API_KEY",
+        ModelApi::DashScope => "DASHSCOPE_API_KEY",
+    }
+}
+
+fn apply_provider_auth(
+    request: reqwest::blocking::RequestBuilder,
+    provider: ModelApi,
+    credential: &str,
+) -> Result<reqwest::blocking::RequestBuilder, BrokerError> {
+    let credential = reqwest::header::HeaderValue::from_str(credential)
+        .map_err(|_| BrokerError::CredentialUnavailable)?;
+    let request = match provider {
+        ModelApi::Anthropic => request
+            .header("x-api-key", credential)
+            .header("anthropic-version", "2023-06-01"),
+        ModelApi::Gemini => request.header("x-goog-api-key", credential),
+        _ => {
+            let bearer = reqwest::header::HeaderValue::from_str(&format!(
+                "Bearer {}",
+                credential
+                    .to_str()
+                    .map_err(|_| BrokerError::CredentialUnavailable)?
+            ))
+            .map_err(|_| BrokerError::CredentialUnavailable)?;
+            request.header(reqwest::header::AUTHORIZATION, bearer)
+        }
+    };
+    Ok(request)
 }
 
 fn build_client(resolution: Option<(&str, &[SocketAddr])>) -> Result<Client, BrokerError> {
@@ -789,6 +845,73 @@ mod tests {
         let response = client.post(url).body("{}").send().unwrap();
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
         server.join().unwrap();
+    }
+
+    #[test]
+    fn provider_credentials_use_fixed_vault_accounts_and_native_auth_headers() {
+        for (provider, account) in [
+            (ModelApi::OpenAi, "OPENAI_API_KEY"),
+            (ModelApi::Anthropic, "ANTHROPIC_API_KEY"),
+            (ModelApi::Gemini, "GEMINI_API_KEY"),
+            (ModelApi::Mistral, "MISTRAL_API_KEY"),
+            (ModelApi::Xai, "XAI_API_KEY"),
+            (ModelApi::DeepSeek, "DEEPSEEK_API_KEY"),
+            (ModelApi::Groq, "GROQ_API_KEY"),
+            (ModelApi::Cerebras, "CEREBRAS_API_KEY"),
+            (ModelApi::OpenRouter, "OPENROUTER_API_KEY"),
+            (ModelApi::Together, "TOGETHER_API_KEY"),
+            (ModelApi::Fireworks, "FIREWORKS_API_KEY"),
+            (ModelApi::Moonshot, "MOONSHOT_API_KEY"),
+            (ModelApi::DashScope, "DASHSCOPE_API_KEY"),
+        ] {
+            assert_eq!(credential_account(provider), account);
+        }
+
+        let client = Client::new();
+        let request = apply_provider_auth(
+            client.post("https://api.openai.com/v1/responses"),
+            ModelApi::OpenAi,
+            "synthetic-key",
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+        assert_eq!(
+            request
+                .headers()
+                .get(reqwest::header::AUTHORIZATION)
+                .unwrap(),
+            "Bearer synthetic-key"
+        );
+        assert!(request.body().is_none());
+
+        let request = apply_provider_auth(
+            client.post("https://api.anthropic.com/v1/messages"),
+            ModelApi::Anthropic,
+            "synthetic-key",
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+        assert_eq!(request.headers().get("x-api-key").unwrap(), "synthetic-key");
+        assert_eq!(
+            request.headers().get("anthropic-version").unwrap(),
+            "2023-06-01"
+        );
+
+        let request = apply_provider_auth(
+            client.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent"),
+            ModelApi::Gemini,
+            "synthetic-key",
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+        assert_eq!(
+            request.headers().get("x-goog-api-key").unwrap(),
+            "synthetic-key"
+        );
+        assert!(request.url().query().is_none());
     }
 
     #[test]

@@ -1,5 +1,9 @@
 # Vakyartha handover — 2026-10-30
 
+## Native broker credential lookup — 2026-10-30
+
+The inactive Rust provider transport now reads each provider key from the native vault through a fixed provider/account map and adds the provider's authentication header inside Rust. Focused broker tests pass 15/15, strict macOS Clippy passes, and the pinned Rust 1.99.1 Linux Docker suite passes 79/79 with strict Clippy. This does not remove TypeScript environment-based credential access or enable product dispatch: trusted task/workspace authorization, approval binding, cancellation, durable receipts, bounded worker scheduling and the sidecar operation remain unimplemented. This slice still needs commit/push. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-broker-credential-lookup-and-authentication--2026-10-30).
+
 ## Sandbox resource-policy refusal correction — 2026-10-30
 
 The owning `vak-sandbox` repo is pushed at `fe184ee`. False numeric `ResourcePolicy` defaults were removed; both macOS and Linux now refuse explicit CPU, memory, wall-time, process-count or file-size limits before target launch. This is a truthfulness/fail-closed correction, not quota enforcement. Its macOS serial suite passes 59/59; the Rust 1.99.1 Linux Docker suite passes 59/59, with strict Clippy, formatting and workspace build. The test container's cgroup v2 mount is read-only, and no resource quotas exist. The helper is still not pinned or dispatched by Vakyartha; ISO4–ISO6 remain open. One parallel macOS suite run had the localhost network fixture fail with unverified supervisor completion; isolated and serial runs pass, with cause unknown. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#sandbox-resource-policy-refusal-correction--2026-10-30).
@@ -8,7 +12,7 @@ The owning `vak-sandbox` repo is pushed at `fe184ee`. False numeric `ResourcePol
 
 The inactive provider transport now resolves each fixed provider hostname before dispatch, refuses empty or mixed public/private DNS answers, and pins reqwest to the validated address set. Redirects and ambient proxy discovery remain disabled. The conservative IPv4/IPv6 classifier is covered by examples for public, private, local, documentation and transition ranges and is maintained against the linked IANA special-purpose registries in [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-provider-dns-resolution-pinning--2026-10-30). The focused broker suite passes 14/14 and strict Clippy passes; the full pinned Rust 1.99.1 Linux Docker gate passes 78/78 with strict Clippy.
 
-This closes only DNS rebinding for the unused transport primitive. There is still no bounded native I/O worker, broker credential/approval binding, cancellation, receipt, sidecar operation or product provider caller. Product provider requests remain on the TypeScript path, so ISO2 and AR-07 remain open.
+This closes only DNS rebinding for the unused transport primitive. There is still no bounded native I/O worker, approval-bound dispatch, cancellation, receipt, sidecar operation or product provider caller. Credential lookup/header insertion has since been added to the primitive, but product provider requests remain on the TypeScript path, so ISO2 and AR-07 remain open.
 
 ## Typed private native-control health bridge — 2026-10-30
 
