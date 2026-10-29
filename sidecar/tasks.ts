@@ -11,7 +11,7 @@ import path from "node:path";
 import { basicCatalog, SurfaceStore, walk, type AgentEvent } from "@vak/core";
 import type { HostRunOptions, HostTurn, SessionView } from "@vak/host";
 import type { AgentTool } from "@vak/providers";
-import { TASK_LIMITS, TASK_BUDGET_DEFAULTS, parseTaskLimits, parseTaskSpending, type TaskSpending, parseReviewSnapshot, type ReviewSnapshot, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskRun, type TaskRunIdentity } from "../shared/task-contract.ts";
+import { TASK_LIMITS, TASK_BUDGET_DEFAULTS, parseTaskLimits, parseTaskSpending, type TaskSpending, parseReviewSnapshot, type ReviewSnapshot, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskRun, type TaskRunIdentity, type TaskStopCause } from "../shared/task-contract.ts";
 import { parseSchedule, SCHEDULE_GRACE_MS } from "../shared/schedule.ts";
 
 interface Dependencies {
@@ -28,7 +28,7 @@ interface Dependencies {
   permitted?(server: string, tool: string): boolean;
   warn(message: string): void;
 }
-type Execution = { sources: Map<string, ResearchRead>; allowance: number; reserved: boolean; run?: TaskRun; task: TaskView; inputId: string; ctrl: AbortController; remaining: number; since: number; timer?: ReturnType<typeof setTimeout> };
+type Execution = { sources: Map<string, ResearchRead>; allowance: number; reserved: boolean; run?: TaskRun; task: TaskView; inputId: string; ctrl: AbortController; remaining: number; since: number; timer?: ReturnType<typeof setTimeout>; stopCause?: TaskStopCause };
 const text = (v: unknown, max: number) => typeof v === "string" && v.trim().length <= max ? v.trim() : "";
 const identifier = (v: unknown) => typeof v === "string" && /^[\w-]{1,120}$/.test(v);
 
@@ -71,6 +71,7 @@ export class Tasks {
       }
       for (const run of t.runHistory) if (run.state === "running") {
         run.state = "interrupted"; run.recovered = new Date().toISOString();
+        run.stopCause ??= "unknown";
         run.note = "Execution stopped before a final record was saved. End time and external effects may be unknown.";
         recovered = true;
       }
@@ -168,8 +169,12 @@ export class Tasks {
     }
   }
   private available(e: Execution): boolean {
-    if (e.remaining <= 0 || (e.timer && performance.now() - e.since >= e.remaining)) e.ctrl.abort(new Error("Active time limit reached"));
+    if (e.remaining <= 0 || (e.timer && performance.now() - e.since >= e.remaining)) this.stop(e, "active_time_limit", new Error("Active time limit reached"));
     return !e.ctrl.signal.aborted;
+  }
+  private stop(e: Execution, cause: TaskStopCause, reason: Error): void {
+    e.stopCause ??= cause;
+    if (!e.ctrl.signal.aborted) e.ctrl.abort(reason);
   }
   async beforeModelRequest(provider: string, model: string): Promise<void> {
     const e = this.scope.getStore();
@@ -179,7 +184,7 @@ export class Tasks {
     if (this.execution !== e || provider !== t.provider || model !== t.model) throw new Error("Execution slot or selected model changed");
     if (run.modelRequests >= TASK_LIMITS.rounds || t.budget.modelRequests >= t.limits.modelRequests) {
       const error = new Error("Model-request budget exhausted; no further generation will start");
-      e.ctrl.abort(error); throw error;
+      this.stop(e, "model_budget_exhausted", error); throw error;
     }
     run.modelRequests++; t.budget.modelRequests++;
     await this.persist(t);
@@ -200,7 +205,8 @@ export class Tasks {
         await rename(temporary, file);
       } finally { await rm(temporary, { force: true }).catch(() => this.deps.warn("A temporary task checkpoint could not be removed; check storage permissions")); }
     }).catch((err: unknown) => {
-      this.running.get(t.id)?.ctrl.abort(new Error("Task state could not be saved"));
+      const execution = this.running.get(t.id);
+      if (execution) this.stop(execution, "state_persist_failed", new Error("Task state could not be saved"));
       if (t.state !== "cancelled") t.state = "failed";
       t.note = "Task state could not be saved. No new work will start; check storage and retry.";
       throw err;
@@ -283,7 +289,8 @@ export class Tasks {
     t.note = "Stopped new work. Operations already sent may still have effects.";
     t.pending = [];
     if (t.schedule?.status === "armed") t.schedule.status = "paused";
-    this.running.get(id)?.ctrl.abort();
+    const execution = this.running.get(id);
+    if (execution) this.stop(execution, "user_cancelled", new Error("Task cancelled by the user"));
     await this.persist(t);
     this.planWake();
     return this.copy(t);
@@ -437,7 +444,7 @@ export class Tasks {
 
   private arm(e: Execution): void {
     e.since = performance.now();
-    e.timer = setTimeout(() => e.ctrl.abort(new Error("Active time limit reached")), Math.max(0, e.remaining));
+    e.timer = setTimeout(() => this.stop(e, "active_time_limit", new Error("Active time limit reached")), Math.max(0, e.remaining));
   }
 
   private async execute(e: Execution): Promise<void> {
@@ -491,7 +498,7 @@ export class Tasks {
             if (!this.available(e) || t.state === "cancelled") throw e.ctrl.signal.reason ?? new Error("Task stopped");
             if (++calls > TASK_LIMITS.tools || t.budget.toolCalls >= t.limits.toolCalls) {
               const error = new Error("Tool-call budget exhausted; no new tool attempt started");
-              e.ctrl.abort(error); throw error;
+              this.stop(e, "tool_budget_exhausted", error); throw error;
             }
             const op = { id: ctx.callId ?? randomUUID(), tool: tool.spec.name, runId: run.id, state: "started" as const };
             run.toolCalls++; t.budget.toolCalls++;
@@ -516,7 +523,7 @@ export class Tasks {
             } catch (err) {
               Object.assign(op, { state: dispatched ? "uncertain" : "failed" });
               await this.persist(t);
-              if (dispatched) e.ctrl.abort(new Error("An operation may have taken effect. Review its recorded identity and the affected service before continuing; it will not be replayed automatically."));
+              if (dispatched) this.stop(e, "external_effect_uncertain", new Error("An operation may have taken effect. Review its recorded identity and the affected service before continuing; it will not be replayed automatically."));
               throw err;
             }
           },
@@ -543,6 +550,7 @@ export class Tasks {
         t.note = t.pending.length ? "Waiting for the next input" : "Review the saved result against your criteria. Continue interacting with any surface, or open an evidence review to accept the result.";
       }, { taskId: t.id, runId: run.id }));
     } catch (err) {
+      e.stopCause ??= "execution_error";
       if (t.state !== "cancelled") {
         t.state = this.closed ? "interrupted" : "failed";
         t.note = (err as Error).message.slice(0, 2000);
@@ -553,6 +561,7 @@ export class Tasks {
       if (e.reserved) { t.budget.activeMs -= e.allowance - run.activeMs; run.chargedMs = run.activeMs; }
       run.state = t.state === "cancelled" ? "cancelled" : t.state === "interrupted" ? "interrupted" : t.state === "failed" ? "failed" : "review";
       run.ended = new Date().toISOString(); run.note = t.note;
+      run.stopCause ??= e.stopCause;
       clearTimeout(e.timer);
       delete t.approval;
       await this.persist(t);
@@ -634,7 +643,7 @@ export class Tasks {
     this.closed = true;
     clearTimeout(this.wake);
     clearInterval(this.retention);
-    for (const e of this.running.values()) e.ctrl.abort(new Error("Application stopped; review before continuing"));
+    for (const e of this.running.values()) this.stop(e, "application_shutdown", new Error("Application stopped; review before continuing"));
     await Promise.all(this.inflight);
     await this.retentionWork;
     await this.checking;

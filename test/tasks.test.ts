@@ -318,6 +318,7 @@ for (const outcome of ["allow", "revoked", "cancel"] as const) {
       assert.equal(tasks.get(first.id).runs, 1);
       const run = tasks.get(first.id).runHistory[0]!;
       assert.equal(run.toolCalls, 1);
+      assert.equal(run.stopCause, outcome === "cancel" ? "user_cancelled" : undefined);
       assert.equal(tasks.get(first.id).operations[0]!.runId, run.id);
       assert.ok(Date.parse(run.ended!) - Date.parse(run.started) - run.activeMs >= 30, "review/slot waits counted as active time");
       tasks = await Tasks.open(tasksDeps);
@@ -428,6 +429,7 @@ test("unfinished run records recover with an unknown end time and never invented
     assert.equal(recovered.runHistory[0]!.state, "interrupted");
     assert.equal(recovered.runHistory[0]!.ended, undefined);
     assert.ok(recovered.runHistory[0]!.recovered);
+    assert.equal(recovered.runHistory[0]!.stopCause, "unknown");
     assert.equal(recovered.runs, 1);
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });

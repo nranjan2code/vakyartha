@@ -40,6 +40,7 @@ export interface TaskApproval {
 }
 export interface TaskActivity { at: string; text: string }
 export type TaskRunState = "running" | "review" | "accepted" | "failed" | "cancelled" | "interrupted";
+export type TaskStopCause = "user_cancelled" | "active_time_limit" | "model_budget_exhausted" | "tool_budget_exhausted" | "state_persist_failed" | "external_effect_uncertain" | "application_shutdown" | "execution_error" | "unknown";
 export interface TaskRunIdentity { taskId: string; runId: string }
 export interface TaskRun {
   id: string;
@@ -55,6 +56,7 @@ export interface TaskRun {
   toolCalls: number;
   modelRequests: number;
   stop?: string;
+  stopCause?: TaskStopCause;
   note: string;
   review?: ResultReview;
   retrievals?: ResearchReceipt[];
@@ -202,9 +204,11 @@ function parseTaskRun(value: unknown): TaskRun {
   const review = raw.review === undefined ? undefined : parseResultReview(raw.review);
   const output = raw.output === undefined ? undefined : parseOutputReceipt(raw.output);
   const retrievals = raw.retrievals === undefined ? undefined : array(raw.retrievals, 8).map(parseResearchReceipt);
+  const stopCause = raw.stopCause === undefined ? undefined : raw.stopCause;
+  if (stopCause !== undefined && !["user_cancelled", "active_time_limit", "model_budget_exhausted", "tool_budget_exhausted", "state_persist_failed", "external_effect_uncertain", "application_shutdown", "execution_error", "unknown"].includes(String(stopCause))) throw new Error("Invalid run stop cause");
   if (retrievals && (new Set(retrievals.map((read) => read.url)).size !== retrievals.length || retrievals.some((read) => Date.parse(read.retrievedAt) < Date.parse(started) || ended && Date.parse(read.retrievedAt) > Date.parse(ended)))) throw new Error("Retrieval receipts must be unique and belong to this run");
   if ((raw.state === "accepted") !== Boolean(review) || (review && review.runId !== raw.id)) throw new Error("Acceptance requires a matching user review");
-  return { ...(review ? { review } : {}), ...(retrievals ? { retrievals } : {}), ...(output ? { output } : {}), id: taskString(raw.id, 120), sequence, inputId: taskString(raw.inputId, 120), inputKind: raw.inputKind, state: raw.state as TaskRunState, started, activeMs: integer(raw.activeMs, TASK_LIMITS.activeMs), chargedMs: integer(raw.chargedMs, TASK_LIMITS.activeMs), toolCalls: integer(raw.toolCalls, TASK_LIMITS.tools), modelRequests: integer(raw.modelRequests, TASK_LIMITS.rounds), note: typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "", ...(ended ? { ended } : {}), ...(recovered ? { recovered } : {}), ...(raw.stop === undefined ? {} : { stop: taskString(raw.stop, 120) }) };
+  return { ...(review ? { review } : {}), ...(retrievals ? { retrievals } : {}), ...(output ? { output } : {}), ...(stopCause ? { stopCause: stopCause as TaskStopCause } : {}), id: taskString(raw.id, 120), sequence, inputId: taskString(raw.inputId, 120), inputKind: raw.inputKind, state: raw.state as TaskRunState, started, activeMs: integer(raw.activeMs, TASK_LIMITS.activeMs), chargedMs: integer(raw.chargedMs, TASK_LIMITS.activeMs), toolCalls: integer(raw.toolCalls, TASK_LIMITS.tools), modelRequests: integer(raw.modelRequests, TASK_LIMITS.rounds), note: typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "", ...(ended ? { ended } : {}), ...(recovered ? { recovered } : {}), ...(raw.stop === undefined ? {} : { stop: taskString(raw.stop, 120) }) };
 }
 
 
