@@ -4,6 +4,7 @@ use super::delegation::{
     ChildProposal, ClaimedBenefit, DelegationMode, DelegationPolicy, ProposalDisposition,
     ProposalReason, validate_proposal,
 };
+use super::registry::WorkspaceGrant;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -108,6 +109,16 @@ pub struct UserReview {
     pub note: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct RootCreate {
+    pub id: String,
+    pub goal: String,
+    pub criteria: String,
+    pub run_limit: u32,
+    pub requirements: Vec<Requirement>,
+    pub delegation: DelegationPolicy,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RootTask {
@@ -124,6 +135,7 @@ pub struct RootTask {
     stop_reason: Option<String>,
     review: Option<UserReview>,
     delegation: DelegationPolicy,
+    workspace_grant: Option<WorkspaceGrant>,
     children: BTreeMap<String, ChildTask>,
 }
 
@@ -222,6 +234,26 @@ impl RootTask {
         requirements: Vec<Requirement>,
         delegation: DelegationPolicy,
     ) -> Result<Self, StateError> {
+        Self::create_with_grant(
+            id,
+            goal,
+            criteria,
+            run_limit,
+            requirements,
+            delegation,
+            None,
+        )
+    }
+
+    pub fn create_with_grant(
+        id: String,
+        goal: String,
+        criteria: String,
+        run_limit: u32,
+        requirements: Vec<Requirement>,
+        delegation: DelegationPolicy,
+        workspace_grant: Option<WorkspaceGrant>,
+    ) -> Result<Self, StateError> {
         if !valid_identity(&id) {
             return Err(StateError::InvalidIdentity);
         }
@@ -263,6 +295,7 @@ impl RootTask {
             stop_reason: None,
             review: None,
             delegation,
+            workspace_grant,
             children: BTreeMap::new(),
         })
     }
@@ -301,6 +334,10 @@ impl RootTask {
 
     pub fn delegation_policy(&self) -> DelegationPolicy {
         self.delegation
+    }
+
+    pub fn workspace_grant(&self) -> Option<&WorkspaceGrant> {
+        self.workspace_grant.as_ref()
     }
 
     pub fn invalidate_queued_children(&mut self) -> Result<Vec<u64>, StateError> {
@@ -721,6 +758,10 @@ impl RootTask {
                         .is_some_and(|receipt| !valid_identity(receipt))
             })
             || !delegation_valid
+            || self
+                .workspace_grant
+                .as_ref()
+                .is_some_and(|grant| grant.validate().is_err())
             || self.children.len() > usize::from(self.delegation.max_children())
             || self
                 .children

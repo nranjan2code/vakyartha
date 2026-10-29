@@ -141,7 +141,8 @@ impl WorkspaceBinding {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct WorkspaceGrant {
     pub binding_id: String,
     pub binding_revision: u64,
@@ -151,6 +152,25 @@ pub struct WorkspaceGrant {
     pub folder_identity: FolderIdentity,
     pub realm_id: Option<String>,
     pub mode: WorkspaceMode,
+}
+
+impl WorkspaceGrant {
+    pub(crate) fn validate(&self) -> Result<(), RegistryError> {
+        if valid_id(&self.binding_id).is_err()
+            || valid_id(&self.session_id).is_err()
+            || valid_id(&self.workspace_id).is_err()
+            || self.binding_revision == 0
+            || !self.canonical_path.is_absolute()
+            || self.folder_identity.validate().is_err()
+            || self
+                .realm_id
+                .as_ref()
+                .is_some_and(|id| valid_id(id).is_err())
+        {
+            return Err(RegistryError::Corrupt);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

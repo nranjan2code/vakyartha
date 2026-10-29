@@ -10,7 +10,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 5;
+const STORE_VERSION: u16 = 6;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -26,7 +26,8 @@ use registry::{
     WorkspaceGrant, WorkspaceMode, WorkspaceRecord,
 };
 use state::{
-    CheckOutcome, ChildTask, Requirement, RootStatus, RootTask, StateError, StopCause, UserReview,
+    CheckOutcome, ChildTask, Requirement, RootCreate, RootStatus, RootTask, StateError, StopCause,
+    UserReview,
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -502,12 +503,8 @@ enum ActorCommand {
         reply: SyncSender<Result<(), ControlError>>,
     },
     CreateRoot {
-        id: String,
-        goal: String,
-        criteria: String,
-        run_limit: u32,
-        requirements: Vec<Requirement>,
-        delegation: DelegationPolicy,
+        request: RootCreate,
+        workspace_binding: Option<(String, u64)>,
         reply: SyncSender<Result<RootTask, ControlError>>,
     },
     AdmitChildren {
@@ -640,15 +637,38 @@ impl ControlHandle {
         requirements: Vec<Requirement>,
         delegation: DelegationPolicy,
     ) -> Result<RootTask, ControlError> {
-        let (reply, response) = sync_channel(1);
-        self.commands
-            .try_send(ActorCommand::CreateRoot {
+        self.create_root_scoped(
+            RootCreate {
                 id,
                 goal,
                 criteria,
                 run_limit,
                 requirements,
                 delegation,
+            },
+            None,
+        )
+    }
+
+    pub fn create_root_in_workspace(
+        &self,
+        request: RootCreate,
+        session_id: String,
+        binding_revision: u64,
+    ) -> Result<RootTask, ControlError> {
+        self.create_root_scoped(request, Some((session_id, binding_revision)))
+    }
+
+    fn create_root_scoped(
+        &self,
+        request: RootCreate,
+        workspace_binding: Option<(String, u64)>,
+    ) -> Result<RootTask, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::CreateRoot {
+                request,
+                workspace_binding,
                 reply,
             })
             .map_err(queue_error)?;
@@ -997,14 +1017,18 @@ fn actor_loop(
                 }
             }
             ActorCommand::CreateRoot {
-                id,
-                goal,
-                criteria,
-                run_limit,
-                requirements,
-                delegation,
+                request,
+                workspace_binding,
                 reply,
             } => {
+                let RootCreate {
+                    id,
+                    goal,
+                    criteria,
+                    run_limit,
+                    requirements,
+                    delegation,
+                } = request;
                 if ledger.roots.contains_key(&id) {
                     let _ = reply.send(Err(ControlError::Admission(AdmissionError::DuplicateRoot)));
                     continue;
@@ -1014,13 +1038,26 @@ fn actor_loop(
                         reply.send(Err(ControlError::Admission(AdmissionError::RootLedgerFull)));
                     continue;
                 }
-                let root = match RootTask::create_with_delegation(
+                let workspace_grant = match workspace_binding {
+                    Some((session_id, revision)) => {
+                        match ledger.registry.grant(&session_id, revision) {
+                            Ok(grant) => Some(grant),
+                            Err(error) => {
+                                let _ = reply.send(Err(ControlError::Registry(error)));
+                                continue;
+                            }
+                        }
+                    }
+                    None => None,
+                };
+                let root = match RootTask::create_with_grant(
                     id,
                     goal,
                     criteria,
                     run_limit,
                     requirements,
                     delegation,
+                    workspace_grant,
                 ) {
                     Ok(root) => root,
                     Err(error) => {
@@ -2665,6 +2702,22 @@ mod tests {
                 WorkspaceMode::CopyReview,
             )
             .unwrap();
+        let root = handle
+            .create_root_in_workspace(
+                RootCreate {
+                    id: "task-fixed-scope".into(),
+                    goal: "Inspect the selected workspace".into(),
+                    criteria: "Return traceable findings".into(),
+                    run_limit: 2,
+                    requirements: vec![Requirement::new("workspace-review".into(), true).unwrap()],
+                    delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0)
+                        .unwrap(),
+                },
+                binding.session_id().into(),
+                binding.revision(),
+            )
+            .unwrap();
+        assert_eq!(root.workspace_grant().unwrap().workspace_id, workspace.id());
         handle
             .set_project_membership(binding.session_id().into(), Some(project.id().into()), None)
             .unwrap();
@@ -2675,6 +2728,22 @@ mod tests {
         let revoked = handle
             .revoke_workspace(binding.session_id().into(), binding.revision())
             .unwrap();
+        assert_eq!(
+            handle.create_root_in_workspace(
+                RootCreate {
+                    id: "task-revoked-scope".into(),
+                    goal: "Inspect the selected workspace".into(),
+                    criteria: "Return traceable findings".into(),
+                    run_limit: 2,
+                    requirements: vec![Requirement::new("workspace-review".into(), true).unwrap()],
+                    delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0)
+                        .unwrap(),
+                },
+                revoked.session_id().into(),
+                revoked.revision(),
+            ),
+            Err(ControlError::Registry(RegistryError::BindingRevoked))
+        );
         drop(handle);
         drop(actor);
 
@@ -2685,12 +2754,37 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(persisted_membership.project_id(), Some("project-0001"));
+        let second_source = temp_data_dir();
+        fs::create_dir(&second_source).unwrap();
+        let second_workspace = restarted_handle
+            .register_workspace("workspace-002".into(), second_source.clone())
+            .unwrap();
+        let rebound = restarted_handle
+            .rebind_workspace(
+                "session-0001".into(),
+                revoked.revision(),
+                second_workspace.id().into(),
+                None,
+                WorkspaceMode::CopyReview,
+            )
+            .unwrap();
+        let current_grant = restarted_handle
+            .read_workspace_grant(rebound.session_id().into(), rebound.revision())
+            .unwrap();
+        let persisted_root = restarted_handle
+            .read_root("task-fixed-scope".into())
+            .unwrap();
+        let admitted_grant = persisted_root.workspace_grant().unwrap();
+        assert_eq!(admitted_grant.workspace_id, "workspace-001");
+        assert_ne!(admitted_grant.workspace_id, current_grant.workspace_id);
+        assert_eq!(admitted_grant.binding_revision, binding.revision());
         assert_eq!(
             restarted_handle.read_workspace_grant(revoked.session_id().into(), revoked.revision()),
-            Err(ControlError::Registry(RegistryError::BindingRevoked))
+            Err(ControlError::Registry(RegistryError::RevisionConflict))
         );
         drop(restarted_handle);
         drop(restarted);
+        fs::remove_dir_all(second_source).unwrap();
         fs::remove_dir_all(source).unwrap();
         fs::remove_dir_all(data).unwrap();
     }
