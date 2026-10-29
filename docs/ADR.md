@@ -542,3 +542,29 @@ Studio starters/suggestions are deterministic editable guidance, not invented re
 Existing installations keep reviewed package updates. The user authorized this cleanup and local installation: refresh only defaults proven to match a previous shipped package or a complete exact historical built-in package from a pushed ancestor of the installed source, through fingerprint-checked updateBuiltin with backups/receipts. Historical matches include all supporting-file names and bytes, not only instruction text. Preserve custom bodies/references, optional removals and on/off state. No new dependency, parallel runtime, broad tool tunnel or public release is part of this decision. The independent mapped-table timeout, other prior source/value/interaction/receipt failures and expanded isolation requirements remain open. Source and installation evidence are recorded separately in HANDOVER.md, EVALUATION.md and RELEASING.md.
 
 Delivery clarification (2026-10-29): workspace documentation now distinguishes direct/disposable 300-second/256-KiB interfaces from retained/shared Realm helper limits of 30 seconds/32 KiB. Basic Git tests do not certify arbitrary worktrees or builds. Historical planning and implementation snapshots remain labelled as such; maintained contracts govern new work.
+
+
+## ADR-052: Indestructible Rust Engine and Minimal Trusted Broker Architecture (2026-10-29)
+
+Accepted at the user's direction with 0 active users: establish clean architectural boundaries without retaining stale code, legacy compromises, or backward-compatibility shims.
+
+An honest architectural audit revealed that while the Rust desktop shell was minimal (~500 lines of plumbing), the TypeScript sidecar operated as an unconfined god process possessing ambient authority over OS credentials, unrestricted network egress, user approvals, and integration lifecycle. If compromised by untrusted model output, malicious MCP server payloads, or package dependencies, the Rust shell could not prevent credential exfiltration or unauthorized network egress.
+
+This decision formalizes the explicit boundary between the indestructible Rust engine and the runtime flexible worker:
+
+1. **Rust (The Indestructible Engine & Root of Trust):**
+   - Must remain unmutable, non-destroyable, and secure in any condition, even if the TypeScript worker is compromised.
+   - Owns cross-platform credential storage (`src-tauri/src/vault.rs`): native macOS Keychain access (`/usr/bin/security`), Linux Secret Service/owner-only `0600` storage, and Windows user-isolated app data vault with strict input validation on service, account, and value format.
+   - Owns outbound network egress policy (`src-tauri/src/policy.rs`): enforces HTTPS for public model providers (`api.openai.com`, `api.anthropic.com`, `generativelanguage.googleapis.com`, `api.elevenlabs.io`, `api.telegram.org`), permits loopback only on designated model ports (11434 for Ollama, 1234 for LM Studio), and refuses arbitrary IP egress or unapproved destinations.
+   - Owns integration pin validation: strictly enforces exact SemVer versions, forbids floating versions/ranges (`^`, `~`, `*`, `latest`), and mandates script-free execution.
+   - Owns user approval enforcement: mutations, external writes, and network egress default to Ask; untrusted model outputs cannot synthesize consent.
+   - Owns process supervision, release environment sanitization (stripping `NODE_OPTIONS`, `NODE_PATH`, etc.), and safe Downloads exports.
+
+2. **Non-Rust / TypeScript (Runtime Flexible Worker):**
+   - Fast-evolving presentation, orchestration, and business logic layer.
+   - Owns the agent reasoning loop, surface projection, dynamic canvas, interactive UI components, skills, voice synthesis/recognition, channels, FinOps usage ledger, and sandboxed tool execution.
+   - Operates with zero ambient authority over the host operating system.
+
+3. **Clean Architecture / Zero Users Principle:**
+   - Because the app has 0 active production users, no backwards-compatibility shims or deprecated parallel stores are maintained.
+   - The native vault and policy are verified via unit tests directly in the Rust crate and exposed to the desktop frontend via verified Tauri IPC commands (`vault_get`, `vault_set`, `vault_delete`, `check_egress_endpoint`).

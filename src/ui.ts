@@ -2,6 +2,7 @@
 // controls, pills, and key/value fields that save themselves.
 
 import { api, ask, el } from "./core.ts";
+import { inTauri, vaultDelete, vaultSet } from "./backend.ts";
 
 export interface Setting { name: string; label: string; secret: boolean; placeholder?: string; group: "main" | "more" | "channel" | "voice" | "media"; owner: string; set: boolean; value?: string }
 
@@ -57,6 +58,10 @@ export function secretField(s: Setting, onSaved: () => void | Promise<void>): HT
   const put = async (value: string | null) => {
     note.textContent = "";
     try {
+      if (inTauri) {
+        if (value) await vaultSet(s.name, value);
+        else await vaultDelete(s.name);
+      }
       await api("/api/settings", { method: "PUT", body: JSON.stringify({ values: { [s.name]: value } }) });
       await onSaved();
     } catch (err) {

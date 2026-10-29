@@ -155,10 +155,11 @@ User-requested feature; [researched design, existing seams and acceptance plan](
 - [x] PC3. Source mechanism: correct Studio generation/suggestions/lint/DAG claims and evaluate the actual configured selector with positive/negative expectations; distinguish heuristics, previews and real provider evidence.
 - [ ] PC4. Freeze/capture before-and-after requests, prove the smallest primary-provider contract in Projection, then original sources/values/interpretation/interactions/receipts and installed state as applicable. Retain all earlier failures.
 
-## Required system isolation — 2026-10-29
+## Required system isolation & indestructible engine — 2026-10-29
 
-User-requested work, tracked separately from the earlier bounded macOS sandbox checkpoint. The chosen architecture keeps a minimal trusted broker and isolates execution workers. [Scope, ownership and acceptance gates](sandbox/SYSTEM-ISOLATION.md). All items below are open; existing command/app receipts do not establish completion.
+User-requested work, tracked separately from the earlier bounded macOS sandbox checkpoint. Formalized in ADR-052: establish the indestructible Rust engine as the root of trust (cross-platform vault, egress network gating, approval policy) with execution workers providing runtime flexibility. [Scope, ownership and acceptance gates](sandbox/SYSTEM-ISOLATION.md). Items below reflect progress under zero-user clean architecture; full end-to-end sandbox gates remain tracked.
 
+- [x] ISO0. Establish Rust root-of-trust boundaries: implement native cross-platform credential vault (`src-tauri/src/vault.rs` for macOS, Linux, Windows), outbound egress policy engine (`src-tauri/src/policy.rs`), and frontend IPC mediation (`vault_get`, `vault_set`, `vault_delete`, `check_egress_endpoint`). Verified via 10 native cargo unit tests.
 - [ ] ISO1. Isolate host execution workers from credential, network, app-private persistence and original-project authority; retain one canonical writer per entity.
 - [ ] ISO2. Broker provider requests through configured authorized endpoints, with broker-owned credentials, bounded response processing, redirect/address checks and cancellation.
 - [ ] ISO3. Mediate host integration calls through existing schemas/policies/approvals; local workers require verified containment with no uncontained fallback and a compatible persistent transport.

@@ -38,6 +38,7 @@ import { SandboxPoolManager } from "./sandbox-pool/pool-manager.ts";
 import { AppRegistry } from "./sandbox-pool/app-registry.ts";
 import { WorkspaceRegistry, validateWorkspaceFolder } from "./workspace-registry.ts";
 import { SandboxRealms } from "./sandbox-realms.ts";
+import { createGuardedFetch } from "./egress.ts";
 
 export interface AppServerOptions {
   /** Conversations, settings, channels, logs (and profiles/transcripts unless given). */
@@ -116,6 +117,9 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   }
   for (const file of opts.envFiles ?? []) loadEnvFile(file);
   hardenNetwork();
+  if (opts.transport === "stdio" && process.env.NODE_ENV !== "test") {
+    globalThis.fetch = createGuardedFetch(globalThis.fetch, false);
+  }
 
   async function settingsRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
     if (url.pathname === "/api/sandbox" && req.method === "GET") {

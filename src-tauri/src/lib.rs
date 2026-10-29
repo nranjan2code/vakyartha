@@ -24,11 +24,73 @@ struct Backend {
 }
 
 mod engine;
+mod policy;
+mod vault;
 use engine::{Engine as Sidecar, engine_request, engine_ack, engine_cancel};
 
 /// Closing the window hides it while this is set, so the engine and its
 /// channels (Telegram, ...) keep running; Quit in the tray menu ends both.
 static KEEP_RUNNING: AtomicBool = AtomicBool::new(true);
+
+fn default_service() -> String {
+    if cfg!(debug_assertions) {
+        "com.nranjan2code.vakyartha.dev".into()
+    } else {
+        "com.nranjan2code.vakyartha".into()
+    }
+}
+
+fn app_data_dir(app: &AppHandle) -> PathBuf {
+    if cfg!(debug_assertions) {
+        std::env::var_os("VAK_DATA_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("..")
+                    .join(".vak/desktop")
+            })
+    } else {
+        app.path().app_data_dir().unwrap_or_else(|_| PathBuf::from("."))
+    }
+}
+
+/// Retrieve a secret from the cross-platform Vault through the trusted engine broker.
+#[tauri::command]
+fn vault_get(window: tauri::WebviewWindow, service: Option<String>, account: String) -> Result<Option<String>, String> {
+    engine::main_window(&window)?;
+    let svc = service.unwrap_or_else(default_service);
+    let data_dir = app_data_dir(window.app_handle());
+    vault::get(&svc, &account, &data_dir)
+}
+
+/// Store a secret into the cross-platform Vault through the trusted engine broker.
+#[tauri::command]
+fn vault_set(window: tauri::WebviewWindow, service: Option<String>, account: String, value: String) -> Result<(), String> {
+    engine::main_window(&window)?;
+    let svc = service.unwrap_or_else(default_service);
+    let data_dir = app_data_dir(window.app_handle());
+    vault::set(&svc, &account, &value, &data_dir)
+}
+
+/// Delete a secret from the cross-platform Vault through the trusted engine broker.
+#[tauri::command]
+fn vault_delete(window: tauri::WebviewWindow, service: Option<String>, account: String) -> Result<(), String> {
+    engine::main_window(&window)?;
+    let svc = service.unwrap_or_else(default_service);
+    let data_dir = app_data_dir(window.app_handle());
+    vault::delete(&svc, &account, &data_dir)
+}
+
+/// Egress validation gate: checks whether a destination URL is permitted by broker policy.
+#[tauri::command]
+fn check_egress_endpoint(window: tauri::WebviewWindow, scheme: String, host: String, port: Option<u16>, custom_hosts: Option<Vec<String>>) -> Result<bool, String> {
+    engine::main_window(&window)?;
+    let extra = custom_hosts.unwrap_or_default();
+    match policy::evaluate_egress_with_custom(&scheme, &host, port, &extra) {
+        policy::EgressDecision::Allowed => Ok(true),
+        policy::EgressDecision::Denied(reason) => Err(reason.into()),
+    }
+}
 
 /// The private desktop transport identifier; the webview asks once at start.
 #[tauri::command]
@@ -263,7 +325,20 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![backend, engine_request, engine_ack, engine_cancel, set_keep_running, autostart, save_canvas, show_admin])
+        .invoke_handler(tauri::generate_handler![
+            backend,
+            engine_request,
+            engine_ack,
+            engine_cancel,
+            set_keep_running,
+            autostart,
+            save_canvas,
+            show_admin,
+            vault_get,
+            vault_set,
+            vault_delete,
+            check_egress_endpoint
+        ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if KEEP_RUNNING.load(Ordering::Relaxed) {

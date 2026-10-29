@@ -231,14 +231,35 @@ export const CATALOG: CatalogEntry[] = [
   },
 ];
 
+/** Enforce the indestructible engine pin and safety policy on integration catalog entries. */
+export function validateCatalogEntry(entry: CatalogEntry): void {
+  if (entry.source.kind === "npm") {
+    const v = entry.source.version;
+    if (!v || v === "latest" || /[\^~*><]/.test(v)) {
+      throw new Error(`Integration ${entry.id} specifies an invalid version: ${v}. Exact pinned version required.`);
+    }
+  } else if (entry.source.kind === "http") {
+    if (typeof entry.source.url === "string") {
+      const u = new URL(entry.source.url);
+      if (u.protocol !== "https:") {
+        throw new Error(`Integration ${entry.id} uses insecure protocol: ${u.protocol}. Only HTTPS allowed.`);
+      }
+    }
+  }
+}
+
 /** Keep one live catalog array so reviewed imports reach the existing lifecycle. */
 export function integrationCatalog(media?: Media, binaryPath = "vaksb", dataDir = ".", getWorkspace?: () => string, workspaces?: WorkspaceRegistry): CatalogEntry[] {
-  return [...CATALOG, ...(media?.entries() ?? []), sandboxExecutionEntry({
+  const catalog = [...CATALOG, ...(media?.entries() ?? []), sandboxExecutionEntry({
     binaryPath, dataDir,
     enabled: () => process.env.VAK_SANDBOX_ENABLED !== "false",
     workspace: getWorkspace ?? (() => process.env.VAK_SANDBOX_WORKSPACE ?? ""),
     workspaces,
   })];
+  for (const entry of catalog) {
+    validateCatalogEntry(entry);
+  }
+  return catalog;
 }
 
 /** App-owned catalog entries run through the framework's common integration lifecycle. */

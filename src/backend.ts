@@ -77,3 +77,33 @@ export async function downloadMarkdown(filename: string, content: string): Promi
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
+
+/** Retrieve a secret from the trusted engine vault. */
+export async function vaultGet(account: string, service?: string): Promise<string | null> {
+  if (!inTauri) return null;
+  return (await invoke<string | null>("vault_get", { account, service })) ?? null;
+}
+
+/** Store a secret into the trusted engine vault. */
+export async function vaultSet(account: string, value: string, service?: string): Promise<void> {
+  if (inTauri) {
+    await invoke("vault_set", { account, value, service });
+  }
+}
+
+/** Remove a secret from the trusted engine vault. */
+export async function vaultDelete(account: string, service?: string): Promise<void> {
+  if (inTauri) {
+    await invoke("vault_delete", { account, service });
+  }
+}
+
+/** Check whether a destination endpoint is permitted by the engine egress policy. */
+export async function checkEgress(destination: string | URL, customHosts?: string[]): Promise<boolean> {
+  if (!inTauri) return true;
+  const parsed = typeof destination === "string" ? new URL(destination) : destination;
+  const scheme = parsed.protocol.replace(/:$/, "");
+  const host = parsed.hostname;
+  const port = parsed.port ? Number(parsed.port) : undefined;
+  return await invoke<boolean>("check_egress_endpoint", { scheme, host, port, customHosts });
+}
