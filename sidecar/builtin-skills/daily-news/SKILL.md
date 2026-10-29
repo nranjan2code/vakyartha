@@ -5,7 +5,7 @@ license: MIT
 compatibility: Works with text summaries, news readers, web search tools, and interactive digest canvases.
 metadata:
   author: nranjan2code
-  version: "1.4"
+  version: "1.5"
 allowed-tools: read_skill_file use_skill vak_render vak_update vak_submit
 ---
 
@@ -35,31 +35,6 @@ Methodology for compiling accurate, sourced daily news digests, executive media 
 4. **Classification discipline**:
    - Clearly delineate verified factual developments from corporate announcements, speculative rumors, and opinion/editorial commentary.
 
-## Liquid Canvas Architecture for News Digests
+## Source attribution
 
-Choose a content-driven composition with the shared `surface-design` guidance. A single column or a full-width analytical panel can be appropriate. The following are optional patterns; include only sections and indicators that answer the requested question, with no required tier or column count:
-
-1. **Morning Briefing Headline & 3-Column Scope Strip**:
-   - **Spoken lead**: 1–2 sentences clearly summarizing the leading headline of the day so audio speech is immediate.
-   - **Coverage metrics**: 3-column metric strip (`grid` with `props: { columns: 3, minItemWidth: "xs" }`):
-     - `Stories Covered`: e.g. "8 key stories"
-     - `Publishers Cited`: e.g. "FT, Reuters, Nature"
-     - `Retrieval Freshness`: e.g. "Oct 28, 2026 · 08:30 UTC"
-2. **Fluid Multi-Column Topic Grid**:
-   - Fluid news grid (`grid` with `props: { columns: 3, minItemWidth: "sm" }` or `columns: 2` on narrower containers):
-     - Each news item is formatted as a structured card (`card` with `props: { maxWidth: "md" }`):
-       - Category badge (e.g. `tone: "neutral"`)
-       - Headline (`subheading`)
-       - Publisher & Timestamp (`caption`)
-       - Core Story Summary (2–3 sentences)
-       - Why It Matters (`text`)
-     - Cards tile cleanly in multi-column rows without stretched single-column bloat.
-3. **Granular Event Timeline & Source Attribution Table**:
-   - **Timeline Table**: Chronological table (`section` with `table`, `maxWidth: "full"`):
-     - Columns: `Time (UTC)`, `Topic`, `Headline`, `Publisher`, `Status`.
-
-## Dual Spoken & Visual Projection
-
-- **Spoken audio harmony**: In spoken projections, refer to publishers by natural names (e.g. "According to the Associated Press...") rather than reciting raw HTTP URLs.
-- **Top headline clarity**: Ensure that the first sentence of the digest functions as a standalone, clear audio news flash when read aloud.
-- **Tone & Style**: Never inject raw CSS or hex codes; use semantic tones (`positive` for confirmed resolutions, `caution` for developing/unverified stories, `critical` for urgent security/breaking events).
+In spoken projections refer to publishers naturally; visible evidence retains actual source links and timestamps.

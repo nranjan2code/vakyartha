@@ -10,7 +10,7 @@ Vakyartha folder workspaces support three distinct operating modes:
 - Everyday software engineering with existing Git repositories.
 - Large codebases exceeding 512 MiB or 50,000 files.
 - Workflows using Git branches, Git worktrees, submodules, or local tooling caches (`node_modules`, `target/`).
-- Arbitrary long builds (`npm run build`, `cargo build --release`).
+- Longer builds that fit the offered deadline and installed helper limits.
 
 ### Behavior & Mechanics
 - **Working Tree**: Commands run directly inside the admitted folder on disk.
@@ -54,6 +54,6 @@ Vakyartha folder workspaces support three distinct operating modes:
 - **Working Tree**: Shared durable Realm allocated on the project (`project.sharedRealmId`).
 - **Containment**: macOS Seatbelt sandbox with network denial.
 - **Persistence**: Shared across all chats assigned to the project. Edits made in Chat 1 are immediately visible and runnable in Chat 2.
-- **Concurrency**: Operations are serialized per Realm ID using an internal mutual-exclusion lock (`withRealmLock`). Concurrent commands from Chat 1 and Chat 2 do not race or corrupt states.
+- **Concurrency**: Operations are serialized per Realm ID using an internal mutual-exclusion lock (`withRealmLock`). Managed commands serialize through that owner; external editors still need conflict checks and must not edit promotion targets concurrently.
 - **Review / Staging**: Same review and promotion procedure as Isolated Copy mode. When promoted, all accumulated changes in the project's shared Realm commit to the source folder.
 

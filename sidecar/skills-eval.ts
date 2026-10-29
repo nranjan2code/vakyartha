@@ -1,99 +1,30 @@
-// Skill Studio Evaluation Harness: tests skill selection (use_skill gate) and adherence.
-// Compliant with Vakyartha's outcome acceptance gate and local Ollama 4B target.
-
-import type { Provider, ChatRequest, ProviderEvent } from "@vak/providers";
-import type { SkillEvalResult } from "../shared/skills.ts";
+// Selection-only evaluation through the same counted provider interceptor used
+// by chat. No lexical substitute or instruction-adherence claim.
+import type { Provider } from "@vak/providers";
+import type { SkillEvalCase, SkillEvalResult } from "../shared/skills.ts";
 import type { Skills } from "./skills.ts";
 
-/** Evaluates whether a prompt correctly triggers use_skill for the target skill. */
-export async function evaluateSkillPrompts(
-  skills: Skills,
-  name: string,
-  prompts: string[],
-  provider?: Provider
-): Promise<SkillEvalResult[]> {
+export async function evaluateSkillPrompts(skills: Skills, name: string, cases: SkillEvalCase[], choice?: { provider: Provider; model: string }): Promise<SkillEvalResult[]> {
+  if (!skills.view().some(skill => skill.name === name && skill.enabled && !skill.required)) throw new Error("Enable the published optional skill before evaluating selection; unpublished drafts are not active");
+  if (!choice?.model.trim()) throw new Error("Choose an available provider and model; no offline heuristic is treated as a model result");
+  if (!Array.isArray(cases) || !cases.length || cases.length > 24 || cases.some(item => !item || typeof item.prompt !== "string" || !item.prompt.trim() || item.prompt.length > 8000 || typeof item.expected !== "boolean")) throw new Error("Provide 1–24 bounded prompt cases with explicit expected selection");
   const results: SkillEvalResult[] = [];
-
-  for (const prompt of prompts) {
+  for (const { prompt, expected } of cases) {
     const start = performance.now();
     try {
-      if (!provider) {
-        // Deterministic offline semantic match evaluation when model is offline
-        const skill = skills.view().find(s => s.name === name);
-        if (!skill) throw new Error(`Skill ${name} is not installed`);
-        
-        const promptWords = prompt.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-        const descWords = (skill.name + " " + skill.description).toLowerCase().split(/\s+/);
-        const matches = promptWords.filter(w => descWords.some(d => d.includes(w) || w.includes(d)));
-        const score = matches.length / Math.max(promptWords.length, 1);
-        const passed = score >= 0.25;
-
-        results.push({
-          prompt,
-          passed,
-          selectedSkills: passed ? [name] : [],
-          durationMs: Math.round(performance.now() - start),
-        });
-        continue;
+      const wrapped = skills.provider(choice.provider);
+      let tool = "", args = "", complete = false;
+      for await (const event of wrapped.stream({ model: choice.model, system: skills.index(), messages: [{ role: "user", content: prompt }], tools: skills.tools().map(tool => tool.spec), maxTokens: 512, signal: AbortSignal.timeout(60_000) })) {
+        if (event.type === "tool_start") tool = event.name;
+        else if (event.type === "tool_args") args += event.delta;
+        else if (event.type === "done") complete = event.stop === "end" || event.stop === "tool_use";
       }
-
-      // Live model provider execution through Skills.provider selection interceptor
-      const wrapped = skills.provider(provider);
-      const req: ChatRequest = {
-        model: "default",
-        messages: [{ role: "user", content: prompt }],
-        system: "",
-      };
-
-      let selectedNames: string[] = [];
-      let rawText = "";
-      let currentToolName = "";
-      let currentToolArgs = "";
-
-      for await (const event of wrapped.stream(req)) {
-        if (event.type === "text") {
-          rawText += event.delta;
-        } else if (event.type === "tool_start") {
-          currentToolName = event.name;
-          currentToolArgs = "";
-        } else if (event.type === "tool_args") {
-          currentToolArgs += event.delta;
-        } else if (event.type === "tool_end") {
-          if (currentToolName === "use_skill") {
-            try {
-              const parsed = JSON.parse(currentToolArgs);
-              if (Array.isArray(parsed?.names)) selectedNames = parsed.names;
-            } catch {}
-          }
-        }
-      }
-
-      // Check if use_skill was returned in raw JSON if native_tool_call was not emitted
-      if (!selectedNames.length && rawText) {
-        try {
-          const parsed = JSON.parse(rawText);
-          if (Array.isArray(parsed?.names)) selectedNames = parsed.names;
-          else if (Array.isArray(parsed?.arguments?.names)) selectedNames = parsed.arguments.names;
-        } catch {}
-      }
-
-      const passed = selectedNames.includes(name);
-      results.push({
-        prompt,
-        passed,
-        selectedSkills: selectedNames,
-        durationMs: Math.round(performance.now() - start),
-      });
+      if (!complete || tool !== "use_skill") throw new Error("The production selector did not return a complete skill selection");
+      const selectedSkills = (JSON.parse(args) as { names: string[] }).names;
+      results.push({ prompt, expected, passed: selectedSkills.includes(name) === expected, selectedSkills, durationMs: Math.round(performance.now() - start) });
     } catch (err) {
-      results.push({
-        prompt,
-        passed: false,
-        selectedSkills: [],
-        durationMs: Math.round(performance.now() - start),
-        error: (err as Error).message,
-      });
+      results.push({ prompt, expected, passed: false, selectedSkills: [], durationMs: Math.round(performance.now() - start), error: (err as Error).message });
     }
   }
-
   return results;
 }

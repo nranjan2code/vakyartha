@@ -1,3 +1,5 @@
+For an admitted direct binding, commands write in place and Realm promotion is not used. For an admitted copy binding, use its retained Realm; do not create a separate copy for each command. The explicit Realm examples below apply only when that mode and tool contract are offered.
+
 # Isolated command examples
 
 For a single check, call `run_command` with `command: "/bin/pwd"` and `args: []`. It returns a result from a disposable copy and does not save changes.

@@ -2,7 +2,15 @@
 
 What changed in the app, newest first. Each release names the [Projection](https://github.com/nranjan2code/Projection) version it was built on; framework changes themselves are in Projection's CHANGELOG. Procedure: [RELEASING.md](docs/RELEASING.md).
 
-## Unreleased
+## Prompt and skill context cleanup — 2026-10-29
+
+Built on pushed Projection `d017a18`. Selected procedures arrive whole and once in current-run system context; references/external results remain data. Required design guidance applies across native/decoded authoring without duplicate bodies. Remove copied wire manuals, fixed dashboard tiers and old schema aliases; retain domain facts, calculations, multiple surfaces, guards and reviewed update preferences. Studio starters preserve requested scope, selection tests use an explicit model and positive/negative cases, and preview/DAG/resource labels state their actual limits. Studio controls and editor panes wrap at narrow widths.
+
+259 app / 410 framework tests, typechecks, builds and WebKit mechanism checks pass. Primary graph contract passes 3/3; the independent mapped-table gate remains 2/3 with one pre-dispatch timeout. Source cleanup and a local installation do not close that or earlier source/value/interaction/receipt gates. Installation provenance is recorded separately in RELEASING.md; no public release is implied.
+
+## Earlier unreleased checkpoints
+
+The entries below retain their original checkpoint scope. Current source/runtime limits and prompt ownership are in SPECS.md, SKILLS.md and ADR-051.
 
 - Execute published app actions and named refresh handlers directly through the existing supervised sandbox, with bounded invocation capacity and host-owned persistent JSON state. Real-data calls reuse declared integration tools and current permissions; credentials stay outside app code.
 - Separate inert app drafts from reviewed publication; retain actual source, source-chat lineage, multiple surface snapshots, revisions, opt-in schedules and uncertain-effect receipts. Fix path escapes, tenant races, missing/async handler receipts and stale update handling. Replace placeholder Canvas deployment with an app draft and an editable Build with chat flow.

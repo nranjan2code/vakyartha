@@ -19,8 +19,8 @@ Common issues, boundary rejections, and resolution steps when working with folde
 ## 2. Execution & Timeout Errors
 
 ### Symptom: "Sandbox execution exceeded the N second limit"
-- **Cause**: The process exceeded its allocated wall-clock time (default 30 seconds).
-- **Resolution**: Provide `timeout_seconds` in `run_command` arguments (e.g. `timeout_seconds: 180`). The maximum supported timeout is 300 seconds (5 minutes).
+- **Cause**: The process or parent operation exceeded its deadline; direct/disposable commands default to 30 seconds, while Realm helper limits are separate.
+- **Resolution**: Provide `timeout_seconds` in `run_command` arguments (e.g. `timeout_seconds: 180`). The direct/disposable adapter accepts up to 300 seconds. A Realm parent timeout does not extend the helper deadline; inspect that receipt before promising a longer run.
 
 ### Symptom: "Sandbox output exceeded the 256 KiB limit"
 - **Cause**: The command emitted more than 262,144 bytes of combined stdout and stderr.

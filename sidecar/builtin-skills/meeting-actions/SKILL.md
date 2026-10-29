@@ -5,7 +5,7 @@ license: MIT
 compatibility: Works with text notes, meeting transcripts, audio transcription summaries, and action registers.
 metadata:
   author: nranjan2code
-  version: "1.3"
+  version: "1.4"
 allowed-tools: vak_render vak_update vak_submit use_skill
 ---
 
@@ -46,24 +46,6 @@ Structure meeting outcomes into four distinct categories:
 - **Explicit ownership**: Only assign action items to people explicitly named in the notes or transcript. Never guess or invent assignees. If ownership was unclear, mark as `Unassigned / Needs Owner`.
 - **Date precision**: Preserve stated deadlines. Clearly distinguish the **meeting date** from the **due date** of a deliverable. Do not invent due dates if none were stated.
 - **Capture dissent**: Preserve notable reservations, dissent or conditional agreements that could affect the execution of a decision.
-
-## Adaptive Meeting Action Canvas Layout
-
-Never output a flat single-column page that stretches short notes across 100% of a wide canvas. Structure the canvas adaptively:
-
-1. **Meeting Header & Outcomes Strip**:
-   - Lead with a concise summary stating meeting title, date, attendees and primary accomplishment.
-   - Follow with a fluid `grid` (`props: { columns: 3, minItemWidth: "sm" }`) showing Total Actions, High Priority Deliverables, and Open Questions.
-2. **Adaptive Decision & Action Tier**:
-   - **Agreed Decisions**: Present in a clean `section` (`props: { title: "Agreed Decisions & Rationale" }`) or paired 2-column `grid` alongside open questions.
-   - **Action Register Table**: Render a structured table below in a clean `section` (`props: { title: "Assigned Action Items" }`). Table uses `maxWidth: "full"` with columns: `Deliverable`, `Owner`, `Due Date`, `Priority`, and bound completion checkboxes (`bind: "/actions/0/done"`).
-3. **Draft Follow-up Message**:
-   - Provide a pre-formatted follow-up note inside a clamped container (`maxWidth: "md"`, 720px) ready for review or export.
-
-## Style & Theming Guide
-
-- **Semantic Tones**: Use `tone: "success"` for ratified agreements; `tone: "warning"` for open questions requiring research; `tone: "danger"` for blocked deliverables. Never hardcode hex colors or inline CSS.
-- **Dual Projection**: Lead with a concise 1–2 sentence finding stating meeting date, top strategic decision made, and count of assigned follow-up items. Spoken gist mode reads this first sentence in isolation.
 
 ## External Tool Boundaries
 

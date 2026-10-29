@@ -42,7 +42,7 @@ Step-by-step query workflows and canvas surface blueprints for common Indian sto
       {
         "id": "reliance-summary",
         "type": "grid",
-        "props": { "columns": 2, "minItemWidth": "xs" },
+        "props": { "columns": 2, "minItemWidth": "sm" },
         "children": ["m-price", "m-return"]
       },
       {
@@ -53,7 +53,7 @@ Step-by-step query workflows and canvas surface blueprints for common Indian sto
       {
         "id": "m-return",
         "type": "metric",
-        "props": { "label": "30-Day Return", "value": "{/summary/windowReturn}", "tone": "positive" }
+        "props": { "label": "30-Day Return", "value": "{/summary/windowReturn}", "tone": "success" }
       },
       {
         "id": "trend-chart",

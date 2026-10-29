@@ -139,7 +139,7 @@ export function sandboxExecutionEntry(opts: {
     tools: [{
       name: "run_command",
       title: "Run a command in workspace",
-      description: "Run a command and argument list inside the admitted workspace folder. Network is denied. In direct mode, commands write directly to the project folder with macOS Seatbelt protection. In isolated copy mode, commands run in a durable Realm across turns until reviewed and applied. Up to 300 seconds and 256 KiB output per run.",
+      description: "Run a command and argument list inside the admitted workspace folder. Network is denied. In direct mode, commands write directly to the project folder with macOS Seatbelt protection. In isolated copy mode, commands run in a durable Realm across turns until reviewed and applied. Direct/disposable runs offer up to 300 seconds and 256 KiB output; Realm helper limits may be tighter.",
       inputSchema: {
         type: "object", additionalProperties: false,
         properties: {
@@ -255,9 +255,9 @@ export function sandboxExecutionEntry(opts: {
   return {
     id: "sandbox-execution", name: "Sandboxed execution", publisher: "Vakyartha", trust: "built-in",
     summary: "Run isolated commands or retain a Realm for reviewed project changes.",
-    description: "Run approved commands with macOS Seatbelt in a temporary copy or a durable Realm. Network is denied. Realm changes reach the original project only through fingerprint-bound, journaled promotion, with conflict checks and rollback receipts.",
+    description: "Run approved commands with macOS Seatbelt in the admitted mode: direct writes modify the original folder, retained Realm changes need reviewed promotion, and configured fallback runs use disposable copies. Network is denied. Follow actual execution limits and receipts.",
     homepage: "https://github.com/nranjan2code/sandbox", icon: "shield",
-    access: ["Admitted folder workspace commands run with macOS Seatbelt protection", "Direct in-place editing writes directly to project folder; isolated mode stages in durable Realm", "No network access; credentials and private directories protected", "Mutations ask by default; explicit per-tool policies remain in force", "Up to 300-second runtime, 256 KiB output, long builds and Git worktrees supported"],
+    access: ["Admitted folder workspace commands run with macOS Seatbelt protection", "Direct in-place editing writes directly to project folder; isolated mode stages in durable Realm", "No network access; credentials and private directories protected", "Mutations ask by default; explicit per-tool policies remain in force", "Direct/disposable adapter: up to 300 seconds and 256 KiB; effective Realm limits are separately reported"],
     source: { kind: "builtin", server: () => server }, config: [],
   };
 }

@@ -135,7 +135,7 @@ Owner: Projection for the voice projector; Vakyartha for the `voice/` module. Ac
 
 ## Folder workspaces and project chats — 2026-10-29
 
-User-requested feature; [researched design, existing seams and acceptance plan](sandbox/FOLDER-WORKSPACES.md). The user selected isolated copies with review and explicit Apply as the default. Direct editing is outside the initial scope. All implementation and real-provider gates remain open.
+User-requested feature; [researched design, existing seams and acceptance plan](sandbox/FOLDER-WORKSPACES.md). The current source retains isolated copies with review and explicit Apply as the default, and adds selectable direct editing and shared project Realms. FOLDER1–FOLDER7 below record the workspace checkpoint; their completion does not establish ISO1–ISO8, arbitrary format support or a fresh installed build.
 
 - [x] FOLDER1. Private revisioned project/session bindings, explicit folder admission and revocation, safe missing/replaced-folder handling; no global cwd or setting mutation on chat switches. Tested in `test/workspace-registry.test.ts`.
 - [x] FOLDER2. Session-scoped file/shell access through the existing integration lifecycle, with binding-aware approvals and no broader connector escape. Tested in `test/workspace-registry.test.ts` and `sidecar/server.ts`.
@@ -144,6 +144,16 @@ User-requested feature; [researched design, existing seams and acceptance plan](
 - [x] FOLDER5. Actual containment tests for traversal/symlinks, stale approvals, cross-chat IDs, broad filesystem tools, shell environment/network and missing helper; supported runtime/repository limitations disclosed. Tested in `test/workspace-containment.test.ts`.
 - [x] FOLDER6. Real primary-local file inspect/edit/verify/review/apply outcome with independent original bytes and receipts; packaging/installed verification recorded separately. Tested in `scripts/folder-workspace-outcome.ts` with local Ollama `qwen3.5:4b-mlx` and evidence under `.vak/evaluations/folder-workspaces/`.
 - [x] FOLDER7. General-purpose document/data/image/audio/video capability composition, governed workspace/media import/export, format-aware previews and binary review/apply identity; verify supported formats, actual file content/playback and size/resource limits without claiming unrestricted format support. Tested in `test/workspace-media.test.ts`.
+
+## Prompt assembly and instruction cleanup — 2026-10-29
+
+[Source audit and offline evidence](PROMPT-AUDIT.md). Preserve runtime guards, caller-selected checked contracts, multiple interactive surfaces and direct executable app actions. Current source repairs and their deterministic tests are recorded in HANDOVER.md/EVALUATION.md. These mechanism checks are not broad provider-outcome passes.
+
+- [x] PC0. Trace current paths and measure isolated request assembly; correct stale current-state docs while preserving historical decisions/failures.
+- [x] PC1. Source mechanism: repair required design injection across native/decoded modes, selected-context instruction labelling, duplicate bodies, clipped loads and historical active-context treatment at their existing owners.
+- [x] PC2. Source instructions: consolidate skill/runtime instruction ownership; remove stale fixed layouts and wire-envelope duplication, use canonical schema values and update workspace/operational guidance without weakening authority boundaries.
+- [x] PC3. Source mechanism: correct Studio generation/suggestions/lint/DAG claims and evaluate the actual configured selector with positive/negative expectations; distinguish heuristics, previews and real provider evidence.
+- [ ] PC4. Freeze/capture before-and-after requests, prove the smallest primary-provider contract in Projection, then original sources/values/interpretation/interactions/receipts and installed state as applicable. Retain all earlier failures.
 
 ## Required system isolation — 2026-10-29
 

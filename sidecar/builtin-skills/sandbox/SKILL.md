@@ -5,7 +5,7 @@ license: MIT
 compatibility: Execution requires macOS, the vak-sandbox helper, an enabled sandbox integration and an admitted project folder.
 metadata:
   author: nranjan2code
-  version: "1.3"
+  version: "1.4"
 allowed-tools: run_command create_realm run_in_realm snapshot_realm read_realm_file promote_realm rollback_realm recover_realm destroy_realm list_realms realm_status
 ---
 
@@ -20,9 +20,9 @@ Use the offered `sandbox-execution` integration. If access, a project folder or 
 - **Direct in-place editing mode**: When a chat is bound with `mode: "direct"`, `run_command` runs directly in the admitted project folder with macOS Seatbelt kernel protection (network denied, path escapes prevented). Writes modify files directly on disk without staging copies. The `.git` directory, branches, and Git worktrees are preserved intact. No Apply step is needed.
 - **Isolated copy mode (default)**: `run_command` or `run_in_realm` operates on a retained Realm working copy. Changes accumulate across turns without touching the original project folder until reviewed and promoted.
 - **Shared project Realm**: In projects with `sharedRealm: true`, multiple chats share the same durable Realm. Edits made in one chat are immediately available in others. Concurrent operations are serialized per Realm via mutex locks.
-- **Disposable test**: When no folder is bound, `run_command` creates a disposable snapshot, runs once, and discards all changes.
+- **Legacy disposable fallback**: If a configured fallback workspace is available without an admitted binding, `run_command` may use a disposable copy. With neither a binding nor a fallback it refuses execution; ask the user to use Work in folder.
 
-Pass an executable and argument array. No shell is implicit. Use an explicit shell (`/bin/sh`, `/bin/zsh`) only when shell syntax (pipes, redirects) is needed. Specify `timeout_seconds` (1 to 300) for long builds or tests.
+Pass an executable and argument array. No shell is implicit. Use an explicit shell (`/bin/sh`, `/bin/zsh`) only when shell syntax (pipes, redirects) is needed. Use offered timeout controls for long builds or tests; they never guarantee the helper can complete that workload.
 
 ## Review and apply changes (Realm mode)
 
@@ -37,7 +37,7 @@ Pass an executable and argument array. No shell is implicit. Use an explicit she
 
 Network is denied by macOS Seatbelt. Commands receive a minimal PATH, HOME and TMPDIR, without app/provider keys. Common credential paths (`.env`, `.ssh`, `.aws`) are excluded from initial Realm copies; inspect the project for other sensitive files. Protected paths cannot be promoted.
 
-Execution wall limits are configurable via `timeout_seconds` up to 300 seconds (5 minutes; defaults to 30s). Combined output is captured up to 256 KiB. In Realm mode, copies are bounded to 512 MiB and 50,000 entries; in direct mode, builds and Git worktrees run without copy limits. Regular files and directories are supported; symlinks, special files and file/directory type replacement are refused in Realm mode.
+Direct/disposable execution offers `timeout_seconds` up to 300 seconds (default 30s) and 256 KiB combined output. Realm execution has separate helper and parent-operation limits; these flags do not establish the helper's effective deadline/output or hard resource quotas. Follow actual receipts and disclose earlier termination. In Realm mode, copies are bounded to 512 MiB and 50,000 entries; in direct mode, builds and Git worktrees run without copy limits. Regular files and directories are supported; symlinks, special files and file/directory type replacement are refused in Realm mode.
 
 Report the command, exit code, relevant output and whether changes remain in a copy or reached the original project. An available tool or valid receipt does not establish semantic correctness of generated code.
 

@@ -8,13 +8,14 @@ Vakyartha uses the separate [`vak-sandbox`](https://github.com/nranjan2code/sand
 
 Vakyartha reuses the same sandbox boundary for distinct product lifetimes:
 
-- **Disposable commands and skill rehearsals:** bounded execution in a temporary copy; changes are discarded.
+- **Folder commands:** an admitted direct binding writes in place; a copy/review binding uses its retained Realm, shared only when explicitly configured.
+- **Disposable fallback commands and skill rehearsals:** bounded execution in a temporary copy; changes are discarded. Legacy configured-workspace fallback is separate from an admitted folder chat.
 - **Retained Realms:** helper-owned project copies for repeated commands, review, promotion, recovery and rollback. A Realm persists files; it is not a permanent running daemon.
 - **Executable apps:** app-owned published source, JSON domain state and multiple surface projections persist in host records. Each action or named refresh function runs in a fresh disposable workspace through `vaksb run`. Execution capacity is bounded; no warm process pool or unbounded filesystem database persistence is claimed. App real-data calls retain existing integration authority. See [app runtime contract](../sandboxed-apps/RUNTIME-CONTRACT.md) and [operations](../sandboxed-apps/OPERATIONS-AND-LIFECYCLE.md).
 
 ## Workspace lifetimes
 
-- `run_command` runs once in a bounded temporary project copy and removes it after the call.
+- `run_command` follows the current admitted binding: direct writes change original files; copy/review mode reuses the chat/project Realm. With neither an admitted folder nor a configured fallback workspace it refuses execution. The legacy configured-workspace fallback runs in a disposable project copy. See [folder modes](FOLDER-WORKSPACES.md).
 - `create_realm` copies the configured project into a retained Realm. `run_in_realm` executes repeatedly in the same copy; files survive calls and app restarts. `list_realms` and `realm_status` inspect saved work. No command resumes automatically after interruption.
 - `snapshot_realm` records a durable review manifest, with a fingerprint and paged changed paths. It is a review snapshot, not a restorable filesystem checkpoint. `read_realm_file` pages candidate or original file contents and marks lossy text.
 - `promote_realm` takes the current fingerprint and every reviewed path in order. It rechecks the candidate and original versions, stages immutable candidates/backups outside the jailed workspace, journals the operation and applies files with atomic replacement. The committed receipt names the affected paths and transaction ID.
@@ -39,7 +40,7 @@ Skills → sandbox links back to setup. Skills edits remain explicit reviewed up
 
 Commands deny network and receive minimal PATH/HOME/TMPDIR, without provider/app keys. Common credential paths, `.env*`, `.npmrc`, `.git`, `.vak`, credential-named files and PEM/key files are excluded from initial copies. This is a filename exclusion rule, not a content secret scanner. Regular files/directories are supported; symlinks, special files and file/directory type replacement are refused for Realm work.
 
-Per command: 30 seconds and 32 KiB combined output. Per copy: 512 MiB, 50,000 entries and an 8 MiB manifest. At most 32 Realms are retained; promotion supports at most 200 changed paths, reviewed 20 per page. File reads return at most 16 KiB per page. CPU, memory, process-count and disk-growth quotas are not enforced; receipts/backups remain until separately managed. Linux isolation is unsupported.
+The direct/disposable command adapter defaults to 30 seconds, accepts up to 300 seconds and bounds combined output to 256 KiB; it forwards helper limits explicitly. The Realm adapter separately bounds its JSON response to 256 KiB and applies a parent-operation timeout, but does not forward those command-limit flags to Realm execution. Effective helper limits therefore need path-specific verification; do not promise every Realm run reaches the advertised 300 seconds/256 KiB. The former blanket 30-second/32-KiB statement describes the earlier snapshot, not every current mode. Per copy: 512 MiB, 50,000 entries and an 8 MiB manifest. At most 32 Realms are retained; promotion supports at most 200 changed paths, reviewed 20 per page. File reads return at most 16 KiB per page. CPU, memory, process-count and disk-growth quotas are not enforced; receipts/backups remain until separately managed. Linux isolation is unsupported.
 
 Promotion is recoverable across files, not a single filesystem-wide atomic commit. External readers can observe intermediate files. External editors do not honor the helper's locks: do not edit the same files during promotion. Versions are rechecked before each apply; later edits cause rollback/recovery refusal rather than silent overwrite. A successful command or receipt is evidence of execution, not semantic correctness of its code or output.
 

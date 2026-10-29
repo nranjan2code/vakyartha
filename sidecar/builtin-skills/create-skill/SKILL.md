@@ -64,7 +64,7 @@ Place supporting files beside `SKILL.md` under standard subdirectories:
 
 - **Surface design**: The `surface-design` skill is required and always on. Visual and spoken composition must adhere to its layout and chart rules.
 - **Data & interaction**: When surfaces require data bindings, maps or forms, chain to enabled `interactive-ui`.
-- **Single canonical projection**: Design one surface that serves both the screen and voice synthesis. Key findings, metrics, dates and caveats must appear in visible prose so speech carries full meaning.
+- **Single canonical projection**: Project the same canonical data to screen and speech; preserve separate surfaces for independent requested outputs. Key findings, metrics, dates and caveats must appear in visible prose so speech carries full meaning.
 
 ## Safety & Security Invariants
 

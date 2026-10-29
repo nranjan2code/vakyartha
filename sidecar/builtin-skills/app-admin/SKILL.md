@@ -4,14 +4,14 @@ description: Administrate, monitor, and audit sandboxed applications, worker poo
 license: MIT
 metadata:
   author: Vakyartha Team
-  version: "1.2"
+  version: "1.3"
 ---
 
 # Inspect app execution
 
-`GET /api/admin/fleet` reports bounded invocation capacity (default three), active executions and logical hibernated tenants. Standby processes are not used. No RSS/CPU quota or latency guarantee is established by the manifest. Security depends on each successful compatible vaksb launch, not a static green indicator.
+The Admin console reports bounded invocation capacity (default three), active executions and logical hibernated tenants. Standby processes are not used. No RSS/CPU quota or latency guarantee is established by the manifest. Security depends on each successful compatible vaksb launch, not a static green indicator.
 
-`GET /api/apps` lists published app status. App package/state is written by the host into private app-state records; drafts are separate. Processes receive disposable copies, minimal environment and no direct network authority. Existing integration permissions control declared tool calls.
+Apps lists published app status. These are UI capabilities; private routes are not model tools. Use offered tools only, otherwise provide a precise UI handoff. App package/state is written by the host into private app-state records; drafts are separate. Processes receive disposable copies, minimal environment and no direct network authority. Existing integration permissions control declared tool calls.
 
 Pause schedules before maintenance. Runtime suspend cancels current invocations; restart drains/cancels them and clears logical leases. Uncertain external effects require explicit review and are never automatically replayed. Deletion validates a registered identity and serializes behind running app work.
 

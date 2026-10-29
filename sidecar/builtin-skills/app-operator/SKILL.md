@@ -1,19 +1,19 @@
 ---
 name: app-operator
-description: Operate running hosted applications, invoke background triggers, poll external data, and dispatch interactive surface actions.
+description: Help operate an existing published executable local app using its Apps controls, receipts and explicitly enabled triggers; no private-route or background-tool authority is implied.
 license: MIT
 metadata:
   author: Vakyartha Team
-  version: "1.2"
+  version: "1.3"
 ---
 
 # Operate local apps
 
 Apps run direct code without an LLM per interaction. Open Apps to use published surfaces. A manual trigger calls its declared exported function, awaits computation and commits canonical state/projections only on success. Closing a view does not delete persistent data.
 
-Inspect `GET /api/apps/:id` for current revision, surfaces and run receipt. Action submissions use `POST /api/apps/:id/action` with controlId, value, action and the current revision. Stale revisions fail. Retain local edits when background updates conflict. Multiple app surfaces share the same canonical app state.
+Use the published app's controls and its Apps details for revision, surfaces and run receipts. Private app HTTP/IPC routes are not model tools. If no offered tool performs an operation, hand off to the matching Apps control; do not invent a route-calling capability. Stale revisions fail. Retain local edits when background updates conflict. Multiple app surfaces share the same canonical app state.
 
-Manual refresh uses `POST /api/apps/:id/triggers/:triggerId/run`. Scheduling is explicitly enabled/paused in Apps. The app and computer must be running/awake; missed intervals are skipped, never burst-replayed. A failure is evidence to inspect, not a reason to add hidden model refresh calls.
+Manual refresh uses the declared trigger control in Apps. Scheduling is explicitly enabled/paused in Apps. The app and computer must be running/awake; missed intervals are skipped, never burst-replayed. A failure is evidence to inspect, not a reason to add hidden model refresh calls.
 
 Real-data tools must be declared by the package and permitted through existing integrations. Credentials never go into app source or state. Ask/off tools do not run unattended. Inspect uncertain effects before acknowledging a run by its exact identity; acknowledgement never replays it.
 

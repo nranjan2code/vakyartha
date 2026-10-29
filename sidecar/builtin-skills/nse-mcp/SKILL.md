@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires enabled 'nse' (Bhavcopy) or 'nse-cmmkt' (Market Live) vendor integrations.
 metadata:
   author: nranjan2code
-  version: "1.1"
+  version: "1.2"
 allowed-tools: read_skill_file use_skill vak_render vak_update vak_submit
 ---
 
@@ -65,7 +65,7 @@ The National Stock Exchange of India operates two official hosted MCP endpoints 
 - **Date Formatting**: Follow standard ISO format (`YYYY-MM-DD`) or exchange format (`DD-MM-YYYY`) as documented in `references/nse-tools-guide.md`.
 - **Trading Calendar Awareness**:
   - NSE trades Monday through Friday, 09:15 to 15:30 IST (UTC+05:30).
-  - Indian national holidays and exchange settlement holidays have no trading sessions. If a query returns no data for a weekend or holiday, use the immediately preceding trading session's final close.
+  - Verify the exchange calendar and requested session. Empty data does not establish a holiday. Use a preceding session only when that basis matches the request, and disclose the substitution.
 
 ---
 
@@ -86,25 +86,10 @@ The National Stock Exchange of India operates two official hosted MCP endpoints 
 
 ---
 
-## Composing Visual & Spoken Projections
+## Compose the requested result
 
-For an instrument review, follow the shared `surface-design` guidance. These are optional patterns; choose only what the question and available evidence need. There is no required tier or column count:
-
-1. **Natural-Language Headline & Metric Strip**:
-   - Provide a concise headline stating the symbol, evaluation window, recorded move, and data source (NSE Bhavcopy or NSE Market Live).
-   - Build a 2-column metric strip (`grid` with `columns: 2, minItemWidth: "xs"`) showing:
-     - **Latest Price / Close**: Value formatted with currency (`₹` or `INR`).
-     - **Window Price Return**: Percentage with semantic tone (`positive` for gain, `critical` for drop, `neutral` for flat).
-2. **Clamped Time-Series Line Visual**:
-   - For multi-session history, plot dated closing prices using a `line` chart.
-   - Always clamp single charts to `maxWidth: "lg"` or pair them with volume/breadth in a 2-column grid (`columns: 2`). Never let a single chart stretch across 100% of a wide screen.
-3. **Granular Historical Table**:
-   - Map `{/history}` records containing date, open, high, low, close, and volume.
-   - Disable table totals (`totals: false`) on price and return columns.
-
----
+Follow required surface-design and enabled interactive-ui. Map related views from the same verified history, retain exact records, use totals:false for price/return columns and show the session, units, freshness and return basis. Keep independent requested outputs separate. A quote cannot supply a candle or a multi-session return. Follow the currently offered integration schemas over reference examples when they differ.
 
 ## Regulatory & Usage Disclaimer
 
 All data provided through the official NSE MCP servers is intended exclusively for educational, informational, and research purposes. It does not constitute investment advice, a financial recommendation, or an order execution facility. Always remind the user that historical market performance does not guarantee future results.
-

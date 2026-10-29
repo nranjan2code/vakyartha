@@ -13,7 +13,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createHost, json, readJson } from "@vak/host";
 import { attachmentsRoute } from "./attachments.ts";
 import { toolName, type Integrations } from "@vak/mcp/client";
-import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, type AgentTool, providersFromEnv, pinnedFetch } from "@vak/providers";
+import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, type Provider, type AgentTool, providersFromEnv, pinnedFetch } from "@vak/providers";
 import { Channels, CHANNELS } from "./channels.ts";
 import { Marketplaces } from "./marketplaces.ts";
 import { Skills } from "./skills.ts";
@@ -235,7 +235,7 @@ ${skills.index()}`;
   });
   const integrationRevisions = new Map<string, number>();
   /** Model providers for turns and voice answers alike: task spending checks and FinOps see every request. */
-  function modelProviders(): ProviderEntry[] {
+  function modelProviders(wrapSkills = true): ProviderEntry[] {
     // Bind admission checks and provider construction to the same configuration.
     const env = { ...process.env };
     const entries = providersFromEnv(env).map((entry) => ({ ...entry, make: (options: Parameters<typeof entry.make>[0]) => {
@@ -246,10 +246,11 @@ ${skills.index()}`;
     // Refused requests never reach either the provider or its usage observer.
     return finops.providers(entries).map((entry) => ({ ...entry, make: (options) => {
       const provider = entry.make(options);
-      return skills.provider({ ...provider, async *stream(request) {
+      const guarded: Provider = { ...provider, async *stream(request) {
         await tasks?.beforeModelRequest(entry.id, request.model);
         yield* provider.stream(tasks?.inTask() ? { ...request, maxTokens: Math.min(request.maxTokens ?? 4096, 4096) } : request);
-      } });
+      } };
+      return wrapSkills ? skills.provider(guarded) : guarded;
     } }));
   }
   const host = createHost({
@@ -432,9 +433,12 @@ ${skills.index()}`;
       }
       else if (m[1] === "eval" && req.method === "POST") {
         const b = await readJson(req);
-        const provs = modelProviders();
-        const activeProv = provs[0]?.make({});
-        json(res, 200, await evaluateSkillPrompts(skills, String(b.name ?? ""), Array.isArray(b.prompts) ? b.prompts : [], activeProv));
+        const entry = modelProviders(false).find(provider => provider.id === b.provider && provider.available);
+        if (!entry || typeof b.model !== "string" || !b.model.trim()) throw new Error("Choose an available provider and model for selection evaluation");
+        await finops.chat(async () => {
+          finops.session("skill-selection-" + randomUUID());
+          json(res, 200, await evaluateSkillPrompts(skills, String(b.name ?? ""), b.cases as import("../shared/skills.ts").SkillEvalCase[], { provider: entry.make({}), model: b.model as string }));
+        });
       }
       else if (m[2] && m[3] === "package" && req.method === "GET") json(res, 200, skills.getPackage(m[2]));
       else if (m[2] && m[3] === "package" && req.method === "PUT") {

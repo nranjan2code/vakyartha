@@ -88,7 +88,7 @@ For development, provider keys can also go in a local `.env` (see [`.env.example
 
 ### Build a skill, report or dashboard
 
-Start with the [reusable authoring guide](docs/SKILL-AUTHORING.md): existing daily workflows, how skills select and chain, canonical data/bindings, responsive layout, supported chart types, visual/spoken projections and verification. [Skills](docs/SKILLS.md) explains reviewed catalog packages, supporting text files, installing/editing and built-in updates. A report's daily/weekly/monthly window does not create automatic recurring delivery. The [audit](docs/SKILL-AUDIT.md) records implementation evidence and remaining reliability limits.
+Start with the [reusable authoring guide](docs/SKILL-AUTHORING.md): existing daily workflows, how skills select and chain, canonical data/bindings, responsive layout, supported chart types, visual/spoken projections and verification. [Skills](docs/SKILLS.md) explains reviewed catalog packages, supporting text files, installing/editing and built-in updates. A report's daily/weekly/monthly window does not create automatic recurring delivery. The [current prompt audit](docs/PROMPT-AUDIT.md) records instruction conflicts and open assembly/evaluation repairs; the [earlier skill audit](docs/SKILL-AUDIT.md) retains its dated evidence and reliability limits.
 
 ### How it fits together
 

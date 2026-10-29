@@ -1,6 +1,6 @@
 # Sandbox policy
 
-Commands use macOS Seatbelt with network denied and writes restricted to an isolated project copy. One-shot `run_command` copies are discarded; persistent Realms retain writes across calls. Control records, review manifests, audit logs, promotion journals, immutable candidates and backups stay outside the jailed workspace.
+Commands use macOS Seatbelt with network denied. An admitted direct binding writes in the original folder immediately; copy_review uses the retained chat/project Realm and requires reviewed promotion. Only legacy configured-workspace fallback and explicit rehearsals use disposable copies. With no admitted folder or fallback, command execution is refused. Control records, review manifests, audit logs, promotion journals, immutable candidates and backups stay outside the jailed workspace.
 
 The app's configured project is rechecked before Realm access. Changing that setting revokes access to older project copies until that project is selected again. Disabling sandbox execution blocks creation, execution, promotion, rollback, recovery and destruction; inspection remains available. The integration and per-tool policies still govern agent access. Mutating tools ask by default, and denial never authorizes another route.
 
@@ -8,4 +8,4 @@ Promotion checks the full reviewed candidate fingerprint, exact path list and or
 
 Snapshot means a durable review manifest, not a restore point for the workspace. Only the latest committed promotion for a Realm can be rolled back, and only while the affected project paths still match that receipt. Destroy removes the copy, not promotion history or backups.
 
-Bounds: 30 seconds and 32 KiB command output; 512 MiB, 50,000 entries and 8 MiB manifest per copy; 32 retained Realms; 200 changed paths per promotion. No memory, CPU, process-count or disk-growth quotas. Regular files/directories only; symlinks, special files and file/directory replacement are refused.
+The direct/disposable adapter defaults to 30 seconds, accepts up to 300 seconds and captures at most 256 KiB. Realm execution separately bounds its JSON response and parent wait, without forwarding those command-limit flags to the helper. Effective helper limits must be checked from actual execution; do not promise every Realm run reaches 300 seconds/256 KiB. Copy bounds: 512 MiB, 50,000 entries and 8 MiB manifest per copy; 32 retained Realms; 200 changed paths per promotion. No memory, CPU, process-count or disk-growth quotas. Regular files/directories only; symlinks, special files and file/directory replacement are refused.

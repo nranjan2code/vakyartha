@@ -1,6 +1,6 @@
 ---
 name: app-authoring
-description: Author, scaffold, create, and compose persistent sandboxed applications with dedicated interactive surfaces and local server logic.
+description: Create a persistent executable local app package with backend handlers and reviewed publication. Do not select for a one-off conversational form, table, chart or dashboard without requested executable behavior.
 license: MIT
 metadata:
   author: Vakyartha Team
@@ -13,7 +13,7 @@ Before authoring, load `references/package-template.md` through `read_skill_file
 
 Use enabled `app-maintainer` for updates, `app-debugger` plus `debug-error` for failures, and domain skills when relevant. These are selected procedures, not automatic execution or permission grants.
 
-Use `read_app_package` to inspect an existing package and its fingerprints. First draft saves of a published app supply `base`; later draft saves supply `previous`. Use `save_app_draft` to stage a complete application for review in Studio. A surface is presentation, not executable behavior. Include real code for every promised action and refresh. Use enabled `interactive-ui` for bindings and actions; the required `surface-design` guidance applies. Preserve independent surfaces and project spoken content from the same canonical values.
+When offered, use `read_app_package` to inspect an existing package and its fingerprints. If app authoring tools are absent, hand off to Studio; private routes are not a model capability. First draft saves of a published app supply `base`; later draft saves supply `previous`. Use `save_app_draft` to stage a complete application for review in Studio. A surface is presentation, not executable behavior. Include real code for every promised action and refresh. Use enabled `interactive-ui` for bindings and actions; the required `surface-design` guidance applies. Preserve independent surfaces and project spoken content from the same canonical values.
 
 The manifest names a Node 24 backend and an optional surface JSON file (one snapshot or an array). Include every relative source file. Python, shell daemons, file watchers, direct network grants and arbitrary durable filesystem databases are unsupported. Do not install dependencies.
 

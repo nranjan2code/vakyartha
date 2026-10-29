@@ -74,7 +74,7 @@ In `direct` mode, the `.git` repository and worktrees are intact and fully funct
 
 ## 3. Long Builds & Test Runs
 
-Always specify `timeout_seconds` when running build tools or test suites to prevent premature termination at 30 seconds:
+For direct/disposable commands, specify the offered timeout_seconds when a build needs more than the default 30 seconds (up to 300). Realm helper limits can terminate sooner than the parent wait; inspect actual receipts and split work when necessary. These examples do not establish an execution-duration guarantee:
 
 ### Node.js / Vite / TypeScript build
 ```json

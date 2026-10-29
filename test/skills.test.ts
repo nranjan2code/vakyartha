@@ -154,7 +154,7 @@ test("required surface-design guidance is injected for authoring requests", asyn
   const skills = new Skills(dir());
   const provider: Provider = { id: "scripted", async *stream(req) {
     assert.match(req.system ?? "", /Required surface-design guidance/);
-    assert.match(req.system ?? "", /Before finalizing, check that a chart/);
+    assert.match(req.system ?? "", /compare chart categories\/series/);
     yield { type: "text", delta: "ok" };
   } };
   for await (const _event of skills.provider(provider).stream({ model: "test", messages: [], tools: [{ name: "vak_render", description: "", inputSchema: { type: "object" } }] })) { /* consume */ }
@@ -175,7 +175,8 @@ test("skill selection precedes answer tools inside the existing counted loop", a
       yield { type: "done", stop: "end", usage: { input: 7, output: 3 } }; return;
     }
     assert.ok(req.tools?.some(t => t.name === "vak_render"));
-    assert.ok(req.messages.some(m => m.role === "tool" && m.content.includes("Skill interactive-ui instructions:")));
+    assert.ok(req.system?.includes("Skill interactive-ui instructions:"));
+    assert.ok(!req.messages.some(m => m.role === "tool" && m.content.includes("Skill interactive-ui instructions:")));
     yield { type: "text", delta: "Ready" }; yield { type: "done", stop: "end" };
   } };
   const messages = [{ role: "user" as const, content: "Build an interactive chart" }];
@@ -478,7 +479,7 @@ test("supports extended text extensions and template files", async () => {
 
   // use_skill accepts singular name
   const singular = String(await use.execute({ name: "multi-ext-skill" }, {}));
-  assert.match(singular, /Skill multi-ext-skill instructions:/);
+  assert.match(singular, /multi-ext-skill is already loaded for this run/);
 
   // read_skill_file handles leading slash, backslashes, basename fallback, and string offset
   const readLeadingSlash = String(await read.execute({ skill: "multi-ext-skill", path: "/references/schema.sql" }, {}));

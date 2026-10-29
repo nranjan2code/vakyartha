@@ -5,7 +5,7 @@ license: MIT
 compatibility: Works with general ledger exports, financial spreadsheets, and canvas projection.
 metadata:
   author: nranjan2code
-  version: "1.3"
+  version: "1.4"
 allowed-tools: vak_render vak_update vak_submit use_skill
 ---
 
@@ -42,31 +42,6 @@ Rigorous financial analysis methodology for constructing income statements, expe
   - For **Revenue**: Positive variance is favorable; negative is unfavorable.
   - For **Expenses**: Negative variance is favorable (under budget); positive is unfavorable (over budget).
   - Clearly label variance as `Favorable` or `Unfavorable` alongside numeric deltas.
-
-## Adaptive Financial Canvas Layout
-
-Never let financial charts stretch across 100% width on wide desktop monitors. Structure the canvas into three coordinated tiers:
-
-1. **Executive Financial KPI Strip**:
-   - 4-metric fluid `grid` (`props: { columns: 4, minItemWidth: "sm" }`):
-     - Total Revenue (vs Budget / Prior Period).
-     - Gross Margin % (and Gross Profit).
-     - Total Operating Expenses (OPEX).
-     - Ending Cash Balance (and Net Burn Rate).
-2. **Paired Analytical Tier (No 100% Chart Stretch)**:
-   - Place two complementary visualizations in a 2-column `grid` (`props: { columns: 2, minItemWidth: "sm", gap: "md" }`):
-     - Budget vs Actual Variance: `bar` or `stacked` chart comparing budgeted vs actual spend by department (`maxWidth: "lg"`).
-     - Revenue & Cash Flow Trend: `line` or `area` chart tracking revenue, burn rate and cash runway over time (`maxWidth: "lg"`).
-   - If only one chart is needed, clamp it with `maxWidth: "md"` (720px) or `"lg"` inside a clean `section`.
-3. **General Ledger / Category Detail Table**:
-   - Granular detail table below the analytics in a clean `section` (`props: { title: "Departmental Variance & Spend Breakdown" }`).
-   - Table uses `maxWidth: "full"` with searchable and sortable columns: `Department`, `Category`, `Budget ($)`, `Actual ($)`, `Variance ($)`, `% Variance`.
-
-## Style & Theming Guide
-
-- **Semantic Tones**: Use `tone: "success"` for favorable financial variances; `tone: "danger"` for unfavorable cost overruns or cash runway alerts; `tone: "warning"` for approaching budget limits. Never use raw hex color codes or inline CSS.
-- **Numbers**: Store raw amounts and rates as pure numbers in `data`. Put currency units (`$k`, `€M`) in labels and column headers.
-- **Dual Projection**: Lead with a concise 1–2 sentence takeaway stating net revenue against budget, ending cash balance and the reporting timeframe. Spoken gist mode reads this first sentence in isolation.
 
 ## Compliance & Export Boundaries
 

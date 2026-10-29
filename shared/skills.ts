@@ -83,15 +83,17 @@ export interface SkillSuggestResponse {
   options?: string[];
 }
 
+export interface SkillEvalCase { prompt: string; expected: boolean }
 export interface SkillEvalRequest {
   name: string;
-  prompts: string[];
-  provider?: string;
-  model?: string;
+  cases: SkillEvalCase[];
+  provider: string;
+  model: string;
 }
 
 export interface SkillEvalResult {
   prompt: string;
+  expected: boolean;
   passed: boolean;
   selectedSkills: string[];
   durationMs: number;

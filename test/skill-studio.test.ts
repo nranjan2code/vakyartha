@@ -115,7 +115,7 @@ Direct body.
   }
 });
 
-test("Skill Studio: YOLO package generator synthesizes a valid Agent Skills package", async () => {
+test("Skill Studio: starter preserves requested scope without fabricated analytics or fixed layout", async () => {
   const generated = await generateSkillPackage(
     { prompt: "Customer Churn and Retention Risk Analysis" },
     ["run_command", "brave_search", "filesystem"]
@@ -124,11 +124,12 @@ test("Skill Studio: YOLO package generator synthesizes a valid Agent Skills pack
   assert.ok(generated.name.includes("customer-churn"));
   assert.ok(generated.description.length > 20);
   assert.ok(generated.description.length <= 1024);
-  assert.ok(generated.body.includes("3-Tier liquid layout architecture"));
-  assert.ok(generated.allowedTools?.includes("run_command"));
+  assert.ok(generated.body.includes("Customer Churn and Retention Risk Analysis"));
+  assert.doesNotMatch(generated.body, /Tier [123]|columns: 4/);
+  assert.ok(!generated.allowedTools?.includes("run_command"), "unrelated execution is not suggested");
   assert.ok(generated.files.some(f => f.path.startsWith("references/")));
-  assert.ok(generated.files.some(f => f.path.startsWith("schemas/")));
-  assert.ok(generated.files.some(f => f.path.startsWith("scripts/")));
+  assert.ok(!generated.files.some(f => f.path.startsWith("schemas/")), "no invented domain schema");
+  assert.ok(!generated.files.some(f => f.path.startsWith("scripts/")), "no unrelated canned script");
   assert.ok(generated.files.some(f => f.path.startsWith("tests/")));
 });
 
@@ -138,7 +139,7 @@ test("Skill Studio: smart element suggestions advise triggers, charts, and bindi
     name: "cloud-spend-monitor",
     description: "monitor cloud",
   }, []);
-  assert.ok(trigger.suggestion.includes("cloud spend monitor"));
+  assert.equal(trigger.suggestion, "monitor cloud");
   assert.ok(trigger.rationale.length > 10);
 
   const chart = suggestSkillElement({
@@ -207,33 +208,29 @@ test("Skill Studio: saved drafts run only through the real sandbox and cannot re
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("Skill Studio: evaluation harness checks prompt matching", async () => {
+test("Skill Studio: evaluation uses the real selection contract and positive/negative expectations", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "vak-studio-eval-"));
   try {
     const skills = new Skills(dir);
-    const text = `---
-name: fleet-telemetry
-description: Monitor vehicle fleet telemetry, fuel efficiency, and route anomalies.
----
-Instructions
-`;
-    skills.save(text);
-
-    const results = await evaluateSkillPrompts(
-      skills,
-      "fleet-telemetry",
-      [
-        "Check vehicle fleet telemetry anomalies and fuel use",
-        "How is the weather in Miami today?"
-      ]
-    );
-
-    assert.equal(results.length, 2);
-    assert.equal(results[0]?.passed, true);
-    assert.equal(results[1]?.passed, false);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+    skills.save("---\nname: fleet-telemetry\ndescription: Monitor vehicle fleet telemetry and route anomalies.\n---\nInstructions");
+    skills.setEnabled("fleet-telemetry", true);
+    const cases = [{ prompt: "Check vehicle fleet telemetry", expected: true }, { prompt: "Say ready", expected: false }];
+    let requests = 0;
+    const provider: import("@vak/providers").Provider = { id: "scripted", capabilities: { constrainedOutput: true }, async *stream(req) {
+      assert.equal(req.model, "chosen-model");
+      assert.match(req.system!, /Select enabled skills/);
+      assert.ok(req.responseSchema?.properties?.names);
+      yield { type: "text", delta: JSON.stringify({ names: requests++ === 0 ? ["fleet-telemetry"] : [] }) };
+      yield { type: "done", stop: "end" };
+    } };
+    await assert.rejects(evaluateSkillPrompts(skills, "fleet-telemetry", cases), /Choose an available provider/);
+    const results = await evaluateSkillPrompts(skills, "fleet-telemetry", cases, { provider, model: "chosen-model" });
+    assert.equal(requests, 2);
+    assert.ok(results.every(result => result.passed));
+    assert.deepEqual(results.map(result => result.expected), [true, false]);
+    skills.setEnabled("fleet-telemetry", false);
+    await assert.rejects(evaluateSkillPrompts(skills, "fleet-telemetry", cases, { provider, model: "chosen-model" }), /Enable the published/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("Skill Studio: tool hints use offered names without inventing sandbox aliases", async () => {
@@ -242,4 +239,18 @@ test("Skill Studio: tool hints use offered names without inventing sandbox alias
   const result = suggestSkillElement({ type: "tools", body: "Run sandbox script" }, [], ["run_command", "unrelated_tool"]);
   assert.equal(result.suggestion, "read_skill_file run_command");
   assert.doesNotMatch(result.suggestion, /sandbox_exec|unrelated_tool/);
+});
+
+test("Studio suggestions preserve explicit scope and use current chart/data contracts", async () => {
+  const email = await generateSkillPackage({ prompt: "Draft a polite thank-you email" });
+  assert.ok(email.body.includes("Draft a polite thank-you email"));
+  assert.doesNotMatch(email.body, /Tier [123]|columns:|156,600|financial and revenue/);
+  const chart = suggestSkillElement({ type: "chart", body: "Plot actual dated OHLC candlestick observations" });
+  assert.equal(chart.suggestion, "candlestick");
+  assert.ok(chart.options!.includes("candlestick"));
+  assert.doesNotMatch(chart.rationale, /unsupported candlestick/);
+  assert.doesNotMatch(suggestSkillElement({ type: "gist" }).suggestion, /156,600|4 active|0 unverified/);
+  const reference = suggestSkillElement({ type: "research", query: "queue aging" });
+  assert.doesNotMatch(reference.suggestion, /15%|30%|Threshold Tones/);
+  assert.match(reference.rationale, /No external sources were read/);
 });

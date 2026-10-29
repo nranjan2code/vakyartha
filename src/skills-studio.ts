@@ -4,6 +4,7 @@ import { CollectionPage, pageControls } from './pagination.ts';
 // Supports multi-tab multitasking, instant background auto-saves, and seamless session restoration.
 
 import { api, ask, el } from "./core.ts";
+import { current } from "./models.ts";
 import { icon } from "./icons.ts";
 import { pill, segmented } from "./ui.ts";
 import { type VakSurfaceElement } from "@vak/web";
@@ -13,6 +14,7 @@ import type {
   SkillDraftResponse,
   SkillDraftSaveResponse,
   SkillEvalResult,
+  SkillEvalCase,
   SkillPackageView,
   SkillSandboxRunResponse,
   SkillView,
@@ -787,9 +789,9 @@ Analyze domain records from verified sources and project structured findings ont
           props: { columns: 4, minItemWidth: "sm" },
           children: ["stat-decisions", "stat-actions", "stat-questions", "stat-blockers"]
         },
-        { id: "stat-decisions", type: "stat", props: { label: "Decisions Ratified", value: 4, tone: "positive", subtext: "unanimous consent" } },
+        { id: "stat-decisions", type: "stat", props: { label: "Decisions Ratified", value: 4, tone: "success", subtext: "unanimous consent" } },
         { id: "stat-actions", type: "stat", props: { label: "Action Items Assigned", value: { records: "{/actions}", field: "id", aggregate: "count" }, tone: "info", subtext: "2 high priority" } },
-        { id: "stat-questions", type: "stat", props: { label: "Open Questions", value: 2, tone: "caution", subtext: "assigned investigation leads" } },
+        { id: "stat-questions", type: "stat", props: { label: "Open Questions", value: 2, tone: "warning", subtext: "assigned investigation leads" } },
         { id: "stat-blockers", type: "stat", props: { label: "Blocked Items", value: 0, tone: "neutral", subtext: "clear path to release" } },
         {
           id: "decisions-section",
@@ -809,7 +811,7 @@ Analyze domain records from verified sources and project structured findings ont
           props: {
             title: "Seatbelt Sandbox Isolation",
             subtitle: "Security & Entitlements Boundary",
-            tone: "positive"
+            tone: "success"
           },
           children: ["decision-1-text"]
         },
@@ -863,7 +865,7 @@ Analyze domain records from verified sources and project structured findings ont
           props: {
             title: "Ephemeral Sandbox Worker Warmup",
             subtitle: "Performance Investigation",
-            tone: "caution"
+            tone: "warning"
           },
           children: ["question-text"]
         },
@@ -917,9 +919,9 @@ Analyze domain records from verified sources and project structured findings ont
           props: { columns: 4, minItemWidth: "sm" },
           children: ["idx-nifty", "idx-sensex", "idx-bank", "idx-vix"]
         },
-        { id: "idx-nifty", type: "stat", props: { label: "NIFTY 50", value: "24,399.40", change: "+0.68%", tone: "positive", subtext: "+164.25 pts" } },
-        { id: "idx-sensex", type: "stat", props: { label: "SENSEX", value: "80,220.72", change: "+0.75%", tone: "positive", subtext: "+600.40 pts" } },
-        { id: "idx-bank", type: "stat", props: { label: "BANK NIFTY", value: "51,280.15", change: "+0.42%", tone: "positive", subtext: "+215.10 pts" } },
+        { id: "idx-nifty", type: "stat", props: { label: "NIFTY 50", value: "24,399.40", change: "+0.68%", tone: "success", subtext: "+164.25 pts" } },
+        { id: "idx-sensex", type: "stat", props: { label: "SENSEX", value: "80,220.72", change: "+0.75%", tone: "success", subtext: "+600.40 pts" } },
+        { id: "idx-bank", type: "stat", props: { label: "BANK NIFTY", value: "51,280.15", change: "+0.42%", tone: "success", subtext: "+215.10 pts" } },
         { id: "idx-vix", type: "stat", props: { label: "INDIA VIX", value: "14.18", change: "-3.20%", tone: "neutral", subtext: "Volatility subsiding" } },
         {
           id: "analytics-split",
@@ -1000,8 +1002,8 @@ Analyze domain records from verified sources and project structured findings ont
           children: ["t-total", "t-done", "t-prog", "t-review"]
         },
         { id: "t-total", type: "stat", props: { label: "Total Tasks", value: 5, tone: "info" } },
-        { id: "t-done", type: "stat", props: { label: "Completed", value: 1, tone: "positive" } },
-        { id: "t-prog", type: "stat", props: { label: "In Progress", value: 2, tone: "caution" } },
+        { id: "t-done", type: "stat", props: { label: "Completed", value: 1, tone: "success" } },
+        { id: "t-prog", type: "stat", props: { label: "In Progress", value: 2, tone: "warning" } },
         { id: "t-review", type: "stat", props: { label: "Under Review", value: 1, tone: "info" } },
         {
           id: "analytics-split",
@@ -1017,7 +1019,7 @@ Analyze domain records from verified sources and project structured findings ont
         {
           id: "workflow-card",
           type: "card",
-          props: { title: "Milestone Velocity", subtitle: "Sprint 4", tone: "positive" },
+          props: { title: "Milestone Velocity", subtitle: "Sprint 4", tone: "success" },
           children: ["workflow-text"]
         },
         {
@@ -1067,9 +1069,9 @@ Analyze domain records from verified sources and project structured findings ont
           children: ["a-files", "a-findings", "a-blockers", "a-gate"]
         },
         { id: "a-files", type: "stat", props: { label: "Files Audited", value: 14, tone: "info" } },
-        { id: "a-findings", type: "stat", props: { label: "Findings", value: 3, tone: "caution" } },
-        { id: "a-blockers", type: "stat", props: { label: "Critical Blockers", value: 0, tone: "positive" } },
-        { id: "a-gate", type: "stat", props: { label: "Quality Gate", value: "PASSED", tone: "positive" } },
+        { id: "a-findings", type: "stat", props: { label: "Findings", value: 3, tone: "warning" } },
+        { id: "a-blockers", type: "stat", props: { label: "Critical Blockers", value: 0, tone: "success" } },
+        { id: "a-gate", type: "stat", props: { label: "Quality Gate", value: "PASSED", tone: "success" } },
         {
           id: "findings-table",
           type: "table",
@@ -1091,14 +1093,14 @@ Analyze domain records from verified sources and project structured findings ont
         {
           id: "b-sandbox",
           type: "card",
-          props: { title: "Seatbelt Sandbox Isolation", subtitle: "Process Boundaries", tone: "positive" },
+          props: { title: "Seatbelt Sandbox Isolation", subtitle: "Process Boundaries", tone: "success" },
           children: ["b-sandbox-text"]
         },
         { id: "b-sandbox-text", type: "text", props: { value: "All script rehearsals strictly constrained to disposable sandbox processes with zero ambient host access." } },
         {
           id: "b-types",
           type: "card",
-          props: { title: "Strict TypeScript Strictness", subtitle: "Type Safety", tone: "positive" },
+          props: { title: "Strict TypeScript Strictness", subtitle: "Type Safety", tone: "success" },
           children: ["b-types-text"]
         },
         { id: "b-types-text", type: "text", props: { value: "Full strict mode enabled with zero implicit any or unchecked index accesses." } }
@@ -1140,9 +1142,9 @@ Analyze domain records from verified sources and project structured findings ont
         props: { columns: 3, minItemWidth: "sm" },
         children: ["m1", "m2", "m3"]
       },
-      { id: "m1", type: "stat", props: { label: "Execution Status", value: "Ready", tone: "positive" } },
+      { id: "m1", type: "stat", props: { label: "Execution Status", value: "Ready", tone: "success" } },
       { id: "m2", type: "stat", props: { label: "Declared Tools", value: (skill.allowedTools ?? "read_skill_file").split(/\s+/).length, tone: "info" } },
-      { id: "m3", type: "stat", props: { label: "Output Mode", value: "3-Tier Canvas", tone: "positive" } }
+      { id: "m3", type: "stat", props: { label: "Output Mode", value: "Content-driven Surface", tone: "success" } }
     ];
 
     if (headings.length > 0) {
@@ -1156,7 +1158,7 @@ Analyze domain records from verified sources and project structured findings ont
         nodes.push({
           id: `heading-card-${i}`,
           type: "card",
-          props: { title: h, subtitle: "Operational Procedure", tone: i === 0 ? "positive" : "info" },
+          props: { title: h, subtitle: "Operational Procedure", tone: i === 0 ? "success" : "info" },
           children: [`heading-text-${i}`]
         });
         nodes.push({
@@ -1207,7 +1209,7 @@ Analyze domain records from verified sources and project structured findings ont
       y: 160,
       width: 220,
       height: 80,
-      inspectorText: `Semantic trigger prompt evaluated against description: "${skill.description}". Routes to this skill when cosine similarity threshold is satisfied on active local model.`
+      inspectorText: `Semantic trigger prompt evaluated against description: "${skill.description}". This illustrative graph is not a selector trace or a similarity router.`
     });
 
     // 2. Gateway Node
@@ -1217,7 +1219,7 @@ Analyze domain records from verified sources and project structured findings ont
       id: "gate",
       title: `use_skill: ${skill.name}`,
       glyph: "spark",
-      detail: `Model Selection Gate · Local 4B / Ollama`,
+      detail: `Selection on the chosen chat model`,
       badge: evalBadge,
       x: 300,
       y: 160,
@@ -1431,15 +1433,15 @@ Analyze domain records from verified sources and project structured findings ont
     // 6. Tier 5: Output Projections
     nodes.push({
       id: "surface",
-      title: "3-Tier Canvas Surface",
+      title: "Content-driven Surface",
       glyph: "canvas",
-      detail: "Executive, Analytics & Table",
+      detail: "Task, content and container",
       badge: "Visual",
       x: 1340,
       y: 90,
       width: 220,
       height: 80,
-      inspectorText: "3-Tier liquid layout reflows across 320px mobile, 720px form, and 960px desktop containers. Preserves responsive data visualization."
+      inspectorText: "Illustrative composition follows actual content and container width. Verify the real output at wide and narrow sizes; no fixed tiers are required."
     });
     edges.push({ from: "store", to: "surface" });
 
@@ -1482,13 +1484,13 @@ Analyze domain records from verified sources and project structured findings ont
       id: "worker",
       title: "Sandboxed Worker",
       glyph: "cpu",
-      detail: `Node 24 · ${app.manifest.runtime.memoryLimitMb}MB Limit`,
+      detail: "Supervised Node invocation",
       badge: "Isolated",
       x: 300,
       y: 140,
       width: 220,
       height: 80,
-      inspectorText: `Backend entrypoint: ${app.manifest.entrypoints.backend || "server.ts"}. Maximum execution CPU time: ${app.manifest.runtime.cpuTimeLimitSec}s.`
+      inspectorText: `Backend entrypoint: ${app.manifest.entrypoints.backend || "server.ts"}. Manifest CPU/memory settings are not enforced quotas; inspect actual invocation limits and receipts.`
     });
     edges.push({ from: "trigger", to: "worker" });
 
@@ -1502,21 +1504,21 @@ Analyze domain records from verified sources and project structured findings ont
       y: 70,
       width: 220,
       height: 80,
-      inspectorText: `Airgap mode: ${app.manifest.entitlements.network.mode}. Ambient host network and unapproved filesystem paths strictly restricted.`
+      inspectorText: `Declared network mode: ${app.manifest.entitlements.network.mode}. Direct network is denied; declared integration calls still require current host policies. This diagram does not verify containment.`
     });
     edges.push({ from: "worker", to: "security" });
 
     nodes.push({
       id: "storage",
-      title: "Airgapped SQLite Storage",
+      title: "Canonical app state",
       glyph: "memory",
-      detail: `${app.manifest.runtime.maxStorageMb}MB Storage Quota`,
+      detail: app.manifest.entitlements.storage.duckdb ? "JSON state + bounded SQL snapshot" : "Host-owned JSON state",
       badge: "Storage",
       x: 560,
       y: 210,
       width: 220,
       height: 80,
-      inspectorText: `Embedded SQLite: ${app.manifest.entitlements.storage.sqlite ? "Enabled" : "Disabled"}. Persistent storage quota: ${app.manifest.runtime.maxStorageMb}MB.`
+      inspectorText: "The host commits validated state and surface updates, plus an opted-in bounded DuckDB snapshot. Scratch files and module memory do not persist; no arbitrary filesystem database or manifest disk quota is implied."
     });
     edges.push({ from: "worker", to: "storage" });
 
@@ -1546,25 +1548,25 @@ Analyze domain records from verified sources and project structured findings ont
     render();
     try {
       const testsFile = currentSkillPkg.files.find(f => f.path.includes("tests/") || f.path.includes("test_scenarios.json"));
-      let testPrompts: string[] = [];
+      let testCases: SkillEvalCase[] = [];
       if (testsFile) {
         try {
           const parsed = JSON.parse(testsFile.text);
           if (Array.isArray(parsed.positive_prompts)) {
-            testPrompts = [...parsed.positive_prompts, ...(parsed.distractor_prompts ?? [])];
+            testCases = [...parsed.positive_prompts.map((prompt: string) => ({ prompt, expected: true })), ...(parsed.distractor_prompts ?? []).map((prompt: string) => ({ prompt, expected: false }))];
           }
         } catch {}
       }
-      if (testPrompts.length === 0) {
+      if (testCases.length === 0) {
         const domain = getDomainTestPrompts(currentSkillPkg.skill);
-        testPrompts = [...domain.positive, ...domain.distractor];
+        testCases = [...domain.positive.map(prompt => ({ prompt, expected: true })), ...domain.distractor.map(prompt => ({ prompt, expected: false }))];
       }
 
       evalResults = await api<SkillEvalResult[]>("/api/skills/eval", {
         method: "POST",
         body: JSON.stringify({
           name: currentSkillPkg.skill.name,
-          prompts: testPrompts
+          cases: testCases, provider: current.provider, model: current.model
         })
       });
       const passedCount = evalResults.filter(r => r.passed).length;
@@ -1939,7 +1941,7 @@ Analyze domain records from verified sources and project structured findings ont
 
         const instructionsCard = el("div", { className: "studio-form-card" },
           el("label", { className: "studio-field-label", textContent: "Skill Instructions & Surface Layout Contract" }),
-          el("span", { className: "studio-field-hint", textContent: "Adheres to 3-Tier liquid layout, single canonical projection, and multi-surface degradation." }),
+          el("span", { className: "studio-field-hint", textContent: "Uses shared content-driven design, canonical data and independent surfaces." }),
           insertBar,
           bodyEditor
         );
@@ -2295,8 +2297,8 @@ Analyze domain records from verified sources and project structured findings ont
 
     const linterCard = el("div", { className: "studio-linter-card" });
     const linterHead = el("div", { className: "linter-head" },
-      el("strong", { textContent: "Surface Design Linter" }),
-      pill("Layout Compliant", "ok")
+      el("strong", { textContent: "Instruction text hints" }),
+      pill("Not checked")
     );
     const linterNotes = el("ul", { className: "studio-linter-notes" });
     linterCard.append(linterHead, linterNotes);
@@ -2355,14 +2357,14 @@ Analyze domain records from verified sources and project structured findings ont
         linterNotes.replaceChildren();
         const bodyLower = currentSkillPkg.skill.body.toLowerCase();
         if (bodyLower.includes('maxwidth: "full"') && (bodyLower.includes("chart") || bodyLower.includes("kind: \"line\""))) {
-          linterNotes.append(el("li", { className: "warn", textContent: "Single chart given maxWidth: 'full' can distort aspect ratio on desktop screens. Clamp to 'md' or 'lg'." }));
+          linterNotes.append(el("li", { className: "warn", textContent: "Review the chart in its actual container. Full width is valid when deliberate; preserve readable labels, units and detail." }));
           warnings++;
         }
         if (/#(?:[0-9a-f]{3}|[0-9a-f]{6})\b/i.test(currentSkillPkg.skill.body)) {
-          linterNotes.append(el("li", { className: "warn", textContent: "Raw hex color detected. Use semantic tones: positive, caution, critical, neutral." }));
+          linterNotes.append(el("li", { className: "warn", textContent: "Raw hex color detected. Use offered semantic tones: neutral, info, success, warning, danger." }));
           warnings++;
         }
-        if (/waterfall|violin|box plot/i.test(bodyLower)) {
+        if (/"kind"\s*:\s*"(?:waterfall|violin|box plot)"/i.test(bodyLower)) {
           linterNotes.append(el("li", { className: "warn", textContent: "Unsupported chart kind requested. Standard kinds are bar, stacked, line, area, pie, scatter, heatmap, radar, candlestick." }));
           warnings++;
         }
@@ -2373,7 +2375,7 @@ Analyze domain records from verified sources and project structured findings ont
             badge.textContent = `⚠️ ${warnings} Warning${warnings > 1 ? "s" : ""}`;
             badge.className = "pill caution";
           } else {
-            badge.textContent = "✓ Layout Compliant";
+            badge.textContent = "No text-pattern warnings";
             badge.className = "pill ok";
           }
         }
@@ -2397,7 +2399,7 @@ Analyze domain records from verified sources and project structured findings ont
       }
     }, 0);
 
-    wrap.append(topRow, canvasContainer, linterCard, voiceCard);
+    wrap.append(topRow, el("p", { className: "studio-field-hint", textContent: activeKind === "skill" ? "Illustrative sample preview; no model ran and sample values are not your outcome." : "Surface preview; verify actual app actions, data and persistence separately." }), canvasContainer, linterCard, voiceCard);
     return wrap;
   }
 
@@ -2438,7 +2440,7 @@ Analyze domain records from verified sources and project structured findings ont
           icon("spark", 18),
           el("div", {},
             el("strong", { textContent: "Instruction & Projection Procedure" }),
-            el("p", { className: "muted small", textContent: "This skill executes through local LLM reasoning and declarative canvas projections without standalone shell or Python scripts." })
+            el("p", { className: "muted small", textContent: "This instruction package uses the selected chat model. Loading it does not execute a script." })
           )
         ),
         el("p", { className: "studio-field-hint", textContent: "To rehearse executable tool scripts inside the disposable Seatbelt sandbox with SHA-256 receipts, click '+ Add Helper Script' below." }),
@@ -2482,13 +2484,13 @@ Analyze domain records from verified sources and project structured findings ont
       const runEvalBtn = el("button", {
         type: "button",
         className: "ghost small",
-        textContent: isRunningTests ? "Testing Prompts…" : "Verify Selection Gate",
+        textContent: isRunningTests ? "Testing Prompts…" : "Evaluate Published Selection",
         disabled: isRunningTests,
         onclick: () => void runEvaluation()
       });
 
       const evalHead = el("div", { className: "sandbox-head" },
-        el("strong", { textContent: "use_skill Selection Gate Verification" }),
+        el("strong", { textContent: "Published skill selection only" }),
         runEvalBtn
       );
 
@@ -2499,7 +2501,7 @@ Analyze domain records from verified sources and project structured findings ont
             el("span", { className: `test-dot ${res.passed ? "pass" : "fail"}`, textContent: res.passed ? "✓" : "✗" }),
             el("div", { className: "test-text" },
               el("p", { className: "test-prompt", textContent: res.prompt }),
-              el("span", { className: "test-meta", textContent: `${res.durationMs}ms · selected: ${res.selectedSkills.join(", ") || "none"}` })
+              el("span", { className: "test-meta", textContent: `${res.durationMs}ms · expected: ${res.expected ? "select" : "do not select"} · selected: ${res.selectedSkills.join(", ") || "none"}${res.error ? " · " + res.error : ""}` })
             )
           );
           evalList.append(item);
@@ -2507,7 +2509,7 @@ Analyze domain records from verified sources and project structured findings ont
       } else {
         const domain = getDomainTestPrompts(currentSkillPkg.skill);
         const testList = el("div", { className: "studio-pending-tests" },
-          el("p", { className: "studio-field-hint", textContent: "Ready to test prompt selection gate on active local model with domain-specific scenarios:" })
+          el("p", { className: "studio-field-hint", textContent: "Evaluates the enabled published skill using the selected chat provider/model. Drafts and instruction adherence are not evaluated:" })
         );
         for (const p of domain.positive) {
           testList.append(el("div", { className: "studio-test-result" },
@@ -2718,7 +2720,7 @@ Analyze domain records from verified sources and project structured findings ont
         el("span", { className: "studio-section-label", textContent: "Active Capabilities" }),
         el("div", { className: "studio-card-meta" },
           pill("read_skill_file", "ok"),
-          (currentSkillPkg.skill.allowedTools ?? "").includes("run_command") ? pill("sandbox_exec", "caution") : null,
+          (currentSkillPkg.skill.allowedTools ?? "").includes("run_command") ? pill("Declared command tool", "caution") : null,
           pill(currentSkillPkg.skill.license ?? "MIT")
         )
       );
@@ -2726,10 +2728,10 @@ Analyze domain records from verified sources and project structured findings ont
       capsCard.append(
         el("span", { className: "studio-section-label", textContent: "Runtime Entitlements" }),
         el("div", { className: "studio-card-meta" },
-          pill(currentAppDetails.manifest.entitlements.network.mode === "airgap" ? "Airgapped" : "Network Enabled", "ok"),
-          pill(`RAM: ${currentAppDetails.manifest.runtime.memoryLimitMb}MB`),
-          pill(`CPU: ${currentAppDetails.manifest.runtime.cpuTimeLimitSec}s`),
-          currentAppDetails.manifest.entitlements.storage.sqlite ? pill("SQLite: On", "info") : null
+          pill(currentAppDetails.manifest.entitlements.network.mode === "airgap" ? "No external tools" : "Brokered tools only", "info"),
+          pill("Memory quota not enforced"),
+          pill("CPU quota not enforced"),
+          currentAppDetails.manifest.entitlements.storage.duckdb ? pill("Bounded SQL snapshot", "info") : null
         )
       );
     }

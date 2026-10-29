@@ -27,7 +27,7 @@ Guidance for authoring, reviewing, explaining and executing command-line operati
 2. **Proper quoting and escaping**:
    - Always quote paths and arguments containing spaces, wildcards or shell variables (`"$VAR"`, `"${DIR}/file.txt"`).
    - Use POSIX-compliant syntax when authoring portable scripts; use shell-specific builtins only when the target shell is known.
-3. **Pipes and subshells**: Keep command pipelines linear and understandable. Use `set -euo pipefail` in multi-line shell scripts to avoid silent failures.
+3. **Pipes and subshells**: Keep command pipelines linear and understandable. Use `set -eu` where appropriate; enable pipefail only in a shell that supports it. Inspect pipeline exit behavior rather than assuming portable pipefail support.
 4. **Destructive operations**:
    - For commands that remove files (`rm`, `git clean`, `find -delete`), make the affected scope unmistakably clear.
    - Recommend a dry-run or inspection preview first (e.g. `ls -la <path>`, `git status`, `--dry-run`).

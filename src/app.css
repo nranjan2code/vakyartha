@@ -1233,12 +1233,13 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 /* Header Chrome */
 .studio-header {
   flex: none;
-  height: 50px;
+  min-height: 50px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 0 16px;
+  gap: 10px;
+  padding: 8px 14px;
   background: var(--side);
   border-bottom: 1px solid var(--border);
   -webkit-user-select: none;
@@ -1552,7 +1553,7 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 220px minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -1791,7 +1792,7 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
   overflow: auto;
   background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
   background-size: 20px 20px;
-  min-width: 1100px;
+  min-width: 0;
   min-height: 420px;
 }
 
@@ -2051,7 +2052,8 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 
 @media (max-width: 900px) {
   .studio-workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
   .studio-left-col {
     border-right: none;
@@ -2241,4 +2243,24 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 }
 @media (max-width: 375px) {
   .chat-workspace-bar { font-size: .78rem; }
+}
+
+/* Keep Studio chrome inside its actual panel; hidden overflow cannot prove fit. */
+.studio-header-left { flex: 1 1 220px; }
+.studio-title-box { flex-shrink: 1; min-width: 0; }
+.studio-skill-title { overflow: hidden; text-overflow: ellipsis; }
+.studio-header-center { min-width: 0; flex: 1 1 480px; }
+.studio-header-center .seg { flex-wrap: wrap; }
+.studio-header-right { flex-wrap: wrap; }
+.studio-workspace, .studio-form-card, .test-text { min-width: 0; }
+.test-text { overflow-wrap: anywhere; }
+.studio-preview-top, .linter-head, .voice-head, .sandbox-head { flex-wrap: wrap; gap: 10px; }
+.studio-dag-toolbar { height: auto; min-height: 42px; flex-wrap: wrap; gap: 10px; padding: 8px 14px; }
+.studio-dag-toolbar > div { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 900px) {
+  .studio-left-col { max-height: 160px; }
+  .studio-code-view, .studio-preview-view, .studio-sandbox-view { padding: 12px; }
+  .studio-header-center { flex-basis: 100%; order: 3; }
+  .studio-header-center .seg { display: flex; width: 100%; }
+  .studio-header-center .seg button { flex: 1 1 42%; }
 }

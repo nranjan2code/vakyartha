@@ -1,5 +1,7 @@
 # Skill and dynamic-surface audit — 2026-10-27
 
+This file retains the dated audit and its original outcome evidence. For the current 35-package source, request assembly, newer app/workspace paths and unresolved instruction conflicts, use [PROMPT-AUDIT.md](PROMPT-AUDIT.md) (2026-10-29). Historical sizes, counts and eight-kind chart coverage below are not current-state claims.
+
 ## Current package and runtime review — 2026-10-27
 
 The [current external package specification](https://agentskills.io/specification) retains a folder with `SKILL.md`, required `name`/`description`, optional `scripts/`, `references/` and `assets/`, and staged loading of metadata, instructions and resources. Vakyartha has this folder and staged-loading shape for supported UTF-8 references and inert script source. Its parser accepts a documented YAML subset with optional `license`, `compatibility`, string `metadata` and `allowed-tools`; it does not claim full YAML syntax, executable scripts or binary assets. The root-level import is a stated extension. The experimental `allowed-tools` field never grants authority. Unsupported resources remain visible as omitted, because their absence can make a third-party skill incomplete.
