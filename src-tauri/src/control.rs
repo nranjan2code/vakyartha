@@ -15,6 +15,7 @@ const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+pub mod delegation;
 pub mod folder;
 pub mod registry;
 pub mod state;

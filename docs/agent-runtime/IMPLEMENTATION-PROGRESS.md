@@ -68,6 +68,10 @@ This is native domain/storage work only. The actor remains inactive in the app, 
 
 AR-01–AR-09, IA-01–IA-06, ISO-1–ISO-8 and all original output acceptance gates remain open unless a later dated evidence entry says otherwise.
 
+## Delegation proposal validation started — 2026-10-29
+
+Added `control/delegation.rs`, a native deterministic shape validator for proposed child assignments. It leaves generic complexity and role-label requests inline, requires declared workflow mode for required-separation claims, bounds proposals to four children, requires bounded objective/acceptance/input references, and refuses overlapping writes or undeclared read/write dependencies. A positive result is named `EligibleForTrustedAdmission`; it is not a child record, capacity lease, security boundary, proof that model-declared work is semantically independent, or permission to dispatch. The actor currently has no atomic proposal+child-record+capacity operation, and it remains inactive in product. The host and Docker Linux Rust library suites pass 46/46.
+
 ## 2026-10-29 — provider transport seam and workspace guard checkpoint
 
 Projection commit `65f183cb73c45d5335e7cc41cf6000520f1b77fe` adds optional public `ProviderTransport` injection through all model provider constructors and `ProviderEntry.make`. It carries provider identity and covers discovery and streaming requests while preserving default fetch behavior. Projection full suite/replay: 412 passed; typecheck and package generation passed. Vakyartha now pins this pushed change. The app suite passes 270, framework suite 412, typecheck, production UI build, 11 native tests, and Task WebKit checks at 1100px/620px. The seam is not a secure broker by itself; Vakyartha still uses its existing direct provider path pending the protected native operation contract.
