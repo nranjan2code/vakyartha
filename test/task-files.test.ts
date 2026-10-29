@@ -124,6 +124,7 @@ test("duplicate operation identities are not dispatched again and uncertain effe
       assert.equal(effects, 1); assert.equal(tasks.get(task.id).operations.length, 1);
       assert.equal(tasks.get(task.id).operations[0]!.state, fail ? "uncertain" : "returned");
       assert.equal(tasks.get(task.id).budget.toolCalls, 1);
+      assert.equal(tasks.get(task.id).runHistory[0]!.stopCause, fail ? "external_effect_uncertain" : undefined);
     } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
   }
 });

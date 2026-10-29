@@ -204,6 +204,7 @@ test("tool limits count calls independently of model rounds and stop before the 
     await until(() => tasks.get(t.id).state === "failed");
     assert.equal(calls, 24);
     assert.equal(tasks.get(t.id).operations.length, 24);
+    assert.equal(tasks.get(t.id).runHistory[0]!.stopCause, "tool_budget_exhausted");
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });
 
