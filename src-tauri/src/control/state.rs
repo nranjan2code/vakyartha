@@ -1,5 +1,9 @@
 //! Revision-fenced native root-task state. Workers may propose changes, but
 //! callers must route every transition through the owning control actor.
+use super::delegation::{
+    ChildProposal, ClaimedBenefit, DelegationMode, DelegationPolicy, ProposalDisposition,
+    ProposalReason, validate_proposal,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -102,6 +106,57 @@ pub struct RootTask {
     requirements: BTreeMap<String, Requirement>,
     stop_reason: Option<String>,
     review: Option<UserReview>,
+    delegation: DelegationPolicy,
+    children: BTreeMap<String, ChildTask>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChildStatus {
+    Queued,
+    Invalidated,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChildTask {
+    id: String,
+    request_id: String,
+    contract_revision: u64,
+    revision: u64,
+    status: ChildStatus,
+    objective: String,
+    acceptance: String,
+    inputs: Vec<String>,
+    reads: Vec<String>,
+    writes: Vec<String>,
+    benefit: ClaimedBenefit,
+    queue_lease_id: u64,
+}
+
+impl ChildTask {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+    pub fn status(&self) -> ChildStatus {
+        self.status
+    }
+    pub fn queue_lease_id(&self) -> u64 {
+        self.queue_lease_id
+    }
+
+    fn matches(&self, proposal: &ChildProposal) -> bool {
+        self.request_id == proposal.request_id
+            && self.objective == proposal.objective
+            && self.acceptance == proposal.acceptance
+            && self.inputs == proposal.inputs
+            && self.reads == proposal.reads
+            && self.writes == proposal.writes
+            && self.benefit == proposal.benefit
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -116,6 +171,10 @@ pub enum StateError {
     RequirementStale,
     EvidenceIncomplete,
     InvalidReview,
+    Delegation(ProposalReason),
+    ChildLimitReached,
+    ChildIdentityConflict,
+    ChildrenOutstanding,
     Corrupt,
 }
 
@@ -126,6 +185,24 @@ impl RootTask {
         criteria: String,
         run_limit: u32,
         requirements: Vec<Requirement>,
+    ) -> Result<Self, StateError> {
+        Self::create_with_delegation(
+            id,
+            goal,
+            criteria,
+            run_limit,
+            requirements,
+            DelegationPolicy::new(DelegationMode::Disabled, 0).map_err(StateError::Delegation)?,
+        )
+    }
+
+    pub fn create_with_delegation(
+        id: String,
+        goal: String,
+        criteria: String,
+        run_limit: u32,
+        requirements: Vec<Requirement>,
+        delegation: DelegationPolicy,
     ) -> Result<Self, StateError> {
         if !valid_identity(&id) {
             return Err(StateError::InvalidIdentity);
@@ -166,6 +243,8 @@ impl RootTask {
             requirements: indexed,
             stop_reason: None,
             review: None,
+            delegation,
+            children: BTreeMap::new(),
         })
     }
 
@@ -192,6 +271,146 @@ impl RootTask {
     }
     pub fn review(&self) -> Option<&UserReview> {
         self.review.as_ref()
+    }
+
+    pub fn children(&self) -> &BTreeMap<String, ChildTask> {
+        &self.children
+    }
+
+    pub fn delegation_policy(&self) -> DelegationPolicy {
+        self.delegation
+    }
+
+    pub fn invalidate_queued_children(&mut self) -> Result<Vec<u64>, StateError> {
+        let queue_leases = self.drain_queued_children()?;
+        if !queue_leases.is_empty() {
+            self.bump_revision()?;
+        }
+        Ok(queue_leases)
+    }
+
+    fn drain_queued_children(&mut self) -> Result<Vec<u64>, StateError> {
+        let mut queue_leases = Vec::new();
+        for child in self.children.values_mut() {
+            if child.status == ChildStatus::Queued {
+                child.status = ChildStatus::Invalidated;
+                child.revision = child.revision.checked_add(1).ok_or(StateError::Corrupt)?;
+                queue_leases.push(child.queue_lease_id);
+            }
+        }
+        Ok(queue_leases)
+    }
+
+    pub fn new_child_count(&self, proposals: &[ChildProposal]) -> Result<usize, StateError> {
+        let mut requests = std::collections::BTreeSet::new();
+        let mut count = 0;
+        for proposal in proposals {
+            if !requests.insert(proposal.request_id.as_str()) {
+                return Err(StateError::Delegation(ProposalReason::InvalidContract));
+            }
+            match self
+                .children
+                .values()
+                .find(|child| child.request_id == proposal.request_id)
+            {
+                Some(child)
+                    if child.matches(proposal)
+                        && child.contract_revision == self.contract_revision
+                        && child.status == ChildStatus::Queued => {}
+                Some(_) => return Err(StateError::ChildIdentityConflict),
+                None => count += 1,
+            }
+        }
+        Ok(count)
+    }
+
+    pub fn validate_child_admission(
+        &self,
+        expected_revision: u64,
+        proposals: &[ChildProposal],
+    ) -> Result<usize, StateError> {
+        let new_count = self.new_child_count(proposals)?;
+        if new_count == 0 && !proposals.is_empty() {
+            return Ok(0);
+        }
+        self.check_revision(expected_revision)?;
+        if self.status != RootStatus::Running {
+            return Err(StateError::InvalidTransition(self.status));
+        }
+        let decision = validate_proposal(self.delegation.mode(), proposals);
+        if decision.disposition != ProposalDisposition::EligibleForTrustedAdmission {
+            return Err(StateError::Delegation(decision.reason));
+        }
+        if self.children.len() + new_count > usize::from(self.delegation.max_children()) {
+            return Err(StateError::ChildLimitReached);
+        }
+        Ok(new_count)
+    }
+
+    pub fn admit_children(
+        &mut self,
+        expected_revision: u64,
+        proposals: Vec<ChildProposal>,
+        queue_lease_ids: &[u64],
+    ) -> Result<Vec<ChildTask>, StateError> {
+        if !proposals.is_empty() && self.new_child_count(&proposals)? == 0 {
+            return Ok(proposals
+                .iter()
+                .filter_map(|proposal| {
+                    self.children
+                        .values()
+                        .find(|child| child.request_id == proposal.request_id)
+                        .cloned()
+                })
+                .collect());
+        }
+        let new_count = self.validate_child_admission(expected_revision, &proposals)?;
+        if queue_lease_ids.len() != new_count
+            || queue_lease_ids.contains(&0)
+            || queue_lease_ids
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != queue_lease_ids.len()
+        {
+            return Err(StateError::Corrupt);
+        }
+
+        let mut result = Vec::with_capacity(proposals.len());
+        let mut next_child = self.children.len() + 1;
+        let mut new_leases = queue_lease_ids.iter().copied();
+        for proposal in proposals {
+            if let Some(existing) = self
+                .children
+                .values()
+                .find(|child| child.request_id == proposal.request_id)
+            {
+                result.push(existing.clone());
+                continue;
+            }
+            let queue_lease_id = new_leases.next().ok_or(StateError::Corrupt)?;
+            let id = format!("child-{next_child:04}");
+            next_child += 1;
+            let child = ChildTask {
+                id: id.clone(),
+                request_id: proposal.request_id,
+                contract_revision: self.contract_revision,
+                revision: 1,
+                status: ChildStatus::Queued,
+                objective: proposal.objective,
+                acceptance: proposal.acceptance,
+                inputs: proposal.inputs,
+                reads: proposal.reads,
+                writes: proposal.writes,
+                benefit: proposal.benefit,
+                queue_lease_id,
+            };
+            self.children.insert(id, child.clone());
+            result.push(child);
+        }
+        self.bump_revision()?;
+        Ok(result)
     }
 
     pub fn recover_after_restart(&mut self) -> Result<bool, StateError> {
@@ -230,19 +449,11 @@ impl RootTask {
     }
 
     pub fn wait_for_input(&mut self, expected_revision: u64) -> Result<(), StateError> {
-        self.transition(
-            expected_revision,
-            RootStatus::Running,
-            RootStatus::WaitingForInput,
-        )
+        self.transition_and_invalidate_children(expected_revision, RootStatus::WaitingForInput)
     }
 
     pub fn wait_for_approval(&mut self, expected_revision: u64) -> Result<(), StateError> {
-        self.transition(
-            expected_revision,
-            RootStatus::Running,
-            RootStatus::WaitingForApproval,
-        )
+        self.transition_and_invalidate_children(expected_revision, RootStatus::WaitingForApproval)
     }
 
     pub fn stop(
@@ -270,6 +481,7 @@ impl RootTask {
         self.status = status;
         self.stop_reason = Some(reason);
         self.review = None;
+        self.drain_queued_children()?;
         self.bump_revision()
     }
 
@@ -306,6 +518,7 @@ impl RootTask {
         self.status = RootStatus::Queued;
         self.stop_reason = None;
         self.review = None;
+        self.drain_queued_children()?;
         self.bump_revision()
     }
 
@@ -363,6 +576,13 @@ impl RootTask {
             return Err(StateError::InvalidTransition(self.status));
         }
         if self
+            .children
+            .values()
+            .any(|child| child.status == ChildStatus::Queued)
+        {
+            return Err(StateError::ChildrenOutstanding);
+        }
+        if self
             .requirements
             .values()
             .any(|r| r.mandatory && r.outcome != CheckOutcome::Pass)
@@ -380,6 +600,10 @@ impl RootTask {
     ) -> Result<(), StateError> {
         self.check_revision(expected_revision)?;
         if self.status != RootStatus::NeedsReview
+            || self
+                .children
+                .values()
+                .any(|child| child.status == ChildStatus::Queued)
             || self
                 .requirements
                 .values()
@@ -411,6 +635,20 @@ impl RootTask {
         self.bump_revision()
     }
 
+    fn transition_and_invalidate_children(
+        &mut self,
+        expected_revision: u64,
+        to: RootStatus,
+    ) -> Result<(), StateError> {
+        self.check_revision(expected_revision)?;
+        if self.status != RootStatus::Running {
+            return Err(StateError::InvalidTransition(self.status));
+        }
+        self.drain_queued_children()?;
+        self.status = to;
+        self.bump_revision()
+    }
+
     fn check_revision(&self, expected: u64) -> Result<(), StateError> {
         if self.revision != expected {
             Err(StateError::RevisionConflict)
@@ -425,6 +663,8 @@ impl RootTask {
     }
 
     pub fn validate(&self) -> Result<(), StateError> {
+        let delegation_valid =
+            DelegationPolicy::new(self.delegation.mode(), self.delegation.max_children()).is_ok();
         if !valid_identity(&self.id)
             || self.revision == 0
             || self.contract_revision == 0
@@ -448,6 +688,40 @@ impl RootTask {
                         .as_deref()
                         .is_some_and(|receipt| !valid_identity(receipt))
             })
+            || !delegation_valid
+            || self.children.len() > usize::from(self.delegation.max_children())
+            || self
+                .children
+                .values()
+                .map(|child| child.request_id.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != self.children.len()
+            || self.children.iter().any(|(id, child)| {
+                id != &child.id
+                    || !valid_identity(id)
+                    || !valid_identity(&child.request_id)
+                    || child.contract_revision == 0
+                    || child.contract_revision > self.contract_revision
+                    || child.revision == 0
+                    || child.queue_lease_id == 0
+                    || (child.status == ChildStatus::Queued
+                        && child.contract_revision != self.contract_revision)
+                    || validate_text(&child.objective, MAX_TEXT).is_err()
+                    || validate_text(&child.acceptance, 4_000).is_err()
+                    || child.inputs.is_empty()
+                    || child.inputs.len() > 64
+                    || child.reads.len() > 64
+                    || child.writes.len() > 64
+                    || !unique_references(&child.inputs)
+                    || !unique_references(&child.reads)
+                    || !unique_references(&child.writes)
+            })
+            || (matches!(self.status, RootStatus::NeedsReview | RootStatus::Completed)
+                && self
+                    .children
+                    .values()
+                    .any(|child| child.status == ChildStatus::Queued))
             || (self.status == RootStatus::Completed) != self.review.is_some()
             || (self.status == RootStatus::Completed
                 && self
@@ -504,6 +778,15 @@ fn valid_identity(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
+fn unique_references(values: &[String]) -> bool {
+    values.iter().all(|value| valid_identity(value))
+        && values
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            == values.len()
+}
+
 fn validate_text(value: &str, max: usize) -> Result<(), StateError> {
     if value.trim().is_empty() || value.len() > max || value.contains('\0') {
         Err(StateError::InvalidText)
@@ -539,6 +822,88 @@ mod tests {
             vec![Requirement::new("outcome".into(), true).unwrap()],
         )
         .unwrap()
+    }
+
+    fn delegating_root() -> RootTask {
+        RootTask::create_with_delegation(
+            "root-1".into(),
+            "Deliver the checked result".into(),
+            "Meet the declared criteria".into(),
+            3,
+            vec![Requirement::new("outcome".into(), true).unwrap()],
+            DelegationPolicy::new(DelegationMode::BoundedAdaptive, 2).unwrap(),
+        )
+        .unwrap()
+    }
+
+    fn child_proposal(request_id: &str, write: &str) -> ChildProposal {
+        ChildProposal {
+            request_id: request_id.into(),
+            objective: format!("Investigate {request_id}"),
+            acceptance: format!("Return supported findings for {request_id}"),
+            inputs: vec![format!("input-{request_id}")],
+            reads: vec![],
+            writes: vec![write.into()],
+            benefit: ClaimedBenefit::IndependentJudgment,
+        }
+    }
+
+    #[test]
+    fn queued_children_are_revision_fenced_idempotent_and_block_review() {
+        let mut task = delegating_root();
+        task.start_attempt(task.revision()).unwrap();
+        let proposals = vec![
+            child_proposal("request-a", "candidate-a"),
+            child_proposal("request-b", "candidate-b"),
+        ];
+        let queued = task
+            .admit_children(task.revision(), proposals.clone(), &[11, 12])
+            .unwrap();
+        assert_eq!(queued.len(), 2);
+        assert!(
+            queued
+                .iter()
+                .all(|child| child.status() == ChildStatus::Queued)
+        );
+        let revision = task.revision();
+        assert_eq!(
+            task.admit_children(1, proposals, &[]).unwrap(),
+            queued,
+            "a retry returns prior children even after the root revision advanced"
+        );
+        assert_eq!(task.revision(), revision);
+        assert_eq!(
+            task.request_review(task.revision()),
+            Err(StateError::ChildrenOutstanding)
+        );
+        task.validate().unwrap();
+    }
+
+    #[test]
+    fn root_changes_invalidate_queued_children() {
+        let mut task = delegating_root();
+        task.start_attempt(task.revision()).unwrap();
+        task.admit_children(
+            task.revision(),
+            vec![
+                child_proposal("request-a", "candidate-a"),
+                child_proposal("request-b", "candidate-b"),
+            ],
+            &[11, 12],
+        )
+        .unwrap();
+        task.stop(
+            task.revision(),
+            RootStatus::Cancelled,
+            "User stopped".into(),
+        )
+        .unwrap();
+        assert!(
+            task.children()
+                .values()
+                .all(|child| child.status() == ChildStatus::Invalidated)
+        );
+        task.validate().unwrap();
     }
 
     #[test]

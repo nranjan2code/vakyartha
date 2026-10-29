@@ -4,20 +4,23 @@
 //! only means the request has a bounded shape worth checking against persisted
 //! task policy, capacity and worker authority in the control actor.
 
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 const MAX_CHILDREN_PER_PROPOSAL: usize = 4;
 const MAX_REFERENCES_PER_CHILD: usize = 64;
 const MAX_FIELD_BYTES: usize = 8_000;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DelegationMode {
     Disabled,
     BoundedAdaptive,
     DeclaredWorkflow,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ClaimedBenefit {
     RequiredSeparation,
     IndependentJudgment,
@@ -25,6 +28,33 @@ pub enum ClaimedBenefit {
     MeasuredParallelism,
     RoleLabelOnly,
     GenericComplexity,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DelegationPolicy {
+    mode: DelegationMode,
+    max_children: u8,
+}
+
+impl DelegationPolicy {
+    pub fn new(mode: DelegationMode, max_children: u8) -> Result<Self, ProposalReason> {
+        if max_children > MAX_CHILDREN_PER_PROPOSAL as u8
+            || (mode == DelegationMode::Disabled && max_children != 0)
+            || (mode != DelegationMode::Disabled && max_children == 0)
+        {
+            return Err(ProposalReason::InvalidPolicy);
+        }
+        Ok(Self { mode, max_children })
+    }
+
+    pub fn mode(self) -> DelegationMode {
+        self.mode
+    }
+
+    pub fn max_children(self) -> u8 {
+        self.max_children
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,6 +76,7 @@ pub enum ProposalDisposition {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProposalReason {
+    InvalidPolicy,
     BoundedProposal,
     DelegationDisabled,
     NoIndependentWork,
@@ -105,7 +136,6 @@ pub fn validate_proposal(mode: DelegationMode, proposals: &[ChildProposal]) -> P
 
     let mut request_ids = BTreeSet::new();
     let mut writes = BTreeSet::new();
-    let mut reads = BTreeSet::new();
     for proposal in proposals {
         if !valid_id(&proposal.request_id)
             || !request_ids.insert(proposal.request_id.as_str())
@@ -135,10 +165,18 @@ pub fn validate_proposal(mode: DelegationMode, proposals: &[ChildProposal]) -> P
                 return inline(ProposalReason::OverlappingWrites);
             }
         }
-        reads.extend(proposal.reads.iter().map(String::as_str));
     }
-    if writes.iter().any(|resource| reads.contains(resource)) {
-        return inline(ProposalReason::ReadWriteDependency);
+    for (writer_index, writer) in proposals.iter().enumerate() {
+        for (reader_index, reader) in proposals.iter().enumerate() {
+            if writer_index != reader_index
+                && writer
+                    .writes
+                    .iter()
+                    .any(|resource| reader.reads.contains(resource))
+            {
+                return inline(ProposalReason::ReadWriteDependency);
+            }
+        }
     }
 
     ProposalDecision {
@@ -255,6 +293,18 @@ mod tests {
             )
             .reason,
             ProposalReason::ReadWriteDependency
+        );
+
+        let mut one_assignment = proposal("child-1", "candidate-1");
+        one_assignment.reads.push("candidate-1".into());
+        let independent = proposal("child-2", "candidate-2");
+        assert_eq!(
+            validate_proposal(
+                DelegationMode::BoundedAdaptive,
+                &[one_assignment, independent]
+            )
+            .disposition,
+            ProposalDisposition::EligibleForTrustedAdmission
         );
     }
 }

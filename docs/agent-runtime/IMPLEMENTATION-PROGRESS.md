@@ -60,6 +60,7 @@ This is native domain/storage work only. The actor remains inactive in the app, 
 ## Still required
 
 - Replace the TypeScript registry/task/scheduler/approval writers with one native durable control actor and a single cutover; do not run duplicate writers.
+- Implement child attempts, atomic queued-to-running capacity conversion, supervised dispatch, bounded output/evidence and parent integration on top of the new queued child records.
 - Capture fixed workspace grants in queued and scheduled root records, derive child grants, invalidate affected descendants on rebind, and recheck the target at native dispatch.
 - Implement native provider and integration mediation, exact payload contracts, effective isolation/resource enforcement, common multi-job admission, recovery, version-fenced canonical commit, evidence and terminal finalization.
 - Implement the planned navigation owner and storage IA changes without breaking existing interactive surfaces.
@@ -70,7 +71,13 @@ AR-01–AR-09, IA-01–IA-06, ISO-1–ISO-8 and all original output acceptance g
 
 ## Delegation proposal validation started — 2026-10-29
 
-Added `control/delegation.rs`, a native deterministic shape validator for proposed child assignments. It leaves generic complexity and role-label requests inline, requires declared workflow mode for required-separation claims, bounds proposals to four children, requires bounded objective/acceptance/input references, and refuses overlapping writes or undeclared read/write dependencies. A positive result is named `EligibleForTrustedAdmission`; it is not a child record, capacity lease, security boundary, proof that model-declared work is semantically independent, or permission to dispatch. The actor currently has no atomic proposal+child-record+capacity operation, and it remains inactive in product. The host and Docker Linux Rust library suites pass 46/46.
+Added `control/delegation.rs`, a native deterministic shape validator for proposed child assignments. It leaves generic complexity and role-label requests inline, requires declared workflow mode for required-separation claims, bounds proposals to four children, requires bounded objective/acceptance/input references, and refuses overlapping writes or undeclared read/write dependencies. A positive result is named `EligibleForTrustedAdmission`; at this first checkpoint it was only a proposal gate. The actor remains inactive in product. The host and Docker Linux Rust library suites passed 46/46.
+
+## Durable child queue admission — 2026-10-29
+
+The native root aggregate now stores the delegation mode and child-count ceiling selected when the trusted task is created. `ControlHandle::admit_children` validates against that stored policy and current root revision, reserves global/per-root `QueuedChild` slots, writes the root revision, child records and leases in the same selected snapshot, and acknowledges only after persistence. A request retry with the same proposal returns the existing child; changed content under the same request identity conflicts. Queue saturation leaves the root unchanged. Root stop, wait-for-input, wait-for-approval and contract revision invalidate unstarted children and release their queue leases in the same commit. Review/completion is blocked while any child is still queued. Restart marks an in-flight root interrupted, invalidates queued children that never dispatched, and releases those queue slots before accepting commands.
+
+This records bounded queued assignments only. There is no child attempt lifecycle, worker dispatch, `ChildExecution` reservation conversion, capability-bound channel, or child result acceptance yet. `QueuedChild` must be explicitly configured in the capacity profile; the default remains unavailable. The actor is still inactive in the app. Snapshot schema advanced to 4 with no legacy schema reader. Host and digest-pinned Docker Linux Rust 1.99.1 library suites pass 50/50; this is Rust persistence/control behavior, not Linux sandbox containment or a production task path.
 
 ## 2026-10-29 — provider transport seam and workspace guard checkpoint
 

@@ -10,7 +10,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 3;
+const STORE_VERSION: u16 = 4;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -19,17 +19,19 @@ pub mod delegation;
 pub mod folder;
 pub mod registry;
 pub mod state;
+use delegation::{ChildProposal, DelegationPolicy};
 use folder::WorkspaceAdmissionPolicy;
 use registry::{
     ProjectMembership, ProjectRecord, RegistryError, RegistryState, WorkspaceBinding,
     WorkspaceGrant, WorkspaceMode, WorkspaceRecord,
 };
-use state::{CheckOutcome, Requirement, RootStatus, RootTask, StateError, UserReview};
+use state::{CheckOutcome, ChildTask, Requirement, RootStatus, RootTask, StateError, UserReview};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Resource {
     Generation,
     ProviderRequest,
+    QueuedChild,
     ChildExecution,
     VerificationExecution,
     ToolInvocation,
@@ -44,6 +46,7 @@ pub enum AdmissionError {
     InvalidProfile,
     CapacityUnavailable(Resource),
     UnconfiguredResource(Resource),
+    ReservedForControl(Resource),
     RootLimit(Resource),
     ConflictingRequestIdentity,
     RequestAlreadySettled,
@@ -243,6 +246,10 @@ impl CapacityLedger {
         self.active.len()
     }
 
+    fn active_lease(&self, id: u64) -> Option<Lease> {
+        self.active.get(&id).cloned()
+    }
+
     fn snapshot(&self) -> LedgerSnapshot {
         let mut issued: Vec<_> = self.issued.values().cloned().collect();
         issued.sort_by_key(|lease| lease.id);
@@ -369,6 +376,37 @@ impl CapacityLedger {
             }
         }
         ledger.request_ids = snapshot.request_ids.into_iter().collect();
+        let mut child_queue_lease_ids = std::collections::HashSet::new();
+        for root in ledger.roots.values() {
+            for child in root.children().values() {
+                let active = ledger.active.get(&child.queue_lease_id());
+                match child.status() {
+                    state::ChildStatus::Queued => {
+                        if !child_queue_lease_ids.insert(child.queue_lease_id()) {
+                            return Err(StoreError::Corrupt);
+                        }
+                        let Some(lease) = active else {
+                            return Err(StoreError::Corrupt);
+                        };
+                        if lease.root_id() != root.id()
+                            || lease.amounts() != &BTreeMap::from([(Resource::QueuedChild, 1)])
+                        {
+                            return Err(StoreError::Corrupt);
+                        }
+                    }
+                    state::ChildStatus::Invalidated if active.is_some() => {
+                        return Err(StoreError::Corrupt);
+                    }
+                    state::ChildStatus::Invalidated => {}
+                }
+            }
+        }
+        if ledger.active.values().any(|lease| {
+            lease.amounts().contains_key(&Resource::QueuedChild)
+                && !child_queue_lease_ids.contains(&lease.id)
+        }) {
+            return Err(StoreError::Corrupt);
+        }
         Ok(ledger)
     }
 }
@@ -467,7 +505,14 @@ enum ActorCommand {
         criteria: String,
         run_limit: u32,
         requirements: Vec<Requirement>,
+        delegation: DelegationPolicy,
         reply: SyncSender<Result<RootTask, ControlError>>,
+    },
+    AdmitChildren {
+        root_id: String,
+        expected_revision: u64,
+        proposals: Vec<ChildProposal>,
+        reply: SyncSender<Result<Vec<ChildTask>, ControlError>>,
     },
     MutateRoot {
         id: String,
@@ -579,6 +624,20 @@ impl ControlHandle {
         run_limit: u32,
         requirements: Vec<Requirement>,
     ) -> Result<RootTask, ControlError> {
+        let delegation = DelegationPolicy::new(delegation::DelegationMode::Disabled, 0)
+            .map_err(|error| ControlError::TaskState(StateError::Delegation(error)))?;
+        self.create_root_with_delegation(id, goal, criteria, run_limit, requirements, delegation)
+    }
+
+    pub fn create_root_with_delegation(
+        &self,
+        id: String,
+        goal: String,
+        criteria: String,
+        run_limit: u32,
+        requirements: Vec<Requirement>,
+        delegation: DelegationPolicy,
+    ) -> Result<RootTask, ControlError> {
         let (reply, response) = sync_channel(1);
         self.commands
             .try_send(ActorCommand::CreateRoot {
@@ -587,6 +646,27 @@ impl ControlHandle {
                 criteria,
                 run_limit,
                 requirements,
+                delegation,
+                reply,
+            })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    pub fn admit_children(
+        &self,
+        root_id: String,
+        expected_revision: u64,
+        proposals: Vec<ChildProposal>,
+    ) -> Result<Vec<ChildTask>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::AdmitChildren {
+                root_id,
+                expected_revision,
+                proposals,
                 reply,
             })
             .map_err(queue_error)?;
@@ -808,10 +888,20 @@ impl ControlActor {
         let (mut store, mut ledger) = ControlStore::open(data_dir, profile_revision, &profile)?;
         let workspace_admission = WorkspaceAdmissionPolicy::new(data_dir).map_err(store_io)?;
         let mut recovered = false;
+        let mut invalidated_child_leases = Vec::new();
         for root in ledger.roots.values_mut() {
+            invalidated_child_leases.extend(
+                root.invalidate_queued_children()
+                    .map_err(|_| StoreError::Corrupt)?,
+            );
             recovered |= root
                 .recover_after_restart()
                 .map_err(|_| StoreError::Corrupt)?;
+        }
+        for lease_id in invalidated_child_leases {
+            let lease = ledger.active_lease(lease_id).ok_or(StoreError::Corrupt)?;
+            ledger.release(&lease).map_err(|_| StoreError::Corrupt)?;
+            recovered = true;
         }
         if recovered {
             store.persist(&ledger, &profile)?;
@@ -860,6 +950,12 @@ fn actor_loop(
                 amounts,
                 reply,
             } => {
+                if amounts.contains_key(&Resource::QueuedChild) {
+                    let _ = reply.send(Err(ControlError::Admission(
+                        AdmissionError::ReservedForControl(Resource::QueuedChild),
+                    )));
+                    continue;
+                }
                 let mut candidate = ledger.clone();
                 let result = candidate
                     .reserve(&profile, &request_id, &root_id, amounts)
@@ -904,6 +1000,7 @@ fn actor_loop(
                 criteria,
                 run_limit,
                 requirements,
+                delegation,
                 reply,
             } => {
                 if ledger.roots.contains_key(&id) {
@@ -915,7 +1012,14 @@ fn actor_loop(
                         reply.send(Err(ControlError::Admission(AdmissionError::RootLedgerFull)));
                     continue;
                 }
-                let root = match RootTask::create(id, goal, criteria, run_limit, requirements) {
+                let root = match RootTask::create_with_delegation(
+                    id,
+                    goal,
+                    criteria,
+                    run_limit,
+                    requirements,
+                    delegation,
+                ) {
                     Ok(root) => root,
                     Err(error) => {
                         let _ = reply.send(Err(ControlError::TaskState(error)));
@@ -935,6 +1039,77 @@ fn actor_loop(
                     }
                 }
             }
+            ActorCommand::AdmitChildren {
+                root_id,
+                expected_revision,
+                proposals,
+                reply,
+            } => {
+                let Some(root) = ledger.roots.get(&root_id) else {
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::RootNotFound)));
+                    continue;
+                };
+                let new_count = match root.validate_child_admission(expected_revision, &proposals) {
+                    Ok(count) => count,
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::TaskState(error)));
+                        continue;
+                    }
+                };
+                if new_count == 0 {
+                    let root = ledger.roots.get_mut(&root_id).expect("root checked above");
+                    let result = root.admit_children(expected_revision, proposals, &[]);
+                    let _ = reply.send(result.map_err(ControlError::TaskState));
+                    continue;
+                }
+                let mut candidate = ledger.clone();
+                let mut queue_lease_ids = Vec::with_capacity(new_count);
+                let mut reservation_error = None;
+                for _ in 0..new_count {
+                    let Some(next_lease) = candidate.next_lease.checked_add(1) else {
+                        reservation_error =
+                            Some(ControlError::Admission(AdmissionError::InvalidProfile));
+                        break;
+                    };
+                    let request_id = format!("child-queue-{next_lease}");
+                    let amounts = BTreeMap::from([(Resource::QueuedChild, 1)]);
+                    match candidate.reserve(&profile, &request_id, &root_id, amounts) {
+                        Ok(lease) => {
+                            queue_lease_ids.push(lease.id);
+                        }
+                        Err(error) => {
+                            reservation_error = Some(ControlError::Admission(error));
+                            break;
+                        }
+                    }
+                }
+                if let Some(error) = reservation_error {
+                    let _ = reply.send(Err(error));
+                    continue;
+                }
+                let root = candidate
+                    .roots
+                    .get_mut(&root_id)
+                    .expect("root cloned above");
+                let children =
+                    match root.admit_children(expected_revision, proposals, &queue_lease_ids) {
+                        Ok(children) => children,
+                        Err(error) => {
+                            let _ = reply.send(Err(ControlError::TaskState(error)));
+                            continue;
+                        }
+                    };
+                match store.persist(&candidate, &profile) {
+                    Ok(_) => {
+                        ledger = candidate;
+                        let _ = reply.send(Ok(children));
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Store(error)));
+                        break;
+                    }
+                }
+            }
             ActorCommand::MutateRoot {
                 id,
                 expected_revision,
@@ -942,42 +1117,81 @@ fn actor_loop(
                 reply,
             } => {
                 let mut candidate = ledger.clone();
-                let Some(root) = candidate.roots.get_mut(&id) else {
-                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::RootNotFound)));
-                    continue;
-                };
-                let changed = match mutation {
-                    RootMutation::StartAttempt => root.start_attempt(expected_revision),
-                    RootMutation::WaitForInput => root.wait_for_input(expected_revision),
-                    RootMutation::WaitForApproval => root.wait_for_approval(expected_revision),
-                    RootMutation::Stop { status, reason } => {
-                        root.stop(expected_revision, status, reason)
-                    }
-                    RootMutation::ReviseContract { goal, criteria } => {
-                        root.revise_contract(expected_revision, goal, criteria)
-                    }
-                    RootMutation::RecordCheck {
-                        contract_revision,
-                        requirement_id,
-                        outcome,
-                        receipt,
-                    } => root.record_check(
-                        expected_revision,
-                        contract_revision,
-                        &requirement_id,
-                        outcome,
-                        receipt,
-                    ),
-                    RootMutation::RequestReview => root.request_review(expected_revision),
-                    RootMutation::AcceptReview(review) => {
-                        root.accept_review(expected_revision, review)
-                    }
+                let (changed, invalidated_queue_ids) = {
+                    let Some(root) = candidate.roots.get_mut(&id) else {
+                        let _ =
+                            reply.send(Err(ControlError::Admission(AdmissionError::RootNotFound)));
+                        continue;
+                    };
+                    let invalidate_children = matches!(
+                        &mutation,
+                        RootMutation::WaitForInput
+                            | RootMutation::WaitForApproval
+                            | RootMutation::Stop { .. }
+                            | RootMutation::ReviseContract { .. }
+                    );
+                    let queued = if invalidate_children {
+                        root.children()
+                            .values()
+                            .filter(|child| child.status() == state::ChildStatus::Queued)
+                            .map(ChildTask::queue_lease_id)
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    let changed = match mutation {
+                        RootMutation::StartAttempt => root.start_attempt(expected_revision),
+                        RootMutation::WaitForInput => root.wait_for_input(expected_revision),
+                        RootMutation::WaitForApproval => root.wait_for_approval(expected_revision),
+                        RootMutation::Stop { status, reason } => {
+                            root.stop(expected_revision, status, reason)
+                        }
+                        RootMutation::ReviseContract { goal, criteria } => {
+                            root.revise_contract(expected_revision, goal, criteria)
+                        }
+                        RootMutation::RecordCheck {
+                            contract_revision,
+                            requirement_id,
+                            outcome,
+                            receipt,
+                        } => root.record_check(
+                            expected_revision,
+                            contract_revision,
+                            &requirement_id,
+                            outcome,
+                            receipt,
+                        ),
+                        RootMutation::RequestReview => root.request_review(expected_revision),
+                        RootMutation::AcceptReview(review) => {
+                            root.accept_review(expected_revision, review)
+                        }
+                    };
+                    (changed, queued)
                 };
                 if let Err(error) = changed {
                     let _ = reply.send(Err(ControlError::TaskState(error)));
                     continue;
                 }
-                let root = root.clone();
+                let mut release_error = None;
+                for lease_id in invalidated_queue_ids {
+                    let Some(lease) = candidate.active_lease(lease_id) else {
+                        release_error = Some(AdmissionError::UnknownLease);
+                        break;
+                    };
+                    if let Err(error) = candidate.release(&lease) {
+                        release_error = Some(error);
+                        break;
+                    }
+                }
+                if let Some(error) = release_error {
+                    let _ = reply.send(Err(ControlError::Admission(error)));
+                    continue;
+                }
+                let root = candidate
+                    .roots
+                    .get(&id)
+                    .expect("root mutated above")
+                    .clone();
                 match store.persist(&candidate, &profile) {
                     Ok(_) => {
                         ledger = candidate;
@@ -1612,6 +1826,35 @@ mod tests {
         .unwrap()
     }
 
+    fn profile_with_queued_children(limit: u32) -> CapacityProfile {
+        CapacityProfile::new(
+            BTreeMap::from([
+                (Resource::Generation, 2),
+                (Resource::ContainedProcess, 4),
+                (Resource::QueuedChild, limit),
+            ]),
+            BTreeMap::from([
+                (Resource::Generation, 1),
+                (Resource::ContainedProcess, 2),
+                (Resource::QueuedChild, limit),
+            ]),
+            16,
+        )
+        .unwrap()
+    }
+
+    fn child_proposal(request_id: &str, write: &str) -> ChildProposal {
+        ChildProposal {
+            request_id: request_id.into(),
+            objective: format!("Investigate {request_id}"),
+            acceptance: format!("Return supported findings for {request_id}"),
+            inputs: vec![format!("input-{request_id}")],
+            reads: vec![],
+            writes: vec![write.into()],
+            benefit: delegation::ClaimedBenefit::IndependentJudgment,
+        }
+    }
+
     fn ask(resource: Resource, amount: u32) -> BTreeMap<Resource, u32> {
         BTreeMap::from([(resource, amount)])
     }
@@ -1712,6 +1955,157 @@ mod tests {
                 )
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn child_queue_admission_is_atomic_idempotent_and_released_on_root_stop() {
+        let data = temp_data_dir();
+        let timeout = Duration::from_secs(2);
+        let profile = profile_with_queued_children(2);
+        let actor = ControlActor::open(&data, "profile-1", profile.clone(), 8, timeout).unwrap();
+        let handle = actor.handle();
+        let policy = DelegationPolicy::new(delegation::DelegationMode::BoundedAdaptive, 4).unwrap();
+        let root = handle
+            .create_root_with_delegation(
+                "task-delegation".into(),
+                "Deliver a verified result".into(),
+                "Meet the declared requirements".into(),
+                2,
+                vec![Requirement::new("outcome".into(), true).unwrap()],
+                policy,
+            )
+            .unwrap();
+        let running = handle
+            .mutate_root(
+                root.id().into(),
+                root.revision(),
+                RootMutation::StartAttempt,
+            )
+            .unwrap();
+        let proposal_a = child_proposal("request-a", "candidate-a");
+        let proposal_b = child_proposal("request-b", "candidate-b");
+        let proposal_c = child_proposal("request-c", "candidate-c");
+        assert_eq!(
+            handle.admit_children(
+                running.id().into(),
+                running.revision(),
+                vec![proposal_a.clone(), proposal_b, proposal_c],
+            ),
+            Err(ControlError::Admission(
+                AdmissionError::CapacityUnavailable(Resource::QueuedChild)
+            ))
+        );
+        let unchanged = handle.read_root(running.id().into()).unwrap();
+        assert_eq!(unchanged.revision(), running.revision());
+        assert!(unchanged.children().is_empty());
+
+        let queued = handle
+            .admit_children(
+                running.id().into(),
+                running.revision(),
+                vec![
+                    proposal_a.clone(),
+                    child_proposal("request-b", "candidate-b"),
+                ],
+            )
+            .unwrap();
+        assert_eq!(queued.len(), 2);
+        assert!(
+            queued
+                .iter()
+                .all(|child| child.status() == state::ChildStatus::Queued)
+        );
+        assert_eq!(
+            handle
+                .admit_children(
+                    running.id().into(),
+                    running.revision(),
+                    vec![proposal_a, child_proposal("request-b", "candidate-b")],
+                )
+                .unwrap(),
+            queued
+        );
+        let stopped = handle
+            .mutate_root(
+                running.id().into(),
+                running.revision() + 1,
+                RootMutation::Stop {
+                    status: RootStatus::Cancelled,
+                    reason: "User stopped".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(stopped.children().len(), 2);
+        assert!(
+            stopped
+                .children()
+                .values()
+                .all(|child| child.status() == state::ChildStatus::Invalidated)
+        );
+        drop(handle);
+        drop(actor);
+
+        let restarted = ControlActor::open(&data, "profile-1", profile, 8, timeout).unwrap();
+        let recovered = restarted
+            .handle()
+            .read_root("task-delegation".into())
+            .unwrap();
+        assert_eq!(recovered, stopped);
+        fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
+    fn restart_interrupts_roots_and_invalidates_unstarted_queued_children() {
+        let data = temp_data_dir();
+        let timeout = Duration::from_secs(2);
+        let profile = profile_with_queued_children(2);
+        let actor = ControlActor::open(&data, "profile-1", profile.clone(), 8, timeout).unwrap();
+        let handle = actor.handle();
+        let policy = DelegationPolicy::new(delegation::DelegationMode::BoundedAdaptive, 2).unwrap();
+        let root = handle
+            .create_root_with_delegation(
+                "task-recovery".into(),
+                "Deliver a verified result".into(),
+                "Meet the declared requirements".into(),
+                2,
+                vec![Requirement::new("outcome".into(), true).unwrap()],
+                policy,
+            )
+            .unwrap();
+        let running = handle
+            .mutate_root(
+                root.id().into(),
+                root.revision(),
+                RootMutation::StartAttempt,
+            )
+            .unwrap();
+        handle
+            .admit_children(
+                running.id().into(),
+                running.revision(),
+                vec![
+                    child_proposal("request-a", "candidate-a"),
+                    child_proposal("request-b", "candidate-b"),
+                ],
+            )
+            .unwrap();
+        drop(handle);
+        drop(actor);
+
+        let recovered_actor = ControlActor::open(&data, "profile-1", profile, 8, timeout).unwrap();
+        let recovered = recovered_actor
+            .handle()
+            .read_root("task-recovery".into())
+            .unwrap();
+        assert_eq!(recovered.status(), RootStatus::Interrupted);
+        assert!(
+            recovered
+                .children()
+                .values()
+                .all(|child| child.status() == state::ChildStatus::Invalidated)
+        );
+        drop(recovered_actor);
+        fs::remove_dir_all(data).unwrap();
     }
 
     #[test]
