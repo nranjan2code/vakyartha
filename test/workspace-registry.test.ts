@@ -39,10 +39,18 @@ test("validateWorkspaceFolder admits accessible directories and rejects unsafe p
     mkdirSync(subData);
     assert.throws(() => validateWorkspaceFolder(subData, dataDir), /Application data directory cannot be selected/);
 
+    // A project root cannot contain the private app-data directory.
+    const nestedData = path.join(projectDir, "private-data");
+    mkdirSync(nestedData);
+    assert.throws(() => validateWorkspaceFolder(projectDir, nestedData), /Application data directory cannot be selected/);
+
     // Reserved folder names rejected
     const dotVak = path.join(projectDir, ".vak");
     mkdirSync(dotVak);
     assert.throws(() => validateWorkspaceFolder(dotVak, dataDir), /is reserved/);
+    const nestedGit = path.join(projectDir, "nested", ".GIT", "child");
+    mkdirSync(nestedGit, { recursive: true });
+    assert.throws(() => validateWorkspaceFolder(nestedGit, dataDir), /is reserved/);
   } finally {
     rmSync(dataDir, { recursive: true, force: true });
     rmSync(projectDir, { recursive: true, force: true });

@@ -124,14 +124,17 @@ export function validateWorkspaceFolder(value: string, dataDir?: string): Folder
   // Reject app-private directories
   if (dataDir) {
     const canonicalDataDir = realpathSyncSafe(dataDir);
-    if (canonical === canonicalDataDir || canonical.startsWith(`${canonicalDataDir}${path.sep}`)) {
+    if (canonical === canonicalDataDir
+      || canonical.startsWith(`${canonicalDataDir}${path.sep}`)
+      || canonicalDataDir.startsWith(`${canonical}${path.sep}`)) {
       throw new Error("Application data directory cannot be selected as a workspace folder.");
     }
   }
 
-  const baseName = path.basename(canonical);
-  if ([".vak", ".git", ".ssh", ".aws"].includes(baseName)) {
-    throw new Error(`The folder name '${baseName}' is reserved for configuration or metadata.`);
+  const reservedNames = new Set([".vak", ".git", ".ssh", ".aws", ".azure", ".kube", ".docker"]);
+  const reserved = canonical.split(path.sep).filter(part => reservedNames.has(part.toLowerCase()));
+  if (reserved.length) {
+    throw new Error(`The folder name '${reserved.at(-1)}' is reserved for configuration or metadata.`);
   }
 
   return {

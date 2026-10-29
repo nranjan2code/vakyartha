@@ -214,7 +214,7 @@ mod tests {
         let base = temp_dir();
         let data = base.join("private-data");
         let work = base.join("work");
-        let reserved = work.join(".git").join("nested");
+        let reserved = work.join(".GIT").join("nested");
         fs::create_dir(&data).expect("private directory can be created");
         fs::create_dir_all(&reserved).expect("reserved path can be created");
         let policy = WorkspaceAdmissionPolicy::new(&data).expect("admission policy");
