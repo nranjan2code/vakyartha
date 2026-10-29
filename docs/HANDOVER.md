@@ -22,6 +22,10 @@ The current implementation checkpoint pins Projection `65f183c` after pushing it
 
 The separate `vak-sandbox` runtime's Linux-only compile failure and false capability signals were corrected in its owning repository. Linux now compiles and refuses execution before launch or persisting an unverified Realm receipt; capability output reports enforcement only for supported builds, and Landlock/Bubblewrap stubs report unavailable. Docker ARM64 Rust 1.99.1 passes 51/51 sandbox workspace tests and strict Clippy. This does not provide Linux containment. The change is pushed at sandbox commit `c487ed9` on `codex/linux-runtime-fail-closed`. Vakyartha was not rebuilt or installed, so an existing bundle does not contain this correction. The app's Linux Rust gate remains separate and still uses its existing build-only Tauri override.
 
+## Framework candidate-generation seam — active 2026-10-29
+
+Projection `946ee39` now exposes `VakHost.runCandidate`: it accepts explicit context snapshots, no chat history, no inherited default tools, enforces transactional surface submission, and returns candidate surfaces with base versions without persistence or viewer broadcasts. Only explicitly supplied local context tools are allowed. Projection `npm run typecheck`, `npm test` (413/413), focused host tests (19/19) and package build pass under Node 26.13.0. The candidate generator is pushed in its owning repo; Vakyartha's `framework/` pin is intentionally unchanged until the native writer's expected-version commit/acknowledgement and publication path exists. This capability does not close AR/ISO or user-outcome gates.
+
 The latest native delegation slice persists bounded queued child assignments under the root's revision and trusted policy, with queue capacity, idempotent retries, stop/revision invalidation and restart cleanup. This is not an active subagent runtime: attempt execution, worker isolation, dispatch capacity conversion, communications and canonical evidence integration remain open.
 
 ## Ongoing requirements and status replace MVP framing — 2026-10-29
