@@ -1424,6 +1424,30 @@ mod tests {
     }
 
     #[test]
+    fn one_bounded_independent_judgment_child_can_be_queued_under_policy() {
+        let mut task = RootTask::create_with_delegation(
+            "root-1".into(),
+            "Deliver the checked result".into(),
+            "Meet the declared criteria".into(),
+            3,
+            vec![Requirement::new("outcome".into(), true).unwrap()],
+            DelegationPolicy::new(DelegationMode::BoundedAdaptive, 1).unwrap(),
+        )
+        .unwrap();
+        task.start_attempt(task.revision()).unwrap();
+        let child = task
+            .admit_children(
+                task.revision(),
+                vec![child_proposal("review-1", "candidate-1")],
+                &[11],
+            )
+            .unwrap();
+        assert_eq!(child.len(), 1);
+        assert_eq!(child[0].status(), ChildStatus::Queued);
+        task.validate().unwrap();
+    }
+
+    #[test]
     fn child_attempt_start_and_return_are_revision_fenced_and_preserve_result_identity() {
         let mut task = delegating_root();
         task.start_attempt(task.revision()).unwrap();

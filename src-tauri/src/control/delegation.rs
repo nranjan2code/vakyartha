@@ -118,11 +118,7 @@ pub fn validate_proposal(mode: DelegationMode, proposals: &[ChildProposal]) -> P
         return inline(ProposalReason::SeparationNotDeclared);
     }
 
-    if proposals.len() < 2
-        && !proposals
-            .iter()
-            .any(|proposal| proposal.benefit == ClaimedBenefit::RequiredSeparation)
-    {
+    if proposals.len() == 1 && proposals[0].benefit == ClaimedBenefit::MeasuredParallelism {
         return inline(ProposalReason::NoIndependentWork);
     }
 
@@ -250,6 +246,35 @@ mod tests {
         );
         assert_eq!(
             decision.disposition,
+            ProposalDisposition::EligibleForTrustedAdmission
+        );
+    }
+
+    #[test]
+    fn one_child_can_serve_independent_judgment_or_context_but_not_parallelism() {
+        for benefit in [
+            ClaimedBenefit::IndependentJudgment,
+            ClaimedBenefit::ContextBound,
+        ] {
+            let mut child = proposal("child-1", "candidate-1");
+            child.benefit = benefit;
+            assert_eq!(
+                validate_proposal(DelegationMode::BoundedAdaptive, &[child]).disposition,
+                ProposalDisposition::EligibleForTrustedAdmission
+            );
+        }
+
+        let mut child = proposal("child-1", "candidate-1");
+        child.benefit = ClaimedBenefit::MeasuredParallelism;
+        assert_eq!(
+            validate_proposal(DelegationMode::BoundedAdaptive, &[child]).reason,
+            ProposalReason::NoIndependentWork
+        );
+
+        let mut separated = proposal("child-1", "candidate-1");
+        separated.benefit = ClaimedBenefit::RequiredSeparation;
+        assert_eq!(
+            validate_proposal(DelegationMode::DeclaredWorkflow, &[separated]).disposition,
             ProposalDisposition::EligibleForTrustedAdmission
         );
     }
