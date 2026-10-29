@@ -26,6 +26,10 @@ struct Backend {
 mod engine;
 mod policy;
 mod vault;
+// Transport primitive only; provider-specific authorization and control-actor
+// dispatch must be completed before this client is used for product traffic.
+#[allow(dead_code)]
+mod broker;
 // Native admission primitives remain inactive until the single control actor
 // can govern every protected workload through one cutover.
 #[allow(dead_code)]

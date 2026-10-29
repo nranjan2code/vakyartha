@@ -2,6 +2,12 @@
 
 Status: active implementation, 2026-10-29. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Native HTTP transport primitive — 2026-10-30
+
+Added the first native HTTP transport primitive using the previously approved exact-pinned reqwest 0.13.5 dependency. The client disables automatic proxy discovery, refuses redirects, sets connect/total timeouts, accepts only HTTPS URLs on the static provider-origin allowlist, bounds endpoint and request sizes, and caps streamed response bodies even when the server omits `Content-Length`. The module is compiled but remains explicitly inactive and is not exposed to TypeScript or a provider request path. A review of its redirect test found that a single nonblocking accept could miss delayed connections; the test now polls for one second and confirms the second listener receives no redirected request.
+
+Validation: digest-pinned Linux Rust 1.99.1 Docker gate passes 56/56 library tests and strict Clippy. The primitive does not validate provider-specific endpoint paths/payloads, bind credentials to an approved operation, resolve/recheck destination IPs, tie dispatch to a single-use native permit, expose cancellation, or produce redacted durable receipts. Consequently it is a transport building block only: no provider egress or trust-boundary gate is closed.
+
 ## Execution-path and current-stack audit — 2026-10-30
 
 Re-audited the app, Projection, and sandbox owners before the full-runtime cutover. The Rust control actor and TypeScript `Tasks`/`WorkspaceRegistry` still have separate authority; `src-tauri/src/lib.rs` does not start the actor. The private desktop pipe currently carries bounded UI-to-sidecar requests and sidecar-to-UI response frames, but has no typed sidecar-to-Rust control request/response contract. Adding a route through the existing generic `/api/*` engine request would leave the Node worker as the caller of native authority and is not an acceptable cutover by itself. The next implementation slice must establish caller identity, command families, cancellation/backpressure, and native actor lifecycle on the private transport before routing task or workspace mutations through it.

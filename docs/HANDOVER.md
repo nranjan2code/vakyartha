@@ -1,5 +1,9 @@
 # Vakyartha handover — 2026-10-30
 
+## Inactive native HTTP transport primitive — 2026-10-30
+
+The approved reqwest transport now compiles as an inactive Rust module with proxy discovery disabled, redirect refusal, HTTPS/allowlist checks, timeouts and bounded request/response bodies. The Linux Rust 1.99.1 Docker gate passes 56/56 plus strict Clippy. It is deliberately not connected to provider traffic: provider operation/credential/approval contracts, destination IP pinning, cancellation, atomic permit consumption and durable redacted receipts are still required. Full app/agent-runtime cutover remains open; see [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md).
+
 ## Realm receipt checkpoint correction — 2026-10-30
 
 The synchronous tool-result observer now attaches a validated Realm UUID receipt without starting an unawaited write. The task operation wrapper persists the returned operation state and receipt together before cancellation/recovery can unwind; this removes duplicate checkpoint/revision churn and retains the cancelled-after-success recovery guarantee. The full serial Node 26.13.0 Linux ARM64 app suite passes 253 tests with 21 platform-gated skips and no failures; typecheck passes. The container's platform dependencies were installed separately with lifecycle scripts disabled. A Linux test expectation now checks the runtime's explicit macOS-only refusal for both command and Realm operations. Current TS task ownership remains active; native cutover and all AR/IA/ISO gates remain open. Full evidence is in [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md).
