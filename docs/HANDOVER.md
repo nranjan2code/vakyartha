@@ -1,5 +1,9 @@
 # Vakyartha handover — 2026-10-30
 
+## Native cumulative operation accounting — 2026-10-30
+
+The native root aggregate now persists bounded cumulative model-request/tool-call limits and idempotent charge identities. The actor persists each unique charge before acknowledgement and persists a terminal `LimitReached` stop on exhaustion; the native store schema is version 9. Focused macOS budget tests pass 2/2, strict Clippy passes, and `scripts/linux-rust-check.sh` passes 82/82 with strict Clippy. This does not authorize dispatch or replace TypeScript task/budget ownership; per-run limits, active-time accounting, approvals, provider/tool routing and durable product receipts remain open. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-cumulative-modeltool-operation-accounting--2026-10-30).
+
 ## Active provider path audit — 2026-10-30
 
 The product call path is still unmediated: `sidecar/settings.ts` loads keys into `process.env`; desktop `src/ui.ts` writes each changed secret to the Rust vault and then `/api/settings`, which writes it again through the TypeScript Keychain/file store; `sidecar/server.ts:modelProviders()` builds from `providersFromEnv()` and supplies no `ProviderTransport`. The pinned Projection host calls `entry.make()` or `entry.make({ think })`, so model calls use the provider's default global `fetch`. TS task approvals, scheduling and journal writes remain in `sidecar/tasks.ts`. Enabling only the native transport seam would retain the other authority paths. The settings, task, approval, capacity and provider call path need one vertical cutover before the broker is activated. This was a source trace only; no runtime path was changed. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#active-provider-and-credential-path-audit--2026-10-30).

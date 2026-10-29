@@ -6,9 +6,13 @@ use super::delegation::{
 };
 use super::registry::WorkspaceGrant;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_REQUIREMENTS: usize = 128;
+pub const DEFAULT_MODEL_REQUEST_LIMIT: u32 = 96;
+pub const DEFAULT_TOOL_CALL_LIMIT: u32 = 96;
+pub const MAX_MODEL_REQUEST_LIMIT: u32 = 384;
+pub const MAX_TOOL_CALL_LIMIT: u32 = 768;
 const MAX_TEXT: usize = 8_000;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -109,12 +113,35 @@ pub struct UserReview {
     pub note: String,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BudgetLimits {
+    pub model_requests: u32,
+    pub tool_calls: u32,
+}
+
+impl BudgetLimits {
+    pub fn new(model_requests: u32, tool_calls: u32) -> Result<Self, StateError> {
+        if model_requests == 0
+            || model_requests > MAX_MODEL_REQUEST_LIMIT
+            || tool_calls > MAX_TOOL_CALL_LIMIT
+        {
+            return Err(StateError::InvalidLimit);
+        }
+        Ok(Self {
+            model_requests,
+            tool_calls,
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RootCreate {
     pub id: String,
     pub goal: String,
     pub criteria: String,
     pub run_limit: u32,
+    pub budget_limits: BudgetLimits,
     pub requirements: Vec<Requirement>,
     pub delegation: DelegationPolicy,
 }
@@ -154,6 +181,9 @@ pub struct RootTask {
     criteria: String,
     run_limit: u32,
     runs_started: u32,
+    budget_limits: BudgetLimits,
+    model_request_ids: BTreeSet<String>,
+    tool_call_ids: BTreeSet<String>,
     requirements: BTreeMap<String, Requirement>,
     stop_cause: Option<StopCause>,
     stop_reason: Option<String>,
@@ -399,6 +429,19 @@ pub enum StateError {
     Corrupt,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BudgetKind {
+    ModelRequest,
+    ToolCall,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BudgetCharge {
+    Charged,
+    Duplicate,
+    Exhausted,
+}
+
 impl RootTask {
     pub fn create(
         id: String,
@@ -426,31 +469,44 @@ impl RootTask {
         delegation: DelegationPolicy,
     ) -> Result<Self, StateError> {
         Self::create_with_grant(
-            id,
-            goal,
-            criteria,
-            run_limit,
-            requirements,
-            delegation,
+            RootCreate {
+                id,
+                goal,
+                criteria,
+                run_limit,
+                budget_limits: BudgetLimits {
+                    model_requests: DEFAULT_MODEL_REQUEST_LIMIT,
+                    tool_calls: DEFAULT_TOOL_CALL_LIMIT,
+                },
+                requirements,
+                delegation,
+            },
             None,
         )
     }
 
     pub fn create_with_grant(
-        id: String,
-        goal: String,
-        criteria: String,
-        run_limit: u32,
-        requirements: Vec<Requirement>,
-        delegation: DelegationPolicy,
+        request: RootCreate,
         workspace_grant: Option<WorkspaceGrant>,
     ) -> Result<Self, StateError> {
+        let RootCreate {
+            id,
+            goal,
+            criteria,
+            run_limit,
+            budget_limits,
+            requirements,
+            delegation,
+        } = request;
         if !valid_identity(&id) {
             return Err(StateError::InvalidIdentity);
         }
         validate_text(&goal, MAX_TEXT)?;
         validate_text(&criteria, 4_000)?;
-        if run_limit == 0 || run_limit > 256 {
+        if run_limit == 0
+            || run_limit > 32
+            || BudgetLimits::new(budget_limits.model_requests, budget_limits.tool_calls).is_err()
+        {
             return Err(StateError::InvalidLimit);
         }
         if requirements.is_empty()
@@ -482,6 +538,9 @@ impl RootTask {
             criteria,
             run_limit,
             runs_started: 0,
+            budget_limits,
+            model_request_ids: BTreeSet::new(),
+            tool_call_ids: BTreeSet::new(),
             requirements: indexed,
             stop_cause: None,
             stop_reason: None,
@@ -517,6 +576,18 @@ impl RootTask {
     }
     pub fn runs_started(&self) -> u32 {
         self.runs_started
+    }
+    pub fn model_requests_used(&self) -> u32 {
+        self.model_request_ids.len() as u32
+    }
+    pub fn tool_calls_used(&self) -> u32 {
+        self.tool_call_ids.len() as u32
+    }
+    pub fn model_request_limit(&self) -> u32 {
+        self.budget_limits.model_requests
+    }
+    pub fn tool_call_limit(&self) -> u32 {
+        self.budget_limits.tool_calls
     }
     pub fn requirements(&self) -> &BTreeMap<String, Requirement> {
         &self.requirements
@@ -844,6 +915,58 @@ impl RootTask {
         Ok(())
     }
 
+    /// Charges a cumulative operation allowance before external dispatch.
+    /// Request identities make retries idempotent; a duplicate charge must not
+    /// be interpreted as permission to replay the external request.
+    pub fn charge_budget(
+        &mut self,
+        expected_revision: u64,
+        kind: BudgetKind,
+        request_id: String,
+    ) -> Result<BudgetCharge, StateError> {
+        if !valid_identity(&request_id) {
+            return Err(StateError::InvalidIdentity);
+        }
+        let (duplicate, used, limit) = match kind {
+            BudgetKind::ModelRequest => (
+                self.model_request_ids.contains(&request_id),
+                self.model_request_ids.len() as u32,
+                self.budget_limits.model_requests,
+            ),
+            BudgetKind::ToolCall => (
+                self.tool_call_ids.contains(&request_id),
+                self.tool_call_ids.len() as u32,
+                self.budget_limits.tool_calls,
+            ),
+        };
+        if duplicate {
+            return Ok(BudgetCharge::Duplicate);
+        }
+        self.check_revision(expected_revision)?;
+        if self.status != RootStatus::Running {
+            return Err(StateError::InvalidTransition(self.status));
+        }
+        if used >= limit {
+            self.stop(
+                expected_revision,
+                RootStatus::LimitReached,
+                StopCause::BudgetLimit,
+                match kind {
+                    BudgetKind::ModelRequest => "Model request limit reached",
+                    BudgetKind::ToolCall => "Tool call limit reached",
+                }
+                .into(),
+            )?;
+            return Ok(BudgetCharge::Exhausted);
+        }
+        match kind {
+            BudgetKind::ModelRequest => self.model_request_ids.insert(request_id),
+            BudgetKind::ToolCall => self.tool_call_ids.insert(request_id),
+        };
+        self.bump_revision()?;
+        Ok(BudgetCharge::Charged)
+    }
+
     pub fn wait_for_input(&mut self, expected_revision: u64) -> Result<(), StateError> {
         self.transition_and_invalidate_children(expected_revision, RootStatus::WaitingForInput)
     }
@@ -1084,8 +1207,20 @@ impl RootTask {
             || self.contract_revision == 0
             || self.cancellation_epoch == 0
             || self.run_limit == 0
-            || self.run_limit > 256
+            || self.run_limit > 32
             || self.runs_started > self.run_limit
+            || BudgetLimits::new(
+                self.budget_limits.model_requests,
+                self.budget_limits.tool_calls,
+            )
+            .is_err()
+            || self.model_request_ids.len() as u32 > self.budget_limits.model_requests
+            || self.tool_call_ids.len() as u32 > self.budget_limits.tool_calls
+            || self
+                .model_request_ids
+                .iter()
+                .chain(self.tool_call_ids.iter())
+                .any(|id| !valid_identity(id))
             || self.requirements.len() > MAX_REQUIREMENTS
             || self.requirements.is_empty()
             || !self.requirements.values().any(Requirement::mandatory)
@@ -1366,6 +1501,61 @@ mod tests {
             vec![Requirement::new("outcome".into(), true).unwrap()],
         )
         .unwrap()
+    }
+
+    fn root_with_limits(model_requests: u32, tool_calls: u32) -> RootTask {
+        RootTask::create_with_grant(
+            RootCreate {
+                id: "root-budget".into(),
+                goal: "Deliver the checked result".into(),
+                criteria: "Meet the declared criteria".into(),
+                run_limit: 3,
+                budget_limits: BudgetLimits::new(model_requests, tool_calls).unwrap(),
+                requirements: vec![Requirement::new("outcome".into(), true).unwrap()],
+                delegation: DelegationPolicy::new(DelegationMode::Disabled, 0).unwrap(),
+            },
+            None,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn model_and_tool_budgets_charge_idempotently_and_stop_at_the_limit() {
+        let mut task = root_with_limits(1, 1);
+        task.start_attempt(task.revision()).unwrap();
+
+        let revision = task.revision();
+        assert_eq!(
+            task.charge_budget(revision, BudgetKind::ModelRequest, "model-1".into())
+                .unwrap(),
+            BudgetCharge::Charged
+        );
+        assert_eq!(task.model_requests_used(), 1);
+        assert_eq!(
+            task.charge_budget(revision, BudgetKind::ModelRequest, "model-1".into())
+                .unwrap(),
+            BudgetCharge::Duplicate
+        );
+
+        let revision = task.revision();
+        assert_eq!(
+            task.charge_budget(revision, BudgetKind::ToolCall, "tool-1".into())
+                .unwrap(),
+            BudgetCharge::Charged
+        );
+        let epoch = task.cancellation_epoch();
+        let revision = task.revision();
+        assert_eq!(
+            task.charge_budget(revision, BudgetKind::ModelRequest, "model-2".into())
+                .unwrap(),
+            BudgetCharge::Exhausted
+        );
+        assert_eq!(task.status(), RootStatus::LimitReached);
+        assert_eq!(task.stop_cause(), Some(StopCause::BudgetLimit));
+        assert!(task.cancellation_epoch() > epoch);
+        assert_eq!(task.model_requests_used(), 1);
+        assert_eq!(task.tool_calls_used(), 1);
+        task.validate().unwrap();
     }
 
     fn delegating_root() -> RootTask {

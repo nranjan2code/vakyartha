@@ -2,6 +2,12 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Native cumulative model/tool operation accounting — 2026-10-30
+
+The native root aggregate now stores bounded cumulative model-request and tool-call limits plus charged operation identities. The control actor persists a charge before acknowledging it, accepts retry of the same identity idempotently, and persists a `LimitReached` stop when another unique operation arrives after exhaustion. Root creation uses typed `BudgetLimits`; the native store schema is version 9. The macOS focused budget tests pass 2/2, strict Rust 1.99.1 Clippy passes, and `scripts/linux-rust-check.sh` passes 82/82 with strict Clippy.
+
+This is accounting substrate only: it does not authorize an external effect, dispatch a provider/tool request, provide per-run caps or active-time reservation/settlement, or replace the current TypeScript task budget and task writer. Duplicate charge acknowledgement is not permission to replay the operation. The product cutover and complete ADR-013 semantics remain open.
+
 ## Active provider and credential path audit — 2026-10-30
 
 Rechecked the live source after confining the Rust broker. `Settings.load()` still reads provider secrets into the sidecar's `process.env`; on desktop, `src/ui.ts` calls native `vault_set`/`vault_delete` and then PUTs the same secret to `/api/settings`, whose TypeScript `Settings` store writes Keychain or the settings file. `modelProviders()` still calls `providersFromEnv()` and wraps its provider instances, but supplies no `ProviderTransport`; the pinned Projection host calls `entry.make()` or `entry.make({ think })`, so the provider default remains global `fetch`, while `tasks.beforeModelRequest()` and FinOps wrap it. Task approvals and task persistence also remain in `sidecar/tasks.ts`.

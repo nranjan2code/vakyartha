@@ -10,7 +10,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 8;
+const STORE_VERSION: u16 = 9;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -28,8 +28,8 @@ use registry::{
     WorkspaceGrant, WorkspaceMode, WorkspaceRecord,
 };
 use state::{
-    CheckOutcome, ChildTask, ExecutionFence, Requirement, RootCreate, RootStatus, RootTask,
-    StateError, StopCause, UserReview,
+    BudgetCharge, BudgetKind, BudgetLimits, CheckOutcome, ChildTask, ExecutionFence, Requirement,
+    RootCreate, RootStatus, RootTask, StateError, StopCause, UserReview,
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -622,6 +622,13 @@ enum ActorCommand {
         mutation: RootMutation,
         reply: SyncSender<Result<RootTask, ControlError>>,
     },
+    ChargeBudget {
+        root_id: String,
+        expected_revision: u64,
+        kind: BudgetKind,
+        request_id: String,
+        reply: SyncSender<Result<(BudgetCharge, RootTask), ControlError>>,
+    },
     ReadRoot {
         id: String,
         reply: SyncSender<Result<RootTask, ControlError>>,
@@ -754,17 +761,23 @@ impl ControlHandle {
         requirements: Vec<Requirement>,
         delegation: DelegationPolicy,
     ) -> Result<RootTask, ControlError> {
-        self.create_root_scoped(
-            RootCreate {
-                id,
-                goal,
-                criteria,
-                run_limit,
-                requirements,
-                delegation,
-            },
-            None,
-        )
+        self.create_root_with_budget(RootCreate {
+            id,
+            goal,
+            criteria,
+            run_limit,
+            budget_limits: BudgetLimits::new(
+                state::DEFAULT_MODEL_REQUEST_LIMIT,
+                state::DEFAULT_TOOL_CALL_LIMIT,
+            )
+            .map_err(ControlError::TaskState)?,
+            requirements,
+            delegation,
+        })
+    }
+
+    pub fn create_root_with_budget(&self, request: RootCreate) -> Result<RootTask, ControlError> {
+        self.create_root_scoped(request, None)
     }
 
     pub fn create_root_in_workspace(
@@ -915,6 +928,55 @@ impl ControlHandle {
         let (reply, response) = sync_channel(1);
         self.commands
             .try_send(ActorCommand::ReadRoot { id, reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    /// Durably charges one model request before dispatch. A duplicate result
+    /// is an idempotency signal, never permission to replay the request.
+    pub fn charge_model_request(
+        &self,
+        root_id: String,
+        expected_revision: u64,
+        request_id: String,
+    ) -> Result<(BudgetCharge, RootTask), ControlError> {
+        self.charge_budget(
+            root_id,
+            expected_revision,
+            BudgetKind::ModelRequest,
+            request_id,
+        )
+    }
+
+    /// Durably charges one tool invocation before dispatch. A duplicate result
+    /// is an idempotency signal, never permission to replay the invocation.
+    pub fn charge_tool_call(
+        &self,
+        root_id: String,
+        expected_revision: u64,
+        request_id: String,
+    ) -> Result<(BudgetCharge, RootTask), ControlError> {
+        self.charge_budget(root_id, expected_revision, BudgetKind::ToolCall, request_id)
+    }
+
+    fn charge_budget(
+        &self,
+        root_id: String,
+        expected_revision: u64,
+        kind: BudgetKind,
+        request_id: String,
+    ) -> Result<(BudgetCharge, RootTask), ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::ChargeBudget {
+                root_id,
+                expected_revision,
+                kind,
+                request_id,
+                reply,
+            })
             .map_err(queue_error)?;
         response
             .recv_timeout(self.response_timeout)
@@ -1237,14 +1299,7 @@ fn actor_loop(
                 workspace_binding,
                 reply,
             } => {
-                let RootCreate {
-                    id,
-                    goal,
-                    criteria,
-                    run_limit,
-                    requirements,
-                    delegation,
-                } = request;
+                let id = request.id.clone();
                 if ledger.roots.contains_key(&id) {
                     let _ = reply.send(Err(ControlError::Admission(AdmissionError::DuplicateRoot)));
                     continue;
@@ -1266,15 +1321,7 @@ fn actor_loop(
                     }
                     None => None,
                 };
-                let root = match RootTask::create_with_grant(
-                    id,
-                    goal,
-                    criteria,
-                    run_limit,
-                    requirements,
-                    delegation,
-                    workspace_grant,
-                ) {
+                let root = match RootTask::create_with_grant(request, workspace_grant) {
                     Ok(root) => root,
                     Err(error) => {
                         let _ = reply.send(Err(ControlError::TaskState(error)));
@@ -1725,6 +1772,90 @@ fn actor_loop(
                     Ok(_) => {
                         ledger = candidate;
                         let _ = reply.send(Ok(root));
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Store(error)));
+                        break;
+                    }
+                }
+            }
+            ActorCommand::ChargeBudget {
+                root_id,
+                expected_revision,
+                kind,
+                request_id,
+                reply,
+            } => {
+                let Some(root) = ledger.roots.get(&root_id) else {
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::RootNotFound)));
+                    continue;
+                };
+                if root
+                    .workspace_grant()
+                    .is_some_and(|grant| !ledger.workspace_grant_is_current(grant))
+                {
+                    let _ = reply.send(Err(ControlError::TaskState(
+                        StateError::WorkspaceGrantStale,
+                    )));
+                    continue;
+                }
+                let queued_child_leases = root
+                    .children()
+                    .values()
+                    .filter(|child| child.status() == state::ChildStatus::Queued)
+                    .map(ChildTask::queue_lease_id)
+                    .collect::<Vec<_>>();
+                let mut candidate = ledger.clone();
+                let charged = candidate
+                    .roots
+                    .get_mut(&root_id)
+                    .expect("root checked above")
+                    .charge_budget(expected_revision, kind, request_id);
+                let outcome = match charged {
+                    Ok(outcome) => outcome,
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::TaskState(error)));
+                        continue;
+                    }
+                };
+                if outcome == BudgetCharge::Duplicate {
+                    let _ = reply.send(Ok((
+                        outcome,
+                        candidate
+                            .roots
+                            .get(&root_id)
+                            .expect("root retained")
+                            .clone(),
+                    )));
+                    continue;
+                }
+                if outcome == BudgetCharge::Exhausted {
+                    let mut release_error = None;
+                    for lease_id in queued_child_leases {
+                        let Some(lease) = candidate.active_lease(lease_id) else {
+                            release_error =
+                                Some(ControlError::Admission(AdmissionError::UnknownLease));
+                            break;
+                        };
+                        if let Err(error) = candidate.release(&lease) {
+                            release_error = Some(ControlError::Admission(error));
+                            break;
+                        }
+                    }
+                    if let Some(error) = release_error {
+                        let _ = reply.send(Err(error));
+                        continue;
+                    }
+                }
+                let updated = candidate
+                    .roots
+                    .get(&root_id)
+                    .expect("root retained")
+                    .clone();
+                match store.persist(&candidate, &profile) {
+                    Ok(_) => {
+                        ledger = candidate;
+                        let _ = reply.send(Ok((outcome, updated)));
                     }
                     Err(error) => {
                         let _ = reply.send(Err(ControlError::Store(error)));
@@ -2425,6 +2556,81 @@ mod tests {
         fs::remove_dir_all(data).unwrap();
     }
 
+    #[test]
+    fn cumulative_operation_budgets_persist_before_ack_and_retry_idempotently() {
+        let data = temp_data_dir();
+        let timeout = Duration::from_secs(2);
+        let profile = CapacityProfile::unconfigured().unwrap();
+        let actor =
+            ControlActor::open(&data, "unconfigured-v1", profile.clone(), 16, timeout).unwrap();
+        let handle = actor.handle();
+        let queued = handle
+            .create_root_with_budget(RootCreate {
+                id: "task-budget".into(),
+                goal: "Complete the requested work".into(),
+                criteria: "Preserve the original acceptance criteria".into(),
+                run_limit: 2,
+                budget_limits: BudgetLimits::new(1, 1).unwrap(),
+                requirements: vec![Requirement::new("outcome".into(), true).unwrap()],
+                delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0).unwrap(),
+            })
+            .unwrap();
+        let running = handle
+            .mutate_root(
+                queued.id().into(),
+                queued.revision(),
+                RootMutation::StartAttempt,
+            )
+            .unwrap();
+        let (first, after_model) = handle
+            .charge_model_request(running.id().into(), running.revision(), "model-op-1".into())
+            .unwrap();
+        assert_eq!(first, BudgetCharge::Charged);
+        assert_eq!(after_model.model_requests_used(), 1);
+        assert_eq!(
+            handle
+                .read_root(after_model.id().into())
+                .unwrap()
+                .model_requests_used(),
+            1
+        );
+        let (duplicate, duplicate_root) = handle
+            .charge_model_request(running.id().into(), running.revision(), "model-op-1".into())
+            .unwrap();
+        assert_eq!(duplicate, BudgetCharge::Duplicate);
+        assert_eq!(duplicate_root.revision(), after_model.revision());
+        let (tool_charge, after_tool) = handle
+            .charge_tool_call(
+                after_model.id().into(),
+                after_model.revision(),
+                "tool-op-1".into(),
+            )
+            .unwrap();
+        assert_eq!(tool_charge, BudgetCharge::Charged);
+        let (exhausted, stopped) = handle
+            .charge_model_request(
+                after_tool.id().into(),
+                after_tool.revision(),
+                "model-op-2".into(),
+            )
+            .unwrap();
+        assert_eq!(exhausted, BudgetCharge::Exhausted);
+        assert_eq!(stopped.status(), RootStatus::LimitReached);
+        assert_eq!(stopped.stop_cause(), Some(StopCause::BudgetLimit));
+        assert_eq!(stopped.model_requests_used(), 1);
+        assert_eq!(stopped.tool_calls_used(), 1);
+
+        drop(handle);
+        drop(actor);
+        let reopened = ControlActor::open(&data, "unconfigured-v1", profile, 16, timeout).unwrap();
+        let recovered = reopened.handle().read_root("task-budget".into()).unwrap();
+        assert_eq!(recovered.status(), RootStatus::LimitReached);
+        assert_eq!(recovered.model_requests_used(), 1);
+        assert_eq!(recovered.tool_calls_used(), 1);
+        drop(reopened);
+        fs::remove_dir_all(data).unwrap();
+    }
+
     fn profile_with_queued_children(limit: u32) -> CapacityProfile {
         CapacityProfile::new(
             BTreeMap::from([
@@ -2469,6 +2675,7 @@ mod tests {
                     goal: "Inspect the fixed workspace".into(),
                     criteria: "Return supported findings".into(),
                     run_limit: 2,
+                    budget_limits: BudgetLimits::new(96, 96).unwrap(),
                     requirements: vec![
                         Requirement::new(format!("requirement-{id}"), true).unwrap(),
                     ],
@@ -3617,6 +3824,7 @@ mod tests {
                     goal: "Inspect the selected workspace".into(),
                     criteria: "Return traceable findings".into(),
                     run_limit: 2,
+                    budget_limits: BudgetLimits::new(96, 96).unwrap(),
                     requirements: vec![Requirement::new("workspace-review".into(), true).unwrap()],
                     delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0)
                         .unwrap(),
@@ -3643,6 +3851,7 @@ mod tests {
                     goal: "Inspect the selected workspace".into(),
                     criteria: "Return traceable findings".into(),
                     run_limit: 2,
+                    budget_limits: BudgetLimits::new(96, 96).unwrap(),
                     requirements: vec![Requirement::new("workspace-review".into(), true).unwrap()],
                     delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0)
                         .unwrap(),
