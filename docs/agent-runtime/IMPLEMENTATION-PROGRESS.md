@@ -123,3 +123,7 @@ The owner-only file fallback previously wrote a predictable temporary path using
 ## Latest Rust lint pass — 2026-10-29
 
 `cargo clippy --lib --tests -- -D warnings` had 19 failures under Rust 1.99. The unused pure-policy helpers are now test-only until the native broker uses the corresponding decisions; credential retrieval APIs are explicitly expected dead code while the native broker remains unwired; current Clippy control-flow lints are corrected without changing IPC fields or policy outcomes. Strict Clippy passes on macOS and in the pinned Linux Docker gate. The public test commands now keep those target-specific checks visible rather than relying on the macOS target alone.
+
+## Linux Secret Service write correction — 2026-10-29
+
+The native `secret-tool store` call previously did not provide the selected value on stdin, which is the command’s input channel; a zero exit status could therefore acknowledge a write that never stored the key. A narrow helper now pipes the value, sends no secret in arguments or captured output, waits for successful completion, and uses the owner-only fallback if Secret Service is unavailable or refuses the write. The Linux-only fixture replaces the command with a synthetic executable and verifies exact bytes, whitespace and absence from argv without using a real secret service. The digest-pinned Rust 1.99.1 Docker gate passes 51/51 tests and strict Clippy; macOS tests 50/50 and strict Clippy pass. This repairs key storage, not native credential insertion into provider operations.

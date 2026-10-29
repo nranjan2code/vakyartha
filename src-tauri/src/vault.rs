@@ -9,6 +9,8 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(target_os = "linux")]
+use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(unix)]
@@ -131,7 +133,13 @@ fn write_vault_file(path: &Path, map: &BTreeMap<String, String>) -> Result<(), S
     result
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "Secret reads are reserved for the native credential broker, which is not wired yet"))]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "Secret reads are reserved for the native credential broker, which is not wired yet"
+    )
+)]
 fn file_vault_get(data_dir: &Path, account: &str) -> Result<Option<String>, String> {
     let path = vault_file_path(data_dir);
     Ok(read_vault_file(&path)?.get(account).cloned())
@@ -163,7 +171,10 @@ mod macos {
     use std::io::Write;
     use std::process::Stdio;
 
-    #[expect(dead_code, reason = "Secret reads are reserved for the native credential broker, which is not wired yet")]
+    #[expect(
+        dead_code,
+        reason = "Secret reads are reserved for the native credential broker, which is not wired yet"
+    )]
     pub fn get(service: &str, account: &str) -> Result<Option<String>, String> {
         let output = Command::new("/usr/bin/security")
             .args(["find-generic-password", "-s", service, "-a", account, "-w"])
@@ -231,7 +242,42 @@ mod macos {
 mod linux {
     use super::*;
 
-    #[expect(dead_code, reason = "Secret reads are reserved for the native credential broker, which is not wired yet")]
+    pub(super) fn store_with_secret_tool(
+        tool: &Path,
+        service: &str,
+        account: &str,
+        value: &str,
+    ) -> bool {
+        let Ok(mut child) = Command::new(tool)
+            .args([
+                "store",
+                "--label=Vakyartha Secret",
+                "service",
+                service,
+                "account",
+                account,
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        else {
+            return false;
+        };
+        let Some(mut stdin) = child.stdin.take() else {
+            let _ = child.wait();
+            return false;
+        };
+        let write_ok = stdin.write_all(value.as_bytes()).is_ok();
+        drop(stdin);
+        let command_ok = child.wait().is_ok_and(|status| status.success());
+        write_ok && command_ok
+    }
+
+    #[expect(
+        dead_code,
+        reason = "Secret reads are reserved for the native credential broker, which is not wired yet"
+    )]
     pub fn get(service: &str, account: &str, data_dir: &Path) -> Result<Option<String>, String> {
         // Try secret-tool if available in desktop environment.
         if let Ok(output) = Command::new("secret-tool")
@@ -251,21 +297,7 @@ mod linux {
     }
 
     pub fn set(service: &str, account: &str, value: &str, data_dir: &Path) -> Result<(), String> {
-        // Try secret-tool first.
-        let secret_tool_result = Command::new("secret-tool")
-            .args([
-                "store",
-                "--label=Vakyartha Secret",
-                "service",
-                service,
-                "account",
-                account,
-            ])
-            .output();
-
-        if let Ok(output) = secret_tool_result
-            && output.status.success()
-        {
+        if store_with_secret_tool(Path::new("secret-tool"), service, account, value) {
             return Ok(());
         }
 
@@ -285,7 +317,10 @@ mod linux {
 // Public Unified Vault Interface (macOS, Linux, Windows)
 // ---------------------------------------------------------------------------
 
-#[expect(dead_code, reason = "Secret reads are reserved for the native credential broker, which is not wired yet")]
+#[expect(
+    dead_code,
+    reason = "Secret reads are reserved for the native credential broker, which is not wired yet"
+)]
 pub fn get(service: &str, account: &str, data_dir: &Path) -> Result<Option<String>, String> {
     if !is_valid_service(service) {
         return Err("Invalid service identifier".into());
@@ -440,5 +475,37 @@ mod tests {
         assert_eq!(std::fs::read(vault_path).unwrap(), corrupt);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn secret_service_store_receives_exact_value_on_stdin() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = std::env::temp_dir().join(format!(
+            "vak-secret-tool-test-{}-{}",
+            std::process::id(),
+            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let tool = temp_dir.join("secret-tool");
+        let received = temp_dir.join("received");
+        let script = r#"#!/bin/sh
+printf '%s\n' "$@" > "$(dirname "$0")/arguments"
+cat > "$(dirname "$0")/received"
+"#;
+        std::fs::write(&tool, script).unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        assert!(linux::store_with_secret_tool(
+            &tool,
+            "com.example.vakyartha",
+            "OPENAI_API_KEY",
+            "  test secret  "
+        ));
+        assert_eq!(std::fs::read(&received).unwrap(), b"  test secret  ");
+        let arguments = std::fs::read_to_string(temp_dir.join("arguments")).unwrap();
+        assert!(!arguments.contains("test secret"));
+        std::fs::remove_dir_all(temp_dir).unwrap();
     }
 }

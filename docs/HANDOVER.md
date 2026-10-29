@@ -28,6 +28,8 @@ Projection `946ee39` now exposes `VakHost.runCandidate`: it accepts explicit con
 
 The native file-vault fallback now creates unique 0600 temporary files before writing, flushes the secret and directory around atomic replacement, preserves valid leading/trailing spaces in stored values and command output, and fails closed on corrupt/unreadable files instead of replacing them as empty. The exact-value, mode and no-overwrite-on-corruption regression passes on macOS and Linux. Strict Rust 1.99 Clippy passes on macOS and Linux; the Docker run found three Linux-only findings that the macOS build could not see, and the repeatable `npm run test:linux-rust` gate now runs both the 50-test suite and strict Clippy. This does not add the still-missing native credential insertion/egress broker.
 
+The Linux Secret Service write now sends the selected value through the child’s piped stdin; it does not put it in arguments or output. It falls back to the owner-only file store if the command is absent, rejects the write or fails to consume the input. A Linux-only fake-command test verifies the exact whitespace-preserving bytes and confirms the value is absent from argv. The Docker gate now passes 51/51 Rust tests and strict Clippy.
+
 The latest native delegation slice persists bounded queued child assignments under the root's revision and trusted policy, with queue capacity, idempotent retries, stop/revision invalidation and restart cleanup. This is not an active subagent runtime: attempt execution, worker isolation, dispatch capacity conversion, communications and canonical evidence integration remain open.
 
 ## Ongoing requirements and status replace MVP framing — 2026-10-29
