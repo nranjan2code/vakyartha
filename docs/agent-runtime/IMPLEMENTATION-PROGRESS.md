@@ -40,7 +40,7 @@ Limits: this does not add CPU, memory, process-count or disk quotas; same-user h
 
 The task objective remains active; these are blocking implementation and acceptance steps, not optional polish:
 
-1. **Native control transport and lifecycle:** typed, identity-bounded and cancellable sidecar-to-Rust protocol; start and supervise the actor from Tauri; bind commands to the caller role and enforce backpressure.
+1. **Native control transport and lifecycle:** health-only protocol v2 and macOS/Linux actor startup are implemented. Add narrowly typed identity/revision/scope-bound product commands, caller-role binding, cancellation and backpressure, then prove them over the private pipe. Do not expose generic RPC or imply the current health request authorizes work.
 2. **Mediation and isolation:** issuer-backed single-use dispatch for exact provider payloads, credentials, approvals and approved egress; cancellation/revocation races, DNS/IP controls, bounded stream decoding and durable redacted receipts; package and pin the sandbox at an exact reviewed revision.
 3. **One authoritative task/workspace path:** replace the TypeScript task, workspace registry, reservation, scheduler and approval writers in one cutover; carry project/workspace/binding identities through typed navigation and preserve modes without compatibility shims.
 4. **Canonical outcome closure:** expected-version canonical commits, durable acknowledgement/publication, existing mandatory checks and user review, recovery after lost acknowledgements, and terminal fencing. Keep the original source/value/interpretation/interaction/output checks as the acceptance gate.
