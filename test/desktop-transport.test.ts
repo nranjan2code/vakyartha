@@ -6,6 +6,7 @@ import { PassThrough } from "node:stream";
 import { Server } from "node:net";
 import { test } from "node:test";
 import { desktopTransport } from "../sidecar/desktop-transport.ts";
+import { DESKTOP_PROTOCOL } from "../shared/desktop-protocol.ts";
 import { startAppServer } from "../sidecar/server.ts";
 
 test("desktop app serves real admitted settings over private pipes without listening", async (t) => {
@@ -25,11 +26,11 @@ test("desktop app serves real admitted settings over private pipes without liste
     raw += chunk;
     while (raw.includes("\n")) {
       const index = raw.indexOf("\n"), frame = JSON.parse(raw.slice(0, index)); raw = raw.slice(index + 1); frames.push(frame);
-      if (frame.type === "data") input.write(JSON.stringify({ v: 1, id: frame.id, type: "ack" }) + "\n");
+      if (frame.type === "data") input.write(JSON.stringify({ v: DESKTOP_PROTOCOL, id: frame.id, type: "ack" }) + "\n");
       if (frame.type === "end") ended = true;
     }
   });
-  input.write(JSON.stringify({ v: 1, type: "request", id: "one", method: "GET", path: "/api/info", headers: {} }) + "\n");
+  input.write(JSON.stringify({ v: DESKTOP_PROTOCOL, type: "request", id: "one", method: "GET", path: "/api/info", headers: {} }) + "\n");
   for (let i = 0; i < 100 && !ended; i++) await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(ended, true);
   assert.equal(frames[0]?.type, "headers"); assert.equal(frames[0]?.status, 200);
@@ -44,7 +45,7 @@ test("private response flow control bounds chunks, multiplexes requests and canc
   const frames: Record<string, unknown>[] = [];
   const bridge = desktopTransport(async () => new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array(200_000)); }, cancel() { cancelled = true; } })), "token", input, output, (error) => { throw error; });
   output.on("data", (chunk) => { raw += chunk; while (raw.includes("\n")) { const i = raw.indexOf("\n"); frames.push(JSON.parse(raw.slice(0, i))); raw = raw.slice(i + 1); } });
-  const send = (f: Record<string, unknown>) => input.write(JSON.stringify({ v: 1, ...f }) + "\n");
+  const send = (f: Record<string, unknown>) => input.write(JSON.stringify({ v: DESKTOP_PROTOCOL, ...f }) + "\n");
   send({ type: "request", id: "a", method: "GET", path: "/api/test" });
   await new Promise((r) => setTimeout(r, 10));
   assert.equal(frames.filter((f) => f.type === "data").length, 1);
@@ -61,12 +62,32 @@ test("private response flow control bounds chunks, multiplexes requests and canc
   bridge.close();
 });
 
+test("native control health uses its own typed identity and bounded response", async (t) => {
+  const input = new PassThrough(), output = new PassThrough();
+  const frames: Record<string, unknown>[] = [];
+  const bridge = desktopTransport(async () => new Response(null), "token", input, output, (error) => { throw error; });
+  t.after(() => bridge.close());
+  output.on("data", (chunk) => { frames.push(JSON.parse(String(chunk))); });
+  const pending = bridge.pingControl();
+  for (let i = 0; i < 100 && !frames.length; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(frames.length, 1);
+  assert.deepEqual(frames[0], {
+    v: DESKTOP_PROTOCOL,
+    id: frames[0]!.id,
+    type: "control_request",
+    operation: "health",
+  });
+  assert.match(String(frames[0]!.id), /^ctl-[a-f0-9-]{36}$/);
+  input.write(JSON.stringify({ v: DESKTOP_PROTOCOL, id: frames[0]!.id, type: "control_response", status: "ready" }) + "\n");
+  assert.deepEqual(await pending, { status: "ready" });
+});
+
 test("private transport rejects incompatible frames and untrusted authority headers", async () => {
   const input = new PassThrough(), output = new PassThrough();
   const errors: Error[] = [], frames: Record<string, unknown>[] = [];
   const bridge = desktopTransport(async () => { throw new Error("must not dispatch"); }, "token", input, output, (error) => errors.push(error));
   output.on("data", (chunk) => frames.push(JSON.parse(String(chunk))));
-  input.write(JSON.stringify({ v: 1, id: "bad", type: "request", method: "GET", path: "/api/info", headers: { authorization: "attacker" } }) + "\n");
+  input.write(JSON.stringify({ v: DESKTOP_PROTOCOL, id: "bad", type: "request", method: "GET", path: "/api/info", headers: { authorization: "attacker" } }) + "\n");
   await new Promise((r) => setTimeout(r, 10));
   assert.equal(frames[0]?.type, "error");
   input.write('{"v":99,"type":"ack","id":"bad"}\n');

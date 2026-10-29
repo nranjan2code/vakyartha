@@ -1,14 +1,19 @@
 // One private parent connection, multiplexed by request identity. No socket,
 // URL listener or independently reachable endpoint exists in desktop mode.
 import type { Readable, Writable } from "node:stream";
+import { randomUUID } from "node:crypto";
+import { DESKTOP_PROTOCOL } from "../shared/desktop-protocol.ts";
+export { DESKTOP_PROTOCOL };
 
-export const DESKTOP_PROTOCOL = 1;
 const MAX_BODY = 32 * 1024 * 1024, MAX_FRAME = 48 * 1024 * 1024;
 const ID = /^[A-Za-z0-9-]{1,64}$/;
 type Pending = { controller: AbortController; ack?: () => void };
+type ControlHealth = { status: "ready" | "unavailable" | "overloaded" };
+type ControlPending = { resolve(value: ControlHealth): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 
-export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void } {
+export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth> } {
   const active = new Map<string, Pending>();
+  const controlPending = new Map<string, ControlPending>();
   let closed = false;
   function send(message: Record<string, unknown>): Promise<void> {
     if (closed) return Promise.reject(new Error("Parent connection closed"));
@@ -19,6 +24,28 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
     closed = true;
     for (const p of active.values()) { p.controller.abort(); p.ack?.(); }
     active.clear();
+    for (const p of controlPending.values()) { clearTimeout(p.timer); p.reject(new Error("Parent connection closed")); }
+    controlPending.clear();
+  }
+  function pingControl(): Promise<ControlHealth> {
+    if (closed) return Promise.reject(new Error("Parent connection closed"));
+    if (controlPending.size >= 8) return Promise.reject(new Error("Native control queue is full"));
+    const id = `ctl-${randomUUID()}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        controlPending.delete(id);
+        reject(new Error("Native control health request timed out"));
+      }, 5000);
+      timer.unref();
+      controlPending.set(id, { resolve, reject, timer });
+      void send({ id, type: "control_request", operation: "health" }).catch((error: unknown) => {
+        const pending = controlPending.get(id);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        controlPending.delete(id);
+        pending.reject(error instanceof Error ? error : new Error("Native control write failed"));
+      });
+    });
   }
   async function run(id: string, frame: Record<string, unknown>): Promise<void> {
     const p: Pending = { controller: new AbortController() };
@@ -66,6 +93,16 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
     if (!frame || typeof frame !== "object" || Array.isArray(frame)) throw new Error("Invalid desktop frame");
     const f = frame as Record<string, unknown>, id = f.id;
     if (f.v !== DESKTOP_PROTOCOL || typeof id !== "string" || !ID.test(id)) throw new Error("Incompatible desktop frame");
+    if (f.type === "control_response") {
+      if (Object.keys(f).length !== 4 || !id.startsWith("ctl-") || !["ready", "unavailable", "overloaded"].includes(String(f.status))) throw new Error("Invalid native control response");
+      const pending = controlPending.get(id);
+      if (pending) {
+        clearTimeout(pending.timer);
+        controlPending.delete(id);
+        pending.resolve({ status: f.status as ControlHealth["status"] });
+      }
+      return;
+    }
     if (f.type === "ack") { active.get(id)?.ack?.(); return; }
     if (f.type === "cancel") { const p = active.get(id); p?.controller.abort(); p?.ack?.(); return; }
     if (f.type !== "request" || active.has(id) || active.size >= 32) throw new Error("Invalid or excessive desktop requests");
@@ -90,5 +127,5 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
   input.on("end", close);
   input.on("error", (error) => { close(); failed(error); });
   output.on("error", (error) => { close(); failed(error); });
-  return { close };
+  return { close, pingControl };
 }

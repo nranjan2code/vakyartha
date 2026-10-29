@@ -1,7 +1,7 @@
 // Vakyartha sidecar: the engine host the Tauri shell starts and stops.
 // Runs the canonical app host over the Tauri parent's private stdin/stdout
 // connection. Desktop opens no network listener. Prints one ready handshake:
-//   VAK_READY {"transport":"stdio","version":1}
+//   VAK_READY {"transport":"stdio","version":2}
 //
 // The shell sets VAK_DATA_DIR, VAK_KEYCHAIN_SERVICE, VAK_APP_VERSION,
 // VAK_NPM_CLI and VAK_SANDBOX_BIN. VAK_ENV_FILES is for development only.
@@ -39,6 +39,8 @@ async function shutdown(): Promise<void> {
   process.exit(0);
 }
 process.stdin.resume();
+const controlHealth = await transport.pingControl().catch(() => ({ status: "unavailable" as const }));
+if (controlHealth.status !== "ready") console.error(`[control] native actor status: ${controlHealth.status}`);
 process.stdin.on("end", () => void shutdown());
 process.stdin.on("error", () => void shutdown());
 process.on("SIGTERM", () => void shutdown());

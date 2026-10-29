@@ -1,6 +1,7 @@
 // Fetch-compatible IPC transport for the main Tauri window. Response chunks
 // are acknowledged as the consumer drains them, bounding media/SSE buffering.
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { DESKTOP_PROTOCOL } from "../shared/desktop-protocol.ts";
 
 type Frame = { v: number; id: string } & ({ type: "headers"; status: number; headers: Record<string, string> } | { type: "data"; data: string } | { type: "end" } | { type: "error"; message: string });
 
@@ -34,7 +35,7 @@ export const desktopFetch: typeof fetch = async (input, init) => {
     const channel = new Channel<Frame>();
     channel.onmessage = (frame) => {
       if (closed) return;
-      if (frame.v !== 1 || frame.id !== id) { fail(new Error("Incompatible engine response")); return; }
+      if (frame.v !== DESKTOP_PROTOCOL || frame.id !== id) { fail(new Error("Incompatible engine response")); return; }
       if (frame.type === "headers") resolve(new Response([204, 205, 304].includes(frame.status) ? null : stream, { status: frame.status, headers: frame.headers }));
       else if (frame.type === "data") {
         if (frame.data.length > 90_000 || awaitingAck) { fail(new Error("Engine response exceeded its flow-control limit")); return; }

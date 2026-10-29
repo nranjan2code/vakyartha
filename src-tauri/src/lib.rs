@@ -393,7 +393,11 @@ fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
 }
 
 fn start(app: &tauri::AppHandle) -> Sidecar {
-    match sidecar_command(app) { Ok(cmd) => engine::start(cmd), Err(error) => Sidecar::failed(error) }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let control = app.try_state::<ControlActor>().map(|actor| actor.handle());
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let control = None;
+    match sidecar_command(app) { Ok(cmd) => engine::start(cmd, control), Err(error) => Sidecar::failed(error) }
 }
 
 pub fn run() {

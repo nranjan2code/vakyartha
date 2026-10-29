@@ -2,6 +2,14 @@
 
 Status: active implementation, 2026-10-29. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Typed private native-control health bridge — 2026-10-30
+
+The Rust engine and sidecar now use desktop protocol v2. A sidecar may request only the typed `health` operation with a bounded `ctl-` identity; strict decoding rejects unknown fields/operations and frames above 4 KiB. Rust feeds at most 16 requests through a dedicated control executor, which pings the native actor and returns only `ready`, `unavailable` or `overloaded`. If the actor is unsupported/unavailable, the sidecar reports that state and continues the existing app startup; no protected workload should infer authorization from health status. Tauri UI request/ack/cancel frames and sidecar HTTP response frames were migrated together to v2, with no v1 fallback.
+
+Evidence: Rust 1.99.1 macOS library suite passes 67/67 and digest-pinned Linux Docker tests pass 69/69; strict Clippy passes on both. The child-process test sends a health request through the actual private stdin/stdout pipes and reads the native actor's correlated response. The desktop transport suite passes 4/4, and Node 26.13.0 typecheck passes. `scripts/desktop-check.ts` passes under Node 26.13.0 with a temporary app identity/data directory: private IPC, canonical rendering, FinOps, exact binary upload, zero Node TCP listeners and parent-exit cleanup. This is a local smoke check, not an installed/release app test or task-authorization outcome gate.
+
+Scope limit: the protocol has no task, workspace, approval, lease, provider, sandbox, or arbitrary-command operation. The actor's stores and capacity remain unused by product paths, and TypeScript remains the authoritative task/workspace writer. No I1/I2/I3 gate or user outcome closes here. Subsequent control operations must be added as distinct native command variants with identity/revision/authority validation and independent canaries; do not widen this health message into a generic RPC tunnel.
+
 ## Native control actor lifecycle wired — 2026-10-30
 
 On macOS and Linux, Tauri application setup resolves and creates its app-data directory, opens the native control store under its private `control/` directory, and manages the actor for the application lifetime. Startup fails closed on these targets if the native store or its durable single-writer lock cannot be established. Windows keeps starting the app but leaves the actor disabled until its directory-sync durability contract is implemented and verified. `CapacityProfile::unconfigured()` is a valid metadata-only profile; because it contains no execution dimensions, reservations fail as `UnconfiguredResource`. A regression starts two actors against one store, verifies single-writer refusal, then drops and reopens cleanly.

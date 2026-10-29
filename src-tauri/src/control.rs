@@ -16,6 +16,7 @@ const MAX_ROOTS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub mod delegation;
+pub mod bridge;
 pub mod folder;
 pub mod registry;
 pub mod state;
@@ -533,6 +534,9 @@ pub enum RootMutation {
 }
 
 enum ActorCommand {
+    Ping {
+        reply: SyncSender<()>,
+    },
     Reserve {
         request_id: String,
         root_id: String,
@@ -630,6 +634,14 @@ pub struct ControlHandle {
 }
 
 impl ControlHandle {
+    pub fn ping(&self) -> Result<(), ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::Ping { reply })
+            .map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)
+    }
+
     pub fn reserve(
         &self,
         request_id: String,
@@ -1023,6 +1035,9 @@ fn actor_loop(
     while let Ok(command) = receiver.recv() {
         match command {
             ActorCommand::Shutdown => break,
+            ActorCommand::Ping { reply } => {
+                let _ = reply.send(());
+            }
             ActorCommand::Reserve {
                 request_id,
                 root_id,
@@ -2009,6 +2024,7 @@ mod tests {
             )
         };
         let actor = open().unwrap();
+        actor.handle().ping().unwrap();
         assert!(matches!(open(), Err(StoreError::WriterAlreadyOpen)));
         drop(actor);
         let reopened = open().unwrap();
