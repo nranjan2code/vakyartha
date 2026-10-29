@@ -2,6 +2,12 @@
 
 Status: active implementation, 2026-10-29. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Execution-path and current-stack audit — 2026-10-30
+
+Re-audited the app, Projection, and sandbox owners before the full-runtime cutover. The Rust control actor and TypeScript `Tasks`/`WorkspaceRegistry` still have separate authority; `src-tauri/src/lib.rs` does not start the actor. The private desktop pipe currently carries bounded UI-to-sidecar requests and sidecar-to-UI response frames, but has no typed sidecar-to-Rust control request/response contract. Adding a route through the existing generic `/api/*` engine request would leave the Node worker as the caller of native authority and is not an acceptable cutover by itself. The next implementation slice must establish caller identity, command families, cancellation/backpressure, and native actor lifecycle on the private transport before routing task or workspace mutations through it.
+
+Current-stack check against official release sources: Node 26.13.0 is the newest official LTS patch as of 2026-10-30, Rust 1.99.1 is latest stable, and Tauri 2.12.5 / CLI 2.12.4 is the latest stable 2.x line (Tauri 3 remains alpha). This checkout's shell resolves Node 24.22.2 and Rust 1.98.1, so do not use those host binaries to claim latest-stack validation. The digest-pinned Docker Rust 1.99.1 gate passed 53/53 library tests plus strict Clippy; the digest-pinned Node 26.13.0 Linux ARM64 DuckDB 2.0.0-r.1 check passed forward-read, forward-write and current-format checks. These are baseline and platform/library checks only; they do not establish sandbox containment, actor integration, or product outcomes.
+
 ## Durable stop-cause attribution
 
 The app-owned task journal now records a bounded typed `stopCause` for known runtime fences: user cancellation, active-time limit, model/tool budget, failed checkpoint persistence, uncertain dispatched effect, application shutdown, and generic execution failure. The first observed cause wins, so later cleanup cannot overwrite the initiating fence. Restart recovery writes `unknown` when a running journal has no durable cause; it does not infer one from a missing end record. Host stop labels remain separate. This is additive recovery metadata and does not prove task acceptance, provider attribution, or native actor cutover.
