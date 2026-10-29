@@ -85,7 +85,7 @@ fn validate_endpoint(endpoint: &str) -> Result<Url, BrokerError> {
     {
         return Err(BrokerError::InvalidEndpoint);
     }
-    if !super::policy::ALLOWED_PROVIDER_HOSTS.contains(&host) {
+    if !super::policy::MODEL_API_HOSTS.contains(&host) {
         return Err(BrokerError::UnapprovedDestination);
     }
     Ok(url)
@@ -145,6 +145,12 @@ mod tests {
             validate_endpoint("https://attacker.example/v1/responses"),
             Err(BrokerError::UnapprovedDestination)
         ));
+        for non_model_service in ["api.telegram.org", "registry.npmjs.org", "mcp.kite.trade"] {
+            assert!(matches!(
+                validate_endpoint(&format!("https://{non_model_service}/v1/request")),
+                Err(BrokerError::UnapprovedDestination)
+            ));
+        }
         assert!(validate_endpoint("https://api.openai.com/v1/responses").is_ok());
     }
 

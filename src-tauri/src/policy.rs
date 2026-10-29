@@ -25,6 +25,24 @@ pub const ALLOWED_PROVIDER_HOSTS: &[&str] = &[
     "mcp.nseindia.in",
 ];
 
+/// Hosted model API origins. This narrower set is for the native model
+/// transport; integration, messaging and package hosts cannot inherit it.
+pub const MODEL_API_HOSTS: &[&str] = &[
+    "api.openai.com",
+    "api.anthropic.com",
+    "generativelanguage.googleapis.com",
+    "api.mistral.ai",
+    "api.x.ai",
+    "api.deepseek.com",
+    "api.groq.com",
+    "api.cerebras.ai",
+    "openrouter.ai",
+    "api.together.xyz",
+    "api.fireworks.ai",
+    "api.moonshot.ai",
+    "dashscope-intl.aliyuncs.com",
+];
+
 /// Permitted vendor workspace cloud suffixes.
 pub const ALLOWED_WORKSPACE_HOST_SUFFIXES: &[&str] = &[
     ".cloud.databricks.com",
@@ -46,7 +64,12 @@ pub enum EgressDecision {
 
 /// Validates whether an outbound request destination is permitted by the egress policy,
 /// checking built-in providers as well as custom user-allowed hosts.
-pub fn evaluate_egress_with_custom(scheme: &str, host: &str, port: Option<u16>, custom_hosts: &[String]) -> EgressDecision {
+pub fn evaluate_egress_with_custom(
+    scheme: &str,
+    host: &str,
+    port: Option<u16>,
+    custom_hosts: &[String],
+) -> EgressDecision {
     let host_lower = host.to_ascii_lowercase();
 
     // Check custom user-configured allowed hosts (can be host or host:port or .domain suffix, or URL with scheme/path)
@@ -65,13 +88,20 @@ pub fn evaluate_egress_with_custom(scheme: &str, host: &str, port: Option<u16>, 
         }
 
         if let Some((custom_h, custom_p_str)) = custom_trimmed.split_once(':') {
-            let matches_port = port.map(|p| p.to_string() == custom_p_str).unwrap_or_else(|| {
-                (custom_p_str == "443" && scheme == "https") || (custom_p_str == "80" && scheme == "http")
-            });
+            let matches_port = port
+                .map(|p| p.to_string() == custom_p_str)
+                .unwrap_or_else(|| {
+                    (custom_p_str == "443" && scheme == "https")
+                        || (custom_p_str == "80" && scheme == "http")
+                });
             if custom_h == host_lower && matches_port {
                 return EgressDecision::Allowed;
             }
-        } else if custom_trimmed == host_lower || (custom_trimmed.starts_with('.') && host_lower.ends_with(&custom_trimmed) && host_lower.len() > custom_trimmed.len()) {
+        } else if custom_trimmed == host_lower
+            || (custom_trimmed.starts_with('.')
+                && host_lower.ends_with(&custom_trimmed)
+                && host_lower.len() > custom_trimmed.len())
+        {
             return EgressDecision::Allowed;
         }
     }
@@ -131,7 +161,9 @@ pub fn validate_integration_version(version: &str) -> Result<(), &'static str> {
         || version.starts_with('*')
         || version == "latest"
     {
-        return Err("Floating versions and version ranges are strictly forbidden; exact pin required");
+        return Err(
+            "Floating versions and version ranges are strictly forbidden; exact pin required",
+        );
     }
 
     // Validate semantic version format: digits.digits.digits[-prerelease]
@@ -214,7 +246,11 @@ mod tests {
     #[test]
     fn egress_admits_known_providers() {
         for host in ALLOWED_PROVIDER_HOSTS {
-            assert_eq!(evaluate_egress("https", host, None), EgressDecision::Allowed, "{host}");
+            assert_eq!(
+                evaluate_egress("https", host, None),
+                EgressDecision::Allowed,
+                "{host}"
+            );
         }
     }
 
