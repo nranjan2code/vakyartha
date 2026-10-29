@@ -2600,6 +2600,7 @@ mod tests {
         assert_eq!(handle.read_root("task-1".into()).unwrap(), ready);
         let recovered = handle.read_root("task-live".into()).unwrap();
         assert_eq!(recovered.status(), RootStatus::Interrupted);
+        assert_eq!(recovered.stop_cause(), Some(StopCause::ControlRestart));
         assert_eq!(recovered.revision(), active.revision() + 1);
         assert!(
             recovered
