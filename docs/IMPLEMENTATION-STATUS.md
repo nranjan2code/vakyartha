@@ -6,6 +6,10 @@ Original planning baseline: 2026-10-25. Scope and acceptance contract: [AGENT-TA
 
 Check an implementation item only after its acceptance behavior is verified. Append the change reference and evidence to that item. Use `Blocked: <reason>` for a dependency, without checking it. An existing foundation does not mark an expanded requirement complete. No unchecked item authorizes implementation by itself.
 
+## Agent-runtime implementation checkpoint — 2026-10-30
+
+Rust now has an inactive native HTTP generation primitive with fixed model-provider routes and payload-permit validation. Digest-pinned Linux Rust 1.99.1 Docker passes 62/62 native library tests and strict Clippy. This does not close the runtime boundary: TypeScript provider traffic still does not use Rust mediation, the control actor is not started by the app, TS task/workspace stores remain authoritative, and shared scheduler coverage, effective Linux containment/resources, canonical durable commit and original outcome gates remain open. See [handover](HANDOVER.md), [evaluation](EVALUATION.md) and the [delivery plan](agent-runtime/DELIVERY-PLAN.md). No AR, IA or ISO acceptance item is closed by this mechanism checkpoint.
+
 ## Planning and design
 
 - [ ] A1. Implement the [data-first authoring contract](plans/DATA-FIRST-AUTHORING.md): skills guide the agent; records, field mappings and operations replace independently authored table/chart/metric copies. Broad rewrite proposal deleted. No old-code/backward-compatibility requirement; preserve security and product capabilities.

@@ -7,6 +7,9 @@
 use reqwest::blocking::{Client, Response};
 use reqwest::redirect::Policy;
 use reqwest::{StatusCode, Url};
+use serde_json::{Map, Value};
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::io::Read;
 use std::time::Duration;
 
@@ -44,9 +47,78 @@ pub(crate) enum BrokerError {
     InvalidEndpoint,
     UnsupportedOperation,
     UnapprovedDestination,
+    InvalidPayload,
+    ModelMismatch,
+    OutputLimitExceeded,
+    ToolNotAllowed,
     RequestTooLarge,
     ResponseTooLarge,
     Transport,
+}
+
+/// Created only after native admission has resolved the provider/model,
+/// cumulative output allowance and exact tool-name subset for this call.
+pub(crate) struct GenerationPermit {
+    provider: ModelApi,
+    operation: ModelOperation,
+    model: String,
+    max_output_tokens: u32,
+    max_request_bytes: usize,
+    allowed_tools: BTreeSet<String>,
+    allowed_extras: BTreeMap<String, Value>,
+}
+
+impl GenerationPermit {
+    pub(crate) fn from_admitted_policy(
+        provider: ModelApi,
+        operation: ModelOperation,
+        model: String,
+        max_output_tokens: u32,
+        max_request_bytes: usize,
+        allowed_tools: BTreeSet<String>,
+        allowed_extras: BTreeMap<String, Value>,
+    ) -> Result<Self, BrokerError> {
+        if !valid_model_id(&model)
+            || max_output_tokens == 0
+            || max_request_bytes == 0
+            || max_request_bytes > MAX_REQUEST_BYTES
+        {
+            return Err(BrokerError::InvalidPayload);
+        }
+        let endpoint = model_endpoint(provider, operation.clone())?;
+        if matches!(provider, ModelApi::Gemini)
+            && !matches!(operation, ModelOperation::StreamGenerateContent { model: ref route_model } if route_model == &model)
+        {
+            return Err(BrokerError::ModelMismatch);
+        }
+        if !matches!(provider, ModelApi::Gemini) && endpoint.host_str().is_none() {
+            return Err(BrokerError::InvalidEndpoint);
+        }
+        if allowed_tools
+            .iter()
+            .any(|name| name.is_empty() || name.len() > 128 || name.chars().any(char::is_control))
+        {
+            return Err(BrokerError::InvalidPayload);
+        }
+        if allowed_extras.iter().any(|(name, _)| {
+            name.is_empty()
+                || name.len() > 64
+                || !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        }) {
+            return Err(BrokerError::InvalidPayload);
+        }
+        Ok(Self {
+            provider,
+            operation,
+            model,
+            max_output_tokens,
+            max_request_bytes,
+            allowed_tools,
+            allowed_extras,
+        })
+    }
 }
 
 pub(crate) struct NativeHttpClient {
@@ -66,27 +138,276 @@ impl NativeHttpClient {
     }
 
     /// POST JSON to one registered model generation route. Callers cannot
-    /// supply an origin, path, headers or proxy policy. Payload semantics still
-    /// require a provider-specific contract before product use.
+    /// supply an origin, path, headers or proxy policy. The permit validates
+    /// the request envelope before it crosses the network boundary.
     pub(crate) fn post_provider_json(
         &self,
-        provider: ModelApi,
-        operation: ModelOperation,
+        permit: &GenerationPermit,
         body: &[u8],
     ) -> Result<BrokerResponse, BrokerError> {
-        let url = model_endpoint(provider, operation)?;
-        if body.len() > MAX_REQUEST_BYTES {
+        let url = model_endpoint(permit.provider, permit.operation.clone())?;
+        if body.len() > permit.max_request_bytes {
             return Err(BrokerError::RequestTooLarge);
         }
+        let body = prepare_generation_body(permit, body)?;
         let response = self
             .client
             .post(url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(body.to_vec())
+            .body(body)
             .send()
             .map_err(|_| BrokerError::Transport)?;
         bounded_response(response)
     }
+}
+
+fn valid_model_id(model: &str) -> bool {
+    !model.trim().is_empty()
+        && model.trim() == model
+        && model.len() <= 256
+        && !model.chars().any(char::is_control)
+}
+
+fn prepare_generation_body(permit: &GenerationPermit, body: &[u8]) -> Result<Vec<u8>, BrokerError> {
+    if body.len() > permit.max_request_bytes {
+        return Err(BrokerError::RequestTooLarge);
+    }
+    let mut value: Value = serde_json::from_slice(body).map_err(|_| BrokerError::InvalidPayload)?;
+    let object = value.as_object_mut().ok_or(BrokerError::InvalidPayload)?;
+    if [
+        "api_key",
+        "authorization",
+        "headers",
+        "base_url",
+        "endpoint",
+        "url",
+    ]
+    .iter()
+    .any(|name| object.contains_key(*name))
+    {
+        return Err(BrokerError::InvalidPayload);
+    }
+    if permit.provider == ModelApi::Gemini {
+        if object.contains_key("model") {
+            return Err(BrokerError::ModelMismatch);
+        }
+    } else if object.get("model").and_then(Value::as_str) != Some(&permit.model) {
+        return Err(BrokerError::ModelMismatch);
+    }
+    validate_operation_model(permit)?;
+    validate_generation_fields(permit, object)?;
+    enforce_output_limit(permit, object)?;
+    validate_tool_names(permit, object)?;
+    if matches!(permit.operation, ModelOperation::Responses) {
+        object.insert("store".into(), Value::Bool(false));
+    }
+    serde_json::to_vec(&value).map_err(|_| BrokerError::InvalidPayload)
+}
+
+fn validate_generation_fields(
+    permit: &GenerationPermit,
+    object: &Map<String, Value>,
+) -> Result<(), BrokerError> {
+    let fixed_fields: &[&str] = match permit.operation {
+        ModelOperation::Responses => &[
+            "model",
+            "stream",
+            "store",
+            "include",
+            "input",
+            "instructions",
+            "prompt_cache_key",
+            "tools",
+            "max_output_tokens",
+        ],
+        ModelOperation::ChatCompletions => &[
+            "model",
+            "stream",
+            "messages",
+            "tools",
+            "max_tokens",
+            "max_completion_tokens",
+        ],
+        ModelOperation::Messages => &[
+            "model",
+            "max_tokens",
+            "stream",
+            "messages",
+            "system",
+            "tools",
+        ],
+        ModelOperation::StreamGenerateContent { .. } => {
+            &["contents", "systemInstruction", "tools", "generationConfig"]
+        }
+    };
+    for name in fixed_fields {
+        if permit.allowed_extras.contains_key(*name) {
+            return Err(BrokerError::InvalidPayload);
+        }
+    }
+    for (name, expected) in &permit.allowed_extras {
+        if object.get(name) != Some(expected) {
+            return Err(BrokerError::InvalidPayload);
+        }
+    }
+    if object.keys().any(|name| {
+        !fixed_fields.contains(&name.as_str()) && !permit.allowed_extras.contains_key(name)
+    }) {
+        return Err(BrokerError::InvalidPayload);
+    }
+    if matches!(permit.operation, ModelOperation::Responses)
+        && object
+            .get("store")
+            .is_some_and(|store| store.as_bool() != Some(false))
+    {
+        return Err(BrokerError::InvalidPayload);
+    }
+    if permit.provider == ModelApi::Gemini
+        && let Some(config) = object.get("generationConfig")
+        && config
+            .as_object()
+            .is_none_or(|config| config.keys().any(|key| key != "maxOutputTokens"))
+    {
+        return Err(BrokerError::InvalidPayload);
+    }
+    let (content_field, streaming_field) = match permit.operation {
+        ModelOperation::Responses => ("input", Some("stream")),
+        ModelOperation::ChatCompletions | ModelOperation::Messages => ("messages", Some("stream")),
+        ModelOperation::StreamGenerateContent { .. } => ("contents", None),
+    };
+    if !object.contains_key(content_field) {
+        return Err(BrokerError::InvalidPayload);
+    }
+    if let Some(field) = streaming_field
+        && object.get(field).and_then(Value::as_bool) != Some(true)
+    {
+        return Err(BrokerError::InvalidPayload);
+    }
+    Ok(())
+}
+
+fn validate_operation_model(permit: &GenerationPermit) -> Result<(), BrokerError> {
+    if let ModelOperation::StreamGenerateContent { model } = &permit.operation
+        && model != &permit.model
+    {
+        return Err(BrokerError::ModelMismatch);
+    }
+    Ok(())
+}
+
+fn enforce_output_limit(
+    permit: &GenerationPermit,
+    object: &mut Map<String, Value>,
+) -> Result<(), BrokerError> {
+    let disallowed = match permit.operation {
+        ModelOperation::Responses => &["max_tokens", "max_completion_tokens"][..],
+        ModelOperation::ChatCompletions if permit.provider == ModelApi::OpenAi => {
+            &["max_tokens", "max_output_tokens"][..]
+        }
+        ModelOperation::ChatCompletions => &["max_completion_tokens", "max_output_tokens"][..],
+        ModelOperation::Messages => &["max_output_tokens", "max_completion_tokens"][..],
+        ModelOperation::StreamGenerateContent { .. } => {
+            &["max_tokens", "max_completion_tokens", "max_output_tokens"][..]
+        }
+    };
+    if disallowed.iter().any(|field| object.contains_key(*field)) {
+        return Err(BrokerError::InvalidPayload);
+    }
+    if object
+        .get("n")
+        .is_some_and(|value| value.as_u64().is_none_or(|count| count != 1))
+        || object
+            .get("candidateCount")
+            .is_some_and(|value| value.as_u64().is_none_or(|count| count != 1))
+    {
+        return Err(BrokerError::InvalidPayload);
+    }
+    let field = match permit.operation {
+        ModelOperation::Responses => "max_output_tokens",
+        ModelOperation::ChatCompletions if permit.provider == ModelApi::OpenAi => {
+            "max_completion_tokens"
+        }
+        ModelOperation::ChatCompletions => "max_tokens",
+        ModelOperation::Messages => "max_tokens",
+        ModelOperation::StreamGenerateContent { .. } => {
+            let config = object
+                .entry("generationConfig")
+                .or_insert_with(|| Value::Object(Map::new()))
+                .as_object_mut()
+                .ok_or(BrokerError::InvalidPayload)?;
+            enforce_token_field(config, "maxOutputTokens", permit.max_output_tokens)?;
+            return Ok(());
+        }
+    };
+    let alternate = match permit.operation {
+        ModelOperation::ChatCompletions if permit.provider == ModelApi::OpenAi => "max_tokens",
+        ModelOperation::ChatCompletions => "max_completion_tokens",
+        _ => "",
+    };
+    if !alternate.is_empty() && object.contains_key(alternate) {
+        return Err(BrokerError::InvalidPayload);
+    }
+    enforce_token_field(object, field, permit.max_output_tokens)
+}
+
+fn enforce_token_field(
+    object: &mut Map<String, Value>,
+    field: &str,
+    maximum: u32,
+) -> Result<(), BrokerError> {
+    match object.get(field) {
+        Some(Value::Number(value))
+            if value.as_u64().is_some_and(|value| value > maximum as u64) =>
+        {
+            Err(BrokerError::OutputLimitExceeded)
+        }
+        Some(Value::Number(value)) if value.as_u64().is_some_and(|value| value > 0) => Ok(()),
+        Some(_) => Err(BrokerError::InvalidPayload),
+        None => {
+            object.insert(field.into(), Value::from(maximum));
+            Ok(())
+        }
+    }
+}
+
+fn validate_tool_names(
+    permit: &GenerationPermit,
+    object: &Map<String, Value>,
+) -> Result<(), BrokerError> {
+    let Some(tools) = object.get("tools") else {
+        return Ok(());
+    };
+    let tools = tools.as_array().ok_or(BrokerError::InvalidPayload)?;
+    for tool in tools {
+        let names = match permit.operation {
+            ModelOperation::Responses => vec![tool.get("name")],
+            ModelOperation::ChatCompletions => vec![
+                tool.get("function")
+                    .and_then(|function| function.get("name")),
+            ],
+            ModelOperation::Messages => vec![tool.get("name")],
+            ModelOperation::StreamGenerateContent { .. } => tool
+                .get("functionDeclarations")
+                .and_then(Value::as_array)
+                .ok_or(BrokerError::InvalidPayload)?
+                .iter()
+                .map(|function| function.get("name"))
+                .collect(),
+        };
+        if names.is_empty() {
+            return Err(BrokerError::InvalidPayload);
+        }
+        for raw_name in names {
+            let name = raw_name
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+                .ok_or(BrokerError::InvalidPayload)?;
+            if !permit.allowed_tools.contains(name) {
+                return Err(BrokerError::ToolNotAllowed);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn model_endpoint(provider: ModelApi, operation: ModelOperation) -> Result<Url, BrokerError> {
@@ -225,6 +546,19 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
 
+    fn openai_permit(allowed_tools: &[&str]) -> GenerationPermit {
+        GenerationPermit::from_admitted_policy(
+            ModelApi::OpenAi,
+            ModelOperation::ChatCompletions,
+            "gpt-local-profile".into(),
+            1024,
+            64 * 1024,
+            allowed_tools.iter().map(|name| (*name).into()).collect(),
+            BTreeMap::new(),
+        )
+        .unwrap()
+    }
+
     #[test]
     fn endpoint_validation_rejects_redirectable_or_unapproved_authority() {
         assert!(matches!(
@@ -298,6 +632,184 @@ mod tests {
             ),
             Err(BrokerError::UnsupportedOperation)
         ));
+    }
+
+    #[test]
+    fn generation_payload_is_bound_to_model_and_native_output_ceiling() {
+        let permit = openai_permit(&[]);
+        let prepared = prepare_generation_body(
+            &permit,
+            br#"{"model":"gpt-local-profile","messages":[],"stream":true}"#,
+        )
+        .unwrap();
+        let value: Value = serde_json::from_slice(&prepared).unwrap();
+        assert_eq!(value["model"], "gpt-local-profile");
+        assert_eq!(value["max_completion_tokens"], 1024);
+
+        assert!(matches!(
+            prepare_generation_body(
+                &permit,
+                br#"{"model":"other-model","messages":[],"stream":true,"max_completion_tokens":100}"#
+            ),
+            Err(BrokerError::ModelMismatch)
+        ));
+        assert!(matches!(
+            prepare_generation_body(
+                &permit,
+                br#"{"model":"gpt-local-profile","messages":[],"stream":true,"max_completion_tokens":2048}"#
+            ),
+            Err(BrokerError::OutputLimitExceeded)
+        ));
+        assert!(matches!(
+            prepare_generation_body(
+                &permit,
+                br#"{"model":"gpt-local-profile","messages":[],"stream":true,"max_tokens":100}"#
+            ),
+            Err(BrokerError::InvalidPayload)
+        ));
+    }
+
+    #[test]
+    fn generation_payload_rejects_unapproved_tools_and_credential_fields() {
+        let permit = openai_permit(&["search__fetch"]);
+        let prepared = prepare_generation_body(
+            &permit,
+            br#"{"model":"gpt-local-profile","stream":true,"messages":[],"tools":[{"type":"function","function":{"name":"search__fetch"}}]}"#,
+        )
+        .unwrap();
+        let value: Value = serde_json::from_slice(&prepared).unwrap();
+        assert_eq!(value["tools"][0]["function"]["name"], "search__fetch");
+
+        assert!(matches!(
+            prepare_generation_body(
+                &permit,
+                br#"{"model":"gpt-local-profile","stream":true,"messages":[],"tools":[{"type":"function","function":{"name":"shell__run"}}]}"#
+            ),
+            Err(BrokerError::ToolNotAllowed)
+        ));
+        assert!(matches!(
+            prepare_generation_body(
+                &permit,
+                br#"{"model":"gpt-local-profile","stream":true,"messages":[],"headers":{"authorization":"secret"}}"#
+            ),
+            Err(BrokerError::InvalidPayload)
+        ));
+        assert!(matches!(
+            prepare_generation_body(
+                &permit,
+                br#"{"model":"gpt-local-profile","stream":true,"messages":[],"tools":[{"type":"function"}]}"#
+            ),
+            Err(BrokerError::InvalidPayload)
+        ));
+    }
+
+    #[test]
+    fn generation_payload_requires_streaming_and_exact_native_extras() {
+        let mut extras = BTreeMap::new();
+        extras.insert("reasoning_effort".into(), Value::String("low".into()));
+        let permit = GenerationPermit::from_admitted_policy(
+            ModelApi::OpenAi,
+            ModelOperation::ChatCompletions,
+            "gpt-local-profile".into(),
+            512,
+            64 * 1024,
+            BTreeSet::new(),
+            extras,
+        )
+        .unwrap();
+
+        let allowed = prepare_generation_body(
+            &permit,
+            br#"{"model":"gpt-local-profile","stream":true,"messages":[],"reasoning_effort":"low"}"#,
+        )
+        .unwrap();
+        let value: Value = serde_json::from_slice(&allowed).unwrap();
+        assert_eq!(value["max_completion_tokens"], 512);
+
+        assert!(matches!(
+            prepare_generation_body(
+                &permit,
+                br#"{"model":"gpt-local-profile","stream":true,"messages":[],"reasoning_effort":"high"}"#
+            ),
+            Err(BrokerError::InvalidPayload)
+        ));
+        assert!(matches!(
+            prepare_generation_body(
+                &permit,
+                br#"{"model":"gpt-local-profile","stream":false,"messages":[],"reasoning_effort":"low"}"#
+            ),
+            Err(BrokerError::InvalidPayload)
+        ));
+        assert!(matches!(
+            prepare_generation_body(
+                &permit,
+                br#"{"model":"gpt-local-profile","stream":true,"reasoning_effort":"low"}"#
+            ),
+            Err(BrokerError::InvalidPayload)
+        ));
+    }
+
+    #[test]
+    fn generation_permit_binds_gemini_route_model_and_token_cap() {
+        let permit = GenerationPermit::from_admitted_policy(
+            ModelApi::Gemini,
+            ModelOperation::StreamGenerateContent {
+                model: "gemini-2.5-flash".into(),
+            },
+            "gemini-2.5-flash".into(),
+            512,
+            64 * 1024,
+            BTreeSet::new(),
+            BTreeMap::new(),
+        )
+        .unwrap();
+        let prepared =
+            prepare_generation_body(&permit, br#"{"contents":[],"generationConfig":{}}"#).unwrap();
+        let value: Value = serde_json::from_slice(&prepared).unwrap();
+        assert_eq!(value["generationConfig"]["maxOutputTokens"], 512);
+        assert!(matches!(
+            GenerationPermit::from_admitted_policy(
+                ModelApi::Gemini,
+                ModelOperation::StreamGenerateContent {
+                    model: "gemini-2.5-flash".into()
+                },
+                "another-model".into(),
+                512,
+                64 * 1024,
+                BTreeSet::new(),
+                BTreeMap::new()
+            ),
+            Err(BrokerError::ModelMismatch)
+        ));
+        assert!(matches!(
+            prepare_generation_body(
+                &permit,
+                br#"{"contents":[],"generationConfig":{"maxOutputTokens":513}}"#
+            ),
+            Err(BrokerError::OutputLimitExceeded)
+        ));
+    }
+
+    #[test]
+    fn responses_payload_is_forced_to_non_persistent_streaming_mode() {
+        let permit = GenerationPermit::from_admitted_policy(
+            ModelApi::OpenAi,
+            ModelOperation::Responses,
+            "gpt-local-profile".into(),
+            256,
+            64 * 1024,
+            BTreeSet::new(),
+            BTreeMap::new(),
+        )
+        .unwrap();
+        let prepared = prepare_generation_body(
+            &permit,
+            br#"{"model":"gpt-local-profile","stream":true,"input":[]}"#,
+        )
+        .unwrap();
+        let value: Value = serde_json::from_slice(&prepared).unwrap();
+        assert_eq!(value["store"], false);
+        assert_eq!(value["max_output_tokens"], 256);
     }
 
     #[test]
