@@ -1,4 +1,8 @@
-# Vakyartha handover — 2026-10-29
+# Vakyartha handover — 2026-10-30
+
+## Latest agent-runtime checkpoint — 2026-10-30
+
+Pushed app commit `7f8e857` on `codex/agent-runtime-implementation`. The active task journal now binds the trusted sandbox `create_realm` response to its exact operation and persists only a validated Realm UUID plus timestamp, never the helper response or project path. Run history retains that identity across cancellation/restart, and task deletion names the retained Realm and requires exact receipt-ID acknowledgement before removing its recovery link. Typed stop-cause persistence and the fix for preserving a returned effect during cancellation are earlier pushed checkpoints. Validation: the serialized app suite passed 274/274 before the final receipt-deletion guard; after that guard, focused task/file tests passed 26/26, typecheck passed, and task WebKit checks passed at 1100px/620px. This is recovery metadata in the current TypeScript task writer. Native actor cutover, child dispatch/attempts, provider and integration mediation, common QoS, fixed native workspace grants, and canonical commit/recovery remain open; see [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md).
 
 ## Agent runtime architecture documentation — 2026-10-29
 
