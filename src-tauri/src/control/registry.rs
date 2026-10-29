@@ -189,6 +189,29 @@ impl RegistryState {
         self.memberships.get(session_id).cloned()
     }
 
+    pub fn set_project_preferred_workspace(
+        &mut self,
+        project_id: &str,
+        expected_revision: u64,
+        workspace_id: Option<String>,
+    ) -> Result<ProjectRecord, RegistryError> {
+        let workspaces = &self.workspaces;
+        let project = self
+            .projects
+            .get_mut(project_id)
+            .ok_or(RegistryError::ProjectNotFound)?;
+        check_revision(project.revision, expected_revision)?;
+        if let Some(workspace_id) = &workspace_id {
+            valid_id(workspace_id)?;
+            if !workspaces.contains_key(workspace_id) {
+                return Err(RegistryError::WorkspaceNotFound);
+            }
+        }
+        project.preferred_workspace = workspace_id;
+        project.revision = next_revision(project.revision)?;
+        Ok(project.clone())
+    }
+
     pub fn create_project(&mut self, project: ProjectRecord) -> Result<(), RegistryError> {
         if self.projects.len() >= MAX_PROJECTS {
             return Err(RegistryError::LimitReached);

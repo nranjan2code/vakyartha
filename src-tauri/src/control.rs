@@ -497,6 +497,12 @@ enum ActorCommand {
         session_id: String,
         reply: SyncSender<Option<ProjectMembership>>,
     },
+    SetProjectPreferredWorkspace {
+        project_id: String,
+        expected_revision: u64,
+        workspace_id: Option<String>,
+        reply: SyncSender<Result<ProjectRecord, ControlError>>,
+    },
     RevokeWorkspace {
         session_id: String,
         expected_revision: u64,
@@ -748,6 +754,26 @@ impl ControlHandle {
         response
             .recv_timeout(self.response_timeout)
             .map_err(response_error)
+    }
+
+    pub fn set_project_preferred_workspace(
+        &self,
+        project_id: String,
+        expected_revision: u64,
+        workspace_id: Option<String>,
+    ) -> Result<ProjectRecord, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::SetProjectPreferredWorkspace {
+                project_id,
+                expected_revision,
+                workspace_id,
+                reply,
+            })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
     }
 }
 
@@ -1065,6 +1091,35 @@ fn actor_loop(
             }
             ActorCommand::ReadProjectMembership { session_id, reply } => {
                 let _ = reply.send(ledger.registry.membership(&session_id));
+            }
+            ActorCommand::SetProjectPreferredWorkspace {
+                project_id,
+                expected_revision,
+                workspace_id,
+                reply,
+            } => {
+                let mut candidate = ledger.clone();
+                let project = match candidate.registry.set_project_preferred_workspace(
+                    &project_id,
+                    expected_revision,
+                    workspace_id,
+                ) {
+                    Ok(project) => project,
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Registry(error)));
+                        continue;
+                    }
+                };
+                match store.persist(&candidate, &profile) {
+                    Ok(_) => {
+                        ledger = candidate;
+                        let _ = reply.send(Ok(project));
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Store(error)));
+                        break;
+                    }
+                }
             }
             ActorCommand::RevokeWorkspace {
                 session_id,
@@ -2127,6 +2182,14 @@ mod tests {
             .register_workspace("workspace-001".into(), source.clone())
             .unwrap();
         assert_eq!(workspace.canonical_path(), source.canonicalize().unwrap());
+        let project = handle
+            .set_project_preferred_workspace(
+                project.id().into(),
+                project.revision(),
+                Some(workspace.id().into()),
+            )
+            .unwrap();
+        assert_eq!(project.revision(), 2);
         let binding = handle
             .bind_workspace(
                 "binding-0001".into(),
