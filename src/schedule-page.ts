@@ -2,7 +2,7 @@ import { CollectionPage, pageControls } from './pagination.ts';
 import { parseTaskResultPolicy } from "../shared/task-result.ts";
 import { parseTaskFiles } from "../shared/task-files.ts";
 import { parseRunUsage } from "../shared/finops.ts";
-import { TASK_LABELS, TASK_RUN_LABELS, TASK_LIMITS, TASK_BUDGET_DEFAULTS, TASK_BUDGET_MAX, parseTaskLimits, parseReviewSnapshot, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../shared/task-contract.ts";
+import { TASK_LABELS, TASK_RUN_LABELS, TASK_STOP_CAUSE_LABELS, TASK_LIMITS, TASK_BUDGET_DEFAULTS, TASK_BUDGET_MAX, parseTaskLimits, parseReviewSnapshot, parseTaskView, taskObject, taskString, type TaskSummary, type TaskView } from "../shared/task-contract.ts";
 import { scheduleLabel } from "../shared/schedule.ts";
 import { $, api, ask, el } from "./core.ts";
 import { icon } from "./icons.ts";
@@ -244,7 +244,7 @@ export class SchedulePage {
       for (const run of [...task.runHistory].reverse()) {
         const timing = run.ended ? `Finished ${date(run.ended)}` : run.recovered ? `Recovery recorded ${date(run.recovered)} · end time unknown` : "In progress";
         const item = el("details", { className: "schedule-run" }, el("summary", {}, el("span", { className: "schedule-run-sequence", textContent: String(run.sequence).padStart(2, "0") }), el("span", {}, el("strong", { textContent: run.inputKind === "action" ? "Surface interaction" : run.sequence === 1 ? "Initial run" : "Continuation" }), el("small", { textContent: date(run.started) })), el("span", { className: `schedule-badge ${run.state === "review" ? "needs_input" : run.state === "accepted" ? "completed" : run.state}`, textContent: TASK_RUN_LABELS[run.state] })));
-        item.append(el("p", { textContent: run.note }), el("p", { className: "hint", textContent: `${run.modelRequests} model requests reserved · ${(run.chargedMs / 1000).toFixed(1)}s charged to the task budget` }), el("p", { className: "hint", textContent: `${timing} · ${run.state === "running" || run.recovered ? "Active time incomplete" : `${(run.activeMs / 1000).toFixed(1)}s active`} · ${run.toolCalls} tool ${run.toolCalls === 1 ? "call" : "calls"}${run.stop ? ` · Stop: ${run.stop}` : ""}` }), el("code", { className: "schedule-run-id", textContent: `Run ${run.id} · Input ${run.inputId}` }));
+        item.append(el("p", { textContent: run.note }), el("p", { className: "hint", textContent: `${run.modelRequests} model requests reserved · ${(run.chargedMs / 1000).toFixed(1)}s charged to the task budget` }), el("p", { className: "hint", textContent: `${timing} · ${run.state === "running" || run.recovered ? "Active time incomplete" : `${(run.activeMs / 1000).toFixed(1)}s active`} · ${run.toolCalls} tool ${run.toolCalls === 1 ? "call" : "calls"}${run.stop ? ` · Stop: ${run.stop}` : ""}${run.stopCause ? ` · Cause: ${TASK_STOP_CAUSE_LABELS[run.stopCause]}` : ""}` }), el("code", { className: "schedule-run-id", textContent: `Run ${run.id} · Input ${run.inputId}` }));
         if (run.review) item.append(el("p", { className: "hint", textContent: `Reviewed by you ${date(run.review.at)} · ${run.review.surfaces.length} saved surfaces · versions recorded` }), el("blockquote", { textContent: run.review.note }));
         const reconciled = task.operations.filter((op) => op.runId === run.id && op.reconciliation);
         for (const op of reconciled) item.append(el("p", { className: "hint", textContent: `${op.tool} · ${op.id} · Reviewed ${op.reconciliation!.at}: ${op.reconciliation!.note}` }));

@@ -6,6 +6,8 @@ Status: active implementation, 2026-10-29. This log records source changes and e
 
 The app-owned task journal now records a bounded typed `stopCause` for known runtime fences: user cancellation, active-time limit, model/tool budget, failed checkpoint persistence, uncertain dispatched effect, application shutdown, and generic execution failure. The first observed cause wins, so later cleanup cannot overwrite the initiating fence. Restart recovery writes `unknown` when a running journal has no durable cause; it does not infer one from a missing end record. Host stop labels remain separate. This is additive recovery metadata and does not prove task acceptance, provider attribution, or native actor cutover.
 
+Task run history now displays the cause using explicit plain-language labels alongside (not instead of) the host stop label. Existing run-history, review and recovery actions remain unchanged.
+
 Focused validation passed: `node --test test/tasks.test.ts` (20/20) and `npm run typecheck`. A serial full app run (`node --test --test-concurrency=1 "test/**/*.test.ts"`) reported 254/273 passing and 19 failures. Captured failures include a missing supervised sandbox helper, API responses of 400, one Vite build failure and dependent workspace/sandbox cases. These remain open; this run does not establish whether they share a cause, and they were not weakened or relabeled as passes.
 
 ## Workspace-boundary correction in progress

@@ -41,6 +41,17 @@ export interface TaskApproval {
 export interface TaskActivity { at: string; text: string }
 export type TaskRunState = "running" | "review" | "accepted" | "failed" | "cancelled" | "interrupted";
 export type TaskStopCause = "user_cancelled" | "active_time_limit" | "model_budget_exhausted" | "tool_budget_exhausted" | "state_persist_failed" | "external_effect_uncertain" | "application_shutdown" | "execution_error" | "unknown";
+export const TASK_STOP_CAUSE_LABELS: Record<TaskStopCause, string> = {
+  user_cancelled: "Cancelled by you",
+  active_time_limit: "Active time limit reached",
+  model_budget_exhausted: "Model request limit reached",
+  tool_budget_exhausted: "Tool call limit reached",
+  state_persist_failed: "Checkpoint could not be saved",
+  external_effect_uncertain: "External effect needs review",
+  application_shutdown: "App stopped",
+  execution_error: "Execution failed; cause not further classified",
+  unknown: "Stop cause unknown",
+};
 export interface TaskRunIdentity { taskId: string; runId: string }
 export interface TaskRun {
   id: string;
