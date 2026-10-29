@@ -11,7 +11,7 @@ import path from "node:path";
 import { basicCatalog, SurfaceStore, walk, type AgentEvent } from "@vak/core";
 import type { HostRunOptions, HostTurn, SessionView } from "@vak/host";
 import type { AgentTool } from "@vak/providers";
-import { TASK_LIMITS, TASK_BUDGET_DEFAULTS, parseTaskLimits, parseTaskSpending, type TaskSpending, parseReviewSnapshot, type ReviewSnapshot, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskRun, type TaskRunIdentity, type TaskStopCause } from "../shared/task-contract.ts";
+import { TASK_LIMITS, TASK_BUDGET_DEFAULTS, parseTaskLimits, parseTaskSpending, type TaskSpending, parseReviewSnapshot, type ReviewSnapshot, parseTaskInput, parseTaskView, taskObject, type TaskApproval, type TaskSummary, type TaskView, type TaskOperation, type TaskOperationReceipt, type TaskRun, type TaskRunIdentity, type TaskStopCause } from "../shared/task-contract.ts";
 import { parseSchedule, SCHEDULE_GRACE_MS } from "../shared/schedule.ts";
 
 interface Dependencies {
@@ -29,6 +29,8 @@ interface Dependencies {
   warn(message: string): void;
 }
 type Execution = { sources: Map<string, ResearchRead>; allowance: number; reserved: boolean; run?: TaskRun; task: TaskView; inputId: string; ctrl: AbortController; remaining: number; since: number; timer?: ReturnType<typeof setTimeout>; stopCause?: TaskStopCause };
+type ToolExecution = { execution: Execution; operation: TaskOperation };
+const REALM_UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const text = (v: unknown, max: number) => typeof v === "string" && v.trim().length <= max ? v.trim() : "";
 const identifier = (v: unknown) => typeof v === "string" && /^[\w-]{1,120}$/.test(v);
 
@@ -37,6 +39,7 @@ export class Tasks {
   private readonly tasks = new Map<string, TaskView>();
   private readonly writes = new Map<string, Promise<void>>();
   private readonly scope = new AsyncLocalStorage<Execution>();
+  private readonly toolScope = new AsyncLocalStorage<ToolExecution>();
   private readonly running = new Map<string, Execution>();
   private readonly inflight = new Set<Promise<void>>();
   private readonly resumptions = new Map<Execution, () => void>();
@@ -159,7 +162,19 @@ export class Tasks {
   }
   observeResult(request: { session: string; server: string; tool: string; args: Record<string, unknown> }, result: { text: string; isError?: boolean }): void {
     const e = this.scope.getStore();
-    if (!e || e.task.session !== request.session || e.task.resultPolicy?.kind !== "research" || request.server !== "web" || request.tool !== "fetch_page" || result.isError || e.ctrl.signal.aborted) return;
+    if (!e || e.task.session !== request.session) return;
+    const tool = this.toolScope.getStore();
+    if (tool?.execution === e && tool.operation.tool === "sandbox-execution__create_realm" && request.server === "sandbox-execution" && request.tool === "create_realm" && !result.isError) {
+      try {
+        const raw = taskObject(JSON.parse(result.text));
+        if (typeof raw.realm_id === "string" && REALM_UUID.test(raw.realm_id)) {
+          const receipt: TaskOperationReceipt = { kind: "sandbox_realm_created", realmId: raw.realm_id, at: new Date().toISOString() };
+          tool.operation.receipt = receipt;
+          void this.persist(e.task).catch((error: unknown) => this.deps.warn(`Operation receipt could not be checkpointed: ${String(error)}`));
+        }
+      } catch { /* An invalid helper response cannot create a recovery receipt. */ }
+    }
+    if (e.task.resultPolicy?.kind !== "research" || request.server !== "web" || request.tool !== "fetch_page" || result.isError || e.ctrl.signal.aborted) return;
     let url: URL;
     try { url = new URL(String(request.args.url)); } catch { return; }
     if (url.protocol === "https:" && (e.sources.size < 8 || e.sources.has(url.href))) {
@@ -339,6 +354,11 @@ export class Tasks {
     if (["queued", "running", "needs_approval"].includes(t.state) || this.running.has(id)) throw new Error("Cancel this task and wait for execution to stop before deleting it");
     if (body.revision !== t.revision) throw new Error("Task changed while you reviewed deletion; check it again");
     if (t.operations.some((op) => op.state === "uncertain" || op.state === "started") && body.confirmUncertain !== true) throw new Error("Acknowledge uncertain external effects before deleting the recovery record");
+    const receiptIds = t.operations.filter((op) => op.receipt).map((op) => op.id);
+    if (receiptIds.length) {
+      const confirmed = Array.isArray(body.confirmReceipts) ? body.confirmReceipts : [];
+      if (confirmed.length !== receiptIds.length || new Set(confirmed).size !== confirmed.length || receiptIds.some((id) => !confirmed.includes(id))) throw new Error("Acknowledge the recorded external effect receipts before deleting their recovery links");
+    }
     this.deleting.add(id);
     try {
       await this.writes.get(id);
@@ -500,7 +520,7 @@ export class Tasks {
               const error = new Error("Tool-call budget exhausted; no new tool attempt started");
               this.stop(e, "tool_budget_exhausted", error); throw error;
             }
-            const op = { id: ctx.callId ?? randomUUID(), tool: tool.spec.name, runId: run.id, state: "started" as const };
+            const op: TaskOperation = { id: ctx.callId ?? randomUUID(), tool: tool.spec.name, runId: run.id, state: "started" };
             run.toolCalls++; t.budget.toolCalls++;
             t.operations.push(op);
             await this.persist(t);
@@ -509,7 +529,7 @@ export class Tasks {
               if (!this.available(e)) throw e.ctrl.signal.reason ?? new Error("Task stopped before tool dispatch");
               dispatched = true;
               const previousRead = tool.spec.name === "web__fetch_page" ? e.sources.get(new URL(String(args.url)).href) : undefined;
-              const result = await tool.execute(args, ctx);
+              const result = await this.toolScope.run({ execution: e, operation: op }, () => tool.execute(args, ctx));
               // A returned response resolves dispatch uncertainty even when the
               // parent run was cancelled while the tool was in flight.
               Object.assign(op, { state: "returned" });

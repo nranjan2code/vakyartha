@@ -134,14 +134,21 @@ test("cancelling during a dispatched operation preserves its returned receipt st
   let tasks!: Tasks, started!: () => void, release!: () => void, calls = 0;
   const entered = new Promise<void>((resolve) => { started = resolve; });
   const gate = new Promise<void>((resolve) => { release = resolve; });
-  tasks = await Tasks.open({
-    dir, ready: () => {}, warn: () => {}, instructions: () => "test", observe: async (_id, work) => work(),
-    view: async (id) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }),
-    tools: async () => [{ spec: { name: "realm__create", description: "Create a working copy", inputSchema: { type: "object" } }, execute: async () => { calls++; started(); await gate; return "created realm receipt"; } }],
-    run: async (_input, options) => { await options.tools![0]!.execute({}, { signal: options.signal, callId: "create-once" }); return { stop: "end" }; },
-  });
+  const realmId = "a1b2c3d4-e5f6-47a8-9123-1234567890ab";
+  const deps = {
+    dir, ready: () => {}, warn: () => {}, instructions: () => "test", observe: async (_id: string, work: () => Promise<void>) => work(), remove: async () => {},
+    view: async (id: string) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }),
+    tools: async (session: string) => [{ spec: { name: "sandbox-execution__create_realm", description: "Create a working copy", inputSchema: { type: "object" as const } }, execute: async () => {
+      calls++; started(); await gate;
+      const result = JSON.stringify({ realm_id: realmId, base_path: "/private/project/path" });
+      tasks.observeResult({ session, server: "sandbox-execution", tool: "create_realm", args: {} }, { text: result });
+      return result;
+    } }],
+    run: async (_input: HostTurn, options: HostRunOptions) => { await options.tools![0]!.execute({}, { signal: options.signal, callId: "create-once" }); return { stop: "end" }; },
+  };
+  tasks = await Tasks.open(deps);
   try {
-    const task = await tasks.create({ goal: "Create a working copy", criteria: "Review its receipt", provider: "scripted", model: "test", integrations: ["realm"], spending: { kind: "local_only" } });
+    const task = await tasks.create({ goal: "Create a working copy", criteria: "Review its receipt", provider: "scripted", model: "test", integrations: ["sandbox-execution"], spending: { kind: "local_only" } });
     await entered;
     await tasks.cancel(task.id);
     release();
@@ -149,6 +156,15 @@ test("cancelling during a dispatched operation preserves its returned receipt st
     await until(() => tasks.get(task.id).runHistory[0]?.ended !== undefined);
     assert.equal(calls, 1);
     assert.equal(tasks.get(task.id).operations[0]!.state, "returned");
+    const receipt = tasks.get(task.id).operations[0]!.receipt!;
+    assert.deepEqual({ kind: receipt.kind, realmId: receipt.realmId }, { kind: "sandbox_realm_created", realmId });
+    assert.ok(Number.isFinite(Date.parse(receipt.at)));
     assert.equal(tasks.get(task.id).runHistory[0]!.stopCause, "user_cancelled");
+    await tasks.close();
+    tasks = await Tasks.open(deps);
+    assert.equal(tasks.get(task.id).operations[0]!.receipt?.realmId, realmId);
+    assert.ok(!(await readFile(path.join(dir, `${task.id}.json`), "utf8")).includes("/private/project/path"));
+    await assert.rejects(tasks.remove(task.id, { revision: tasks.get(task.id).revision }), /recorded external effect receipts/);
+    await tasks.remove(task.id, { revision: tasks.get(task.id).revision, confirmReceipts: [tasks.get(task.id).operations[0]!.id] });
   } finally { release(); await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });

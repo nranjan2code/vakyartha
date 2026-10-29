@@ -39,6 +39,15 @@ export interface TaskApproval {
   capabilityRevision: number;
 }
 export interface TaskActivity { at: string; text: string }
+export interface TaskOperationReceipt { kind: "sandbox_realm_created"; realmId: string; at: string }
+export interface TaskOperation {
+  id: string;
+  tool: string;
+  runId?: string;
+  state: "started" | "returned" | "failed" | "uncertain" | "reviewed";
+  receipt?: TaskOperationReceipt;
+  reconciliation?: { at: string; note: string };
+}
 export type TaskRunState = "running" | "review" | "accepted" | "failed" | "cancelled" | "interrupted";
 export type TaskStopCause = "user_cancelled" | "active_time_limit" | "model_budget_exhausted" | "tool_budget_exhausted" | "state_persist_failed" | "external_effect_uncertain" | "application_shutdown" | "execution_error" | "unknown";
 export const TASK_STOP_CAUSE_LABELS: Record<TaskStopCause, string> = {
@@ -101,7 +110,7 @@ export interface TaskView {
   pending: TaskInput[];
   approval?: TaskApproval;
   activity: TaskActivity[];
-  operations: { id: string; tool: string; runId?: string; state: "started" | "returned" | "failed" | "uncertain" | "reviewed"; reconciliation?: { at: string; note: string } }[];
+  operations: TaskOperation[];
   accepted: string[];
   schedule?: OnceSchedule;
 }
@@ -131,6 +140,13 @@ function integer(value: unknown, max: number): number {
 }
 function isState(value: unknown): value is TaskState { return typeof value === "string" && Object.hasOwn(TASK_LABELS, value); }
 function isOperationState(value: unknown): value is TaskView["operations"][number]["state"] { return value === "started" || value === "returned" || value === "failed" || value === "uncertain" || value === "reviewed"; }
+function parseTaskOperationReceipt(value: unknown): TaskOperationReceipt {
+  const raw = taskObject(value);
+  if (Object.keys(raw).some((key) => !["kind", "realmId", "at"].includes(key)) || raw.kind !== "sandbox_realm_created") throw new Error("Invalid operation receipt");
+  const realmId = taskString(raw.realmId, 36), at = taskString(raw.at, 40);
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(realmId) || !Number.isFinite(Date.parse(at)) || new Date(at).toISOString() !== at) throw new Error("Invalid operation receipt identity or time");
+  return { kind: "sandbox_realm_created", realmId, at };
+}
 export function parseTaskInput(value: unknown): TaskInput {
   const raw = taskObject(value), id = taskString(raw.id, 120);
   if (!/^[\w-]+$/.test(id)) throw new Error("Invalid input identity");
@@ -152,10 +168,12 @@ export function parseTaskView(value: unknown): TaskView {
   const operations = array(raw.operations, 768).map((value) => {
     const op = taskObject(value);
     if (!isOperationState(op.state)) throw new Error("Invalid operation state");
+    const receipt = op.receipt === undefined ? undefined : parseTaskOperationReceipt(op.receipt);
+    if (receipt && op.tool !== "sandbox-execution__create_realm") throw new Error("Operation receipt does not match its tool");
     const review = op.reconciliation === undefined ? undefined : taskObject(op.reconciliation);
     const reconciliation = review ? { at: taskString(review.at, 40), note: taskString(review.note, 1000) } : undefined;
     if ((op.state === "reviewed") !== Boolean(reconciliation) || reconciliation && !Number.isFinite(Date.parse(reconciliation.at))) throw new Error("Reviewed operations need a dated reconciliation note");
-    return { id: taskString(op.id, 120), tool: taskString(op.tool, 240), state: op.state, ...(op.runId === undefined ? {} : { runId: taskString(op.runId, 120) }), ...(reconciliation ? { reconciliation } : {}) };
+    return { id: taskString(op.id, 120), tool: taskString(op.tool, 240), state: op.state, ...(op.runId === undefined ? {} : { runId: taskString(op.runId, 120) }), ...(receipt ? { receipt } : {}), ...(reconciliation ? { reconciliation } : {}) };
   });
   const runs = integer(raw.runs, 32);
   const runHistory = array(raw.runHistory, 32).map(parseTaskRun);

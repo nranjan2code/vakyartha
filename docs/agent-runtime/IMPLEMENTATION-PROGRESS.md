@@ -97,6 +97,12 @@ The active TypeScript task path previously changed an operation to `uncertain` w
 
 Verification: focused task/file suites pass 26/26, Node typecheck passes, and the complete serial app suite passes 274/274. The serial run uses one test file at a time to avoid the previously observed cross-file supervisor contention; it does not claim multi-root production saturation.
 
+## Persisting the sandbox Realm creation identity — 2026-10-30
+
+The built-in sandbox integration exposes a trusted `create_realm` adapter response as structured JSON before it is framed as untrusted tool text. The task operation scope now binds that response to the exact `sandbox-execution__create_realm` call and checkpoints only a validated UUID with an app timestamp. It never copies the response body or `base_path` into the task journal. Run history displays that retained UUID after cancellation/restart; deletion names the retained Realm and requires exact receipt-ID acknowledgement before removing the task’s recovery link. Invalid, error and unrelated tool responses do not become receipts. This does not yet persist promotion transaction/path receipts or wire canonical Realm recovery into the native root actor.
+
+The cancel-in-flight test verifies one dispatch, `returned` state, receipt checkpoint, close/reopen durability and path omission. Validation: task/file tests pass 26/26, Node typecheck passes, WebKit `scripts/task-check.ts` passes at 1100px and 620px, and the serial app suite passes 274/274. The WebKit check exercised the task and run-history UI; the receipt UUID was verified at the task journal boundary.
+
 ## 2026-10-29 — provider transport seam and workspace guard checkpoint
 
 Projection commit `65f183cb73c45d5335e7cc41cf6000520f1b77fe` adds optional public `ProviderTransport` injection through all model provider constructors and `ProviderEntry.make`. It carries provider identity and covers discovery and streaming requests while preserving default fetch behavior. Projection full suite/replay: 412 passed; typecheck and package generation passed. Vakyartha now pins this pushed change. The app suite passes 270, framework suite 412, typecheck, production UI build, 11 native tests, and Task WebKit checks at 1100px/620px. The seam is not a secure broker by itself; Vakyartha still uses its existing direct provider path pending the protected native operation contract.

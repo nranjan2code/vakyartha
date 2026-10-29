@@ -128,14 +128,19 @@ export class TasksPanel {
   }
 
   private async remove(t: TaskView): Promise<void> {
-    if (!(await ask(`Delete “${t.goal.slice(0, 120)}”? This removes its conversation, drafts, input snapshots, local task output files and raw diagnostic transcript. Downloaded copies, external changes, shared memory, integrations, credentials, integration logs and numeric usage records are kept.`, "Delete"))) return;
+    const receipts = t.operations.filter((op) => op.receipt);
+    const realmIds = receipts.flatMap((op) => op.receipt?.kind === "sandbox_realm_created" ? [op.receipt.realmId] : []);
+    const receiptNote = realmIds.length ? ` The created Realm${realmIds.length === 1 ? " remains" : "s remain"} for inspection (${realmIds.join(", ")}), but deleting removes this task’s recovery link.` : "";
+    if (!(await ask(`Delete “${t.goal.slice(0, 120)}”? This removes its conversation, drafts, input snapshots, local task output files and raw diagnostic transcript. Downloaded copies, external changes, shared memory, integrations, credentials, integration logs and numeric usage records are kept.${receiptNote}`, "Delete"))) return;
     let confirmUncertain = false;
     if (t.operations.some((op) => op.state === "uncertain" || op.state === "started")) {
       confirmUncertain = await ask("Some external effects are uncertain. Deleting removes the recovery record, but cannot undo those effects. Review the affected service or files first.", "Delete recovery record");
       if (!confirmUncertain) return;
     }
+    const confirmReceipts = receipts.length && await ask("This task has recorded external effect receipts. Deleting removes their recovery links. Confirm you have recorded any identity you need to retain.", "Delete recovery links") ? receipts.map((op) => op.id) : [];
+    if (receipts.length && !confirmReceipts.length) return;
     try {
-      await api(`/api/tasks/${encodeURIComponent(t.id)}`, { method: "DELETE", body: JSON.stringify({ revision: t.revision, confirmUncertain }) });
+      await api(`/api/tasks/${encodeURIComponent(t.id)}`, { method: "DELETE", body: JSON.stringify({ revision: t.revision, confirmUncertain, confirmReceipts }) });
       window.dispatchEvent(new CustomEvent("vak:task-deleted", { detail: t.id }));
       await this.refresh();
     } catch (err) { this.error((err as Error).message); }
