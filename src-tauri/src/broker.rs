@@ -20,7 +20,7 @@ pub(crate) enum BrokerError {
     UnapprovedDestination,
     RequestTooLarge,
     ResponseTooLarge,
-    Transport(String),
+    Transport,
 }
 
 pub(crate) struct NativeHttpClient {
@@ -35,7 +35,7 @@ impl NativeHttpClient {
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(120))
             .build()
-            .map_err(|error| BrokerError::Transport(error.to_string()))?;
+            .map_err(|_| BrokerError::Transport)?;
         Ok(Self { client })
     }
 
@@ -57,7 +57,7 @@ impl NativeHttpClient {
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(body.to_vec())
             .send()
-            .map_err(|error| BrokerError::Transport(error.to_string()))?;
+            .map_err(|_| BrokerError::Transport)?;
         bounded_response(response)
     }
 }
@@ -78,6 +78,7 @@ fn validate_endpoint(endpoint: &str) -> Result<Url, BrokerError> {
         || url.password().is_some()
         || url.port().is_some_and(|port| port != 443)
         || url.fragment().is_some()
+        || url.query().is_some()
     {
         return Err(BrokerError::InvalidEndpoint);
     }
@@ -100,7 +101,7 @@ fn bounded_response(mut response: Response) -> Result<BrokerResponse, BrokerErro
         .by_ref()
         .take(MAX_RESPONSE_BYTES + 1)
         .read_to_end(&mut body)
-        .map_err(|error| BrokerError::Transport(error.to_string()))?;
+        .map_err(|_| BrokerError::Transport)?;
     if body.len() as u64 > MAX_RESPONSE_BYTES {
         return Err(BrokerError::ResponseTooLarge);
     }
@@ -127,6 +128,10 @@ mod tests {
         ));
         assert!(matches!(
             validate_endpoint("https://user@api.openai.com/v1/responses"),
+            Err(BrokerError::InvalidEndpoint)
+        ));
+        assert!(matches!(
+            validate_endpoint("https://api.openai.com/v1/responses?key=secret"),
             Err(BrokerError::InvalidEndpoint)
         ));
         assert!(matches!(
