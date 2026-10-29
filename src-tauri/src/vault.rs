@@ -5,11 +5,16 @@
 // cannot inject commands, escape boundaries, or contain malformed control characters.
 
 use std::collections::BTreeMap;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::OpenOptionsExt;
+
+static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Validate service name: 1..=128 chars, ascii alphanumeric, '.', '-', '_'.
 pub fn is_valid_service(service: &str) -> bool {
@@ -54,9 +59,8 @@ fn read_vault_file(path: &Path) -> BTreeMap<String, String> {
             if trimmed.is_empty() || trimmed.starts_with('#') {
                 continue;
             }
-            if let Some((k, v)) = trimmed.split_once('=') {
+            if let Some((k, v)) = line.split_once('=') {
                 let k = k.trim();
-                let v = v.trim();
                 let unquoted = if (v.starts_with('"') && v.ends_with('"'))
                     || (v.starts_with('\'') && v.ends_with('\''))
                 {
@@ -77,24 +81,51 @@ fn write_vault_file(path: &Path, map: &BTreeMap<String, String>) -> Result<(), S
         content.push_str(&format!("{k}={v}\n"));
     }
 
-    let temp_path = path.with_extension("tmp");
-    std::fs::write(&temp_path, &content).map_err(|e| format!("Failed to write vault temp file: {e}"))?;
-
-    #[cfg(unix)]
-    {
-        let perm = std::fs::Permissions::from_mode(0o600);
-        let _ = std::fs::set_permissions(&temp_path, perm);
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Vault file has no parent directory".to_string())?;
+    let mut temp = None;
+    for _ in 0..8 {
+        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temp_path = parent.join(format!(".vault-{}-{sequence}.tmp", std::process::id()));
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        match options.open(&temp_path) {
+            Ok(file) => {
+                temp = Some((temp_path, file));
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(format!(
+                    "Failed to create a private vault temp file: {error}"
+                ));
+            }
+        }
     }
+    let (temp_path, mut file) =
+        temp.ok_or_else(|| "Failed to allocate a unique vault temp file".to_string())?;
 
-    std::fs::rename(&temp_path, path).map_err(|e| format!("Failed to commit vault file: {e}"))?;
-
-    #[cfg(unix)]
-    {
-        let perm = std::fs::Permissions::from_mode(0o600);
-        let _ = std::fs::set_permissions(path, perm);
+    let result = (|| {
+        file.write_all(content.as_bytes())
+            .map_err(|e| format!("Failed to write vault temp file: {e}"))?;
+        file.sync_all()
+            .map_err(|e| format!("Failed to sync vault temp file: {e}"))?;
+        drop(file);
+        std::fs::rename(&temp_path, path)
+            .map_err(|e| format!("Failed to commit vault file: {e}"))?;
+        #[cfg(unix)]
+        std::fs::File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|e| format!("Failed to sync vault directory: {e}"))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(temp_path);
     }
-
-    Ok(())
+    result
 }
 
 fn file_vault_get(data_dir: &Path, account: &str) -> Option<String> {
@@ -135,7 +166,9 @@ mod macos {
             .map_err(|e| format!("Failed to query Keychain: {e}"))?;
 
         if output.status.success() {
-            let secret = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let secret = String::from_utf8_lossy(&output.stdout)
+                .trim_end_matches(['\r', '\n'])
+                .to_string();
             if secret.is_empty() {
                 Ok(None)
             } else {
@@ -155,7 +188,8 @@ mod macos {
             .spawn()
             .map_err(|e| format!("Failed to spawn Keychain write process: {e}"))?;
 
-        let cmd_input = format!("add-generic-password -U -s \"{service}\" -a \"{account}\" -w \"{value}\"\n");
+        let cmd_input =
+            format!("add-generic-password -U -s \"{service}\" -a \"{account}\" -w \"{value}\"\n");
         if let Some(mut stdin) = child.stdin.take() {
             stdin
                 .write_all(cmd_input.as_bytes())
@@ -199,7 +233,9 @@ mod linux {
             .output()
         {
             if output.status.success() {
-                let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let s = String::from_utf8_lossy(&output.stdout)
+                    .trim_end_matches(['\r', '\n'])
+                    .to_string();
                 if !s.is_empty() {
                     return Ok(Some(s));
                 }
@@ -212,7 +248,14 @@ mod linux {
     pub fn set(service: &str, account: &str, value: &str, data_dir: &Path) -> Result<(), String> {
         // Try secret-tool first.
         let secret_tool_result = Command::new("secret-tool")
-            .args(["store", "--label=Vakyartha Secret", "service", service, "account", account])
+            .args([
+                "store",
+                "--label=Vakyartha Secret",
+                "service",
+                service,
+                "account",
+                account,
+            ])
             .output();
 
         if let Ok(output) = secret_tool_result {
@@ -366,6 +409,20 @@ mod tests {
             file_vault_get(&temp_dir, "TEST_KEY"),
             Some("secret-123".into())
         );
+        file_vault_set(&temp_dir, "SPACED_KEY", "  secret with spaces  ").unwrap();
+        assert_eq!(
+            file_vault_get(&temp_dir, "SPACED_KEY"),
+            Some("  secret with spaces  ".into())
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let mode = std::fs::metadata(vault_file_path(&temp_dir))
+                .unwrap()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600);
+        }
 
         file_vault_delete(&temp_dir, "TEST_KEY").unwrap();
         assert_eq!(file_vault_get(&temp_dir, "TEST_KEY"), None);
@@ -373,4 +430,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
-
