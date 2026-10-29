@@ -8,7 +8,7 @@ The app-owned task journal now records a bounded typed `stopCause` for known run
 
 Task run history now displays the cause using explicit plain-language labels alongside (not instead of) the host stop label. Existing run-history, review and recovery actions remain unchanged.
 
-Focused validation passed: `node --test test/tasks.test.ts` (20/20) and `npm run typecheck`. A serial full app run (`node --test --test-concurrency=1 "test/**/*.test.ts"`) reported 254/273 passing and 19 failures. Captured failures include a missing supervised sandbox helper, API responses of 400, one Vite build failure and dependent workspace/sandbox cases. These remain open; this run does not establish whether they share a cause, and they were not weakened or relabeled as passes.
+Focused validation passed: `node --test test/tasks.test.ts` (20/20) and `npm run typecheck`. The first serial full app run reported 254/273 because the shared sandbox checkout's `target/debug/vaksb` had been replaced with a Linux ARM64 ELF by a Docker build. On macOS this produced the misleading “helper could not be started” result, followed by dependent API/workspace failures. Rebuilding only `vak-sandbox-ctl` for the macOS host restored a Mach-O ARM64 helper; the same serial app command then passed 273/273. This was a cross-target build-artifact collision in the local sandbox checkout, not an app code failure. Future Linux sandbox checks must keep their Cargo target directory outside the host `target/` tree or rebuild the host helper before running app integration tests.
 
 ## Workspace-boundary correction in progress
 
