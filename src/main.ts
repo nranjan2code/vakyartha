@@ -1066,6 +1066,10 @@ window.addEventListener("vak:studio-closed", () => {
 });
 
 function toggleSidebar(): void {
+  if (isSkillStudioOpen() && innerWidth <= 720) {
+    document.body.classList.toggle("studio-show-sidebar");
+    return;
+  }
   if (tasksPanel.page.visible() && innerWidth <= 720) {
     document.body.classList.toggle("schedule-show-sidebar");
     return;

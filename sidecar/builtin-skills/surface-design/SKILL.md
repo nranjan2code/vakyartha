@@ -5,7 +5,7 @@ license: MIT
 compatibility: Core required Vakyartha capability; active across desktop and web runtimes.
 metadata:
   author: nranjan2code
-  version: "1.5"
+  version: "1.6"
 allowed-tools: vak_render vak_update vak_submit
 ---
 
@@ -25,6 +25,10 @@ Design guidelines and layout architecture for crafting responsive, minimalistic,
 Compose around the content and its reading order, not a fixed screen template. A single-column form or reading flow can be correct. Do not force every app/report into the same metric/chart/table tiers. Surfaces respond to their actual container (a side panel can be narrow on a wide screen).
 
 Prefer `grid` with `columns: "auto"` and an appropriate `minItemWidth` for repeated peer content. Use explicit column counts only for an intentional grouping or comparison; they still collapse as space decreases. Use wrapping horizontal stacks for related actions. Ordinary buttons size to their content; reserve explicit `maxWidth: "full"` or stretch alignment for intentional full-width actions. Compact density reduces control spacing without shrinking labels or coarse-pointer targets.
+
+Short cards size to their content by default. Do not add empty children, spacer nodes, arbitrary heights or extra boxes to fill the canvas. Data panels can use the available width; use an explicit semantic measure only when the task needs one. Forms and metric strips already provide structure and do not need enclosing cards solely for a border.
+
+Long `grid` and `list` collections page locally at 12 items by default when they exceed 12. Set `pageSize` deliberately when needed (`0` explicitly shows all). Tables have their own local paging. Search, sorting and paging preserve canonical source data and do not invoke the model or app backend. Keep primary action labels explicit. Use compact, accessible utility icons where the host offers them; never replace labels with unexplained glyph text or unsupported icon props.
 
 Choose the following patterns only when the content needs them:
 

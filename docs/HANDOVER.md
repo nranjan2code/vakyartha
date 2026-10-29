@@ -1,5 +1,16 @@
 # Vakyartha handover — 2026-10-28
 
+## Content sizing and collection UX — source checkpoint 2026-10-29
+
+Projection `bd36389` adopts the pushed direct-child card padding repair and local grid/list pagination. Short cards are intrinsic with readable limits; explicit semantic measures and full-width data panels remain supported. Forms and metrics no longer require nested decorative boxes. Vakyartha libraries (Artifacts, Apps, Studio, installed/catalog Skills and MCP), tool/call details and expandable provider groups share bounded local paging/search where needed. Model names are searchable without changing selection. External MCP discovery retains its existing source cursor/Load more contract. Native small collections intentionally have no pager.
+
+Shell cards remove decorative icon hero areas, reduce spacing and wrap titles. Schedule has a compact empty state and one primary create action. Studio collapses navigation on narrow windows. Routine refresh, delete, edit, app settings and close controls use labelled icons with tooltips/focus; primary and ambiguous actions retain text. Domain skills and Studio starters now treat layout patterns as optional, with shared `surface-design` 1.6 guidance. Existing custom skills/preferences still require reviewed updates; source changes alone do not update installed skill text.
+
+232 app tests, 405 framework tests and typecheck pass. Native WebKit control geometry/paging checks pass at 1440/620/375. The new shell collection checks pass at those widths, including exact page contents, size/filter reset, compact cards, model selection and no horizontal overflow. Existing app sandbox/local-action ownership checks pass at 1100/620/375. The Canvas test was updated from the replaced 24-item Show more behavior to 12-item previous/next/last-page navigation while retaining sort and cross-chat opening checks. Original narrow Studio failure (sidebar squeezed content), old test expectation failures and final runs are retained under `.vak/evaluations/density-2026-10-29` and `/tmp/vak-density-*.txt`.
+
+Free primary-provider contract gate at Projection passes all three numeric two-surface cases; two cases require a rejected root-ID attempt followed by accepted repair. Receipt `primary-provider-2026-10-29T01-07-54.690Z.json`. This only proves the small provider contract. General authoring, real source interpretation, new domain composition quality and earlier failed user-outcome gates remain open. No paid inference, new dependency, permissions grant or public release. Installation status is recorded separately in RELEASING.md.
+
+
 ## Practical reference feedback repairs — 2026-10-29
 
 Installed feedback exposed two acceptance gaps: oversized/stretched shared actions and app events leaking into the last chat. Projection `a2470db` fixes intrinsic action sizing and consistent compact control spacing in its owning repo; the app pin adopts that pushed commit. Vakyartha consumes app action/edit events and admits chat/task events only from the currently mounted owner instance, so equal surface IDs cannot transfer authority. Local table controls stay local. Canvas action progress/errors appear in its existing top status region. The app runner always releases controls after failed actions and displays launch errors locally; stale asynchronous opens cannot replace a newer view.

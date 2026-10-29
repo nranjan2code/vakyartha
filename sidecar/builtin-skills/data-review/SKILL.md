@@ -5,7 +5,7 @@ license: MIT
 compatibility: Works with tabular CSV, JSON, and structured query snapshots.
 metadata:
   author: nranjan2code
-  version: "1.3"
+  version: "1.4"
 allowed-tools: read_skill_file use_skill vak_render vak_update vak_submit
 ---
 
@@ -46,21 +46,21 @@ Methodical procedure for auditing, profiling and validating structured datasets,
 
 ## Liquid Canvas Architecture for Data Audits
 
-Never stretch single profiling charts, narrow sample tables, or short audit notes across 100% of a wide canvas. Structure the data audit canvas into three adaptive tiers:
+Choose a content-driven composition with the shared `surface-design` guidance. A single column or a full-width analytical panel can be appropriate. The following are optional patterns; include only sections and indicators that answer the requested question, with no required tier or column count:
 
-1. **Tier 1: Data Hygiene Strip & Spoken Takeaway**:
+1. **Data Hygiene Strip & Spoken Takeaway**:
    - **Spoken lead**: 1–2 sentences clearly summarizing total records processed, data completeness rate, and primary data anomalies identified so voice projection is immediate.
    - **KPI grid**: 4-column metric strip (`grid` with `props: { columns: 4, minItemWidth: "xs" }`):
      - `Total Records`: e.g. "12,450 rows"
      - `Valid / Clean`: e.g. "98.2%" (`tone: "positive"`)
      - `Missing / Nulls`: e.g. "184 cells (1.5%)" (`tone: "caution"`)
      - `Flagged Anomalies`: e.g. "23 records" (`tone: "critical"`)
-2. **Tier 2: Paired 2-Column Profiling Grid**:
+2. **Paired 2-Column Profiling Grid**:
    - Paired visual grid (`grid` with `props: { columns: 2, minItemWidth: "sm" }`):
      - **Left**: Missing Values per Column (`bar` chart, `props: { maxWidth: "md" }`).
      - **Right**: Category / Value Distribution (`pie` or `stacked` bar chart, `props: { maxWidth: "md" }`).
    - Never stretch single profiling charts across 100% of the canvas. Clamping to `maxWidth: "md"` or pairing in 2-column tracks preserves readable bar heights and undistorted pie circles.
-3. **Tier 3: Granular Flagged Records Table & Clamped Correction Form**:
+3. **Granular Flagged Records Table & Clamped Correction Form**:
    - **Flagged Records Table**: Full-width dense inspection table (`section` with `table`, `maxWidth: "full"`, searchable and sortable, with pagination).
    - **Correction Form**: Clamped correction or filter form (`form` with `maxWidth: "md"`), allowing user inspection or approval of corrections.
 

@@ -1,3 +1,4 @@
+import { CollectionPage, pageControls } from './pagination.ts';
 // A library of saved surfaces, independent of the chat sidebar's length. Cards
 // show metadata only: a form's private values never become a library preview.
 import type { SessionSummary, SurfaceSummary } from "@vak/host";
@@ -24,7 +25,7 @@ export class ArtifactsPage {
   #query = "";
   #filter: Kind | "All" = "All";
   #sort = "recent";
-  #limit = 24;
+  #paging = new CollectionPage();
   #request = 0;
   #opening = false;
   #openArtifact: (session: string, surface: string) => Promise<void>;
@@ -97,19 +98,19 @@ export class ArtifactsPage {
     const back = el("button", { type: "button", className: "ghost small", textContent: "Back to chat" });
     back.addEventListener("click", () => this.close(true));
     const search = el("input", { id: "artifacts-search", type: "search", value: this.#query, placeholder: "Search artifacts or chats", "aria-label": "Search artifacts or chats" });
-    search.addEventListener("input", () => { this.#query = search.value; this.#limit = 24; this.#draw(); });
+    search.addEventListener("input", () => { this.#query = search.value; this.#paging.index = 0; this.#draw(); });
     const sort = el("select", { id: "artifacts-sort", "aria-label": "Sort artifacts", value: this.#sort }, new Option("Most recent", "recent"), new Option("Oldest first", "oldest"), new Option("Name A–Z", "name"));
     sort.value = this.#sort;
     sort.addEventListener("change", () => { this.#sort = sort.value; this.#draw(); });
     const filters = el("div", { className: "artifact-filters", role: "group", "aria-label": "Filter by type" }, ...FILTERS.map(([kind, label]) => {
       const button = el("button", { type: "button", className: "artifact-filter", textContent: label, "aria-pressed": String(kind === this.#filter), "data-kind": kind });
-      button.addEventListener("click", () => { this.#filter = kind; this.#limit = 24; this.#draw(); });
+      button.addEventListener("click", () => { this.#filter = kind; this.#paging.index = 0; this.#draw(); });
       return button;
     }));
     this.#page.replaceChildren(
       el("div", { className: "artifacts-top", "data-tauri-drag-region": "" }, toggle, back),
       el("div", { className: "artifacts-body" },
-        el("header", { className: "artifacts-intro" }, el("div", { className: "artifacts-mark" }, icon("canvas", 24)), el("h1", { id: "artifacts-title", tabIndex: -1, textContent: "Artifacts" }), el("p", { textContent: "Forms, dashboards and interfaces from your chats." })),
+        el("header", { className: "artifacts-intro" }, el("div", { className: "artifacts-mark" }, icon("canvas", 24)), el("h1", { id: "artifacts-title", tabIndex: -1, textContent: "Artifacts" }), el("p", { textContent: "Saved interfaces from your chats." })),
         el("div", { className: "artifacts-search-row" }, el("div", { className: "artifact-search" }, icon("search", 18), search), sort),
         filters,
         el("div", { className: "artifacts-results", id: "artifacts-results", role: "status" }),
@@ -128,7 +129,7 @@ export class ArtifactsPage {
     for (const button of this.#page.querySelectorAll<HTMLButtonElement>(".artifact-filter")) button.setAttribute("aria-pressed", String(button.dataset.kind === this.#filter));
     $("artifacts-results").textContent = `${matches.length} ${matches.length === 1 ? "artifact" : "artifacts"}${matches.length !== all.length ? ` · ${all.length} total` : ""}`;
     const grid = $("artifacts-grid");
-    grid.replaceChildren(...matches.slice(0, this.#limit).map(a => this.#card(a)));
+    grid.replaceChildren(...this.#paging.slice(matches, `${this.#filter}:${this.#query}:${this.#sort}`).map(a => this.#card(a)));
     if (!matches.length) {
       const clear = el("button", { type: "button", className: "ghost", textContent: all.length ? "Clear filters" : "Start a chat" });
       clear.addEventListener("click", () => {
@@ -141,16 +142,7 @@ export class ArtifactsPage {
     }
     const more = $("artifacts-more");
     more.replaceChildren();
-    if (matches.length > this.#limit) {
-      const button = el("button", { type: "button", className: "ghost", textContent: `Show more (${matches.length - this.#limit} remaining)` });
-      button.addEventListener("click", () => {
-        const previous = this.#limit;
-        this.#limit += 24;
-        this.#draw();
-        grid.querySelectorAll<HTMLButtonElement>(".artifact-card")[previous]?.focus({ preventScroll: true });
-      });
-      more.append(button);
-    }
+    more.append(pageControls(this.#paging, matches.length, 'Artifacts', () => this.#draw()));
   }
 
   #card(a: Artifact): HTMLElement {

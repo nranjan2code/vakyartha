@@ -5,7 +5,7 @@ license: MIT
 compatibility: Compatible with market data feeds, financial time-series snapshots, and Vakyartha canvas surfaces.
 metadata:
   author: nranjan2code
-  version: "1.4"
+  version: "1.5"
 allowed-tools: read_skill_file use_skill vak_render vak_update vak_submit
 ---
 
@@ -39,15 +39,15 @@ Analytical methodology for authoring evidence-backed market, equity, index and c
 ## Compose the Requested Result
 
 1. **Liquid Canvas Architecture**:
-   Never let single trend charts span 100% width on wide desktop screens. Structure the financial canvas into three adaptive tiers:
-   - **Tier 1: Natural-Language Headline & Metric Strip**:
+   Choose a content-driven composition with the shared `surface-design` guidance. A single column or a full-width analytical panel can be appropriate. The following are optional patterns; include only sections and indicators that answer the requested question, with no required tier or column count:
+   - **Natural-Language Headline & Metric Strip**:
      - Lead with a concise natural-language sentence naming the instrument, exact evaluation window, observed move, and data freshness so speech projection is immediate.
      - Follow with a compact metric strip (`grid` with `props: { columns: 2, minItemWidth: "sm" }`) showing Last Close and Window Price Return (`%`) with appropriate semantic `tone: "positive" | "caution" | "critical"`.
-   - **Tier 2: Clamped Time-Series Visual**:
+   - **Clamped Time-Series Visual**:
      - Render a dated time-series chart (`line`) plotting historical close values over the window, clamped to `maxWidth: "lg"` (or paired with volume/sector metrics in a 2-column grid `columns: 2, minItemWidth: "sm"`). Never stretch a single line chart across 100% of a 1400px canvas.
    - Use `candlestick` when actual open/high/low/close records answer the price-structure question: map the same history fields in that exact order. Use `line` for a close-only trend. Candles/trends fit observed ranges by default (`yScale: "auto"`); preserve the disclosed scale and use a separate volume bar plot. Long sector rankings use horizontal signed bars rather than a nonnegative heatmap.
    - Compact workspaces may use root `density: "compact"` and a `split` with `ratio: "2:1"` for primary price analysis and secondary context. Set chart heights deliberately, without losing readable labels.
-   - **Tier 3: Granular Historical Table**:
+   - **Granular Historical Table**:
      - Provide a granular historical table (`section` with `table`, `maxWidth: "full"`) mapping the canonical `{/history}` collection with trading dates, close prices and volume. Set `totals: false` on price series and returns.
 2. **Canonical data submission**:
    - Submit the complete `data.history` array containing all dated records in the same `vak_render` or `vak_submit` call that references `{/history}`.

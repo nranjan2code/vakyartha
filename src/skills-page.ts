@@ -1,3 +1,4 @@
+import { CollectionPage, pageControls, pagedNodes } from './pagination.ts';
 // Settings → Skills, laid out like MCP: installed skills as cards with search
 // and filters, a page per skill (on/off, instructions, edit, remove), and
 // publisher catalogs. A catalog skill is added only after its exact
@@ -74,12 +75,14 @@ export async function skillsPage(initialSkill?: string, openSandbox?: () => void
     }, reload);
   }
 
+  const paging = new CollectionPage();
+  const pages = el("div");
   const grid = el("div", { className: "market skills-market" });
   const search = el("input", { type: "search", className: "market-search", placeholder: "Search skills", value: query, "aria-label": "Search skills" });
   search.addEventListener("input", () => { query = search.value; paint(); });
   const filters = segmented([["all", "All"], ["on", "On"], ["updates", "Updates"], ["builtin", "Built in"], ["catalog", "From catalogs"], ["yours", "Yours"]] as const, filter, v => { filter = v; paint(); });
   filters.classList.add("catalog-filters");
-  const installed = el("div", {}, el("div", { className: "market-bar" }, search, button("Skill Studio…", () => void openStudio(), "primary small"), button("New skill…", () => editor()), filters), grid);
+  const installed = el("div", {}, el("div", { className: "market-bar" }, search, button("Skill Studio…", () => void openStudio(), "primary small"), button("New skill…", () => editor()), filters), grid, pages);
   const summary = el("p", { className: "skills-summary", role: "status" });
   installed.prepend(summary);
   const catalog = el("div");
@@ -89,12 +92,13 @@ export async function skillsPage(initialSkill?: string, openSandbox?: () => void
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     const shown = list.filter(s => (filter === "all" || (filter === "on" ? s.enabled : filter === "updates" ? Boolean(s.update) : origin(s) === filter)) && words.every(w => `${s.name} ${s.description} ${s.files?.length ? "files" : ""} ${(s.files ?? []).map(f => f.path).join(" ")}`.toLowerCase().includes(w)));
     summary.textContent = `${list.filter(s => s.enabled).length} enabled · ${list.length} installed${list.some(s => s.update) ? ` · ${list.filter(s => s.update).length} updates available` : ""} · Showing ${shown.length}`;
-    grid.replaceChildren(...shown.map(s => {
+    grid.replaceChildren(...paging.slice(shown, `${filter}:${query}`).map(s => {
       const mark = s.source ? skillPublisherIcon(s.source.repo, 40) : tile(SKILL_GLYPHS[s.name] ?? "spark", 40);
       const card = el("button", { type: "button", className: "market-card" }, mark, el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: s.name }), el("div", { className: "market-sum", textContent: s.description })), el("div", { className: "market-foot" }, pill(originLabel(s)), pill(s.required ? "Always on" : s.enabled ? "On" : "Off", s.enabled ? "ok" : ""), s.hasDraft ? pill("Draft", "caution") : null, s.files?.length ? pill(`${s.files.length} files`) : null, s.update ? pill("Update") : null, el("span", { className: "market-card-action" }, "Manage", icon("arrow", 14))));
       card.addEventListener("click", () => detail(s.name));
       return card;
     }));
+    pages.replaceChildren(pageControls(paging, shown.length, "Skills", paint));
     if (!shown.length) grid.append(el("p", { className: "row-hint", textContent: filter === "updates" && !query.trim() ? "No built-in updates available." : list.length ? "Nothing matches." : "No skills yet." }));
   }
 
@@ -134,7 +138,7 @@ export async function skillsPage(initialSkill?: string, openSandbox?: () => void
       });
       box.append(details);
     }
-    return box;
+    return pagedNodes([...box.children] as HTMLElement[], "Skill files", true);
   }
 
   function skillToggle(skill: SkillView): HTMLElement {
@@ -220,22 +224,25 @@ export async function skillsPage(initialSkill?: string, openSandbox?: () => void
     try {
       const items = await api<SkillListing[]>(`/api/skills/catalog?repo=${encodeURIComponent(repo)}`);
       const descriptions = new Map<string, string | null>();
+      const paging = new CollectionPage(), pages = el("div");
       const results = el("div", { className: "market skills-catalog-market" });
       const find = el("input", { type: "search", className: "market-search", placeholder: `Search ${items.length} skills`, "aria-label": "Search catalog skills" });
       const paintResults = () => {
         const words = find.value.toLowerCase().split(/\s+/).filter(Boolean);
-        const visible = items.filter(i => words.every(w => `${i.name} ${i.path} ${descriptions.get(i.path) ?? ""}`.toLowerCase().includes(w))).slice(0, 24);
+        const matches = items.filter(i => words.every(w => `${i.name} ${i.path} ${descriptions.get(i.path) ?? ""}`.toLowerCase().includes(w)));
+        const visible = paging.slice(matches, find.value);
         results.replaceChildren(...visible.map(i => {
           const action = el("span", { className: "catalog-action" }, list.some(s => s.name === i.name) ? "Installed" : "Review", icon("arrow", 14));
           const b = el("button", { type: "button", className: "market-card external-card" }, skillPublisherIcon(repo, 40), el("div", { className: "market-text" }, el("h3", { className: "market-name", textContent: i.name }), el("div", { className: "market-pub", textContent: i.path || "/" }), el("div", { className: "market-sum", textContent: descriptions.has(i.path) ? descriptions.get(i.path) ?? i.path : "Loading description…" })), el("div", { className: "market-foot" }, el("span", { className: "catalog-origin", textContent: repo }), action));
           b.addEventListener("click", () => void review(i)); return b;
         }));
         if (!results.children.length) results.append(el("p", { className: "row-hint", textContent: "Nothing matches." }));
+        pages.replaceChildren(pageControls(paging, matches.length, "Catalog skills", paintResults));
         const missing = visible.filter(i => !descriptions.has(i.path)).map(i => i.path);
         if (missing.length) void api<Record<string, string | null>>("/api/skills/describe", { method: "POST", body: JSON.stringify({ repo, paths: missing }) }).then(found => { for (const [key, value] of Object.entries(found)) descriptions.set(key, value); paintResults(); }).catch(() => { for (const key of missing) descriptions.set(key, null); paintResults(); });
       };
       find.addEventListener("input", paintResults); paintResults();
-      catalog.replaceChildren(el("p", { className: "row-hint catalog-status", textContent: `${repo} at ${items[0]?.sha.slice(0, 7) ?? "—"}, the newest commit at least 14 days old · ${items.length} skills` }), find, results);
+      catalog.replaceChildren(el("p", { className: "row-hint catalog-status", textContent: `${repo} at ${items[0]?.sha.slice(0, 7) ?? "—"}, the newest commit at least 14 days old · ${items.length} skills` }), find, results, pages);
       find.focus();
     } catch (err) { catalog.replaceChildren(el("div", { className: "catalog-empty", role: "alert" }, el("h3", { textContent: "This catalog couldn't be read" }), el("p", { className: "row-hint", textContent: (err as Error).message }), button("Try again", () => void browse(repo)))); }
   }

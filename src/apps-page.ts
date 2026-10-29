@@ -1,3 +1,4 @@
+import { CollectionPage, pageControls } from './pagination.ts';
 import type { AppConnection } from '../shared/app-connections.ts';
 // Sandboxed Dynamic Applications Workbench Page.
 // Manages application lifecycle in isolated child runtimes with dedicated full-view execution.
@@ -22,6 +23,7 @@ function formatBytes(bytes: number): string {
 export class AppsPage {
   #page = $("apps-page");
   #query = "";
+  #paging = new CollectionPage();
   #apps: AppSummary[] = [];
   #activeApp: AppDetails | null = null;
   #opening = 0;
@@ -182,8 +184,8 @@ export class AppsPage {
       el("div", { className: "artifacts-body" },
         el("header", { className: "artifacts-intro" },
           el("div", { className: "artifacts-mark" }, icon("cpu", 24)),
-          el("h1", { id: "apps-title", tabIndex: -1, textContent: "Hosted Applications" }),
-          el("p", { textContent: "Persistent local apps with sandboxed actions, saved state and direct data refresh." })
+          el("h1", { id: "apps-title", tabIndex: -1, textContent: "Apps" }),
+          el("p", { textContent: "Your apps, saved data and refresh status." })
         ),
         el("div", { className: "artifacts-search-row" },
           el("div", { className: "artifact-search" }, icon("search", 18), search),
@@ -212,6 +214,7 @@ export class AppsPage {
       resultsEl.textContent = `${filtered.length} application${filtered.length === 1 ? "" : "s"}${filtered.length !== this.#apps.length ? ` · ${this.#apps.length} total` : ""}`;
     }
 
+    document.getElementById("apps-pages")?.remove();
     if (filtered.length === 0) {
       grid.innerHTML = `
         <div class="artifact-empty">
@@ -225,7 +228,7 @@ export class AppsPage {
     }
 
     grid.replaceChildren(
-      ...filtered.map((app) => {
+      ...this.#paging.slice(filtered, this.#query).map((app) => {
         const isRunning = app.isRunning;
         return el("div", { className: "artifact-card app-card" },
           el("div", { className: "artifact-cover app-cover" },
@@ -258,19 +261,21 @@ export class AppsPage {
             app.triggerCount > 0
               ? el("button", {
                   type: "button",
-                  className: "ghost small",
+                  className: "icon-action", title: "Refresh", "aria-label": `Refresh ${app.name}`,
                   onclick: () => void this.#runTrigger(app.id),
-                }, "Run Poll")
+                }, icon("refresh", 15))
               : false,
             el("button", {
               type: "button",
-              className: "ghost small app-btn-danger",
+              className: "icon-action app-btn-danger", title: "Delete app", "aria-label": `Delete ${app.name}`,
               onclick: () => void this.#deleteApp(app.id, app.name),
-            }, "Delete")
+            }, icon("trash", 15))
           )
         );
       })
     );
+    document.getElementById('apps-pages')?.remove();
+    const pages = pageControls(this.#paging, filtered.length, 'Applications', () => this.#renderGrid()); pages.id = 'apps-pages'; grid.after(pages);
   }
 
   #feedback(message: string, isError = false): void {
@@ -328,10 +333,10 @@ export class AppsPage {
 
     const pollBtn = el("button", {
       type: "button",
-      className: "ghost small",
+      className: "icon-action",
       onclick: () => void this.#runTrigger(app.manifest.id),
-      title: "Trigger scheduled background action",
-    }, icon("clock", 13), document.createTextNode(" Refresh"));
+      title: "Refresh", "aria-label": "Refresh",
+    }, icon("refresh", 16));
 
     const consoleBtn = el("button", {
       type: "button",
@@ -372,7 +377,7 @@ export class AppsPage {
     const operations = el("details", { className: "app-runner-operations" },
       el("summary", { textContent: "Manage" }),
       el("div", { className: "app-runner-menu" }, consoleBtn, ...(app.manifest.triggers.length ? [schedule] : [])));
-    actions.append(el("button", { type: "button", className: "ghost small", textContent: "Settings", onclick: () => void this.#openAppSettings() }), operations);
+    actions.append(el("button", { type: "button", className: "icon-action", title: "App settings", "aria-label": "App settings", onclick: () => void this.#openAppSettings() }, icon("sliders", 16)), operations);
     const navigation = el("nav", { className: "app-surface-nav", "aria-label": "App views" });
     if (Object.keys(app.surfaces ?? {}).length > 1) {
       const navigate = (id: string) => {
@@ -512,7 +517,7 @@ export class AppsPage {
     body.append(el("button", { type: "button", className: "ghost small", textContent: "Review source and documentation", onclick: async () => { close(); const {openSkillStudio} = await import("./skills-studio.ts"); this.close(false); await openSkillStudio(app.manifest.id, () => this.runApp(app.manifest.id), async () => { await this.refresh(); }, "app"); } }));
     body.append(el("h3", { textContent: "App preferences" }), el("p", { textContent: "Source lists, reporting criteria and other domain preferences are maintained in the app's own views." }));
     for (const [id, view] of Object.entries(app.surfaces ?? {})) body.append(el("button", { type: "button", className: "ghost small", textContent: `Open ${view.title || id}`, onclick: () => { close(); const current = this.#activeApp; if (current?.surfaces?.[id]) { current.surface = current.surfaces[id] as unknown as Record<string, unknown>; this.#renderRunnerView(current); } } }));
-    dialog.append(el("header", {}, el("h2", { textContent: `${app.manifest.name} settings` }), el("button", { type: "button", className: "ghost small", textContent: "Close", onclick: close })), body);
+    dialog.append(el("header", {}, el("h2", { textContent: `${app.manifest.name} settings` }), el("button", { type: "button", className: "icon-action", title: "Close settings", "aria-label": "Close settings", onclick: close }, icon("close", 16))), body);
     dialog.addEventListener("cancel", e => { e.preventDefault(); close(); }); document.body.append(dialog); dialog.showModal();
   }
 

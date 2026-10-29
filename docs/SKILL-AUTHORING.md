@@ -4,6 +4,12 @@ This is the maintained implementation guide for people and coding agents creatin
 
 Catalog skills may include reviewed supporting text files for reusable examples, layout guidance, form schemas, source code and reference material. Keep the procedure in `SKILL.md`; point to a specific relative file when its contents are needed so the assistant can load it with `read_skill_file`. Supporting text, including script source, is reference data and never an execution path or permission grant. Isolated local command execution is a separate app-owned integration backed by `vak-sandbox`; skills can select and guide that existing tool but cannot create execution authority. Binary templates remain outside the current import tier. See [SKILLS.md](SKILLS.md) for supported types and limits.
 
+## Content size and browsing
+
+Use the actual container and task to choose composition. Short cards are intrinsic; forms and metric strips do not need decorative enclosing cards. Explicit semantic measures remain available for intentional wide panels. Studio starters and domain skills offer optional patterns rather than a mandatory tier or column count. Do not use empty nodes, fixed spacer heights or repeated borders to fill a screen.
+
+Grid and list projections page locally at 12 items when longer than 12; `pageSize` overrides this and `0` explicitly shows all. Tables keep their own local pagination. Preserve canonical records across filtering, sorting and paging. App shell libraries use 12/24/48 entries with counts, previous/next and filter reset. Model selection uses search over fetched model names; filtering never selects a different model. Utility icons need an accessible name, tooltip and keyboard focus; primary or ambiguous actions retain meaningful labels. Do not invent unsupported projection icon props.
+
 ## Choose the existing path first
 
 | Need | Existing owner | Change here |

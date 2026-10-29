@@ -202,9 +202,11 @@ const steps = [
    }
    document.getElementById('open-artifacts').click(); await new Promise(r=>setTimeout(r,200));
    document.querySelector('.artifact-filter[data-kind="All"]').click();
-   check(document.querySelectorAll('.artifact-card').length === 24, 'library should page large collections');
-   document.querySelector('#artifacts-more button').click();
-   check(document.querySelectorAll('.artifact-card').length === 27, 'show more failed');
+   check(document.querySelectorAll('.artifact-card').length === 12, 'library should page large collections');
+   document.querySelector('#artifacts-more [aria-label="Next page"]').click();
+   check(document.querySelectorAll('.artifact-card').length === 12, 'second page failed');
+   document.querySelector('#artifacts-more [aria-label="Next page"]').click();
+   check(document.querySelectorAll('.artifact-card').length === 3, 'last page failed');
    const sort=document.getElementById('artifacts-sort'); sort.value='name'; sort.dispatchEvent(new Event('change'));
    check(document.querySelector('.artifact-card strong').textContent === 'Newsletter signup', 'name sort failed');
    document.querySelector('.artifact-card[data-session="library-other"][data-surface="notes-0"]').click(); await new Promise(r=>setTimeout(r,250)); flush();

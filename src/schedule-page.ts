@@ -1,3 +1,4 @@
+import { CollectionPage, pageControls } from './pagination.ts';
 import { parseTaskResultPolicy } from "../shared/task-result.ts";
 import { parseTaskFiles } from "../shared/task-files.ts";
 import { parseRunUsage } from "../shared/finops.ts";
@@ -43,6 +44,7 @@ export class SchedulePage {
   private tab: "yours" | "templates" = "yours";
   private sort: "recent" | "next" = "recent";
   private key = "";
+  private paging = new CollectionPage();
   private request = 0;
   private detail?: TaskView;
   private busy = false;
@@ -156,9 +158,11 @@ export class SchedulePage {
     const shown = this.summaries.filter((t) => (!this.query.trim() || `${t.goal} ${t.note}`.toLocaleLowerCase().includes(this.query.trim().toLocaleLowerCase())) && (this.filter === "all" || this.filter === "upcoming" && ["scheduled", "paused"].includes(t.state) || this.filter === "attention" && ATTENTION.has(t.state) || this.filter === "active" && ["queued", "running"].includes(t.state) || this.filter === "history" && ["completed", "cancelled"].includes(t.state)));
     shown.sort((a, b) => this.sort === "next" ? (a.state === "scheduled" ? Date.parse(a.schedule!.at) : Infinity) - (b.state === "scheduled" ? Date.parse(b.schedule!.at) : Infinity) || b.updated.localeCompare(a.updated) : b.updated.localeCompare(a.updated));
     $("schedule-count").textContent = shown.length ? `${shown.length} ${shown.length === 1 ? "item" : "items"}` : "";
-    if (shown.length) results.append(el("div", { className: "schedule-grid" }, ...shown.map((t) => this.card(t))));
+    if (shown.length) {
+      results.append(el("div", { className: "schedule-grid" }, ...this.paging.slice(shown, `${this.query}:${this.filter}:${this.sort}`).map(t => this.card(t))), pageControls(this.paging, shown.length, "Schedules", () => { this.key = ""; this.drawList(); }));
+    }
     else if (this.summaries.length) results.append(el("div", { className: "schedule-empty" }, icon("search", 34), el("h2", { textContent: "Nothing matches just yet" }), el("p", { textContent: "Try another search or lifecycle filter." }), button("Clear filters", () => { this.query = ""; this.filter = "all"; this.list(); })));
-    else results.append(el("div", { className: "schedule-empty" }, el("div", { className: "schedule-empty-icon" }, icon("calendar", 44)), el("h2", { textContent: "Nothing scheduled yet" }), el("p", { textContent: "Start now or choose a time. Follow the work here, then open the result when it is ready." }), button("Create your first schedule", () => void this.create(), true)), el("section", { className: "schedule-inspiration" }, el("h2", { textContent: "What would you like to make time for?" }), this.templates()));
+    else results.append(el("div", { className: "schedule-empty" }, el("div", { className: "schedule-empty-icon" }, icon("calendar", 44)), el("h2", { textContent: "Nothing scheduled yet" }), el("p", { textContent: "Start now or choose a time. Follow the work here, then open the result when it is ready." })), el("section", { className: "schedule-inspiration" }, el("h2", { textContent: "What would you like to make time for?" }), this.templates()));
   }
   private card(t: TaskSummary): HTMLElement {
     const b = button("", () => void this.showDetail(t.id)); b.className = "schedule-card"; b.dataset.task = t.id;

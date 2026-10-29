@@ -1,3 +1,4 @@
+import { CollectionPage, pageControls } from './pagination.ts';
 // Studio: Unified Authoring, Rehearsal, Flow DAG, and Canvas Staging
 // Workbench for Agent Skills and Sandboxed Dynamic Applications.
 // Supports multi-tab multitasking, instant background auto-saves, and seamless session restoration.
@@ -93,6 +94,7 @@ export async function openSkillStudio(
   let installedApps: AppSummary[] = [];
   let hubFilter: "all" | "skills" | "apps" | "drafts" = "all";
   let hubQuery = "";
+  const hubPage = new CollectionPage();
 
   // Editor states
   let currentSkillPkg: SkillPackageView | null = null;
@@ -227,7 +229,7 @@ export async function openSkillStudio(
     const slug = name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
     const template = `---
 name: ${slug}
-description: Analyze domain records and project structured 3-tier findings across interactive canvas surfaces.
+description: Analyze domain records and project structured findings across interactive canvas surfaces.
 allowed-tools: read_skill_file
 license: MIT
 compatibility: Compliant with Agent Skills specification.
@@ -244,16 +246,16 @@ Analyze domain records from verified sources and project structured findings ont
 1. Resolve the analysis window, source records, and currency/units.
 2. Load \`interactive-ui\` when binding canonical data collections or receiving form criteria.
 3. The shared, required \`surface-design\` guidance applies automatically:
-   - Tier 1: Executive summary headline and 3 to 4 metric aggregate cards.
-   - Tier 2: Analytical core using a 2-column grid pairing a trend chart with distribution.
-   - Tier 3: Dense detail inspection table with sorting and filtering.
+   - Choose layout from the requested task, content and actual container width.
+   - Use only metrics and charts that answer the question; keep short content intrinsic.
+   - Page long collections locally and retain exact underlying records.
 4. Keep one canonical collection under \`/records\` rather than duplicating numbers across separate surfaces.
 5. Formulate the visible narrative so the first sentence carries the primary finding and key caveat for Voice TTS.
 `;
     currentSkillPkg = {
       skill: {
         name: slug,
-        description: "Analyze domain records and project structured 3-tier findings across interactive canvas surfaces.",
+        description: "Analyze domain records and project structured findings across interactive canvas surfaces.",
         enabled: false,
         body: template.split(/^---\s*$/m).slice(2).join("---").trim(),
         text: template,
@@ -678,7 +680,7 @@ Analyze domain records from verified sources and project structured findings ont
     if (name === "surface-design") {
       return {
         positive: [
-          "Format this analytical report with 3-tier liquid layout",
+          "Format this report for its content and available width",
           "Ensure canvas surface reflows properly across 320px, 720px, and 960px",
           "Construct dual spoken voice readout for this dashboard"
         ],
@@ -1290,8 +1292,8 @@ Analyze domain records from verified sources and project structured findings ont
           detail = "Data Binding & Forms";
           desc = "Binds user inputs, form controls, and filters to canonical data collections.";
         } else if (c === "surface-design") {
-          detail = "3-Tier Layout Standard";
-          desc = "Enforces 3-tier layout across 320px mobile, 720px form, and 960px desktop containers.";
+          detail = "Adaptive Surface Design";
+          desc = "Selects readable, content-driven layouts for the actual surface container.";
         } else if (c === "summarize") {
           detail = "Narrative Distillation";
           desc = "Distills unstructured text and transcripts into concise findings.";
@@ -1624,7 +1626,7 @@ Analyze domain records from verified sources and project structured findings ont
     // Hub Header
     const titleCol = el("div", {},
       el("h1", { className: "studio-hub-title", textContent: "Creator Studio" }),
-      el("p", { className: "studio-hub-subtitle", textContent: "Author, orchestrate, test, and rehearse Agent Skills and Sandboxed Dynamic Applications in a governed runtime." })
+      el("p", { className: "studio-hub-subtitle", textContent: "Create and maintain apps and reusable skills." })
     );
 
     const newSkillBtn = el("button", {
@@ -1705,7 +1707,7 @@ Analyze domain records from verified sources and project structured findings ont
       placeholder: "Filter skills and apps…",
       value: hubQuery
     });
-    searchInput.oninput = () => { hubQuery = searchInput.value.toLowerCase().trim(); render(); };
+    searchInput.oninput = () => { hubQuery = searchInput.value.toLowerCase().trim(); render(); root.querySelector<HTMLInputElement>(".studio-search-box input")?.focus(); };
 
     const searchBox = el("div", { className: "studio-search-box" }, icon("search", 14), searchInput);
     const filterRow = el("div", { className: "studio-filter-row" }, filterTabs, searchBox);
@@ -1743,7 +1745,7 @@ Analyze domain records from verified sources and project structured findings ont
           s.allowedTools ? pill(`Tools: ${s.allowedTools.split(/\s+/).length}`) : null,
           s.files?.length ? pill(`${s.files.length} files`) : null
         );
-        const openBtn = el("button", { type: "button", className: "ghost tiny", textContent: "Edit in Studio →" });
+        const openBtn = el("button", { type: "button", className: "icon-action", title: "Edit skill", "aria-label": `Edit ${s.name}` }, icon("edit", 16));
         const foot = el("div", { className: "studio-card-foot" }, footMeta, openBtn);
 
         card.append(head, foot);
@@ -1781,7 +1783,7 @@ Analyze domain records from verified sources and project structured findings ont
           pill(`v${a.version}`),
           a.triggerCount > 0 ? pill(`${a.triggerCount} cron triggers`) : null
         );
-        const openBtn = el("button", { type: "button", className: "ghost tiny", textContent: "Open in Studio →" });
+        const openBtn = el("button", { type: "button", className: "icon-action", title: "Edit app", "aria-label": `Edit ${a.name}` }, icon("edit", 16));
         const foot = el("div", { className: "studio-card-foot" }, footMeta, openBtn);
 
         card.append(head, foot);
@@ -1789,7 +1791,10 @@ Analyze domain records from verified sources and project structured findings ont
       }
     }
 
-    hub.append(headRow, ...(draftBanner ? [draftBanner] : []), filterRow, grid);
+    const items = [...grid.children];
+    grid.replaceChildren(...hubPage.slice(items, `${hubFilter}:${hubQuery}`));
+    const pages = pageControls(hubPage, items.length, 'Studio items', render);
+    hub.append(headRow, ...(draftBanner ? [draftBanner] : []), filterRow, grid, pages);
     return hub;
   }
 
@@ -1881,9 +1886,9 @@ Analyze domain records from verified sources and project structured findings ont
           el("button", {
             type: "button",
             className: "ghost tiny",
-            textContent: "+ 3-Tier Layout Contract",
+            textContent: "+ Adaptive Layout Guidance",
             onclick: () => {
-              const snippet = `\n## Responsive Canvas Layout Contract\n\nAdhere to 3-tier liquid layout:\n1. **Tier 1 (Executive Strip)**: Fluid grid showing 3-4 top metrics with semantic tones.\n2. **Tier 2 (Analytical Split)**: Split container pairing trend visualization with breakdown.\n3. **Tier 3 (Granular Table)**: Searchable and sortable detail records table.\n`;
+              const snippet = `\n## Responsive Canvas Layout Contract\n\nFollow the shared surface-design guidance. Choose the simplest composition that answers the question at the actual container width. Keep short cards content-sized, use charts only when they add evidence, and make long record collections searchable and paged without discarding source records.\n`;
               bodyEditor.value += snippet;
               rebuildSkillMdFromVisual(nameInput.value, descInput.value, toolsInput.value, bodyEditor.value);
             }

@@ -5,7 +5,7 @@ license: MIT
 compatibility: Works with text summaries, news readers, web search tools, and interactive digest canvases.
 metadata:
   author: nranjan2code
-  version: "1.3"
+  version: "1.4"
 allowed-tools: read_skill_file use_skill vak_render vak_update vak_submit
 ---
 
@@ -37,15 +37,15 @@ Methodology for compiling accurate, sourced daily news digests, executive media 
 
 ## Liquid Canvas Architecture for News Digests
 
-Never stretch short 2-sentence news cards across 100% of a wide canvas. Structure the news digest canvas into three adaptive tiers:
+Choose a content-driven composition with the shared `surface-design` guidance. A single column or a full-width analytical panel can be appropriate. The following are optional patterns; include only sections and indicators that answer the requested question, with no required tier or column count:
 
-1. **Tier 1: Morning Briefing Headline & 3-Column Scope Strip**:
+1. **Morning Briefing Headline & 3-Column Scope Strip**:
    - **Spoken lead**: 1–2 sentences clearly summarizing the leading headline of the day so audio speech is immediate.
    - **Coverage metrics**: 3-column metric strip (`grid` with `props: { columns: 3, minItemWidth: "xs" }`):
      - `Stories Covered`: e.g. "8 key stories"
      - `Publishers Cited`: e.g. "FT, Reuters, Nature"
      - `Retrieval Freshness`: e.g. "Oct 28, 2026 · 08:30 UTC"
-2. **Tier 2: Fluid Multi-Column Topic Grid**:
+2. **Fluid Multi-Column Topic Grid**:
    - Fluid news grid (`grid` with `props: { columns: 3, minItemWidth: "sm" }` or `columns: 2` on narrower containers):
      - Each news item is formatted as a structured card (`card` with `props: { maxWidth: "md" }`):
        - Category badge (e.g. `tone: "neutral"`)
@@ -54,7 +54,7 @@ Never stretch short 2-sentence news cards across 100% of a wide canvas. Structur
        - Core Story Summary (2–3 sentences)
        - Why It Matters (`text`)
      - Cards tile cleanly in multi-column rows without stretched single-column bloat.
-3. **Tier 3: Granular Event Timeline & Source Attribution Table**:
+3. **Granular Event Timeline & Source Attribution Table**:
    - **Timeline Table**: Chronological table (`section` with `table`, `maxWidth: "full"`):
      - Columns: `Time (UTC)`, `Topic`, `Headline`, `Publisher`, `Status`.
 

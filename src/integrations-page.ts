@@ -1,3 +1,4 @@
+import { CollectionPage, pageControls, pagedNodes } from './pagination.ts';
 // Settings → Integrations: the marketplace, one page per integration (setup,
 // every tool with its policy and a test run, recent calls), and adding a
 // server of your own. What an integration can reach is shown before install.
@@ -77,18 +78,21 @@ let query = "";
 export async function marketplace(open: (id: string) => void, addOwn: () => void): Promise<HTMLElement[]> {
   const list = await api<Integration[]>("/api/integrations");
   filter = "all";
+  const paging = new CollectionPage();
+  const pages = el("div");
   const grid = el("div", { className: "market" });
   const paint = () => {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     const shown = list.filter((i) => (filter === "all" ? true : filter === "installed" ? i.enabled || i.entry.sourceKind === "npm" && i.installed || Boolean(i.provenance) || i.entry.trust === "custom" : i.entry.trust === filter)).filter((i) => words.every((w) => `${i.entry.name} ${i.entry.publisher} ${i.entry.summary}`.toLowerCase().includes(w)));
     grid.replaceChildren(
-      ...shown.map((i) => {
+      ...paging.slice(shown, `${filter}:${query}`).map((i) => {
         const [label, tone] = STATUS[i.status];
         const card = el("button", { type: "button", className: "market-card" }, i.provenance ? importedIcon(i.entry.id, i.entry.name, 40, Boolean(i.provenance.icon)) : brandTile(i.entry.id, i.entry.icon, 40), el("div", { className: "market-text" }, el("div", { className: "market-name" }, i.entry.name), el("div", { className: "market-pub" }, i.entry.publisher), el("div", { className: "market-sum" }, i.entry.summary)), el("div", { className: "market-foot" }, trustBadge(i.entry.trust), pill(label, tone), i.provenance ? pill(i.provenance.source) : null, el("span", { className: "market-card-action" }, i.enabled || i.provenance || i.entry.sourceKind === "npm" && i.installed ? "Manage" : "Set up", icon("arrow", 14))));
         card.addEventListener("click", () => open(i.entry.id));
         return card;
       }),
     );
+    pages.replaceChildren(pageControls(paging, shown.length, "Integrations", paint));
     if (!shown.length) grid.append(el("p", { className: "row-hint", textContent: "Nothing matches." }));
   };
   const search = el("input", { type: "search", className: "market-search", placeholder: "Search integrations", value: query, "aria-label": "Search integrations" });
@@ -115,7 +119,7 @@ export async function marketplace(open: (id: string) => void, addOwn: () => void
   add.addEventListener("click", addOwn);
   paint();
   const external = externalCatalogs(open);
-  const own = el("div", {}, el("div", { className: "market-bar" }, search, add, filters), grid);
+  const own = el("div", {}, el("div", { className: "market-bar" }, search, add, filters), grid, pages);
   external.node.hidden = true;
   const tabs = segmented([["ours", "Our catalog"], ["external", "External catalogs"], ["installed", "In use"]] as const, "ours", v => {
     external.node.hidden = v !== "external"; own.hidden = v === "external";
@@ -239,7 +243,7 @@ export async function integrationPage(id: string, back: () => void, reload: () =
   const tools = i.installed
     ? group(
         `Tools${i.tools.length ? ` (${i.tools.length})` : ""}`,
-        ...(toolRows.length ? toolRows : [el("div", { className: "row stack" }, el("p", { className: "row-hint", textContent: i.enabled ? "No tools listed yet." : "Turn it on to see its tools." }))]),
+        ...(toolRows.length ? [pagedNodes(toolRows, "Integration tools", true)] : [el("div", { className: "row stack" }, el("p", { className: "row-hint", textContent: i.enabled ? "No tools listed yet." : "Turn it on to see its tools." }))]),
         i.tools.length ? el("div", { className: "row stack" }, el("p", { className: "row-hint", textContent: "Allow: runs without asking. Ask: you approve each call in the chat (or for the whole chat). Off: the model never sees it." })) : null,
       )
     : null;
@@ -247,9 +251,9 @@ export async function integrationPage(id: string, back: () => void, reload: () =
   const calls = i.calls.length
     ? group(
         "Recent calls",
-        ...i.calls.slice(0, 12).map((c) =>
+        pagedNodes(i.calls.map((c) =>
           el("div", { className: "row" }, el("div", { className: "row-text" }, el("div", { className: "row-label" }, el("code", { textContent: c.tool }), " ", pill(c.decision === "denied" ? "Declined" : c.ok === false ? "Failed" : "Done", c.decision === "denied" || c.ok === false ? "bad" : "ok")), el("div", { className: "row-hint", textContent: `${new Date(c.at).toLocaleString()}${c.ms !== undefined ? ` · ${c.ms} ms` : ""}${c.preview ? ` · ${c.preview.slice(0, 120)}` : ""}` }))),
-        ),
+        ), "Integration calls", true),
       )
     : null;
 

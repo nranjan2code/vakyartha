@@ -8,6 +8,7 @@ import { $, api, ask, el, engine, prefs } from "./core.ts";
 import { choose, current, labelOf, listModels, loadProviders, modelOptions, parseChoice, type ProviderInfo, providers } from "./models.ts";
 import { applyAppearance, appearance, MODES, SIZES, THEMES } from "./theme.ts";
 import { icon } from "./icons.ts";
+import { pagedNodes } from "./pagination.ts";
 import { skillsPage } from "./skills-page.ts";
 import { addOwnPage, integrationPage, marketplace } from "./integrations-page.ts";
 import { disposeFinops, finopsPage } from "./finops-page.ts";
@@ -159,6 +160,9 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
   );
   for (const o of providerSel.options) o.disabled = !usable.some((p) => p.id === o.value);
   const modelSel = el("select", { "aria-label": "Model" });
+  const modelSearch = el("input", { type: "search", placeholder: "Search models…", "aria-label": "Search models", disabled: true });
+  const modelMatches = el("span", { className: "row-hint", role: "status" });
+  let offeredModels: string[] = [];
   const other = el("input", { type: "text", className: "wide", placeholder: "Type a model id", spellcheck: false, hidden: true, "aria-label": "Model id" });
   const status = el("p", { className: "row-hint" });
   const plan = el("div", { className: "plan" });
@@ -172,6 +176,16 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     void showPlan();
   };
 
+  function filterModels(want: string): void {
+    const query = modelSearch.value.toLowerCase().trim();
+    const matches = offeredModels.filter(name => name.toLowerCase().includes(query));
+    const visible = want && want !== OTHER && offeredModels.includes(want) && !matches.includes(want) ? [want, ...matches] : matches;
+    modelSel.replaceChildren(el("option", { value: "", textContent: "Choose a model…" }), ...visible.map(m => el("option", { value: m, textContent: m })), el("option", { value: OTHER, textContent: "Other (type a model id)…" }));
+    modelSel.value = offeredModels.includes(want) ? want : want ? OTHER : "";
+    modelMatches.textContent = query ? `${matches.length} matching models${visible.length > matches.length ? " · current selection retained" : ""}` : "";
+  }
+  modelSearch.oninput = () => filterModels(modelSel.value);
+
   async function fillModels(want: string): Promise<void> {
     const p = providers.find((x) => x.id === provider);
     modelSel.replaceChildren(el("option", { value: "", textContent: "Loading models…" }));
@@ -182,7 +196,7 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     if (p?.id !== provider) return;
     // No pre-selection from the list: it is alphabetical and often starts with
     // models that cannot chat (OpenAI lists babbage-002 first).
-    modelSel.replaceChildren(el("option", { value: "", textContent: "Choose a model…" }), ...res.models.map((m) => el("option", { value: m, textContent: m })), el("option", { value: OTHER, textContent: "Other (type a model id)…" }));
+    offeredModels = res.models; modelSearch.value = ""; modelSearch.disabled = false; filterModels(want);
     modelSel.disabled = false;
     if (res.error) {
       status.className = "row-hint bad";
@@ -245,11 +259,11 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
   void fillModels(focus && focus !== current.provider ? "" : current.model);
   if (current.model) void showPlan();
   return [
-    ...title("Models", "The model new messages go to. The picker under the message box switches between recent ones."),
+    ...title("Models", "Choose the model for new messages."),
     group(
       "Model",
       row("Provider", usable.length ? null : "Add a key in Providers, or start Ollama.", providerSel),
-      el("div", { className: "row" }, el("div", { className: "row-text" }, el("div", { className: "row-label", textContent: "Model" }), status), el("div", { className: "row-control column" }, modelSel, other)),
+      el("div", { className: "row" }, el("div", { className: "row-text" }, el("div", { className: "row-label", textContent: "Model" }), status), el("div", { className: "row-control column" }, modelSearch, modelMatches, modelSel, other)),
     ),
     group("How vak asks this model", el("div", { className: "row stack" }, plan, el("div", { className: "row-actions" }, calibrate, calibration))),
   ];
@@ -305,15 +319,15 @@ async function providersPage(): Promise<HTMLElement[]> {
   const media = (await api<MediaProvider[]>("/api/media/providers")).filter((p) => !providers.some((chat) => chat.id === p.id));
   return [
     ...title("Providers", "Manage connections and keys. Choose models in Models and speech settings in Voice."),
-    el("section", { className: "group" }, el("h2", { textContent: "On this computer" }), ...local.map(card)),
-    el("section", { className: "group" }, el("h2", { textContent: "Labs and hosts" }), ...labs.filter((p) => p.available).map(card),
-      el("details", { className: "provider-more" }, el("summary", { textContent: "More providers" }), ...labs.filter((p) => !p.available).map(card))),
+    el("section", { className: "group" }, el("h2", { textContent: "On this computer" }), pagedNodes(local.map(card), "Local providers", true)),
+    el("section", { className: "group" }, el("h2", { textContent: "Labs and hosts" }), pagedNodes(labs.filter((p) => p.available).map(card), "Connected providers", true),
+      el("details", { className: "provider-more" }, el("summary", { textContent: "More providers" }), pagedNodes(labs.filter((p) => !p.available).map(card), "More providers", true))),
     el("section", { className: "group" }, el("h2", { textContent: "Media and voice" }), ...media.map((p) => el("details", { className: "provider-row" },
       el("summary", {}, el("span", { className: "provider-name", textContent: p.label }), pill(p.available ? "Key saved" : "Needs key", p.available ? "ok" : "")),
       el("div", { className: "card-fields" }, ...settings.filter((s) => s.name === p.keyVar).map((s) => secretField(s, refresh))),
       voiceProviders.some((v) => v.id === p.id) ? el("div", { className: "provider-actions" }, voiceSetup(p.id)) : null))),
     ...await voiceSection((id) => void show(`voice:${id}`), [...providers.map((p) => p.id), ...media.map((p) => p.id)]),
-    el("section", { className: "group" }, el("h2", { textContent: "Any OpenAI-compatible server" }), ...custom.map(card)),
+    el("section", { className: "group" }, el("h2", { textContent: "Any OpenAI-compatible server" }), pagedNodes(custom.map(card), "Custom providers", true)),
   ];
 }
 

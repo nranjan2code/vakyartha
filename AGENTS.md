@@ -70,6 +70,10 @@ Node 24 runs `.ts` directly; the UI is bundled by Vite, the sidecar by `scripts/
 - Don't restart a channel (Telegram) while the user is mid-test; say so first.
 - Data: `.vak/desktop/` (dev window), `.vak/web/` (browser), `~/Library/Application Support/com.nranjan2code.vakyartha/` (installed).
 
+## UI density and collections
+
+Short content must not acquire a fixed hero height, empty spacer nodes or nested decorative cards. Projection owns general surface geometry; shell libraries use the shared local pagination helpers. Long collections need bounded browsing/search without discarding canonical records. Use accessible utility icons with tooltips and focus states where meaningful; retain clear primary action text. Verify wide and narrow WebKit geometry and exact page/filter behavior with `scripts/control-layout-check.ts` and `scripts/collection-ui-check.ts` alongside the existing Canvas/Skills checks.
+
 ## Code style
 
 - TypeScript, strict, ESM, `.ts` imports. Erasable syntax only (no enums, no parameter properties).

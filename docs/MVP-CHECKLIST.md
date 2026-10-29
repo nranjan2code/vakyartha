@@ -304,3 +304,7 @@ Supersedes the earlier mini-cloud completion claims: [current bounded runtime co
 - [x] Reusable Projection OHLC intervals, truthful fitted trend scales, horizontal signed rankings, explicit plot sizes/axis context, compact density and exact observation inspection; adopted through pushed pin `b28c317`.
 - [x] Independent source/SQL/persistence checks and actual WebKit navigation/inspection/actions at wide/narrow widths; ordinary Canvas remains covered. Earlier visual false positives are retained and corrected in Evaluation.
 - [ ] Broader model-authored app reliability, installed delivery, comprehensive accessibility/channel parity, pan/zoom/brush/linked-axis capabilities and unbounded database volumes. No existing unchecked task-outcome gate is closed by this reference.
+
+## Collection UX checkpoint — 2026-10-29
+
+Compact shared geometry and local collection paging/search are implemented and checked in native WebKit; see HANDOVER.md and EVALUATION.md. This does not close broad accessibility, real model composition or source/outcome gates. Small collections intentionally omit pagination; model names use search in the native selector and external catalog discovery retains its cursor contract.

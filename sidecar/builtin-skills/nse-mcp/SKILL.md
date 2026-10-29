@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires enabled 'nse' (Bhavcopy) or 'nse-cmmkt' (Market Live) vendor integrations.
 metadata:
   author: nranjan2code
-  version: "1.0"
+  version: "1.1"
 allowed-tools: read_skill_file use_skill vak_render vak_update vak_submit
 ---
 
@@ -88,17 +88,17 @@ The National Stock Exchange of India operates two official hosted MCP endpoints 
 
 ## Composing Visual & Spoken Projections
 
-When requested to review NSE instruments or compose an interactive review, follow Vakyartha's liquid canvas architecture:
+For an instrument review, follow the shared `surface-design` guidance. These are optional patterns; choose only what the question and available evidence need. There is no required tier or column count:
 
-1. **Tier 1: Natural-Language Headline & Metric Strip**:
+1. **Natural-Language Headline & Metric Strip**:
    - Provide a concise headline stating the symbol, evaluation window, recorded move, and data source (NSE Bhavcopy or NSE Market Live).
    - Build a 2-column metric strip (`grid` with `columns: 2, minItemWidth: "xs"`) showing:
      - **Latest Price / Close**: Value formatted with currency (`₹` or `INR`).
      - **Window Price Return**: Percentage with semantic tone (`positive` for gain, `critical` for drop, `neutral` for flat).
-2. **Tier 2: Clamped Time-Series Line Visual**:
+2. **Clamped Time-Series Line Visual**:
    - For multi-session history, plot dated closing prices using a `line` chart.
    - Always clamp single charts to `maxWidth: "lg"` or pair them with volume/breadth in a 2-column grid (`columns: 2`). Never let a single chart stretch across 100% of a wide screen.
-3. **Tier 3: Granular Historical Table**:
+3. **Granular Historical Table**:
    - Map `{/history}` records containing date, open, high, low, close, and volume.
    - Disable table totals (`totals: false`) on price and return columns.
 
