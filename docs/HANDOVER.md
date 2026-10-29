@@ -1,5 +1,11 @@
 # Vakyartha handover — 2026-10-28
 
+## Required system isolation — 2026-10-29
+
+The user requested extending isolation beyond app code to host execution, provider requests and host-mediated integrations, plus CPU/memory limits and Linux support, and explicitly selected a minimal trusted broker. [ADR-050](ADR.md#adr-050-minimal-trusted-broker-and-required-system-isolation-2026-10-29) records the decision. [System isolation contract](sandbox/SYSTEM-ISOLATION.md) freezes ownership, broker grants, platform/resource semantics, implementation ordering and independent acceptance scenarios. Checklist ISO1–ISO8 remains entirely open. These are requirements and architecture records only; no runtime, helper, framework pin, installed data or running service changed.
+
+Source inspection confirms the current gaps: the app host owns provider/integration dispatch; `ResourcePolicy` fields do not currently establish backend quotas; Linux backends remain stubs; Projection's local MCP client can launch directly when an enabled helper probe fails. Its present stdio command wrapper also cannot be assumed compatible with persistent MCP because the supervised target receives closed stdin. Implementation must address the complete transport/authority boundary, rather than only changing a status label or removing a fallback. Preserve existing containment, recovery, source and user-outcome evidence while adding the new gates. The pre-existing uncommitted RELEASING.md change is unrelated and preserved.
+
 ## Content sizing and collection UX — source checkpoint 2026-10-29
 
 Projection `bd36389` adopts the pushed direct-child card padding repair and local grid/list pagination. Short cards are intrinsic with readable limits; explicit semantic measures and full-width data panels remain supported. Forms and metrics no longer require nested decorative boxes. Vakyartha libraries (Artifacts, Apps, Studio, installed/catalog Skills and MCP), tool/call details and expandable provider groups share bounded local paging/search where needed. Model names are searchable without changing selection. External MCP discovery retains its existing source cursor/Load more contract. Native small collections intentionally have no pager.

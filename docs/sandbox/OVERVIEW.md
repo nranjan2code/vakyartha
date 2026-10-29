@@ -1,5 +1,7 @@
 # Sandbox execution and Realms
 
+Required expansion (2026-10-29): host execution workers, brokered provider/integration access, enforced CPU/memory limits and Linux isolation are tracked in [SYSTEM-ISOLATION.md](SYSTEM-ISOLATION.md). The user selected a minimal trusted broker. Those requirements are not implemented by the bounded macOS mechanisms described below.
+
 Vakyartha uses the separate [`vak-sandbox`](https://github.com/nranjan2code/sandbox) project for macOS Seatbelt containment and the durable Realm lifecycle. The app owns settings, the integration adapter, skill guidance, approvals and Settings UI. Projection's existing integration lifecycle owns tool discovery, policy, approval delivery and call logging; no framework dependency files are edited.
 
 ## Execution lifetimes: commands, Realms and apps

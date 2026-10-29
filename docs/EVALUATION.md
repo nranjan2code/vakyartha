@@ -1,5 +1,9 @@
 # Agent outcome evaluation
 
+## System isolation requirements — 2026-10-29
+
+Requirements/design checkpoint only. The user requested host execution isolation, brokered provider/integration requests, CPU/memory enforcement and Linux containment, and selected a minimal trusted broker. [Frozen scope and acceptance scenarios](sandbox/SYSTEM-ISOLATION.md); checklist ISO1–ISO8 is open. Source inspection identifies missing resource enforcement, Linux stubs and local MCP fallback; it is not a fresh runtime containment test. No implementation, native resource/escape test, provider run, installation or new protection is claimed. Existing command/Realm/app evidence below retains its original bounded scope. Documentation checks do not close any of these outcome gates.
+
 ## Content sizing and collection UX — source checkpoint 2026-10-29
 
 Projection `bd36389` adopts the pushed direct-child card padding repair and local grid/list pagination. Short cards are intrinsic with readable limits; explicit semantic measures and full-width data panels remain supported. Forms and metrics no longer require nested decorative boxes. Vakyartha libraries (Artifacts, Apps, Studio, installed/catalog Skills and MCP), tool/call details and expandable provider groups share bounded local paging/search where needed. Model names are searchable without changing selection. External MCP discovery retains its existing source cursor/Load more contract. Native small collections intentionally have no pager.

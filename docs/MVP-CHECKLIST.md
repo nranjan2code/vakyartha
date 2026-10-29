@@ -133,6 +133,19 @@ Owner: Projection for the voice projector; Vakyartha for the `voice/` module. Ac
 - [ ] R4. Follow the existing release procedure; distribution, signing, new dependencies and paid runs retain their existing approval requirements.
 - [ ] R5. Review dependency and lockfile diffs, including transitive additions, provenance, integrity and install/build scripts. Record approval for every exception; no floating/ad hoc installs, unreviewed vendoring or remote executable downloads. Existing pins and package-age rules alone do not close this gate.
 
+## Required system isolation — 2026-10-29
+
+User-requested work, tracked separately from the earlier bounded macOS sandbox checkpoint. The chosen architecture keeps a minimal trusted broker and isolates execution workers. [Scope, ownership and acceptance gates](sandbox/SYSTEM-ISOLATION.md). All items below are open; existing command/app receipts do not establish completion.
+
+- [ ] ISO1. Isolate host execution workers from credential, network, app-private persistence and original-project authority; retain one canonical writer per entity.
+- [ ] ISO2. Broker provider requests through configured authorized endpoints, with broker-owned credentials, bounded response processing, redirect/address checks and cancellation.
+- [ ] ISO3. Mediate host integration calls through existing schemas/policies/approvals; local workers require verified containment with no uncontained fallback and a compatible persistent transport.
+- [ ] ISO4. Enforce explicit CPU limits with documented units, scope and descendant behavior; verify native exhaustion, cleanup and receipts independently of wall timeout.
+- [ ] ISO5. Enforce memory limits with explicit accounting/scope and independent native allocation evidence; disclose monitoring separately from hard quotas.
+- [ ] ISO6. Implement Linux isolation and capability admission; verify filesystem/network/environment denial, descendant/owner-death cleanup, resource limits and unavailable-kernel refusal on Linux.
+- [ ] ISO7. Measure private worker boundary overhead and verify existing desktop, provider, integration, task, channel and multiple-surface behavior through it.
+- [ ] ISO8. Package and verify the exact installed app/framework/helper combination, with truthful capabilities, effective limits and retained failed evidence.
+
 ## Later — not required for MVP completion
 
 These boxes track future candidates only. Do not start them simply because they appear here. One-time clock triggers are now implemented; repeating/event triggers remain below.
@@ -146,7 +159,7 @@ These boxes track future candidates only. Do not start them simply because they 
 - [ ] L3. Repeating routines and event triggers with wall-clock/DST rules, cumulative budgets and long-term run retention. One-time triggers and bounded run records are implemented.
 - [ ] L3a. Task chains: verified sequential dependencies, typed artifact handoffs, per-step permissions and budgets, partial failure handling and deletion without cascades.
 - [ ] L4. Additional connectors, authorization methods and document formats.
-- [ ] L5. Browser/computer interaction and broader isolation outcomes. The bounded macOS command/Realm tool lifecycle and responsive Settings are verified independently (2026-10-28): approval/denial, containment, durable writes, review, promotion, restart, rollback, conflict refusal and destruction. Full autonomous provider and broader resource/platform isolation remain open. [Evidence](EVALUATION.md#sandbox-settings-and-realms--2026-10-28).
+- [ ] L5. Browser/computer interaction and full autonomous provider outcomes. The bounded macOS command/Realm tool lifecycle and responsive Settings are verified independently (2026-10-28): approval/denial, containment, durable writes, review, promotion, restart, rollback, conflict refusal and destruction. Broader system/resource/Linux isolation is now explicitly requested work under ISO1–ISO8 above. [Evidence](EVALUATION.md#sandbox-settings-and-realms--2026-10-28).
 - [ ] L6. Multiple agent roles, delegation and concurrent execution.
 - [ ] L7. Remote execution, remote notifications and cross-device channels.
 - [ ] L8. Artifact history, collaboration and publishing.
