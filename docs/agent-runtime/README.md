@@ -1,6 +1,6 @@
 # Agent execution and bounded delegation
 
-Design baseline: 2026-10-29. Status: architecture and active implementation plan. The native capacity actor/store and focused workspace corrections are incomplete foundations; they do not enable delegation, establish the isolation boundary, pass a delivery slice, or close an outcome gate. Diagrams show the target unless explicitly labelled current behavior. Track live changes and verification in [implementation progress](IMPLEMENTATION-PROGRESS.md).
+Design baseline: 2026-10-29. Status: architecture and active implementation. The native actor now persists revision-fenced root-task aggregates with capacity state, but remains inactive in the product; focused workspace corrections and the actor are incomplete foundations. They do not enable delegation, establish the isolation boundary, pass a delivery slice, or close an outcome gate. Diagrams show the target unless explicitly labelled current behavior. Track live changes and verification in [implementation progress](IMPLEMENTATION-PROGRESS.md).
 
 The design applies to one agent first. Delegation is an optional extension of the same task contract, authority, budgets, evidence and recovery. The default is zero children; neither task length nor a role name justifies creating one.
 

@@ -10,9 +10,13 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 1;
+const STORE_VERSION: u16 = 2;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_ROOTS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+pub mod state;
+use state::{CheckOutcome, Requirement, RootStatus, RootTask, StateError, UserReview};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum Resource {
@@ -32,6 +36,9 @@ pub enum AdmissionError {
     RequestAlreadySettled,
     RequestLedgerFull,
     UnknownLease,
+    DuplicateRoot,
+    RootLedgerFull,
+    RootNotFound,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -96,6 +103,7 @@ pub struct CapacityLedger {
     request_ids: HashMap<String, u64>,
     used: BTreeMap<Resource, u32>,
     used_by_root: HashMap<String, BTreeMap<Resource, u32>>,
+    roots: BTreeMap<String, RootTask>,
 }
 
 impl CapacityLedger {
@@ -232,6 +240,7 @@ impl CapacityLedger {
                 .iter()
                 .map(|(id, lease)| (id.clone(), *lease))
                 .collect(),
+            roots: self.roots.clone(),
         }
     }
 
@@ -245,8 +254,12 @@ impl CapacityLedger {
         }
         let mut ledger = Self {
             next_lease: snapshot.next_lease,
+            roots: snapshot.roots,
             ..Self::default()
         };
+        if ledger.roots.len() > MAX_ROOTS || ledger.roots.iter().any(|(id, root)| id != root.id() || root.validate().is_err()) {
+            return Err(StoreError::Corrupt);
+        }
         for lease in snapshot.issued {
             if lease.id == 0
                 || lease.id > snapshot.next_lease
@@ -338,6 +351,7 @@ struct LedgerSnapshot {
     issued: Vec<Lease>,
     active_ids: Vec<u64>,
     request_ids: BTreeMap<String, u64>,
+    roots: BTreeMap<String, RootTask>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -380,6 +394,24 @@ pub enum ControlError {
     QueueFull,
     Closed,
     TimedOut,
+    TaskState(StateError),
+}
+
+#[derive(Clone, Debug)]
+pub enum RootMutation {
+    StartAttempt,
+    WaitForInput,
+    WaitForApproval,
+    Stop { status: RootStatus, reason: String },
+    ReviseContract { goal: String, criteria: String },
+    RecordCheck {
+        contract_revision: u64,
+        requirement_id: String,
+        outcome: CheckOutcome,
+        receipt: Option<String>,
+    },
+    RequestReview,
+    AcceptReview(UserReview),
 }
 
 enum ActorCommand {
@@ -392,6 +424,24 @@ enum ActorCommand {
     Release {
         lease: Lease,
         reply: SyncSender<Result<(), ControlError>>,
+    },
+    CreateRoot {
+        id: String,
+        goal: String,
+        criteria: String,
+        run_limit: u32,
+        requirements: Vec<Requirement>,
+        reply: SyncSender<Result<RootTask, ControlError>>,
+    },
+    MutateRoot {
+        id: String,
+        expected_revision: u64,
+        mutation: RootMutation,
+        reply: SyncSender<Result<RootTask, ControlError>>,
+    },
+    ReadRoot {
+        id: String,
+        reply: SyncSender<Result<RootTask, ControlError>>,
     },
     Shutdown,
 }
@@ -432,6 +482,55 @@ impl ControlHandle {
             .recv_timeout(self.response_timeout)
             .map_err(response_error)?
     }
+
+    pub fn create_root(
+        &self,
+        id: String,
+        goal: String,
+        criteria: String,
+        run_limit: u32,
+        requirements: Vec<Requirement>,
+    ) -> Result<RootTask, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::CreateRoot {
+                id,
+                goal,
+                criteria,
+                run_limit,
+                requirements,
+                reply,
+            })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    pub fn mutate_root(&self, id: String, expected_revision: u64, mutation: RootMutation) -> Result<RootTask, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::MutateRoot {
+                id,
+                expected_revision,
+                mutation,
+                reply,
+            })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    pub fn read_root(&self, id: String) -> Result<RootTask, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::ReadRoot { id, reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
 }
 
 /// Single-threaded owner for the native capacity ledger. Not wired to product
@@ -452,7 +551,16 @@ impl ControlActor {
         if queue_capacity == 0 || response_timeout.is_zero() {
             return Err(StoreError::InvalidProfile);
         }
-        let (mut store, ledger) = ControlStore::open(data_dir, profile_revision, &profile)?;
+        let (mut store, mut ledger) = ControlStore::open(data_dir, profile_revision, &profile)?;
+        let mut recovered = false;
+        for root in ledger.roots.values_mut() {
+            recovered |= root
+                .recover_after_restart()
+                .map_err(|_| StoreError::Corrupt)?;
+        }
+        if recovered {
+            store.persist(&ledger, &profile)?;
+        }
         let (commands, receiver) = sync_channel(queue_capacity);
         let join = thread::Builder::new()
             .name("vak-control".into())
@@ -533,6 +641,102 @@ fn actor_loop(
                         }
                     },
                 }
+            }
+            ActorCommand::CreateRoot {
+                id,
+                goal,
+                criteria,
+                run_limit,
+                requirements,
+                reply,
+            } => {
+                if ledger.roots.contains_key(&id) {
+                    let _ = reply.send(Err(ControlError::Admission(
+                        AdmissionError::DuplicateRoot,
+                    )));
+                    continue;
+                }
+                if ledger.roots.len() >= MAX_ROOTS {
+                    let _ = reply.send(Err(ControlError::Admission(
+                        AdmissionError::RootLedgerFull,
+                    )));
+                    continue;
+                }
+                let root = match RootTask::create(id, goal, criteria, run_limit, requirements) {
+                    Ok(root) => root,
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::TaskState(error)));
+                        continue;
+                    }
+                };
+                let mut candidate = ledger.clone();
+                candidate.roots.insert(root.id().to_owned(), root.clone());
+                match store.persist(&candidate, &profile) {
+                    Ok(_) => {
+                        ledger = candidate;
+                        let _ = reply.send(Ok(root));
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Store(error)));
+                        break;
+                    }
+                }
+            }
+            ActorCommand::MutateRoot {
+                id,
+                expected_revision,
+                mutation,
+                reply,
+            } => {
+                let mut candidate = ledger.clone();
+                let Some(root) = candidate.roots.get_mut(&id) else {
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::RootNotFound)));
+                    continue;
+                };
+                let changed = match mutation {
+                    RootMutation::StartAttempt => root.start_attempt(expected_revision),
+                    RootMutation::WaitForInput => root.wait_for_input(expected_revision),
+                    RootMutation::WaitForApproval => root.wait_for_approval(expected_revision),
+                    RootMutation::Stop { status, reason } => root.stop(expected_revision, status, reason),
+                    RootMutation::ReviseContract { goal, criteria } => root.revise_contract(expected_revision, goal, criteria),
+                    RootMutation::RecordCheck {
+                        contract_revision,
+                        requirement_id,
+                        outcome,
+                        receipt,
+                    } => root.record_check(
+                        expected_revision,
+                        contract_revision,
+                        &requirement_id,
+                        outcome,
+                        receipt,
+                    ),
+                    RootMutation::RequestReview => root.request_review(expected_revision),
+                    RootMutation::AcceptReview(review) => root.accept_review(expected_revision, review),
+                };
+                if let Err(error) = changed {
+                    let _ = reply.send(Err(ControlError::TaskState(error)));
+                    continue;
+                }
+                let root = root.clone();
+                match store.persist(&candidate, &profile) {
+                    Ok(_) => {
+                        ledger = candidate;
+                        let _ = reply.send(Ok(root));
+                    }
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Store(error)));
+                        break;
+                    }
+                }
+            }
+            ActorCommand::ReadRoot { id, reply } => {
+                let result = ledger
+                    .roots
+                    .get(&id)
+                    .cloned()
+                    .ok_or(ControlError::Admission(AdmissionError::RootNotFound));
+                let _ = reply.send(result);
             }
         }
     }
@@ -1402,6 +1606,29 @@ mod tests {
         let timeout = Duration::from_secs(2);
         let actor = ControlActor::open(&data, "profile-1", profile(), 4, timeout).unwrap();
         let handle = actor.handle();
+        let root = handle.create_root(
+            "task-1".into(),
+            "Produce a verified result".into(),
+            "Meet the declared requirements".into(),
+            3,
+            vec![Requirement::new("outcome".into(), true).unwrap()],
+        ).unwrap();
+        let running = handle.mutate_root(root.id().into(), root.revision(), RootMutation::StartAttempt).unwrap();
+        let checked = handle.mutate_root(running.id().into(), running.revision(), RootMutation::RecordCheck {
+            contract_revision: running.contract_revision(),
+            requirement_id: "outcome".into(),
+            outcome: CheckOutcome::Pass,
+            receipt: Some("receipt-1".into()),
+        }).unwrap();
+        let ready = handle.mutate_root(checked.id().into(), checked.revision(), RootMutation::RequestReview).unwrap();
+        let active = handle.create_root(
+            "task-live".into(),
+            "An interrupted task".into(),
+            "Review uncertain effects".into(),
+            3,
+            vec![Requirement::new("outcome".into(), true).unwrap()],
+        ).unwrap();
+        let active = handle.mutate_root(active.id().into(), active.revision(), RootMutation::StartAttempt).unwrap();
         let lease = handle
             .reserve(
                 "request-1".into(),
@@ -1426,6 +1653,11 @@ mod tests {
 
         let restarted = ControlActor::open(&data, "profile-1", profile(), 4, timeout).unwrap();
         let handle = restarted.handle();
+        assert_eq!(handle.read_root("task-1".into()).unwrap(), ready);
+        let recovered = handle.read_root("task-live".into()).unwrap();
+        assert_eq!(recovered.status(), RootStatus::Interrupted);
+        assert_eq!(recovered.revision(), active.revision() + 1);
+        assert!(recovered.stop_reason().unwrap().contains("in-flight effects"));
         assert!(matches!(
             handle.reserve(
                 "request-1".into(),
