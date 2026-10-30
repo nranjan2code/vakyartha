@@ -157,7 +157,7 @@ test("native provider transport strips credentials and streams bounded response 
     method: "POST",
     headers: { authorization: "Bearer secret", "content-type": "application/json" },
     body: "{}",
-  }, { operationId: "root_operation_1", attempt: 2 });
+  }, { operationId: "root_operation_1", attempt: 2, sessionId: "session-1", runId: "run-1" });
   for (let i = 0; i < 100 && !frames.length; i++) await new Promise((resolve) => setTimeout(resolve, 5));
   const request = frames[0]!;
   assert.equal(request.type, "provider_request");
@@ -166,6 +166,8 @@ test("native provider transport strips credentials and streams bounded response 
   assert.equal("headers" in request, false);
   assert.equal(request.operationId, "root_operation_1");
   assert.equal(request.attempt, 2);
+  assert.equal(request.sessionId, "session-1");
+  assert.equal(request.runId, "run-1");
   assert.doesNotMatch(JSON.stringify(request), /secret/);
   const id = String(request.id);
   const send = (frame: Record<string, unknown>) => input.write(JSON.stringify({ v: DESKTOP_PROTOCOL, id, ...frame }) + "\n");
@@ -191,7 +193,7 @@ test("native provider framing sends registered operations without caller-selecte
       raw = raw.slice(index + 1);
     }
   });
-  const gemini = bridge.providerFetch("gemini", "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse", { method: "POST", body: "{}" }, { operationId: "gemini-op", attempt: 0 });
+  const gemini = bridge.providerFetch("gemini", "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse", { method: "POST", body: "{}" }, { operationId: "gemini-op", attempt: 0, sessionId: "session-1", runId: "run-1" });
   for (let i = 0; i < 100 && frames.length < 1; i++) await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(frames[0]?.operation, "stream_generate_content");
   assert.equal(frames[0]?.routeModel, "gemini-2.5-flash");
@@ -199,7 +201,7 @@ test("native provider framing sends registered operations without caller-selecte
   input.write(JSON.stringify({ v: DESKTOP_PROTOCOL, id: frames[0]!.id, type: "provider_error", message: "test refusal" }) + "\n");
   await assert.rejects(gemini, /test refusal/);
 
-  const ollama = bridge.providerFetch("ollama", "http://127.0.0.1:11434/api/chat", { method: "POST", body: "{}" }, { operationId: "ollama-op", attempt: 0 });
+  const ollama = bridge.providerFetch("ollama", "http://127.0.0.1:11434/api/chat", { method: "POST", body: "{}" }, { operationId: "ollama-op", attempt: 0, sessionId: "session-1", runId: "run-1" });
   for (let i = 0; i < 100 && frames.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(frames[1]?.operation, "ollama_chat");
   assert.equal("url" in frames[1]!, false);
@@ -207,12 +209,16 @@ test("native provider framing sends registered operations without caller-selecte
   await assert.rejects(ollama, /test refusal/);
 
   await assert.rejects(
-    bridge.providerFetch("openai", "https://attacker.example/v1/responses", { method: "POST", body: "{}" }, { operationId: "bad-host", attempt: 0 }),
+    bridge.providerFetch("openai", "https://attacker.example/v1/responses", { method: "POST", body: "{}" }, { operationId: "bad-host", attempt: 0, sessionId: "session-1", runId: "run-1" }),
     /Unsupported native provider operation/,
   );
   await assert.rejects(
-    bridge.providerFetch("openai", "https://api.openai.com/v1/responses?key=secret", { method: "POST", body: "{}" }, { operationId: "query-key", attempt: 0 }),
+    bridge.providerFetch("openai", "https://api.openai.com/v1/responses?key=secret", { method: "POST", body: "{}" }, { operationId: "query-key", attempt: 0, sessionId: "session-1", runId: "run-1" }),
     /Unsupported native provider operation/,
+  );
+  await assert.rejects(
+    bridge.providerFetch("openai", "https://api.openai.com/v1/responses", { method: "POST", body: "{}" }, { operationId: "missing-run", attempt: 0 }),
+    /Missing provider execution identity/,
   );
   await assert.rejects(
     bridge.providerFetch("openai", "https://api.openai.com/v1/responses", { method: "POST", body: "{}" }),

@@ -254,6 +254,8 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
     if (signal?.aborted) return Promise.reject(new Error("Provider request was cancelled"));
     const id = `gen-${randomUUID()}`;
     if (!context || !/^[A-Za-z0-9_-]{1,128}$/.test(context.operationId)) return Promise.reject(new Error("Missing provider operation identity"));
+    if (!context.sessionId || !/^[A-Za-z0-9_-]{1,128}$/.test(context.sessionId)
+      || !context.runId || !/^[A-Za-z0-9_-]{1,128}$/.test(context.runId)) return Promise.reject(new Error("Missing provider execution identity"));
     const operationId = context.operationId;
     const attempt = context.attempt;
     if (!Number.isSafeInteger(attempt) || attempt < 0 || attempt > 16) return Promise.reject(new Error("Invalid provider attempt identity"));
@@ -294,6 +296,8 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
         body,
         operationId,
         attempt,
+        sessionId: context.sessionId,
+        runId: context.runId,
       };
       void send(message).catch((error: unknown) => {
         if (providerPending.delete(id)) {

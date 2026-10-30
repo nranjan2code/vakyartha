@@ -2,6 +2,14 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Desktop provider egress fail-closed cutover — 2026-10-30
+
+Projection `aa9a6be` adds public host-owned `sessionId`/`runId` correlation metadata to each generation request and carries it through provider transport callbacks and retries. Vakyartha pins that public API and now passes the desktop private native `providerFetch` into `startAppServer`, including the startup interval where no transport is ready (which rejects). Desktop model calls therefore cannot fall back to the TypeScript default network fetch. The sidecar rejects missing/invalid execution identities and forwards them over private IPC; Rust requires and validates both fields on the registered operation frame.
+
+This closes an accidental direct-egress path but does not enable dispatch: Rust still refuses every provider request. The metadata is not authority. Native task/root admission, binding the host run to the durable root/fence, approval review/decision, exact request ticket consumption, durable budget charge and redacted receipt, cancellation settlement, and a trusted UI outcome path still must be implemented together before provider traffic can be enabled. Desktop model requests currently fail closed.
+
+Evidence: Projection focused host/provider tests pass 29/29; its full suite passed 420/420, typecheck and package generation passed before a final import-only cleanup (typecheck and focused tests passed after cleanup). Vakyartha desktop transport tests pass 8/8; app typecheck and the serial app suite pass (282/282); the Rust 1.99.1 Linux Docker suite passes 103/103 with strict Clippy; and Node 26.13.0 desktop smoke passes. The first Linux run retained one stale private-pipe fixture without `sessionId`/`runId` and failed with EOF; the fixture was updated and the full Linux rerun passed. These checks validate transport shape/fail-closed behavior, not native provider authorization or an original user outcome.
+
 ## Native file-vault fallback moved beside native stores — 2026-10-30
 
 The Rust file-vault fallback now uses `<native-data>/.vault.secrets`, under the same sibling root as control and canonical-session data. On Unix the directory is owner-only and the file is 0600; on Windows the path relies on the user-SID-protected AppData ACL. Every file get/set/delete validates that the root is a real directory and refuses a symlink. Tests cover sibling placement, Unix owner-only directory mode, persistence/deletion, symlink refusal, and that an existing `<data>/.vault.secrets` is neither read nor modified. The old file is left untouched under the zero-user cutover. Platform credential vaults remain primary; this file is a fallback, not an OS isolation boundary. The same-UID sidecar can still derive the sibling path until the contained worker is actually launched.

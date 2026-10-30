@@ -48,6 +48,10 @@ struct ProviderRequest {
     #[serde(rename = "operationId")]
     operation_id: String,
     attempt: u32,
+    #[serde(rename = "sessionId")]
+    session_id: String,
+    #[serde(rename = "runId")]
+    run_id: String,
 }
 
 impl ProviderRequest {
@@ -76,7 +80,13 @@ impl ProviderRequest {
             && !self.operation_id.is_empty()
             && self.operation_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
             && self.attempt <= 16
+            && valid_execution_id(&self.session_id)
+            && valid_execution_id(&self.run_id)
     }
+}
+
+fn valid_execution_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 128 && id.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
 fn provider_refusal(id: &str) -> serde_json::Value {
@@ -410,15 +420,19 @@ mod tests {
     #[test]
     fn provider_frames_are_registered_operation_records_without_destinations() {
         let request: ProviderRequest = serde_json::from_str(
-            r#"{"v":2,"id":"gen-123","type":"provider_request","provider":"openai","operation":"responses","body":"{}","operationId":"root-op-1","attempt":1}"#,
+            r#"{"v":2,"id":"gen-123","type":"provider_request","provider":"openai","operation":"responses","body":"{}","operationId":"root-op-1","attempt":1,"sessionId":"session-1","runId":"run-1"}"#,
         ).unwrap();
         assert!(request.validate());
         let gemini: ProviderRequest = serde_json::from_str(
-            r#"{"v":2,"id":"gen-124","type":"provider_request","provider":"gemini","operation":"stream_generate_content","routeModel":"gemini-2.5-flash","body":"{}","operationId":"root-op-1","attempt":0}"#,
+            r#"{"v":2,"id":"gen-124","type":"provider_request","provider":"gemini","operation":"stream_generate_content","routeModel":"gemini-2.5-flash","body":"{}","operationId":"root-op-1","attempt":0,"sessionId":"session-1","runId":"run-1"}"#,
         ).unwrap();
         assert!(gemini.validate());
+        let invalid_execution_identity: ProviderRequest = serde_json::from_str(
+            r#"{"v":2,"id":"gen-invalid","type":"provider_request","provider":"openai","operation":"responses","body":"{}","operationId":"root-op-1","attempt":0,"sessionId":"../session","runId":"run-1"}"#,
+        ).unwrap();
+        assert!(!invalid_execution_identity.validate());
         let mismatched: ProviderRequest = serde_json::from_str(
-            r#"{"v":2,"id":"gen-125","type":"provider_request","provider":"openai","operation":"messages","body":"{}","operationId":"root-op-1","attempt":0}"#,
+            r#"{"v":2,"id":"gen-125","type":"provider_request","provider":"openai","operation":"messages","body":"{}","operationId":"root-op-1","attempt":0,"sessionId":"session-1","runId":"run-1"}"#,
         ).unwrap();
         assert!(!mismatched.validate());
         assert!(serde_json::from_str::<ProviderRequest>(
@@ -485,7 +499,7 @@ printf '%s' "$response" > "$1"
         std::fs::create_dir_all(&root).unwrap();
         let response_path = root.join("provider-response.json");
         let script = r#"echo 'VAK_READY {"transport":"stdio","version":2}'
-echo '{"v":2,"id":"gen-fixture","type":"provider_request","provider":"openai","operation":"responses","body":"{}","operationId":"root-op-1","attempt":0}'
+echo '{"v":2,"id":"gen-fixture","type":"provider_request","provider":"openai","operation":"responses","body":"{}","operationId":"root-op-1","attempt":0,"sessionId":"session-1","runId":"run-1"}'
 IFS= read -r response
 printf '%s' "$response" > "$1"
 "#;

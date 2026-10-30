@@ -11,12 +11,14 @@ import path from "node:path";
 import { startAppServer } from "./server.ts";
 import { desktopTransport, DESKTOP_PROTOCOL } from "./desktop-transport.ts";
 import type { HostCandidateCommitRequest, HostCandidateCommitReceipt, HostSessionStore } from "@vak/host";
+import type { ProviderTransport } from "@vak/providers";
 
 // Chats, transcripts and logs are private even when the launching shell uses 022.
 process.umask(0o077);
 
 let nativeCommit: (candidate: HostCandidateCommitRequest) => Promise<HostCandidateCommitReceipt> = async () => { throw new Error("Native control transport is not ready"); };
 let nativeTransport: ReturnType<typeof desktopTransport> | undefined;
+let nativeProviderFetch: ProviderTransport = async () => { throw new Error("Native provider transport is not ready"); };
 const nativeSessionStore: HostSessionStore = {
   load: async (id) => { if (!nativeTransport) throw new Error("Native session transport is not ready"); return nativeTransport.hostSessionStore.load(id); },
   save: async (snapshot, revision) => { if (!nativeTransport) throw new Error("Native session transport is not ready"); return nativeTransport.hostSessionStore.save(snapshot, revision); },
@@ -34,10 +36,12 @@ const app = await startAppServer({
   sandboxBin: process.env.VAK_SANDBOX_BIN,
   candidateCommit: (candidate) => nativeCommit(candidate),
   nativeSessionStore,
+  providerTransport: (...args) => nativeProviderFetch(...args),
 });
 const transport = desktopTransport(app.request, app.token!, process.stdin, process.stdout, (error) => { console.error(error.message); void shutdown(); });
 nativeCommit = transport.commitCandidate;
 nativeTransport = transport;
+nativeProviderFetch = transport.providerFetch;
 console.log(`VAK_READY ${JSON.stringify({ transport: "stdio", version: DESKTOP_PROTOCOL })}`);
 
 // The shell holds our stdin open; when it goes away (quit or crash), so do
