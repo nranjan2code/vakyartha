@@ -22,6 +22,13 @@ const DAY = 86_400_000;
 const MAX_FILE = 256 * 1024, MAX_FILES = 50, MAX_TOTAL = 2 * 1024 * 1024;
 const TEXT_EXT = /\.(?:md|markdown|txt|json|jsonl|ndjson|yaml|yml|toml|ini|cfg|conf|csv|tsv|xml|html|htm|sql|css|svg|rst|adoc)$/i;
 const SCRIPT_EXT = /\.(?:py|js|mjs|cjs|ts|tsx|jsx|sh|bash|zsh|ps1|rb|go|rs|swift|php|pl|lua|java|kt|c|cc|cpp|h|r|bat|cmd|dart)$/i;
+
+const SALUTATION_PATTERN = /^(?:hi|hello|hey|greetings|howdy|hola|yo|good\s+(?:morning|afternoon|evening|day)|thanks|thank\s+you|thx|cheers|ok|okay|sure|got\s+it|understood|cool|great|awesome|fine|perfect|bye|goodbye|see\s+ya|farewell|cya)(?:\s+there|\s+all|\s+team|\s+bot|\s+a\s+lot|\s+very\s+much|\s+so\s+much)?[!?. ]*$/i;
+
+function isSalutationMessage(text: string): boolean {
+  const trimmed = text.trim();
+  return Boolean(trimmed && SALUTATION_PATTERN.test(trimmed));
+}
 interface Saved { enabled: boolean; builtin?: boolean; source?: SkillView["source"]; files?: { path: string; bytes: number; sha256: string }[]; omitted?: SkillFile[] }
 function safeRelative(value: string): boolean {
   return value.length <= 200 && !value.includes("\\") && !value.includes("\0") && !value.startsWith("/") && value.split("/").length <= 8 && value.split("/").every(part => part && part !== "." && part !== "..");
@@ -671,6 +678,53 @@ export class Skills {
       if (selected || !request.system?.includes(INDEX_HEADER)) { yield* provider.stream(prepared); return; }
       // A settings change must not silently bypass selection for a stale run.
       if (!tool || !request.system.includes(index)) throw new Error("Enabled skills changed; start this run again");
+
+      // 1. Zero-latency fast-path for pure salutations & conversational banter
+      const userMsgs = request.messages.filter((m) => m.role === "user" && !m.content.startsWith("[engine]"));
+      const lastUserMsg = userMsgs[userMsgs.length - 1]?.content.trim() ?? "";
+
+      if (!request.responseSchema && isSalutationMessage(lastUserMsg)) {
+        selected = true;
+        yield* provider.stream(prepared);
+        return;
+      }
+
+      // 2. Session Skill Cache: in ongoing multi-turn sessions where skills are already loaded
+      // and the conversation continues the same task, proceed directly to generation.
+      if (!request.responseSchema && userMsgs.length > 1) {
+        const priorLoadedSkills = new Set<string>();
+        for (const m of request.messages) {
+          if (m.role === "tool" && (m as { toolName?: string }).toolName === "use_skill" && typeof m.content === "string") {
+            const matches = m.content.matchAll(/Skill ([a-z0-9-]+) instructions:/g);
+            for (const match of matches) {
+              if (match[1]) priorLoadedSkills.add(match[1]);
+            }
+          }
+        }
+
+        const enabledSkills = skills.enabled();
+        const enabledNames = new Set(enabledSkills.map((s) => s.name));
+
+        // Dynamically ensure all previously loaded skills are still enabled in settings
+        const allPriorStillEnabled = priorLoadedSkills.size > 0 &&
+          [...priorLoadedSkills].every((name) => enabledNames.has(name));
+
+        if (allPriorStillEnabled) {
+          // Check if the user is explicitly asking to switch or load a different skill
+          const lowerMsg = lastUserMsg.toLowerCase();
+          const asksForSkill = /\b(?:skill|procedure|load|switch|use\s+skill)\b/i.test(lowerMsg);
+          const mentionsUnloadedSkill = enabledSkills.some(
+            (s) => !priorLoadedSkills.has(s.name) && lowerMsg.includes(s.name.toLowerCase()),
+          );
+
+          if (!asksForSkill && !mentionsUnloadedSkill) {
+            selected = true;
+            yield* provider.stream(prepared);
+            return;
+          }
+        }
+      }
+
       const checked = (value: unknown) => {
         if (validate(tool.spec.inputSchema, value).length) throw new Error("Skill selection did not complete with valid names");
         const names = (value as { names: string[] }).names;

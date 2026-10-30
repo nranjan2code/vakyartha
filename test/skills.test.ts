@@ -546,3 +546,51 @@ test("NSE MCP vendor skill package is seeded with tools guide and query pattern 
   assert.match(readGuide, /Official NSE MCP Tools & Schema Guide/);
   assert.match(readGuide, /moving_average/);
 });
+
+test("skills.provider: zero-latency salutation bypass and dynamic Session Skill Cache", async () => {
+  const manager = new Skills(dir());
+  let providerCalls = 0;
+  const mockProvider: Provider = {
+    id: "mock",
+    async *stream(req) {
+      providerCalls++;
+      // If bypass works, req is the prepared prompt directly, not the selection prompt!
+      yield { type: "text", delta: "Direct answer" };
+      yield { type: "done", stop: "end" };
+    },
+  };
+
+  // 1. Salutation bypass: "hi" must proceed directly to answer without running selection LLM call
+  const wrapped = manager.provider(mockProvider);
+  const events = [];
+  for await (const e of wrapped.stream({
+    model: "test",
+    system: manager.index(),
+    messages: [{ role: "user", content: "hi" }],
+  })) {
+    events.push(e);
+  }
+  assert.equal(providerCalls, 1);
+  assert.equal(events[0]?.type, "text");
+  assert.equal(events[0]?.delta, "Direct answer");
+
+  // 2. Session Skill Cache: ongoing conversation with already-loaded skills continues directly
+  providerCalls = 0;
+  const continuedEvents = [];
+  for await (const e of wrapped.stream({
+    model: "test",
+    system: manager.index(),
+    messages: [
+      { role: "user", content: "build a chart" },
+      { role: "tool", toolName: "use_skill", content: "Skill interactive-ui instructions:\n..." },
+      { role: "assistant", content: "Chart is ready" },
+      { role: "user", content: "can you roughly calculate the total" },
+    ],
+  })) {
+    continuedEvents.push(e);
+  }
+  // Continues directly to generation without extra selection round
+  assert.equal(providerCalls, 1);
+  assert.equal(continuedEvents[0]?.type, "text");
+  assert.equal(continuedEvents[0]?.delta, "Direct answer");
+});

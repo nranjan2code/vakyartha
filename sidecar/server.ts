@@ -223,6 +223,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
     const sess = ctx?.session ?? activeTurnSession;
     return `You are the assistant inside ${opts.appName ?? "Vakyartha, a desktop app"}.
 Today is ${new Date().toISOString().slice(0, 10)}.${formatWorkspaceInfo(sess)}
+Prose style: Respond in fluid, elegant, human conversational prose. In dialogue, greetings, and direct answers, speak directly and warmly without gratuitous bold headers, synthetic bullet lists, or robotic markdown artifacts. Structure longer analytical answers with clean paragraphs and meaningful formatting only when complexity demands it.
 ${skills.index()}`;
   };
 
