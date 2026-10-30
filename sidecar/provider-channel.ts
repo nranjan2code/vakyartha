@@ -78,7 +78,7 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
     let operation: string | undefined;
     let routeModel: string | undefined;
     if (provider === "ollama") {
-      if (method !== "POST" || url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.port !== "11434" || url.pathname !== "/api/chat" || url.searchParams.size) return Promise.reject(new Error("Unsupported local model operation"));
+      if (method !== "POST" || url.protocol !== "http:" || (url.hostname !== "127.0.0.1" && url.hostname !== "localhost") || url.port !== "11434" || url.pathname !== "/api/chat" || url.searchParams.size) return Promise.reject(new Error("Unsupported local model operation"));
       operation = "ollama_chat";
     } else if (provider === "gemini") {
       const match = url.pathname.match(/^\/v1beta\/models\/([A-Za-z0-9._:-]{1,128}):streamGenerateContent$/);
