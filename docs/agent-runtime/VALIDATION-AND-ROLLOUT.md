@@ -64,6 +64,17 @@ No unchecked gate authorizes a new dependency, paid inference, release, installa
 
 Use synthetic credentials, temporary projects and local endpoints for fault/security tests. Do not expose live secrets or spend on hosted inference to prove deterministic mechanisms. Do not count safe refusal as completion of the intended user task.
 
+### Retained local incidents that the runtime must explain
+
+These are acceptance inputs, not established root causes. Keep their original receipts in [EVALUATION.md](../EVALUATION.md); a later passing suite does not erase them.
+
+| Incident | What is known | Runtime requirement before closure |
+| --- | --- | --- |
+| Parallel app runs intermittently returned sandbox supervisor exit 126 and local FinOps HTTP 400 | The serial suite passes. Shared-resource contention is only a working inference; no causal trace proves it. | Attribute every invocation to a root/run/attempt and a bounded supervisor receipt; distinguish queue refusal, launch failure, target exit, transport error and HTTP status. Exercise simultaneous workloads under the same shared capacity owner and retain per-attempt cleanup/lease evidence. |
+| Local `[100,70]` record-view request reached its 60 s deadline after 49/50 prompt tokens were processed, ended context-canceled, and produced no framework event | The provider call completed after 60.0019 s. Cause is unknown; the deadline and frozen outcome checks were not changed. A later 3/3 gate pass does not close this incident. | Record provider operation identity, attempt, bounded progress/timing, cancellation source, deadline and final transport/framework receipt. A deadline must stop the work and produce a typed interrupted/failed result; missing events remain unknown/failure, never inferred success. Diagnose the earliest boundary from preserved evidence before changing retries, prompts or limits. |
+
+These incidents do not justify increasing parallel capacity, retrying past the deadline or translating a nonzero helper/HTTP result into success. Any proposed repair must reproduce the relevant concurrent or timeout condition and pass the original outcome checks.
+
 ## 3. Prove the outcome, not just the mechanism
 
 ```mermaid
