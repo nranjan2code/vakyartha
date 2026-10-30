@@ -1,5 +1,9 @@
 # Vakyartha handover — 2026-10-30
 
+## Approval binding without a hash dependency — 2026-10-30
+
+The approval design now binds consent by keeping the exact bounded normalized request bytes in a native one-use in-memory ticket; after consent, the actor dispatches those unchanged bytes. No custom digest or additional crate is needed. Pending tickets are intentionally discarded on restart, while the running task is recovered interrupted and must submit a fresh request for approval. This is a design decision, not implemented behavior; no approval or dispatch gate is closed. Details are in [implementation design](agent-runtime/IMPLEMENTATION-DESIGN.md).
+
 ## Projection operation identity API pin — 2026-10-30
 
 Moved the `framework/` submodule from `65f183c` to pushed Projection commit `c51987b`. Provider transports now receive one stable operation ID across adapter retries plus a zero-based attempt number; a framework regression proves retries retain identity. With the new pin, the full framework suite/replay passes 414/414 and app TypeScript typecheck passes under the digest-pinned Node 26.13.0 Docker runtime. This is metadata only: Vakyartha still supplies no provider transport and native dispatch remains inactive. No app outcome or authority gate is closed. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#projection-provider-operation-identity-api-pin--2026-10-30).

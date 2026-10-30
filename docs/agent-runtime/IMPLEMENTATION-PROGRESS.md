@@ -2,6 +2,10 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## One-use approval ticket design refinement — 2026-10-30
+
+Exact-request binding will use native ownership of the normalized bounded bytes, not a digest dependency. Rust stages one opaque in-memory ticket, presents a bounded operation preview in the trusted UI, and dispatches only those unchanged bytes after an allow-once decision plus current task/workspace fence and durable budget/dispatch intent. Pending tickets do not survive actor restart; existing root recovery marks active work interrupted, so a new request and approval are required. This is a design decision only: no ticket or UI path is implemented and no dependency was added. See the approval and dispatch sections in [implementation design](IMPLEMENTATION-DESIGN.md).
+
 ## Projection provider operation identity API pin — 2026-10-30
 
 Projection commit `c51987ba62cb0bd5537b1d3dbd39b837f7e440ca` adds an optional `ProviderTransportContext` containing one UUID per logical HTTP call and a zero-based attempt count. Retry attempts reuse the operation ID. The Projection provider retry suite passes 4/4, the full framework suite/replay passes 414/414, typecheck and package generation pass. The app pin now uses this pushed commit; its Node 26.13.0 Docker verification passes `npm run test:framework` (414/414) and `npm run typecheck`. This makes retries attributable/deduplicable by a future host; it does not itself prevent a retry, provide authorization, or mediate app provider traffic. The app does not yet pass a transport callback. No AR, IA, ISO or user outcome gate is closed.
