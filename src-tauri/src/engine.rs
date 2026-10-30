@@ -118,6 +118,7 @@ fn control_error_status(error: &ControlError) -> ControlStatus {
             | AdmissionError::InvalidIdentity,
         )
         | ControlError::Store(StoreError::SessionRevisionConflict | StoreError::TooLarge)
+        | ControlError::Admission(AdmissionError::TaskCapabilityUnavailable)
         | ControlError::TaskState(
             StateError::ExecutionFenceStale | StateError::WorkspaceGrantStale,
         ) => ControlStatus::Refused,
@@ -145,6 +146,7 @@ fn control_error_code(error: &ControlError) -> &'static str {
         ControlError::TaskState(StateError::ExecutionFenceStale) => "execution_fence_stale",
         ControlError::TaskState(StateError::WorkspaceGrantStale) => "workspace_grant_stale",
         ControlError::TaskState(StateError::InvalidTransition(_)) => "root_not_running",
+        ControlError::Admission(AdmissionError::TaskCapabilityUnavailable) => "task_runtime_owned",
         ControlError::Admission(AdmissionError::InvalidCandidate) => "invalid_candidate",
         ControlError::Store(StoreError::TooLarge) => "candidate_too_large",
         ControlError::Store(StoreError::SessionRevisionConflict) => "session_revision_conflict",
@@ -232,7 +234,7 @@ pub fn start(mut cmd: Command, control: Option<ControlHandle>) -> Engine {
                 ControlOperation::CandidateCommit(candidate) => {
                     match candidate.into_request() {
                         Ok(candidate) => match control.as_ref() {
-                            Some(actor) => match actor.commit_candidate(candidate) {
+                            Some(actor) => match actor.commit_app_candidate(candidate) {
                                 Ok(receipt) => bridge::Response::candidate(
                                     &request.id,
                                     ControlStatus::Committed,

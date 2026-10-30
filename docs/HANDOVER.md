@@ -1,5 +1,11 @@
 # Vakyartha handover — 2026-10-30
 
+## Native provider I/O, cancellation and settlement — 2026-10-30
+
+The native approval/budget handoff now feeds actual cancellable HTTP I/O with a durable start claim, exact-byte request preparation, bounded acknowledged streaming and explicit redacted outcomes (schema 18). Root cancellation, consumer loss and deadlines abort/join local I/O before provider capacity settles; model charges stay cumulative. Production blocking transport was replaced. Eight real loopback tests plus the complete native suites pass: 141 macOS/143 Linux, strict Clippy and WebKit. [Evidence and diagram](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-provider-io-cancellation-and-settlement--2026-10-30).
+
+Trusted consent UI and Work orchestration remain unconnected, so product execution stays disabled. The broader tools/skills/continuation, scheduling, workspace/IA, drift/QoS, original outcomes, installed proof and final Astra gates remain open. The decision-feature checkout is untouched.
+
 ## Protected canonical supervision and atomic settlement — 2026-10-30
 
 Canonical preparation now runs through a native supervisor with separate scratch, private helper evidence, durable verification/process holds and bounded I/O/cancellation. Publication selection and verified cleanup settlement share one commit; direct publication actor commands have been removed. Restart retains uncertain holds without replaying output. Actual packaged and hostile-worker tests pass on macOS/Linux, including cross-job capacity, denied authority, cancellation and storage-failure recovery: 133/135 native tests, strict Clippy and WebKit. [Evidence and diagram](agent-runtime/IMPLEMENTATION-PROGRESS.md#protected-canonical-supervision-and-atomic-settlement--2026-10-30).

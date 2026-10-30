@@ -11,7 +11,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 17;
+const STORE_VERSION: u16 = 18;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 const MAX_CANDIDATE_RECEIPTS: usize = 10_000;
@@ -29,6 +29,7 @@ pub mod bridge;
 mod approval;
 mod broker;
 pub mod generation;
+pub mod provider_io;
 pub mod canonical;
 pub mod publication;
 pub mod canonical_runs;
@@ -707,6 +708,8 @@ enum RootRunAction {
 enum ActorCommand {
     IssueProviderApproval { run_id: String, operation_id: String, attempt: u32, body: Vec<u8>, in_flight: Arc<std::sync::atomic::AtomicBool>, reply: SyncSender<Result<generation::Approval, ControlError>> },
     DecideProviderApproval { ticket_id: String, fingerprint: String, decision: generation::Decision, reply: SyncSender<Result<generation::Dispatch, ControlError>> },
+    BeginProvider { dispatch: Box<generation::Dispatch>, in_flight: Arc<std::sync::atomic::AtomicBool>, reply: SyncSender<Result<generation::StartedDispatch, ControlError>> },
+    ProviderCurrent { id: String, reply: SyncSender<Result<(), ControlError>> },
     SettleProvider { id: String, receipt: generation::ResultReceipt, reply: SyncSender<Result<generation::OperationRecord, ControlError>> },
     ReadProvider { id: String, reply: SyncSender<Result<generation::OperationRecord, ControlError>> },
     PrepareWorkerCompletion { run_id: String, reply: SyncSender<Result<worker_completion::WorkerInvocation, ControlError>> },
@@ -838,6 +841,7 @@ enum ActorCommand {
     },
     CommitCandidate {
         request: CandidateCommitRequest,
+        app_worker: bool,
         in_flight: Arc<std::sync::atomic::AtomicBool>,
         reply: SyncSender<Result<CandidateCommitReceipt, ControlError>>,
     },
@@ -927,6 +931,19 @@ impl ControlHandle {
     }
 
     /// Only the native broker's settled I/O may supply this receipt.
+    pub(super) fn begin_provider_dispatch(&self, dispatch: generation::Dispatch) -> Result<generation::StartedDispatch, ControlError> {
+        if self.provider_in_flight.compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed).is_err() { return Err(ControlError::QueueFull); }
+        let (reply, response) = sync_channel(1);
+        if let Err(error) = self.commands.try_send(ActorCommand::BeginProvider { dispatch: Box::new(dispatch), in_flight: self.provider_in_flight.clone(), reply }) {
+            self.provider_in_flight.store(false, Ordering::Release); return Err(queue_error(error));
+        }
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+    pub(super) fn provider_io_current(&self, id: String) -> Result<(), ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::ProviderCurrent { id, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
     pub fn settle_provider_operation(&self, id: String, receipt: generation::ResultReceipt) -> Result<generation::OperationRecord, ControlError> {
         let (reply, response) = sync_channel(1);
         self.commands.try_send(ActorCommand::SettleProvider { id, receipt, reply }).map_err(queue_error)?;
@@ -1419,6 +1436,13 @@ impl ControlHandle {
         &self,
         request: CandidateCommitRequest,
     ) -> Result<CandidateCommitReceipt, ControlError> {
+        self.commit_candidate_from(request, false)
+    }
+
+    pub(crate) fn commit_app_candidate(&self, request: CandidateCommitRequest) -> Result<CandidateCommitReceipt, ControlError> {
+        self.commit_candidate_from(request, true)
+    }
+    fn commit_candidate_from(&self, request: CandidateCommitRequest, app_worker: bool) -> Result<CandidateCommitReceipt, ControlError> {
         if self
             .candidate_in_flight
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
@@ -1429,6 +1453,7 @@ impl ControlHandle {
         let (reply, response) = sync_channel(1);
         if let Err(error) = self.commands.try_send(ActorCommand::CommitCandidate {
             request,
+            app_worker,
             in_flight: self.candidate_in_flight.clone(),
             reply,
         }) {
@@ -1859,6 +1884,18 @@ fn actor_loop(
                     }
                 }
             }
+            ActorCommand::BeginProvider { dispatch, in_flight, reply } => {
+                let mut next = ledger.clone();
+                let result = generation::begin(&mut next, *dispatch).and_then(|dispatch| {
+                    store.persist(&next, &profile).map_err(ControlError::Store)?;
+                    ledger = next; Ok(dispatch)
+                });
+                in_flight.store(false, Ordering::Release);
+                let fatal = matches!(result, Err(ControlError::Store(_)));
+                let _ = reply.send(result);
+                if fatal { break; }
+            }
+            ActorCommand::ProviderCurrent { id, reply } => { let _ = reply.send(generation::io_current(&ledger, &id)); }
             ActorCommand::SettleProvider { id, receipt, reply } => {
                 let mut candidate = ledger.clone();
                 match generation::settle(&mut candidate, &id, receipt) {
@@ -2888,9 +2925,14 @@ fn actor_loop(
             }
             ActorCommand::CommitCandidate {
                 request,
+                app_worker,
                 in_flight,
                 reply,
             } => {
+                if app_worker && (ledger.product_tasks.contains_key(&request.session_id) || ledger.product_tasks.contains_key(request.fence.root_id())) {
+                    in_flight.store(false, Ordering::Release);
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable))); continue;
+                }
                 let result = commit_candidate(
                     store,
                     &profile,
@@ -3559,6 +3601,8 @@ mod tests {
         };
         assert_eq!(handle.create_root_with_budget(shadow), Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable)));
         assert_eq!(handle.mutate_root("product-task".into(), 1, root_start()), Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable)));
+        let root = handle.read_root("product-task".into()).unwrap();
+        assert_eq!(handle.commit_app_candidate(CandidateCommitRequest { session_id: "product-task".into(), commit_id: "forged-app-task-candidate".into(), fence: root.execution_fence(), expected_canonical_revision: 0, candidate_bytes: br#"{"session":"product-task","surfaces":[]}"#.to_vec() }), Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable)));
         assert_eq!(handle.product_task(TaskCommand::Create { request: Box::new(request.clone()) }).unwrap(), created);
         let mut changed = request.clone(); changed.goal = "Changed request".into();
         assert!(handle.product_task(TaskCommand::Create { request: Box::new(changed) }).is_err());
@@ -3758,7 +3802,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         assert_eq!(exact_bytes, broker::prepare_generation_body(&permit, proposal.body.as_bytes()).unwrap());
         assert_eq!(handle.read_root(root.id().into()).unwrap().model_requests_used(), 1);
         assert!(handle.decide_provider_approval(ticket.ticket_id, ticket.fingerprint, generation::Decision::AllowOnce).is_err());
-        handle.settle_provider_operation(operation.id, generation::ResultReceipt { id: "harness-refused-before-network".into(), status_code: None, response_bytes: 0 }).unwrap();
+        handle.settle_provider_operation(operation.id, generation::ResultReceipt { outcome: generation::IoOutcome::NotDispatched, id: "harness-refused-before-network".into(), status_code: None, response_bytes: 0 }).unwrap();
         protocol.finish_provider(&proposal.id).unwrap();
         owner.write_all(format!("{}\n", serde_json::json!({"v":2,"id":proposal.id,"type":"provider_error","message":"Native provider dispatch is not enabled"})).as_bytes()).unwrap();
         let Event::Candidate(candidate) = receive(&mut protocol) else { panic!("expected the retained failed candidate"); };

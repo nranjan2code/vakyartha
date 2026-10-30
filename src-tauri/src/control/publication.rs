@@ -858,6 +858,25 @@ mod tests {
         let candidate = h.candidate(1);
         let (actor, data, native, profile) = h.actor();
         let handle = actor.handle();
+        let current_root = handle.read_root("task-publish".into()).unwrap();
+        assert_eq!(
+            handle.commit_app_candidate(CandidateCommitRequest {
+                session_id: "task-publish".into(),
+                commit_id: "forged-main-worker".into(),
+                fence: current_root.execution_fence(),
+                expected_canonical_revision: candidate.canonical_revision,
+                candidate_bytes: br#"{"session":"task-publish","surfaces":[]}"#.to_vec()
+            }),
+            Err(ControlError::Admission(
+                AdmissionError::TaskCapabilityUnavailable
+            ))
+        );
+        assert_eq!(
+            handle
+                .read_candidate_receipt("forged-main-worker".into())
+                .unwrap(),
+            None
+        );
         let resources = data.with_extension("canonical-runtime");
         fs::create_dir(&resources).unwrap();
         fs::copy(

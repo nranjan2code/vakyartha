@@ -20,6 +20,7 @@ const APPROVAL_TTL: Duration = Duration::from_secs(300);
 #[serde(rename_all = "snake_case")]
 pub enum OperationStatus {
     DispatchCommitted,
+    IoStarted,
     Interrupted,
     Returned,
 }
@@ -39,12 +40,26 @@ pub struct OperationRecord {
     pub approval_fingerprint: String,
     pub request_bytes: u32,
     pub status: OperationStatus,
+    pub io_started: bool,
     pub receipt: Option<ResultReceipt>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IoOutcome {
+    Completed,
+    Cancelled,
+    TimedOut,
+    TransportFailed,
+    ResponseLimit,
+    ConsumerClosed,
+    NotDispatched,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResultReceipt {
+    pub outcome: IoOutcome,
     pub id: String,
     pub status_code: Option<u16>,
     pub response_bytes: u32,
@@ -73,11 +88,18 @@ pub struct Dispatch {
 }
 
 impl Dispatch {
+    #[cfg(test)]
+    pub(super) fn into_request(self) -> (OperationRecord, GenerationPermit, Vec<u8>) {
+        (self.operation, self.permit, self.bytes)
+    }
     pub fn operation(&self) -> &OperationRecord {
         &self.operation
     }
+}
+pub(crate) struct StartedDispatch(Dispatch);
+impl StartedDispatch {
     pub(super) fn into_request(self) -> (OperationRecord, GenerationPermit, Vec<u8>) {
-        (self.operation, self.permit, self.bytes)
+        (self.0.operation, self.0.permit, self.0.bytes)
     }
 }
 
@@ -87,6 +109,60 @@ impl std::fmt::Debug for Dispatch {
             .field("operation_id", &self.operation.id)
             .field("request_bytes", &self.bytes.len())
             .finish_non_exhaustive()
+    }
+}
+
+pub(super) fn io_current(ledger: &CapacityLedger, id: &str) -> Result<(), ControlError> {
+    let record = ledger.provider_operations.get(id).ok_or_else(refused)?;
+    let root = running(ledger, &record.run_id)?;
+    if record.status != OperationStatus::IoStarted
+        || !record.io_started
+        || root.revision() != record.charged_root_revision
+        || root.contract_revision() != record.fence.contract_revision()
+        || root.cancellation_epoch() != record.fence.cancellation_epoch()
+        || !ledger.active.contains_key(&record.lease_id)
+    {
+        return Err(refused());
+    }
+    Ok(())
+}
+
+pub(super) fn begin(
+    ledger: &mut CapacityLedger,
+    mut dispatch: Dispatch,
+) -> Result<StartedDispatch, ControlError> {
+    let record = ledger
+        .provider_operations
+        .get(&dispatch.operation.id)
+        .ok_or_else(refused)?;
+    let root = running(ledger, &record.run_id)?;
+    if record != &dispatch.operation
+        || record.status != OperationStatus::DispatchCommitted
+        || record.io_started
+        || root.revision() != record.charged_root_revision
+        || root.contract_revision() != record.fence.contract_revision()
+        || root.cancellation_epoch() != record.fence.cancellation_epoch()
+        || !ledger.active.contains_key(&record.lease_id)
+        || super::canonical::digest(&dispatch.bytes) != record.request_digest
+        || dispatch.bytes.len() != record.request_bytes as usize
+    {
+        return Err(refused());
+    }
+    let record = ledger
+        .provider_operations
+        .get_mut(&dispatch.operation.id)
+        .expect("checked operation");
+    record.status = OperationStatus::IoStarted;
+    record.io_started = true;
+    dispatch.operation = record.clone();
+    Ok(StartedDispatch(dispatch))
+}
+
+fn valid_receipt(record: &OperationRecord, receipt: &ResultReceipt) -> bool {
+    match receipt.outcome {
+        IoOutcome::NotDispatched => receipt.status_code.is_none() && receipt.response_bytes == 0,
+        IoOutcome::Completed => record.io_started && receipt.status_code.is_some(),
+        _ => record.io_started,
     }
 }
 
@@ -289,6 +365,7 @@ impl Approvals {
             approval_fingerprint: fingerprint.into(),
             request_bytes: bytes.len() as u32,
             status: OperationStatus::DispatchCommitted,
+            io_started: false,
             receipt: None,
         };
         ledger
@@ -332,6 +409,9 @@ pub(super) fn settle(
         return Err(refused());
     }
     let record = ledger.provider_operations.get(id).ok_or_else(refused)?;
+    if !valid_receipt(record, &receipt) {
+        return Err(refused());
+    }
     if record.status == OperationStatus::Returned {
         return if record.receipt.as_ref() == Some(&receipt) {
             Ok(record.clone())
@@ -350,7 +430,10 @@ pub(super) fn settle(
 pub(super) fn recover(ledger: &mut CapacityLedger) -> bool {
     let mut changed = false;
     for record in ledger.provider_operations.values_mut() {
-        if record.status == OperationStatus::DispatchCommitted {
+        if matches!(
+            record.status,
+            OperationStatus::DispatchCommitted | OperationStatus::IoStarted
+        ) {
             record.status = OperationStatus::Interrupted;
             changed = true;
         }
@@ -409,11 +492,14 @@ pub(super) fn validate(ledger: &CapacityLedger) -> Result<(), StoreError> {
             || lease.request_id != *id
             || lease.amounts() != &BTreeMap::from([(Resource::ProviderRequest, 1)])
             || !leases.insert(record.lease_id)
+            || record.status == OperationStatus::DispatchCommitted && record.io_started
+            || record.status == OperationStatus::IoStarted && !record.io_started
             || (record.status != OperationStatus::Returned)
                 != ledger.active.contains_key(&record.lease_id)
             || (record.status == OperationStatus::Returned) != record.receipt.is_some()
             || record.receipt.as_ref().is_some_and(|receipt| {
-                !super::valid_identity(&receipt.id)
+                !valid_receipt(record, receipt)
+                    || !super::valid_identity(&receipt.id)
                     || !receipts.insert(&receipt.id)
                     || receipt.response_bytes > 8_388_608
                     || receipt
@@ -549,6 +635,7 @@ mod tests {
         assert_eq!(dispatches.len(), 1);
         let dispatch = dispatches.pop().unwrap();
         assert!(!format!("{dispatch:?}").contains("private-request-marker"));
+        let dispatch = handle.begin_provider_dispatch(dispatch).unwrap();
         let (record, permit, bytes) = dispatch.into_request();
         assert_eq!(bytes, prepare_generation_body(&permit, &body()).unwrap());
         assert_eq!(
@@ -659,6 +746,7 @@ mod tests {
             0
         );
         let receipt = ResultReceipt {
+            outcome: IoOutcome::Completed,
             id: "native-io-finished".into(),
             status_code: Some(503),
             response_bytes: 12,
@@ -678,6 +766,7 @@ mod tests {
                 .settle_provider_operation(
                     record.id,
                     ResultReceipt {
+                        outcome: IoOutcome::NotDispatched,
                         id: "changed".into(),
                         status_code: None,
                         response_bytes: 0
@@ -841,10 +930,13 @@ mod tests {
         let dispatch = handle
             .decide_provider_approval(ticket.ticket_id, ticket.fingerprint, Decision::AllowOnce)
             .unwrap();
+        let id = dispatch.operation().id.clone();
+        handle.begin_provider_dispatch(dispatch).unwrap();
         handle
             .settle_provider_operation(
-                dispatch.operation().id.clone(),
+                id,
                 ResultReceipt {
+                    outcome: IoOutcome::Completed,
                     id: "done-first".into(),
                     status_code: Some(200),
                     response_bytes: 30,

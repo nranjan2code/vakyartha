@@ -2,6 +2,42 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Native provider I/O, cancellation and settlement — 2026-10-30
+
+An approved move-only dispatch now has a second native handoff immediately before I/O. The actor rechecks the confirmed invocation, charged root revision, cancellation epoch, contract/workspace authority, provider lease and exact approved digest/length, then durably records `io_started`. Only the returned native object can construct a request. Schema 18 records redacted I/O intent and explicit completed/cancelled/timed-out/transport/response-limit/consumer-closed/not-dispatched outcomes. A committed model-request charge is never refunded by I/O cancellation or failure.
+
+Task authority is also narrowed at the app-worker bridge: it cannot commit product-task candidates even with a valid running task ID, fence and canonical revision. Worker JSON cannot choose its origin. The native supervisor keeps its separate commit path; ordinary app candidates retain their existing path. A real contained canonical test proves refusal of the forged app-worker commit followed by successful native publication.
+
+Production HTTP uses the already established Tauri async runtime and approved request library. The earlier blocking production transport was replaced; blocking helpers remain test-only. Native request preparation retains registered destinations, public-address pinning for hosted routes, native vault credentials, exact approved JSON, no proxy, no redirects and explicitly disabled transport retries. Credentials are marked sensitive in header diagnostics. Root admission currently permits only the registered local-model operation; hosted task admission remains disabled.
+
+```mermaid
+sequenceDiagram
+    participant A as Native actor
+    participant O as Native I/O owner
+    participant H as Registered provider
+    participant D as Native task driver
+    A-->>O: Approved exact bytes, committed budget and provider slot
+    O->>A: Claim I/O against current authority
+    A-->>O: Durable one-use start object
+    O->>H: Exact registered request
+    H-->>O: Bounded headers and response chunk
+    O-->>D: Filtered headers and at most 64 KiB
+    D->>O: Exact sequence acknowledgement
+    Note over O,D: No next chunk is exposed without its acknowledgement
+    O->>O: Join request future, including after cancellation
+    O->>A: Redacted local I/O outcome and accepted byte count
+    A-->>O: Persist receipt and settle provider capacity
+    O-->>D: Finished, only after native settlement
+```
+
+One queued event and one exact-sequence acknowledgement bound backpressure. A native watchdog observes root revocation, cancellation, consumer loss and an absolute deadline capped at 120 seconds; it aborts and joins the request task before settlement. Dropping the consumer triggers cleanup independently of the worker. Joining proves local request/response ownership ended; it does not prove a remote provider stopped computation or incurred no cost. A failed control commit leaves uncertainty/charges retained and never reconstructs request bytes or replays I/O. HTTP completion supplies no task success or canonical authority.
+
+Eight real loopback HTTP tests pass: exact approved bytes, response chunk bounds/backpressure, filtered headers, actor responsiveness during a stalled consumer, native root cancellation while awaiting headers, socket EOF after completion/cancellation, premature/invalid/missing acknowledgements, consumer drop, declared and chunked overflow, redirect refusal, malformed responses, cancelled admission and failed I/O-intent selection without any connection. Fixture endpoint substitution is test-only; production has no URL override. The first run retained a macOS fixture failure: accepted sockets inherited nonblocking mode, making its server misclassify `WouldBlock` as EOF. The fixture now explicitly returns accepted sockets to blocking mode; the original socket-EOF/cancellation assertions remain unchanged.
+
+Validation: 141 macOS and 143 pinned Linux Docker native tests pass with all five real contained-worker gates included; strict Clippy passes on both. Native WebKit smoke passes; receipt: `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-desktop-private-GzfMPW`. No TypeScript/framework source, dependency, paid/local inference, installed app or decision-feature change. The existing 290 app/422 framework runs remain prior evidence, not newly repeated checks.
+
+Next: trusted consent UI and the Work dispatcher connecting bound reasoning proposals, this I/O owner, canonical supervision and publication acknowledgement. Product execution and the general app-worker provider pipe remain disabled; the product capacity profile stays empty. Broader skill/tool/continuation parity, scheduling, workspace/IA cutover, drift/QoS, CPU/memory/disk enforcement, original outcomes, installed proof and final Astra review remain open.
+
 ## Protected canonical supervision and atomic settlement — 2026-10-30
 
 The native actor now admits a canonical invocation with both `VerificationExecution` and `ContainedProcess` capacity reserved in one durable generation. One unresolved canonical invocation is allowed per root; global/per-root capacity applies across independent jobs. It returns a move-only context once, and retains redacted invocation/lease/context/candidate identities in schema 17. The canonical role receives its own fresh `canonical-workers/<invocation-id>/` scratch, runtime reads and a private helper channel. App-worker data, sibling reasoners, native stores, credentials, integration tools and network authority are excluded.

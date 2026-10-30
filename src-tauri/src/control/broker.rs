@@ -1,23 +1,29 @@
 //! Native HTTP transport primitive for the provider broker.
 //!
-//! This is intentionally not wired to worker requests yet. Provider operation
-//! schemas, task authorization, approval, cancellation and operation receipts
-//! must be composed before this client can dispatch product traffic.
+//! Exact native request preparation feeds the cancellable provider I/O owner.
+//! Product worker dispatch remains gated on trusted consent UI and the task
+//! supervisor; this module accepts no worker-selected endpoint or headers.
 
+#[cfg(test)]
+use reqwest::StatusCode;
+use reqwest::Url;
+#[cfg(test)]
 use reqwest::blocking::{Client, Response};
 use reqwest::redirect::Policy;
-use reqwest::{StatusCode, Url};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+#[cfg(test)]
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
 use std::time::Duration;
 
+pub(super) const MAX_OPERATION_TIME: Duration = Duration::from_secs(120);
+
 const MAX_ENDPOINT_BYTES: usize = 2_048;
 const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
-const MAX_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
+pub(super) const MAX_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ModelApi {
@@ -136,36 +142,30 @@ impl NativeHttpClient {
         Self { service, data_dir }
     }
 
-    /// POST JSON to one registered model generation route. Callers cannot
-    /// supply an origin, path, headers or proxy policy. The permit validates
-    /// the request envelope before it crosses the network boundary.
-    /// Dispatches one admitted request and exposes its bounded response body
-    /// incrementally so a future broker bridge can apply backpressure.
-    pub(super) fn post_provider_json_stream(
+    /// Build one exact admitted request. Network I/O runs only when the native
+    /// supervisor polls it on the established async runtime.
+    pub(super) fn request(
         &self,
         permit: &GenerationPermit,
         body: &[u8],
-    ) -> Result<BrokerStreamResponse, BrokerError> {
+    ) -> Result<reqwest::RequestBuilder, BrokerError> {
         let url = model_endpoint(permit.provider, permit.operation.clone())?;
-        if body.len() > permit.max_request_bytes {
-            return Err(BrokerError::RequestTooLarge);
+        if prepare_generation_body(permit, body)? != body {
+            return Err(BrokerError::InvalidPayload);
         }
-        let body = prepare_generation_body(permit, body)?;
         let client = if permit.provider == ModelApi::OllamaLocal {
-            build_client(None)?
+            async_client(None)?
         } else {
             let host = url.host_str().ok_or(BrokerError::InvalidEndpoint)?;
             let addresses = resolve_public_addresses(host)?;
-            build_client(Some((host, &addresses)))?
+            async_client(Some((host, &addresses)))?
         };
         let credential = self.credential(permit.provider)?;
-        let request = provider_post(client, url, permit.provider, credential.as_deref())?;
-        let response = request
+        Ok(client
+            .post(url)
+            .headers(provider_headers(permit.provider, credential.as_deref())?)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(body)
-            .send()
-            .map_err(|_| BrokerError::Transport)?;
-        bounded_stream_response(response)
+            .body(body.to_vec()))
     }
 
     fn credential(&self, provider: ModelApi) -> Result<Option<String>, BrokerError> {
@@ -180,18 +180,16 @@ impl NativeHttpClient {
     }
 }
 
+#[cfg(test)]
 fn provider_post(
     client: Client,
     url: Url,
     provider: ModelApi,
     credential: Option<&str>,
 ) -> Result<reqwest::blocking::RequestBuilder, BrokerError> {
-    match (provider, credential) {
-        (ModelApi::OllamaLocal, None) => Ok(client.post(url)),
-        (ModelApi::OllamaLocal, Some(_)) => Err(BrokerError::InvalidPayload),
-        (_, Some(credential)) => apply_provider_auth(client.post(url), provider, credential),
-        (_, None) => Err(BrokerError::CredentialUnavailable),
-    }
+    Ok(client
+        .post(url)
+        .headers(provider_headers(provider, credential)?))
 }
 
 fn credential_account(provider: ModelApi) -> Option<&'static str> {
@@ -213,38 +211,79 @@ fn credential_account(provider: ModelApi) -> Option<&'static str> {
     }
 }
 
+fn provider_headers(
+    provider: ModelApi,
+    credential: Option<&str>,
+) -> Result<reqwest::header::HeaderMap, BrokerError> {
+    use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
+    let mut headers = HeaderMap::new();
+    if provider == ModelApi::OllamaLocal {
+        return if credential.is_none() {
+            Ok(headers)
+        } else {
+            Err(BrokerError::InvalidPayload)
+        };
+    }
+    let credential = credential.ok_or(BrokerError::CredentialUnavailable)?;
+    let value = if matches!(provider, ModelApi::Anthropic | ModelApi::Gemini) {
+        credential.to_owned()
+    } else {
+        format!("Bearer {credential}")
+    };
+    let mut value =
+        HeaderValue::from_str(&value).map_err(|_| BrokerError::CredentialUnavailable)?;
+    value.set_sensitive(true);
+    match provider {
+        ModelApi::Anthropic => {
+            headers.insert("x-api-key", value);
+            headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
+        }
+        ModelApi::Gemini => {
+            headers.insert("x-goog-api-key", value);
+        }
+        _ => {
+            headers.insert(AUTHORIZATION, value);
+        }
+    }
+    Ok(headers)
+}
+#[cfg(test)]
 fn apply_provider_auth(
     request: reqwest::blocking::RequestBuilder,
     provider: ModelApi,
     credential: &str,
 ) -> Result<reqwest::blocking::RequestBuilder, BrokerError> {
-    let credential = reqwest::header::HeaderValue::from_str(credential)
-        .map_err(|_| BrokerError::CredentialUnavailable)?;
-    let request = match provider {
-        ModelApi::Anthropic => request
-            .header("x-api-key", credential)
-            .header("anthropic-version", "2023-06-01"),
-        ModelApi::Gemini => request.header("x-goog-api-key", credential),
-        _ => {
-            let bearer = reqwest::header::HeaderValue::from_str(&format!(
-                "Bearer {}",
-                credential
-                    .to_str()
-                    .map_err(|_| BrokerError::CredentialUnavailable)?
-            ))
-            .map_err(|_| BrokerError::CredentialUnavailable)?;
-            request.header(reqwest::header::AUTHORIZATION, bearer)
-        }
-    };
-    Ok(request)
+    Ok(request.headers(provider_headers(provider, Some(credential))?))
 }
 
+pub(super) fn async_client(
+    resolution: Option<(&str, &[SocketAddr])>,
+) -> Result<reqwest::Client, BrokerError> {
+    let builder = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(Policy::none())
+        .retry(reqwest::retry::never())
+        .pool_max_idle_per_host(0)
+        .http1_only()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(MAX_OPERATION_TIME);
+    let builder = match resolution {
+        Some((host, addresses)) if !addresses.is_empty() => {
+            builder.resolve_to_addrs(host, addresses)
+        }
+        Some(_) => return Err(BrokerError::UnapprovedDestination),
+        None => builder,
+    };
+    builder.build().map_err(|_| BrokerError::Transport)
+}
+#[cfg(test)]
 fn build_client(resolution: Option<(&str, &[SocketAddr])>) -> Result<Client, BrokerError> {
     let builder = Client::builder()
         .no_proxy()
         .redirect(Policy::none())
+        .retry(reqwest::retry::never())
         .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(120));
+        .timeout(MAX_OPERATION_TIME);
     let builder = match resolution {
         Some((host, addresses)) if !addresses.is_empty() => {
             builder.resolve_to_addrs(host, addresses)
@@ -748,12 +787,14 @@ fn valid_model_segment(model: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
+#[cfg(test)]
 pub(super) struct BrokerStreamResponse {
     pub(super) status: StatusCode,
     body: Response,
     delivered: u64,
 }
 
+#[cfg(test)]
 impl BrokerStreamResponse {
     /// Reads at most one caller-provided chunk and never exposes bytes beyond
     /// the response ceiling. A one-byte probe detects an undeclared overflow.
@@ -822,6 +863,7 @@ fn validate_endpoint_query(
     Ok(url)
 }
 
+#[cfg(test)]
 fn bounded_stream_response(response: Response) -> Result<BrokerStreamResponse, BrokerError> {
     if response
         .content_length()
