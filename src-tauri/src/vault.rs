@@ -461,10 +461,14 @@ mod tests {
         std::fs::create_dir_all(&temp_root).unwrap();
         let temp_dir = temp_root.join("data");
         std::fs::create_dir(&temp_dir).unwrap();
+        let legacy_path = temp_dir.join(".vault.secrets");
+        let legacy_bytes = b"TEST_KEY=legacy-value\n";
+        std::fs::write(&legacy_path, legacy_bytes).unwrap();
 
         assert_eq!(file_vault_get(&temp_dir, "TEST_KEY").unwrap(), None);
         file_vault_set(&temp_dir, "TEST_KEY", "secret-123").unwrap();
         assert!(!vault_file_path(&temp_dir).starts_with(&temp_dir));
+        assert_eq!(std::fs::read(&legacy_path).unwrap(), legacy_bytes);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
