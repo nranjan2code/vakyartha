@@ -9,6 +9,22 @@ export { DESKTOP_PROTOCOL };
 const MAX_BODY = 32 * 1024 * 1024, MAX_FRAME = 48 * 1024 * 1024;
 const MAX_PROVIDER_BODY = 8 * 1024 * 1024, MAX_PROVIDER_CALLS = 4;
 const ID = /^[A-Za-z0-9-]{1,64}$/;
+const PROVIDER_OPERATIONS: Record<string, Map<string, string>> = {
+  openai: new Map([[
+    "api.openai.com|/v1/responses", "responses",
+  ], ["api.openai.com|/v1/chat/completions", "chat_completions"]]),
+  anthropic: new Map([["api.anthropic.com|/v1/messages", "messages"]]),
+  mistral: new Map([["api.mistral.ai|/v1/chat/completions", "chat_completions"]]),
+  xai: new Map([["api.x.ai|/v1/chat/completions", "chat_completions"]]),
+  deepseek: new Map([["api.deepseek.com|/v1/chat/completions", "chat_completions"]]),
+  groq: new Map([["api.groq.com|/openai/v1/chat/completions", "chat_completions"]]),
+  cerebras: new Map([["api.cerebras.ai|/v1/chat/completions", "chat_completions"]]),
+  openrouter: new Map([["openrouter.ai|/api/v1/chat/completions", "chat_completions"]]),
+  together: new Map([["api.together.xyz|/v1/chat/completions", "chat_completions"]]),
+  fireworks: new Map([["api.fireworks.ai|/inference/v1/chat/completions", "chat_completions"]]),
+  moonshot: new Map([["api.moonshot.ai|/v1/chat/completions", "chat_completions"]]),
+  dashscope: new Map([["dashscope-intl.aliyuncs.com|/compatible-mode/v1/chat/completions", "chat_completions"]]),
+};
 type Pending = { controller: AbortController; ack?: () => void };
 type ControlHealth = { status: "ready" | "unavailable" | "overloaded" };
 type ControlPending = { resolve(value: ControlHealth): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
@@ -85,16 +101,32 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
   const providerFetch: ProviderTransport = (provider, input, init = {}, context?: ProviderTransportContext) => {
     if (closed) return Promise.reject(new Error("Native provider transport is unavailable"));
     if (providerPending.size >= MAX_PROVIDER_CALLS) return Promise.reject(new Error("Native provider queue is full"));
-    const method = String(init.method ?? "GET").toUpperCase();
-    if (!/^[a-z][a-z0-9_-]{0,63}$/i.test(provider) || !["GET", "POST"].includes(method)) return Promise.reject(new Error("Unsupported native provider operation"));
+    const method = String(init.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+    if (!Object.hasOwn(PROVIDER_OPERATIONS, provider) && provider !== "gemini" && provider !== "ollama") return Promise.reject(new Error("Unsupported native provider"));
     let url: URL;
     try { url = new URL(input instanceof Request ? input.url : String(input)); }
     catch { return Promise.reject(new Error("Invalid provider URL")); }
-    if (url.username || url.password || url.hash || url.searchParams.size > 0 || (provider !== "ollama" && url.protocol !== "https:")) return Promise.reject(new Error("Provider URL contains unsupported authority or query data"));
-    const body = init.body;
+    if (url.username || url.password || url.hash) return Promise.reject(new Error("Provider URL contains unsupported authority data"));
+    const body = init.body ?? (input instanceof Request && input.body ? input.body : undefined);
     if (body !== undefined && typeof body !== "string") return Promise.reject(new Error("Native provider requests require a bounded JSON body"));
     if (body !== undefined && Buffer.byteLength(body) > MAX_PROVIDER_BODY) return Promise.reject(new Error("Provider request is too large"));
     if (method === "GET" && body !== undefined) return Promise.reject(new Error("GET provider requests cannot include a body"));
+    let operation: string | undefined;
+    let routeModel: string | undefined;
+    if (provider === "ollama") {
+      if (method !== "POST" || url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.port !== "11434" || url.pathname !== "/api/chat" || url.searchParams.size) return Promise.reject(new Error("Unsupported local model operation"));
+      operation = "ollama_chat";
+    } else if (provider === "gemini") {
+      const match = url.pathname.match(/^\/v1beta\/models\/([A-Za-z0-9._:-]{1,128}):streamGenerateContent$/);
+      if (method !== "POST" || url.protocol !== "https:" || url.hostname !== "generativelanguage.googleapis.com" || url.port && url.port !== "443" || url.search !== "?alt=sse" || !match) return Promise.reject(new Error("Unsupported native provider operation"));
+      operation = "stream_generate_content";
+      routeModel = match[1];
+    } else {
+      if (method !== "POST" || url.protocol !== "https:" || url.port && url.port !== "443" || url.search) return Promise.reject(new Error("Unsupported native provider operation"));
+      operation = PROVIDER_OPERATIONS[provider]?.get(`${url.hostname}|${url.pathname}`);
+      if (!operation) return Promise.reject(new Error("Unsupported native provider operation"));
+    }
+    if (typeof body !== "string") return Promise.reject(new Error("Native provider requests require a bounded JSON body"));
     const headers: Record<string, string> = {};
     try {
       new Headers(input instanceof Request ? input.headers : init.headers).forEach((value, name) => {
@@ -106,8 +138,9 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
     const signal = init.signal ?? undefined;
     if (signal?.aborted) return Promise.reject(new Error("Provider request was cancelled"));
     const id = `gen-${randomUUID()}`;
-    const operation = context?.operationId && /^[A-Za-z0-9_-]{1,128}$/.test(context.operationId) ? context.operationId : randomUUID();
-    const attempt = context?.attempt ?? 0;
+    if (!context || !/^[A-Za-z0-9_-]{1,128}$/.test(context.operationId)) return Promise.reject(new Error("Missing provider operation identity"));
+    const operationId = context.operationId;
+    const attempt = context.attempt;
     if (!Number.isSafeInteger(attempt) || attempt < 0 || attempt > 16) return Promise.reject(new Error("Invalid provider attempt identity"));
     return new Promise<Response>((resolve, reject) => {
       let abort: (() => void) | undefined;
@@ -141,11 +174,10 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
         id,
         type: "provider_request",
         provider,
-        url: url.toString(),
-        method,
-        headers,
-        ...(body === undefined ? {} : { body }),
-        operationId: operation,
+        operation,
+        ...(routeModel === undefined ? {} : { routeModel }),
+        body,
+        operationId,
         attempt,
       };
       void send(message).catch((error: unknown) => {

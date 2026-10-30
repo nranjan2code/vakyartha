@@ -11,6 +11,8 @@ use super::control::{ControlHandle, bridge::{self, Operation as ControlOperation
 
 const MAX_BODY: usize = 32 * 1024 * 1024;
 const MAX_QUEUE: usize = 48 * 1024 * 1024;
+const MAX_PROVIDER_BODY: usize = 8 * 1024 * 1024;
+const MAX_BRIDGE_FRAME: usize = 48 * 1024 * 1024;
 const PROTOCOL_VERSION: u8 = bridge::PROTOCOL_VERSION;
 type Pending = Arc<Mutex<HashMap<String, Channel<Frame>>>>;
 type Input = Arc<Mutex<Option<SyncSender<Vec<u8>>>>>;
@@ -29,6 +31,61 @@ enum Output {
     Data { data: String },
     End,
     Error { message: String },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProviderRequest {
+    v: u8,
+    id: String,
+    #[serde(rename = "type")]
+    kind: String,
+    provider: String,
+    operation: String,
+    #[serde(rename = "routeModel")]
+    route_model: Option<String>,
+    body: String,
+    #[serde(rename = "operationId")]
+    operation_id: String,
+    attempt: u32,
+}
+
+impl ProviderRequest {
+    fn validate(&self) -> bool {
+        let valid_model = self.route_model.as_deref().is_some_and(|model| {
+            !model.is_empty()
+                && model.len() <= 128
+                && model.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+        });
+        let operation_matches_provider = match self.provider.as_str() {
+            "openai" => matches!(self.operation.as_str(), "responses" | "chat_completions") && self.route_model.is_none(),
+            "anthropic" => self.operation == "messages" && self.route_model.is_none(),
+            "gemini" => self.operation == "stream_generate_content" && valid_model,
+            "ollama" => self.operation == "ollama_chat" && self.route_model.is_none(),
+            "mistral" | "xai" | "deepseek" | "groq" | "cerebras" | "openrouter"
+            | "together" | "fireworks" | "moonshot" | "dashscope" => self.operation == "chat_completions" && self.route_model.is_none(),
+            _ => false,
+        };
+        self.v == PROTOCOL_VERSION
+            && self.kind == "provider_request"
+            && self.id.starts_with("gen-")
+            && valid_id(&self.id)
+            && operation_matches_provider
+            && self.body.len() <= MAX_PROVIDER_BODY
+            && self.operation_id.len() <= 128
+            && !self.operation_id.is_empty()
+            && self.operation_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+            && self.attempt <= 16
+    }
+}
+
+fn provider_refusal(id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "v": PROTOCOL_VERSION,
+        "id": id,
+        "type": "provider_error",
+        "message": "Native provider dispatch is not enabled",
+    })
 }
 
 pub struct Engine {
@@ -124,8 +181,8 @@ pub fn start(mut cmd: Command, control: Option<ControlHandle>) -> Engine {
     std::thread::spawn(move || {
         loop {
             let mut line = Vec::new();
-            let result = reader.by_ref().take(128 * 1024 + 1).read_until(b'\n', &mut line);
-            if !matches!(result, Ok(n) if n > 0 && n <= 128 * 1024) || !line.ends_with(b"\n") { break; }
+            let result = reader.by_ref().take(MAX_BRIDGE_FRAME as u64 + 1).read_until(b'\n', &mut line);
+            if !matches!(result, Ok(n) if n > 0 && n <= MAX_BRIDGE_FRAME) || !line.ends_with(b"\n") { break; }
             let value = match serde_json::from_slice::<serde_json::Value>(&line) { Ok(value) => value, Err(_) => break };
             if value.get("type").and_then(serde_json::Value::as_str) == Some("control_request") {
                 let request = match ControlRequest::decode(&line) { Ok(request) => request, Err(_) => break };
@@ -140,6 +197,16 @@ pub fn start(mut cmd: Command, control: Option<ControlHandle>) -> Engine {
                     }
                     Err(TrySendError::Disconnected(_)) => break,
                 }
+            }
+            if value.get("type").and_then(serde_json::Value::as_str) == Some("provider_request") {
+                let request = match serde_json::from_value::<ProviderRequest>(value) {
+                    Ok(request) if request.validate() => request,
+                    _ => break,
+                };
+                let input = connection.lock().unwrap().clone();
+                let Some(input) = input else { break; };
+                if queue_input(&input, &response_queue, provider_refusal(&request.id)).is_err() { break; }
+                continue;
             }
             let frame = match serde_json::from_value::<Frame>(value) { Ok(frame) if frame.v == PROTOCOL_VERSION => frame, _ => break };
             let terminal = matches!(frame.event, Output::End | Output::Error { .. });
@@ -207,6 +274,25 @@ mod tests {
         assert!(matches!(frame.event, Output::Data { .. }));
     }
 
+    #[test]
+    fn provider_frames_are_registered_operation_records_without_destinations() {
+        let request: ProviderRequest = serde_json::from_str(
+            r#"{"v":2,"id":"gen-123","type":"provider_request","provider":"openai","operation":"responses","body":"{}","operationId":"root-op-1","attempt":1}"#,
+        ).unwrap();
+        assert!(request.validate());
+        let gemini: ProviderRequest = serde_json::from_str(
+            r#"{"v":2,"id":"gen-124","type":"provider_request","provider":"gemini","operation":"stream_generate_content","routeModel":"gemini-2.5-flash","body":"{}","operationId":"root-op-1","attempt":0}"#,
+        ).unwrap();
+        assert!(gemini.validate());
+        let mismatched: ProviderRequest = serde_json::from_str(
+            r#"{"v":2,"id":"gen-125","type":"provider_request","provider":"openai","operation":"messages","body":"{}","operationId":"root-op-1","attempt":0}"#,
+        ).unwrap();
+        assert!(!mismatched.validate());
+        assert!(serde_json::from_str::<ProviderRequest>(
+            r#"{"v":2,"id":"gen-126","type":"provider_request","provider":"openai","operation":"responses","url":"https://attacker.example","body":"{}","operationId":"root-op-1","attempt":0}"#,
+        ).is_err());
+    }
+
     #[cfg(unix)]
     #[test]
     fn private_child_pipe_round_trips_health_to_native_control_actor() {
@@ -255,6 +341,40 @@ printf '%s' "$response" > "$1"
         assert_eq!(response["status"], "ready");
         drop(engine);
         drop(actor);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_provider_pipe_returns_typed_fail_closed_response() {
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("vak-engine-provider-{}-{stamp}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let response_path = root.join("provider-response.json");
+        let script = r#"echo 'VAK_READY {"transport":"stdio","version":2}'
+echo '{"v":2,"id":"gen-fixture","type":"provider_request","provider":"openai","operation":"responses","body":"{}","operationId":"root-op-1","attempt":0}'
+IFS= read -r response
+printf '%s' "$response" > "$1"
+"#;
+        let mut command = Command::new("sh");
+        command.arg("-c").arg(script).arg("fixture").arg(&response_path);
+        let engine = start(command, None);
+        assert!(engine.backend.is_ok());
+        let mut child = engine.child.lock().unwrap().take().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                assert!(status.success());
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "provider frame response timed out");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let response: serde_json::Value = serde_json::from_slice(&std::fs::read(&response_path).unwrap()).unwrap();
+        assert_eq!(response["id"], "gen-fixture");
+        assert_eq!(response["type"], "provider_error");
+        assert_eq!(response["message"], "Native provider dispatch is not enabled");
+        drop(engine);
         std::fs::remove_dir_all(root).unwrap();
     }
 }

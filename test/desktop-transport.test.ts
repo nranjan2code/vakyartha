@@ -99,7 +99,9 @@ test("native provider transport strips credentials and streams bounded response 
   for (let i = 0; i < 100 && !frames.length; i++) await new Promise((resolve) => setTimeout(resolve, 5));
   const request = frames[0]!;
   assert.equal(request.type, "provider_request");
-  assert.deepEqual(request.headers, { "content-type": "application/json" });
+  assert.equal(request.operation, "responses");
+  assert.equal("url" in request, false);
+  assert.equal("headers" in request, false);
   assert.equal(request.operationId, "root_operation_1");
   assert.equal(request.attempt, 2);
   assert.doesNotMatch(JSON.stringify(request), /secret/);
@@ -111,6 +113,49 @@ test("native provider transport strips credentials and streams bounded response 
   send({ type: "provider_end" });
   assert.equal(await response.text(), "ok");
   assert.equal(frames.some((frame) => frame.type === "provider_ack" && frame.seq === 0), true);
+});
+
+test("native provider framing sends registered operations without caller-selected destinations", async (t) => {
+  const input = new PassThrough(), output = new PassThrough();
+  const frames: Record<string, unknown>[] = [];
+  const bridge = desktopTransport(async () => new Response(null), "token", input, output, (error) => { throw error; });
+  t.after(() => bridge.close());
+  let raw = "";
+  output.on("data", (chunk) => {
+    raw += String(chunk);
+    while (raw.includes("\n")) {
+      const index = raw.indexOf("\n");
+      frames.push(JSON.parse(raw.slice(0, index)) as Record<string, unknown>);
+      raw = raw.slice(index + 1);
+    }
+  });
+  const gemini = bridge.providerFetch("gemini", "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse", { method: "POST", body: "{}" }, { operationId: "gemini-op", attempt: 0 });
+  for (let i = 0; i < 100 && frames.length < 1; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(frames[0]?.operation, "stream_generate_content");
+  assert.equal(frames[0]?.routeModel, "gemini-2.5-flash");
+  assert.equal("url" in frames[0]!, false);
+  input.write(JSON.stringify({ v: DESKTOP_PROTOCOL, id: frames[0]!.id, type: "provider_error", message: "test refusal" }) + "\n");
+  await assert.rejects(gemini, /test refusal/);
+
+  const ollama = bridge.providerFetch("ollama", "http://127.0.0.1:11434/api/chat", { method: "POST", body: "{}" }, { operationId: "ollama-op", attempt: 0 });
+  for (let i = 0; i < 100 && frames.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(frames[1]?.operation, "ollama_chat");
+  assert.equal("url" in frames[1]!, false);
+  input.write(JSON.stringify({ v: DESKTOP_PROTOCOL, id: frames[1]!.id, type: "provider_error", message: "test refusal" }) + "\n");
+  await assert.rejects(ollama, /test refusal/);
+
+  await assert.rejects(
+    bridge.providerFetch("openai", "https://attacker.example/v1/responses", { method: "POST", body: "{}" }, { operationId: "bad-host", attempt: 0 }),
+    /Unsupported native provider operation/,
+  );
+  await assert.rejects(
+    bridge.providerFetch("openai", "https://api.openai.com/v1/responses?key=secret", { method: "POST", body: "{}" }, { operationId: "query-key", attempt: 0 }),
+    /Unsupported native provider operation/,
+  );
+  await assert.rejects(
+    bridge.providerFetch("openai", "https://api.openai.com/v1/responses", { method: "POST", body: "{}" }),
+    /Missing provider operation identity/,
+  );
 });
 
 test("private transport rejects incompatible frames and untrusted authority headers", async () => {
