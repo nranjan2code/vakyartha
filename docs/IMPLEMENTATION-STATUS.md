@@ -412,3 +412,12 @@ Historical workspace checkpoint, read with the bounded FOLDER1–FOLDER7 criteri
 - [x] Stored secrets: `TYPESAFE_API_KEY` registered in `sidecar/settings.ts` with macOS Keychain / cross-platform vault storage.
 - [x] Official Skill Pack support: `typesafe-ai/skills` added to `SKILL_SOURCES` in `shared/skills.ts` with official 200×200 brand mark in `public/brand/integrations/typesafe-ai.png` and `src/catalog-icons.ts` (`skillPublisherIcon`), cleanly separated from built-in skills.
 - [x] Verification: TypeScript typecheck passes with 0 errors; all 287 Node tests pass; all 11 Rust cargo tests pass.
+
+## Cross-Provider Prompt Caching Governance & FinOps Visibility checkpoint — 2026-10-30
+
+- [x] Cross-provider prompt caching research and architecture (ADR-055): Analyzed prompt caching paradigms and cache invalidation rules across OpenAI (prefix caching), Anthropic (ephemeral breakpoints), and Google Gemini (implicit caching on 2.5/3/4).
+- [x] Stable prefix shaping (`src/decision/shaper.ts`): Implemented deterministic tool sorting by name and preserved tool schemas across ongoing multi-turn conversations on hosted prefix-cached providers (`openai`, `gemini`, `anthropic`) to eliminate `tools_changed` cache miss penalties.
+- [x] FinOps Prompt Cache Hit Rate metric (`src/finops-page.ts`): Surfaces `Prompt cache hit rate` (`hitPct% (cached / input tokens)`) in turn details and adds `cache_hit_rate_pct` to CSV exports.
+- [x] Standard Model Rate Presets (`src/finops-page.ts`): Pre-computed three-tier rate templates (`input`, `cached`, `output`) for OpenAI (`gpt-4o`, `gpt-4o-mini`, `o1`, `o3-mini`), Anthropic (`claude-3-5-sonnet`, `claude-3-5-haiku`, `claude-3-opus`), and Gemini (`gemini-2.5-pro`, `gemini-2.5-flash`), with 1-click "Use standard preset" action.
+- [x] Verification: TypeScript typecheck passes; full suite of unit tests in `test/decision.test.ts` and `test/finops.test.ts` pass; WebKit UI checks in `scripts/finops-check.ts` pass at 1100px and 620px widths with 0 regressions.
+

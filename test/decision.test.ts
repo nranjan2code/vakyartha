@@ -589,6 +589,55 @@ test("TypeSafeDecisionProvider: processes mock SystemOne response accurately", a
   }
 });
 
+test("shapeTurn: deterministically sorts tools and preserves toolset for prefix-cached providers in multi-turn", async () => {
+  saveDecisionConfig({ enabled: true, providerId: "heuristic", pruneTools: true });
+
+  // 1. Tool order is always sorted alphabetically by name
+  const sortedResult = await shapeTurn({
+    message: "analyze repository",
+    tools: [{ name: "zebra_tool" }, { name: "alpha_tool" }, { name: "beta_tool" }],
+  });
+  assert.deepEqual(
+    sortedResult.payload.tools?.map((t) => t.name),
+    ["alpha_tool", "beta_tool", "zebra_tool"],
+  );
+
+  // 2. Multi-turn turn with an ongoing conversation on OpenAI preserves tools to avoid tools_changed cache miss
+  const openAiResult = await shapeTurn({
+    message: "read the package.json file",
+    provider: "openai",
+    model: "gpt-4o",
+    history: [
+      { role: "user", content: "list files" },
+      { role: "assistant", content: "here are files" },
+    ],
+    tools: [{ name: "filesystem_read" }, { name: "web_search" }],
+  });
+  assert.equal(openAiResult.shape.intent, "scoped_tool_task");
+  // Toolset is preserved to protect prefix cache
+  assert.equal(openAiResult.payload.tools?.length, 2);
+  assert.deepEqual(
+    openAiResult.payload.tools?.map((t) => t.name),
+    ["filesystem_read", "web_search"],
+  );
+
+  // 3. For local model (ollama), aggressive tool pruning remains active
+  const ollamaResult = await shapeTurn({
+    message: "read the package.json file",
+    provider: "ollama",
+    model: "qwen3.5:4b-mlx",
+    history: [
+      { role: "user", content: "list files" },
+      { role: "assistant", content: "here are files" },
+    ],
+    tools: [{ name: "filesystem_read" }, { name: "web_search" }],
+  });
+  assert.equal(ollamaResult.shape.intent, "scoped_tool_task");
+  assert.equal(ollamaResult.payload.tools?.length, 1);
+  assert.equal(ollamaResult.payload.tools?.[0]?.name, "filesystem_read");
+});
+
+
 
 
 

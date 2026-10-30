@@ -8,7 +8,7 @@ Open **Settings → FinOps** for the same turn-by-turn views used to inspect the
 - Context composition at the first model request: user/actions, assistant text, projection arguments, other tool arguments, engine feedback, and external results.
 - Conversation characters repeated across every model step in a turn.
 - Generated UI arguments, other tool arguments, and assistant text.
-- Provider-reported input, output, and cached input tokens. An input total without cache detail is shown separately.
+- Provider-reported input, output, and cached input tokens. An input total without cache detail is shown separately, along with prompt cache hit rate percentage (`cachedInput / input * 100%`).
 - Estimated API cost, with missing usage or rates explicitly unknown.
 
 The open page refreshes every five seconds while visible and not editing a rate, and manual Refresh updates it in place. Filters, selected turn and unsaved rates survive refresh. The freshness line distinguishes measured/reconstructed counts and configured model rates. Charts draw the latest 200 filtered turns; details and CSV retain all filtered history. Telemetry appears after a turn completes, rather than as live token-by-token billing.
@@ -33,7 +33,7 @@ Character counts measure the provider-neutral request content, using JavaScript 
 
 ## Prices
 
-Enter exact provider/model rates under **Model rates**, in USD per million input, cached input, and output tokens. They are saved in `<dataDir>/finops-rates.json` with an update timestamp. They are manually configured, not fetched or assumed from a model name.
+Enter exact provider/model rates under **Model rates**, in USD per million input, cached input, and output tokens. Standard preset rates for major providers (OpenAI `gpt-4o`/`o1`/`o3-mini`, Anthropic `claude-3-5-sonnet`/`haiku`, Google Gemini `gemini-2.5-pro`/`flash`) can be applied with one click. They are saved in `<dataDir>/finops-rates.json` with an update timestamp. They are manually configured, not fetched or assumed from a model name.
 
 Costs use the **current** configured rates, including when viewing previous turns. They are estimates, not historical invoices, and exclude cache-write premiums, provider extras and tool fees. Unknown cached input prevents a discounted estimate unless cached and uncached rates are equal. A partially observed paid run stays unknown even if another step reported usage. Totals show the known subtotal and the number of turns with unknown cost.
 

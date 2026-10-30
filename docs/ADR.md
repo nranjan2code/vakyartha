@@ -630,3 +630,30 @@ Accepted at the user's direction: dynamically modulate model reasoning effort, l
 5. **Dynamic Session Skill Cache:**
    - In ongoing multi-turn conversations where skills were already loaded in history and the user continues the active workflow, turns proceed directly to generation without re-invoking `use_skill`.
    - Dynamically re-evaluates if the user enables, disables, adds, or removes skills in Settings between turns, or explicitly asks for an unloaded capability. [Contract and architecture](DECISION-MODELS.md).
+
+## ADR-055: Cross-Provider Prompt Caching Governance, Stable Prefix Shaping, and FinOps Hit Visibility (2026-10-30)
+
+Accepted at the user's direction: optimize cross-provider prompt caching efficiency across OpenAI, Anthropic, and Google Gemini through deterministic tool ordering, prefix-preserving turn shaping on hosted models, standard model rate presets, and explicit prompt cache hit rate metrics in FinOps.
+
+1. **Context & Problem:**
+   - Frontier AI providers (OpenAI, Anthropic, Google Gemini) offer prompt caching that reduces input latency and lowers input token pricing by 50% to 90% when token prefixes are reused across multi-turn conversations and agent loops.
+   - However, each provider enforces distinct caching paradigms and invalidation constraints:
+     - **OpenAI:** Operates automatic prefix caching (minimum 1,024 tokens) from token 0. The tokenized `tools` array is part of the cached prefix; altering or reordering tool schemas between turns invalidates downstream prompt cache blocks (`tools_changed`).
+     - **Anthropic:** Requires explicit `cache_control: { type: "ephemeral" }` breakpoints on system prompts, tools, and turn messages (up to 4 breakpoints), subject to minimum token limits (1,024 tokens for standard models, 2,048 tokens for Haiku).
+     - **Google Gemini:** Provides automated implicit caching on Gemini 2.5, 3, and 4 for prompts meeting model-specific thresholds (2,048 tokens for 2.5, 4,096 tokens for 3+), returning `usageMetadata.cachedContentTokenCount`.
+   - In Vakyartha, aggressive System 1 tool pruning under ADR-053 benefits small local models (Ollama 4B) by reducing memory pressure, but when applied dynamically mid-conversation to hosted prefix-cached providers, it altered the prefix and invalidated the provider's cached KV context on continuing turns.
+   - Additionally, FinOps recorded raw `cachedInput` counts but omitted calculated cache hit rates and standard preset rates, requiring manual rate configuration before cost estimation could occur.
+
+2. **Stable Prefix Shaping for Hosted Providers:**
+   - In [`src/decision/shaper.ts`](src/decision/shaper.ts), tool schemas are now deterministically sorted by name (`localeCompare`) so tool array serialization is invariant across turns.
+   - For hosted prefix-cached providers (`openai`, `gemini`, `anthropic`), when an active multi-turn conversation contains ongoing history and tool usage (`scoped_tool_task`), the active toolset is preserved across continuing turns rather than pruned per-step, avoiding `tools_changed` cache invalidations and maximizing KV reuse.
+   - Small local models (`ollama`) continue aggressive per-turn pruning to protect unified RAM and attention bandwidth.
+
+3. **FinOps Prompt Cache Hit Rate Visibility:**
+   - In [`src/finops-page.ts`](src/finops-page.ts), the turn details inspector renders a calculated `Prompt cache hit rate` percentage and ratio (`hitPct% (X of Y input tokens)`) whenever cached and total input tokens are recorded.
+   - FinOps CSV export includes `cache_hit_rate_pct` alongside raw token counts.
+
+4. **Standard Model Rate Presets:**
+   - Added `STANDARD_MODEL_RATES` and `findStandardRate()` in [`src/finops-page.ts`](src/finops-page.ts) covering standard baseline and cached input rates for OpenAI (`gpt-4o`, `gpt-4o-mini`, `o1`, `o3-mini`), Anthropic (`claude-3-5-sonnet`, `claude-3-5-haiku`, `claude-3-opus`), and Google Gemini (`gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-1.5-pro`, `gemini-1.5-flash`).
+   - The rate editor provides an "Apply standard preset" action with cached discounts pre-calculated, while preserving the core rule that estimates use explicit configured rates and never invent invoice amounts.
+

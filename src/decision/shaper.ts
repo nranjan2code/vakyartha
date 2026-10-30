@@ -171,17 +171,29 @@ export async function shapeTurn(
     }
   }
 
-  // 2. Tool Pruning
+  // 2. Tool Pruning & Prefix Stability
+  const isPrefixCachedProvider = payload.provider === "openai" || payload.provider === "gemini" || payload.provider === "anthropic";
   if (shape.allowedToolNamespaces.length === 0 && (shape.intent === "salutation" || shape.intent === "canvas_refinement")) {
     if (config.pruneTools) {
       shapedPayload.tools = [];
     }
   } else if (config.pruneTools && shape.allowedToolNamespaces.length > 0) {
-    shapedPayload.tools = originalTools.filter((tool) =>
-      shape.allowedToolNamespaces.some((ns) =>
-        tool.name.toLowerCase().includes(ns.toLowerCase()),
-      ),
-    );
+    if (isPrefixCachedProvider && originalHistoryLength > 0 && shape.intent === "scoped_tool_task") {
+      // For hosted prefix-cached providers in ongoing multi-turn conversations, preserve the active tool set
+      // so downstream message history matches the already-cached prompt prefix block without tools_changed invalidation.
+      shapedPayload.tools = [...originalTools];
+    } else {
+      shapedPayload.tools = originalTools.filter((tool) =>
+        shape.allowedToolNamespaces.some((ns) =>
+          tool.name.toLowerCase().includes(ns.toLowerCase()),
+        ),
+      );
+    }
+  }
+
+  // Deterministically sort tools by name so prompt prefixes match identical token sequences across turns
+  if (shapedPayload.tools && shapedPayload.tools.length > 1) {
+    shapedPayload.tools = [...shapedPayload.tools].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   // 3. Execution Budgets

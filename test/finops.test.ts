@@ -215,3 +215,21 @@ test("history deduplication keeps session, provider and strict timestamp-skew bo
   assert.deepEqual(view.turns.filter((turn) => turn.source === "reconstructed").map((turn) => turn.session).sort(), ["chat-2", "chat-3", "chat-4"]);
   assert.equal(view.turns.filter((turn) => turn.source === "recorded").length, 4);
 });
+
+test("standard model rates resolve known presets with cached token discounts", async () => {
+  const { findStandardRate, STANDARD_MODEL_RATES } = await import("../src/finops-page.ts");
+  assert.ok(STANDARD_MODEL_RATES["openai/gpt-4o"]);
+  assert.equal(STANDARD_MODEL_RATES["openai/gpt-4o"]?.cached, 1.25);
+  assert.equal(STANDARD_MODEL_RATES["anthropic/claude-3-5-sonnet"]?.cached, 0.30);
+  assert.equal(STANDARD_MODEL_RATES["gemini/gemini-2.5-pro"]?.cached, 0.3125);
+
+  const openaiRate = findStandardRate("openai", "gpt-4o");
+  assert.deepEqual(openaiRate, { input: 2.50, cached: 1.25, output: 10.00 });
+
+  const anthropicRate = findStandardRate("anthropic", "claude-3-5-sonnet");
+  assert.deepEqual(anthropicRate, { input: 3.00, cached: 0.30, output: 15.00 });
+
+  const unknownRate = findStandardRate("fixture", "custom-model");
+  assert.equal(unknownRate, undefined);
+});
+
