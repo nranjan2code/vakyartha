@@ -24,6 +24,9 @@ Key achievements and invariants:
   - Canvas WebKit check passed at 1100px and 620px viewports (receipt `vak-canvas-check-vwi8bB`).
   - Strict `cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings` passed cleanly with 0 warnings.
   - `npm run typecheck`, `npm run bundle-sidecar`, and `npm run build` passed with 0 errors.
+- **Outcome Acceptance Gate**:
+  - Ran primary-provider contract check in `~/Projects/vakProjection` (`node scripts/record-view-check.ts --run-local --table-only`) using local Ollama `qwen3.5:4b-mlx`.
+  - Retained recorded outcome failure honest per `AGENTS.md`: receipt `.vak/contracts/record-view-2026-10-30T20-43-51.509Z.json` failed closed with `validation_stalled` because model output included `"id": "table-records"` on the root node instead of omitting it or naming it `"root"`. Gate remains frozen and open.
 
 ## Native workspace and IA single-writer cutover, project management and atomic projection — 2026-10-30
 
