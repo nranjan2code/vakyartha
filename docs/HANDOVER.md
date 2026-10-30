@@ -1,5 +1,9 @@
 # Vakyartha handover — 2026-10-30
 
+## Projection operation identity API pin — 2026-10-30
+
+Moved the `framework/` submodule from `65f183c` to pushed Projection commit `c51987b`. Provider transports now receive one stable operation ID across adapter retries plus a zero-based attempt number; a framework regression proves retries retain identity. With the new pin, the full framework suite/replay passes 414/414 and app TypeScript typecheck passes under the digest-pinned Node 26.13.0 Docker runtime. This is metadata only: Vakyartha still supplies no provider transport and native dispatch remains inactive. No app outcome or authority gate is closed. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#projection-provider-operation-identity-api-pin--2026-10-30).
+
 ## Native fixed-loopback local-model transport primitive — 2026-10-30
 
 The inactive native broker now recognizes only `http://127.0.0.1:11434/api/chat` for the local Ollama operation. It disables proxy discovery and redirect following, never retrieves or attaches a credential, pins the model to the permit, requires streaming, caps output tokens, limits worker-supplied generation options and requires native-policy-matched `think`/`keep_alive` fields. macOS Rust tests pass 83/83 with host strict Clippy; Linux Docker passes 85/85 with strict Clippy. This is not dispatch authorization or a live product path: permits, approval, task/budget/cancel/capacity atomicity and private streaming bridge remain absent. The TS provider path is still active; no local model call has used this route and no gate is closed. [Details](agent-runtime/IMPLEMENTATION-PROGRESS.md#fixed-loopback-local-generation-transport-primitive--2026-10-30).

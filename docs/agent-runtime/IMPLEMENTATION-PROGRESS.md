@@ -2,6 +2,10 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Projection provider operation identity API pin — 2026-10-30
+
+Projection commit `c51987ba62cb0bd5537b1d3dbd39b837f7e440ca` adds an optional `ProviderTransportContext` containing one UUID per logical HTTP call and a zero-based attempt count. Retry attempts reuse the operation ID. The Projection provider retry suite passes 4/4, the full framework suite/replay passes 414/414, typecheck and package generation pass. The app pin now uses this pushed commit; its Node 26.13.0 Docker verification passes `npm run test:framework` (414/414) and `npm run typecheck`. This makes retries attributable/deduplicable by a future host; it does not itself prevent a retry, provide authorization, or mediate app provider traffic. The app does not yet pass a transport callback. No AR, IA, ISO or user outcome gate is closed.
+
 ## Provider transport seam code-audit correction — 2026-10-30
 
 Current app and pinned Projection source were compared directly. Projection `65f183c` publicly exports provider-aware `ProviderTransport` injection through each provider factory; `sidecar/server.ts:modelProviders()` currently calls `entry.make(options)` without passing a transport, leaving providers on default `fetch`. The app can inject a transport without another framework change. The missing work is the native private-pipe request/stream protocol, exact operation authorization, approval/receipt lifecycle and TypeScript secret removal. Separately, `VakHost` still persists canonical sessions through `sessionsDir`; the protected native prepare/fence/commit persistence adapter remains a real public-API gap. No execution path changed in this audit.
