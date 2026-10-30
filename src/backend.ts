@@ -20,6 +20,11 @@ export async function admitNativeChat(sessionId: string): Promise<void> {
   if (inTauri) await invoke("control_admit_host_session", { sessionId });
 }
 
+/** Release a fresh admission when the trusted UI's operation failed before session persistence. */
+export async function releaseNativeChatAdmission(sessionId: string): Promise<void> {
+  if (inTauri) await invoke("control_release_host_session_admission", { sessionId });
+}
+
 export interface NativeSessionMigrationPlan {
   session_count: number;
   bytes: number;

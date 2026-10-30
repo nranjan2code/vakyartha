@@ -67,6 +67,7 @@ pub enum AdmissionError {
     CandidateIdentityConflict,
     CandidateSessionMismatch,
     HostSessionAdmissionFull,
+    HostSessionAdmissionHasData,
     CanonicalRevisionConflict,
     CanonicalSessionOwned,
     InvalidCandidate,
@@ -704,6 +705,10 @@ enum ActorCommand {
         session_id: String,
         reply: SyncSender<Result<(), ControlError>>,
     },
+    ReleaseHostSessionAdmission {
+        session_id: String,
+        reply: SyncSender<Result<(), ControlError>>,
+    },
     LoadHostSession {
         session_id: String,
         reply: SyncSender<Result<Option<(u64, serde_json::Value)>, ControlError>>,
@@ -1056,6 +1061,14 @@ impl ControlHandle {
     pub fn admit_host_session(&self, session_id: String) -> Result<(), ControlError> {
         let (reply, response) = sync_channel(1);
         self.commands.try_send(ActorCommand::AdmitHostSession { session_id, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    /// Releases an unused trusted admission after a failed UI operation.
+    /// Existing snapshots keep their admission so cleanup cannot hide data.
+    pub fn release_host_session_admission(&self, session_id: String) -> Result<(), ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::ReleaseHostSessionAdmission { session_id, reply }).map_err(queue_error)?;
         response.recv_timeout(self.response_timeout).map_err(response_error)?
     }
 
@@ -2237,6 +2250,18 @@ fn actor_loop(
                 };
                 let _ = reply.send(result);
             }
+            ActorCommand::ReleaseHostSessionAdmission { session_id, reply } => {
+                let result = if !admitted_host_sessions.contains(&session_id) {
+                    Err(ControlError::Admission(AdmissionError::InvalidIdentity))
+                } else {
+                    match host_sessions.load(&session_id) {
+                        Ok(None) => { admitted_host_sessions.remove(&session_id); Ok(()) }
+                        Ok(Some(_)) => Err(ControlError::Admission(AdmissionError::HostSessionAdmissionHasData)),
+                        Err(error) => Err(ControlError::Store(error)),
+                    }
+                };
+                let _ = reply.send(result);
+            }
             ActorCommand::LoadHostSession { session_id, reply } => {
                 let result = if admitted_host_sessions.contains(&session_id) {
                     host_sessions.load(&session_id).map_err(ControlError::Store)
@@ -2990,11 +3015,15 @@ mod tests {
         let open = || ControlActor::open(&data, "unconfigured-v1", CapacityProfile::unconfigured().unwrap(), 16, timeout);
         let actor = open().unwrap();
         let handle = actor.handle();
+        handle.admit_host_session("unused-1".into()).unwrap();
+        handle.release_host_session_admission("unused-1".into()).unwrap();
+        assert!(matches!(handle.load_host_session("unused-1".into()), Err(ControlError::Admission(AdmissionError::InvalidIdentity))));
         assert!(matches!(handle.load_host_session("chat-1".into()), Err(ControlError::Admission(AdmissionError::InvalidIdentity))));
         handle.admit_host_session("chat-1".into()).unwrap();
         let snapshot = serde_json::json!({"id":"chat-1","title":"Revenue","created":"2026-10-30T00:00:00.000Z","updated":"2026-10-30T00:00:01.000Z","messages":[],"timeline":[],"surfaces":[],"external":[]});
         assert_eq!(handle.save_host_session("chat-1".into(), 0, snapshot.clone()), Ok(1));
         assert_eq!(handle.load_host_session("chat-1".into()), Ok(Some((1, snapshot))));
+        assert_eq!(handle.release_host_session_admission("chat-1".into()), Err(ControlError::Admission(AdmissionError::HostSessionAdmissionHasData)));
         assert_eq!(handle.list_host_sessions().unwrap().len(), 1);
         let stale = serde_json::json!({"id":"chat-1","title":"stale","created":"2026-10-30T00:00:00.000Z","updated":"2026-10-30T00:00:02.000Z","messages":[],"timeline":[],"surfaces":[],"external":[]});
         assert_eq!(handle.save_host_session("chat-1".into(), 0, stale), Err(ControlError::Store(StoreError::SessionRevisionConflict)));

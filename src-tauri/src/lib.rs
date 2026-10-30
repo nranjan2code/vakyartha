@@ -247,6 +247,18 @@ fn control_admit_host_session(
     actor.handle().admit_host_session(session_id).map_err(|_| "Native chat admission was refused".to_owned())
 }
 
+/// Releases a newly admitted ID when the trusted UI's operation failed before persistence.
+#[tauri::command]
+fn control_release_host_session_admission(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    session_id: String,
+) -> Result<(), String> {
+    engine::main_window(&window)?;
+    let actor = app.try_state::<ControlActor>().ok_or_else(|| "Native session storage is unavailable".to_owned())?;
+    actor.handle().release_host_session_admission(session_id).map_err(|_| "Native chat admission could not be released safely".to_owned())
+}
+
 #[tauri::command]
 fn control_list_host_sessions(window: tauri::WebviewWindow, app: AppHandle) -> Result<Vec<SessionSummary>, String> {
     engine::main_window(&window)?;
@@ -626,6 +638,7 @@ pub fn run() {
             control_read_root,
             control_read_candidate_receipt,
             control_admit_host_session,
+            control_release_host_session_admission,
             control_list_host_sessions,
             control_plan_host_session_migration,
             control_migrate_host_sessions,

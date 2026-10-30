@@ -42,6 +42,8 @@ The Rust control actor is started with the desktop engine and its current contro
 
 Projection `822622e` exports a revisioned `HostSessionStore`, now wired in desktop mode through the private sidecar pipe to the Rust actor. Compare-and-set revisions, owner-only files, recovery and trusted UI admission protect canonical snapshots; the worker cannot self-admit a chat ID. Browser development continues to use `<data>/sessions/`. FinOps reads canonical snapshots through the active backend rather than assuming a filesystem path.
 
+New Work tasks now use the same native session authority: the trusted composer allocates the task/session ID and admits it before posting the task contract. The TS-owned `<data>/tasks/` journal remains a separate active writer for task lifecycle state; this admission bridge does not transfer scheduler, approval, workspace or terminal-state authority. Existing queued/scheduled records across restart are not yet reconciled through a native task registry and remain part of the open task cutover.
+
 On first desktop startup, existing `<data>/sessions/*.json` records are inventoried by count, byte size and digest. Import is an explicit copy after user confirmation; source bytes remain in place, and a durable receipt makes retries idempotent. Declining leaves old records untouched and starts a fresh chat. Desktop WebKit smoke verifies the prompt, native list/load/save path, source preservation and private file mode. This storage cutover does not complete task authority, publication, workspace registry or recovery UI.
 
 ## 3. Target entity relationships

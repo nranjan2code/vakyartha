@@ -14,6 +14,10 @@ Projection commit `c51987b` extends that callback with a stable logical operatio
 
 Vakyartha now exposes an optional app-server provider transport and passes it through the chat, voice, skill-evaluation and channel provider factories. Two focused tests pass. The full app suite passes 256/256 runnable tests with 21 platform/feature-gated skips, and typecheck passes in Node 26.13.0 Linux ARM64 Docker. The callback is not supplied by the desktop sidecar, and direct fetch remains active. This verifies dependency injection only, not native mediation or any original user outcome.
 
+## Native session and task-session admission — 2026-10-30
+
+Desktop chat/session snapshots now pass through native `HostSessionStore`. The Work composer pre-admits each new task/session ID through a trusted Tauri command before submitting creation; the native actor refuses to release that admission after any canonical bytes exist. A task lifecycle regression executes and writes through an admission-enforcing store, while an unadmitted session is denied. Rust 99/99, strict Clippy, Node typecheck and task tests 20/20 pass. This is a persistence-boundary regression repair only: the TypeScript task journal/scheduler and workspace registry still own product state, and no task uses the native root/candidate commit lifecycle. Provider mediation, drift detection/stop, multi-job QoS, full IA and original outcome/security gates remain open.
+
 ## Agent runtime design documentation — 2026-10-29
 
 [Design package](agent-runtime/README.md) records proposed single-agent/delegated architecture, Rust-first implementation/removal/delivery design, folder/storage/IA, drift/stopping, QoS, aggregate resource admission/observability and independent acceptance gates, with twenty-two Mermaid diagrams and dated primary-source references. It includes a standalone [implementation prompt](agent-runtime/IMPLEMENTATION-PROMPT.md). This is a documentation artifact, not implemented runtime evidence. AR-01–AR-09, IA-01–IA-06, L6 and ISO1–ISO8 remain open; original failed outcomes are retained.

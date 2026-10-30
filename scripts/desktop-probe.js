@@ -66,6 +66,11 @@
   try{await ipc.invoke('control_create_root',{request:{...nativeRequest,id:'native-ipc-unknown',unexpected:true}});unknownFieldAccepted=true;}catch{}
   check(!unknownFieldAccepted,'native task decoder accepted an unknown field');
   const info=await request('/api/info');check(info.status===200,'private info failed');
+ await ipc.invoke('control_admit_host_session',{sessionId:'unused-admission'});
+ await ipc.invoke('control_release_host_session_admission',{sessionId:'unused-admission'});
+ let persistedAdmissionReleased=false;
+ try{await ipc.invoke('control_release_host_session_admission',{sessionId:'legacy-chat'});persistedAdmissionReleased=true;}catch{}
+ check(!persistedAdmissionReleased,'native shell released an admission after canonical session bytes existed');
  await ipc.invoke('control_admit_host_session',{sessionId:'ipc-check'});
   const projected=await request('/api/project','POST',{session:'ipc-check',args:{surface:'ipc-card',title:'Private transport check',nodes:[{id:'root',type:'card',props:{title:'Private transport check',body:'Ready'}}]}});
   check(projected.status===200&&projected.data.diagnostics.length===0,'canonical projection failed');

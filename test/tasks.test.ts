@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { createHost, type HostRunOptions, type HostTurn } from "@vak/host";
+import { createHost, type HostRunOptions, type HostSessionSnapshot, type HostSessionStore, type SessionSummary, type HostTurn } from "@vak/host";
 import { ProfileCache, type Provider, type AgentTool } from "@vak/providers";
 import { comparisonExpectedRows } from "../shared/comparison-contract.ts";
 import { TaskFiles } from "../sidecar/task-files.ts";
@@ -124,13 +124,41 @@ test("only successful scoped reads issue application retrieval receipts and pers
 
 test("tasks run through one canonical host, retain multiple interactive surfaces, and require explicit review", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "vak-tasks-"));
-  const host = createHost({ providers: () => [{ id: "scripted", label: "Scripted", available: true, make: () => scripted }], profiles: new ProfileCache(path.join(dir, "profiles.json")), instructions: "test", sessionsDir: path.join(dir, "sessions"), log: () => {} });
+  const admitted = new Set<string>(["admitted-task-ui-001"]);
+  const snapshots = new Map<string, { revision: number; snapshot: HostSessionSnapshot }>();
+  const summaries: SessionSummary[] = [];
+  const sessionStore: HostSessionStore = {
+    async load(id) { if (!admitted.has(id)) throw new Error("session admission required"); const stored = snapshots.get(id); return stored && { revision: stored.revision, snapshot: structuredClone(stored.snapshot) }; },
+    async save(snapshot, expectedRevision) {
+      if (!admitted.has(snapshot.id)) throw new Error("session admission required");
+      const current = snapshots.get(snapshot.id);
+      if ((current?.revision ?? 0) !== expectedRevision) throw new Error("session revision conflict");
+      const revision = expectedRevision + 1;
+      snapshots.set(snapshot.id, { revision, snapshot: structuredClone(snapshot) });
+      const previous = summaries.findIndex((item) => item.id === snapshot.id);
+      const summary = { id: snapshot.id, title: snapshot.title, updated: snapshot.updated };
+      if (previous < 0) summaries.push(summary); else summaries[previous] = summary;
+      return revision;
+    },
+    async list() { return structuredClone(summaries); },
+    async remove(id, expectedRevision) {
+      if (!admitted.has(id)) throw new Error("session admission required");
+      const current = snapshots.get(id);
+      if (current && expectedRevision !== current.revision) throw new Error("session revision conflict");
+      snapshots.delete(id); admitted.delete(id);
+    },
+  };
+  const host = createHost({ providers: () => [{ id: "scripted", label: "Scripted", available: true, make: () => scripted }], profiles: new ProfileCache(path.join(dir, "profiles.json")), instructions: "test", sessionStore, log: () => {} });
   const deps = { dir: path.join(dir, "tasks"), run: host.run, view: host.view, tools: async () => [], instructions: () => "test", observe: async (_session: string, work: () => Promise<void>) => work(), ready: () => {}, warn: () => {} };
   let tasks = await Tasks.open(deps);
   try {
-    const t = await tasks.create({ goal: "Create two forms and a table", criteria: "All three are usable", provider: "scripted", model: "fake", spending: { kind: "local_only" }, integrations: [] });
+    const t = await tasks.create({ id: "admitted-task-ui-001", goal: "Create two forms and a table", criteria: "All three are usable", provider: "scripted", model: "fake", spending: { kind: "local_only" }, integrations: [] });
+    assert.equal(t.session, "admitted-task-ui-001", "the persisted canonical session must use the shell-admitted identity");
+    await assert.rejects(tasks.create({ id: t.id, goal: "Conflicting task", criteria: "No reuse", provider: "scripted", model: "fake", spending: { kind: "local_only" }, integrations: [] }), /identity is invalid or already exists/);
     await until(() => tasks.get(t.id).state === "needs_input");
     const view = await host.view(t.session);
+    assert.equal(snapshots.get(t.session)?.snapshot.id, "admitted-task-ui-001", "task output must be saved through the admitted native-store boundary");
+    await assert.rejects(host.run({ session: "not-admitted", provider: "scripted", model: "fake", message: "Must fail before any session write" }), /session admission required/);
     assert.equal(view.surfaces.length, 3);
     assert.equal(view.surfaces[0]?.nodes[0]?.type, "form");
     assert.equal(tasks.get(t.id).state, "needs_input");

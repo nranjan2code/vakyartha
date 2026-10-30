@@ -257,7 +257,9 @@ export class Tasks {
     this.deps.ready(provider, model, integrations, confirmedFree, spending);
     const schedule = body.schedule === undefined ? undefined : parseSchedule(body.schedule);
     if (schedule && (schedule.status !== "armed" || Date.parse(schedule.at) <= Date.now())) throw new Error("Choose a future date and time");
-    const id = randomUUID(), at = new Date().toISOString();
+    const id = body.id === undefined ? randomUUID() : text(body.id, 120);
+    if (!identifier(id) || this.tasks.has(id)) throw new Error("Task identity is invalid or already exists");
+    const at = new Date().toISOString();
     const t: TaskView = { version: 5, revision: 0, id, session: id, goal, criteria, provider, model, integrations, confirmedFree, spending, ...(resultPolicy ? { resultPolicy } : {}), ...(inputs ? { inputs } : {}), ...(output ? { output } : {}), diagnosticDays, limits, budget: { modelRequests: 0, toolCalls: 0, activeMs: 0 }, state: "queued", created: at, updated: at, note: "Waiting to start", runs: 0, runHistory: [], pending: [{ id: randomUUID(), kind: "message", message: goal }], activity: [], operations: [], accepted: [] };
     if (schedule) { t.schedule = schedule; t.state = "scheduled"; t.note = "Will run once at the selected time while this app is running and the computer is awake."; }
     await this.persist(t);
