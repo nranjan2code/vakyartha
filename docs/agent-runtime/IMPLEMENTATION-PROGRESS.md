@@ -1,6 +1,28 @@
 # Implementation progress
 
-Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
+Status: active implementation, 2026-10-31. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
+
+## Desktop smoke verification, Ollama loopback admittance and release bundle packaging — 2026-10-31
+
+In `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` (branch `codex/agent-runtime-implementation`), resolved Ollama loopback host admittance, aligned native cancelled task status notes, verified desktop private IPC transport smoke, and confirmed release bundle generation.
+
+Key achievements and invariants:
+- **Ollama Loopback Admittance**: Diagnosed `Ollama: Unsupported local model operation` originating from `sidecar/provider-channel.ts:81`. The private transport strictly asserted `url.hostname === "127.0.0.1"`, failing closed on standard `http://localhost:11434` endpoints used in user environments and settings presets. Admitted `localhost` alongside `127.0.0.1` for loopback operations. Re-bundled `src-tauri/resources/sidecar.mjs` and `src-tauri/resources/task-worker.mjs` with Node 26 LTS (`d29861e`).
+- **Native Cancelled Task Note Resolution**: In `src-tauri/src/control/tasks.rs:313`, `status_note` previously allowed `stop_reason` (`Some("Cancelled by the user")`) to shadow the unexecuted cancellation state. When `status == RootStatus::Cancelled && runs_started == 0`, `status_note` now returns `"Stopped before native execution."`, aligning native storage DTOs with Work UI lifecycles (`65f4a0d`).
+- **Resilient Desktop Probe Diagnostics**: In `scripts/desktop-probe.js`, updated the rejection catch block to preserve error details (`error?.stack || error?.message || JSON.stringify(error) || String(error)`) instead of logging `undefined` when string or object rejections occur.
+- **Desktop Smoke Verification (`scripts/desktop-check.ts`)**: Executed native desktop smoke check with Node 26 LTS (`v26.13.0`), passing all assertions with binary receipt at `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-desktop-private-5ZDNaB/receipt.json`:
+  - `privateIpc`: true
+  - `canonicalProjection`: true
+  - `nativeSessionStore`: true
+  - `nonDestructiveSessionMigration`: true
+  - `webkitRendering`: true
+  - `finops`: true
+  - `binaryReceipt`: true
+  - `nodeTcpListeners`: 0
+- **Release Bundling**: Packaged and validated production macOS release bundles via `npm run desktop:build`:
+  - `src-tauri/target/release/bundle/macos/Vakyartha.app` (226.22 MiB)
+  - `src-tauri/target/release/bundle/dmg/Vakyartha_0.2.0_aarch64.dmg` (69.37 MiB)
+- **Validation**: 150 Rust tests passed (0 failed). 326 app tests passed (0 failed, 1 paid test skipped). `npm run typecheck` passed with 0 errors.
 
 ## Common capacity admission, resident-service leases and bounded child proposals — 2026-10-30
 
