@@ -17,6 +17,7 @@ Systematic evaluation framework for comparing products, frameworks, architecture
 
 - **Purpose**: Use this skill when asked to evaluate alternatives, decide between competing options, weigh tradeoffs, or prepare an objective recommendation.
 - **Skill chaining**:
+  - Load `decision-eval` or `decision-chain` to objectively score candidate options and trade-offs against user constraints using the System 1 decision engine rather than generating speculative reasoning tokens.
   - Load `interactive-ui` when rendering an interactive comparison matrix, weighted scoring model, or bound criteria sliders.
   - The required `surface-design` skill governs table layout, comparison cards, typography and spoken harmony.
   - Load `research-brief` if comprehensive background investigation across external sources is needed before comparison.
