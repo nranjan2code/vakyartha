@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}, mpsc::{SyncSender, 
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use super::Backend;
-use super::control::{ControlHandle, bridge::{self, Operation as ControlOperation, Request as ControlRequest, Status as ControlStatus}};
+use super::control::{AdmissionError, ControlError, ControlHandle, StoreError, bridge::{self, Operation as ControlOperation, Request as ControlRequest, Status as ControlStatus}, state::StateError};
 
 const MAX_BODY: usize = 32 * 1024 * 1024;
 const MAX_QUEUE: usize = 48 * 1024 * 1024;
@@ -95,6 +95,50 @@ pub struct Engine {
     pending: Pending,
     pub backend: Result<Backend, String>,
 }
+
+fn control_error_status(error: &ControlError) -> ControlStatus {
+    match error {
+        ControlError::QueueFull | ControlError::TimedOut => ControlStatus::Overloaded,
+        ControlError::Admission(
+            AdmissionError::CandidateIdentityConflict
+            | AdmissionError::CandidateSessionMismatch
+            | AdmissionError::CanonicalRevisionConflict
+            | AdmissionError::CanonicalSessionOwned
+            | AdmissionError::InvalidCandidate,
+        )
+        | ControlError::TaskState(
+            StateError::ExecutionFenceStale | StateError::WorkspaceGrantStale,
+        ) => ControlStatus::Refused,
+        _ => ControlStatus::Unavailable,
+    }
+}
+
+fn control_error_code(error: &ControlError) -> &'static str {
+    match error {
+        ControlError::QueueFull => "native_control_overloaded",
+        ControlError::TimedOut => "native_control_timeout",
+        ControlError::Admission(AdmissionError::RootNotFound) => "root_not_found",
+        ControlError::Admission(AdmissionError::CanonicalRevisionConflict) => {
+            "canonical_revision_conflict"
+        }
+        ControlError::Admission(AdmissionError::CandidateIdentityConflict) => {
+            "candidate_identity_conflict"
+        }
+        ControlError::Admission(AdmissionError::CandidateSessionMismatch) => {
+            "candidate_session_mismatch"
+        }
+        ControlError::Admission(AdmissionError::CanonicalSessionOwned) => {
+            "canonical_session_owned"
+        }
+        ControlError::TaskState(StateError::ExecutionFenceStale) => "execution_fence_stale",
+        ControlError::TaskState(StateError::WorkspaceGrantStale) => "workspace_grant_stale",
+        ControlError::TaskState(StateError::InvalidTransition(_)) => "root_not_running",
+        ControlError::Admission(AdmissionError::InvalidCandidate) => "invalid_candidate",
+        ControlError::Store(StoreError::TooLarge) => "candidate_too_large",
+        ControlError::Store(StoreError::UnsupportedDurability) => "durability_unavailable",
+        _ => "native_control_unavailable",
+    }
+}
 impl Engine {
     pub fn failed(error: String) -> Self {
         Self { child: Mutex::new(None), input: Arc::new(Mutex::new(None)), queued: Arc::new(AtomicUsize::new(0)), pending: Arc::new(Mutex::new(HashMap::new())), backend: Err(error) }
@@ -158,16 +202,56 @@ pub fn start(mut cmd: Command, control: Option<ControlHandle>) -> Engine {
         }
         // Dropping the only stdin writer terminates the child even after a crash.
     });
-    let (control_tx, control_rx) = sync_channel::<ControlRequest>(16);
+    let (control_tx, control_rx) = sync_channel::<ControlRequest>(2);
     let control_writer = sender.clone();
     let control_queue_size = queued.clone();
     std::thread::spawn(move || {
         while let Ok(request) = control_rx.recv() {
-            let status = match (control.as_ref(), request.operation) {
-                (Some(actor), ControlOperation::Health) if actor.ping().is_ok() => ControlStatus::Ready,
-                _ => ControlStatus::Unavailable,
+            let response = match request.operation {
+                ControlOperation::Health => {
+                    let status = match control.as_ref() {
+                        Some(actor) if actor.ping().is_ok() => ControlStatus::Ready,
+                        _ => ControlStatus::Unavailable,
+                    };
+                    bridge::Response::new(&request.id, status)
+                }
+                ControlOperation::CandidateCommit(candidate) => {
+                    match candidate.into_request() {
+                        Ok(candidate) => match control.as_ref() {
+                            Some(actor) => match actor.commit_candidate(candidate) {
+                                Ok(receipt) => bridge::Response::candidate(
+                                    &request.id,
+                                    ControlStatus::Committed,
+                                    Some(receipt),
+                                    None,
+                                ),
+                                Err(error) => {
+                                    let code = control_error_code(&error);
+                                    bridge::Response::candidate(
+                                        &request.id,
+                                        control_error_status(&error),
+                                        None,
+                                        Some(code),
+                                    )
+                                }
+                            },
+                            None => bridge::Response::candidate(
+                                &request.id,
+                                ControlStatus::Unavailable,
+                                None,
+                                Some("native_control_unavailable"),
+                            ),
+                        },
+                        Err(code) => bridge::Response::candidate(
+                            &request.id,
+                            ControlStatus::Refused,
+                            None,
+                            Some(code),
+                        ),
+                    }
+                }
             };
-            let response = serde_json::to_value(bridge::Response::new(&request.id, status)).unwrap();
+            let response = serde_json::to_value(response).unwrap();
             let writer = control_writer.lock().unwrap().clone();
             if let Some(writer) = writer {
                 let _ = queue_input(&writer, &control_queue_size, response);
@@ -185,11 +269,20 @@ pub fn start(mut cmd: Command, control: Option<ControlHandle>) -> Engine {
             if !matches!(result, Ok(n) if n > 0 && n <= MAX_BRIDGE_FRAME) || !line.ends_with(b"\n") { break; }
             let value = match serde_json::from_slice::<serde_json::Value>(&line) { Ok(value) => value, Err(_) => break };
             if value.get("type").and_then(serde_json::Value::as_str) == Some("control_request") {
-                let request = match ControlRequest::decode(&line) { Ok(request) => request, Err(_) => break };
+                let request = match ControlRequest::decode_value(value, line.len()) { Ok(request) => request, Err(_) => break };
                 match control_requests.try_send(request) {
                     Ok(()) => continue,
                     Err(TrySendError::Full(request)) => {
-                        let response = serde_json::to_value(bridge::Response::new(&request.id, ControlStatus::Overloaded)).unwrap();
+                        let response = match request.operation {
+                            ControlOperation::Health => bridge::Response::new(&request.id, ControlStatus::Overloaded),
+                            ControlOperation::CandidateCommit(_) => bridge::Response::candidate(
+                                &request.id,
+                                ControlStatus::Overloaded,
+                                None,
+                                Some("native_control_queue_full"),
+                            ),
+                        };
+                        let response = serde_json::to_value(response).unwrap();
                         let input = connection.lock().unwrap().clone();
                         let Some(input) = input else { break; };
                         if queue_input(&input, &response_queue, response).is_err() { break; }

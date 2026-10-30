@@ -139,6 +139,7 @@ impl BudgetLimits {
 #[serde(deny_unknown_fields)]
 pub struct RootCreate {
     pub id: String,
+    pub session_id: Option<String>,
     pub goal: String,
     pub criteria: String,
     pub run_limit: u32,
@@ -147,7 +148,8 @@ pub struct RootCreate {
     pub delegation: DelegationPolicy,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExecutionFence {
     root_id: String,
     root_revision: u64,
@@ -473,6 +475,7 @@ impl RootTask {
         Self::create_with_grant(
             RootCreate {
                 id,
+                session_id: None,
                 goal,
                 criteria,
                 run_limit,
@@ -530,6 +533,9 @@ impl RootTask {
 
     pub fn id(&self) -> &str {
         &self.id
+    }
+    pub fn session_id(&self) -> Option<&str> {
+        self.creation_request.session_id.as_deref()
     }
     pub fn creation_request_matches(&self, request: &RootCreate) -> bool {
         self.creation_request == *request
@@ -1226,6 +1232,9 @@ impl RootTask {
                 .workspace_grant
                 .as_ref()
                 .is_some_and(|grant| grant.validate().is_err())
+            || self.workspace_grant.as_ref().is_some_and(|grant| {
+                self.session_id() != Some(grant.session_id.as_str())
+            })
             || self.children.len() > usize::from(self.delegation.max_children())
             || self
                 .children
@@ -1453,6 +1462,13 @@ fn validate_create_request(request: &RootCreate) -> Result<(), StateError> {
     if !valid_identity(&request.id) {
         return Err(StateError::InvalidIdentity);
     }
+    if request
+        .session_id
+        .as_deref()
+        .is_some_and(|session_id| !valid_identity(session_id))
+    {
+        return Err(StateError::InvalidIdentity);
+    }
     validate_text(&request.goal, MAX_TEXT)?;
     validate_text(&request.criteria, 4_000)?;
     if request.run_limit == 0
@@ -1528,6 +1544,7 @@ mod tests {
         RootTask::create_with_grant(
             RootCreate {
                 id: "root-budget".into(),
+                session_id: None,
                 goal: "Deliver the checked result".into(),
                 criteria: "Meet the declared criteria".into(),
                 run_limit: 3,

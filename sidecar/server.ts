@@ -7,7 +7,7 @@ import { AppToolResults } from "./app-tool-results.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { createFetchHandler, type HostRequest, type HostResponse } from "@vak/host";
+import { createFetchHandler, type HostCandidateCommitRequest, type HostCandidateCommitReceipt, type HostRequest, type HostResponse } from "@vak/host";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createHost, json, readJson } from "@vak/host";
@@ -67,6 +67,8 @@ export interface AppServerOptions {
   marketplaceImageFetch?: typeof pinnedFetch;
   /** Desktop may supply the supervised native broker transport for all model providers. */
   providerTransport?: ProviderTransport;
+  /** Native sole-writer boundary for a completed candidate. */
+  candidateCommit?: (request: HostCandidateCommitRequest) => Promise<HostCandidateCommitReceipt>;
   /** Built UI to serve at / (the playground); none: API only. */
   uiDir?: string;
   appName?: string;
@@ -299,6 +301,7 @@ ${skills.index()}`;
     sessionsDir: path.join(dataDir, "sessions"),
     token,
     allowSessionMutation: (session) => !tasks?.owns(session),
+    commitCandidate: opts.candidateCommit,
     // The webview's origin per platform (macOS/Linux, Windows) and the Vite dev server.
     origins: ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420", "http://127.0.0.1:1420"],
     // Outside agents get a link to watch what they projected (only when this server serves the UI).

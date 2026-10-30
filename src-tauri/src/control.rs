@@ -6,23 +6,27 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 10;
+const STORE_VERSION: u16 = 12;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
+const MAX_CANDIDATE_RECEIPTS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub mod bridge;
 mod approval;
 mod broker;
+pub mod canonical;
 pub mod delegation;
 pub mod folder;
 pub mod registry;
 pub mod state;
 use delegation::{ChildProposal, DelegationPolicy};
+use canonical::{CandidateCommitReceipt, CandidateCommitRequest, CanonicalContentStore, CanonicalSessionRecord};
 use folder::WorkspaceAdmissionPolicy;
 use registry::{
     ProjectMembership, ProjectRecord, RegistryError, RegistryState, WorkspaceBinding,
@@ -57,6 +61,12 @@ pub enum AdmissionError {
     ConflictingRequestIdentity,
     RequestAlreadySettled,
     RequestLedgerFull,
+    CandidateCommitLedgerFull,
+    CandidateIdentityConflict,
+    CandidateSessionMismatch,
+    CanonicalRevisionConflict,
+    CanonicalSessionOwned,
+    InvalidCandidate,
     UnknownLease,
     DuplicateRoot,
     RootLedgerFull,
@@ -132,6 +142,8 @@ pub struct CapacityLedger {
     used_by_root: HashMap<String, BTreeMap<Resource, u32>>,
     roots: BTreeMap<String, RootTask>,
     registry: RegistryState,
+    canonical_sessions: BTreeMap<String, CanonicalSessionRecord>,
+    candidate_receipts: BTreeMap<String, CandidateCommitReceipt>,
 }
 
 impl CapacityLedger {
@@ -312,6 +324,8 @@ impl CapacityLedger {
                 .collect(),
             roots: self.roots.clone(),
             registry: self.registry.clone(),
+            canonical_sessions: self.canonical_sessions.clone(),
+            candidate_receipts: self.candidate_receipts.clone(),
         }
     }
 
@@ -327,8 +341,49 @@ impl CapacityLedger {
             next_lease: snapshot.next_lease,
             roots: snapshot.roots,
             registry: snapshot.registry,
+            canonical_sessions: snapshot.canonical_sessions,
+            candidate_receipts: snapshot.candidate_receipts,
             ..Self::default()
         };
+        if ledger.canonical_sessions.len() > MAX_ROOTS
+            || ledger.candidate_receipts.len() > MAX_CANDIDATE_RECEIPTS
+            || ledger.canonical_sessions.iter().any(|(session_id, record)| {
+                !canonical::validate_identity(session_id)
+                    || !valid_identity(&record.root_id)
+                    || record.revision == 0
+                    || record.digest.len() != 64
+                    || !record.digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    || record.previous_revision.is_some_and(|previous| {
+                        previous == 0 || previous >= record.revision
+                    })
+            })
+            || ledger.candidate_receipts.iter().any(|(commit_id, receipt)| {
+                commit_id != &receipt.commit_id
+                    || !valid_identity(commit_id)
+                    || !canonical::validate_identity(&receipt.session_id)
+                    || !valid_identity(&receipt.root_id)
+                    || receipt.canonical_revision != receipt.expected_canonical_revision.saturating_add(1)
+                    || receipt.digest.len() != 64
+                    || receipt.request_fingerprint.len() != 64
+            })
+        {
+            return Err(StoreError::Corrupt);
+        }
+        for receipt in ledger.candidate_receipts.values() {
+            let Some(session) = ledger.canonical_sessions.get(&receipt.session_id) else {
+                return Err(StoreError::Corrupt);
+            };
+            let Some(root) = ledger.roots.get(&receipt.root_id) else {
+                return Err(StoreError::Corrupt);
+            };
+            if session.root_id != receipt.root_id
+                || root.session_id() != Some(receipt.session_id.as_str())
+                || receipt.root_revision > root.revision()
+                || receipt.contract_revision > root.contract_revision()
+            {
+                return Err(StoreError::Corrupt);
+            }
+        }
         if ledger.roots.len() > MAX_ROOTS
             || ledger
                 .roots
@@ -499,6 +554,8 @@ struct LedgerSnapshot {
     request_ids: BTreeMap<String, u64>,
     roots: BTreeMap<String, RootTask>,
     registry: RegistryState,
+    canonical_sessions: BTreeMap<String, CanonicalSessionRecord>,
+    candidate_receipts: BTreeMap<String, CandidateCommitReceipt>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -638,6 +695,11 @@ enum ActorCommand {
         fence: ExecutionFence,
         reply: SyncSender<Result<(), ControlError>>,
     },
+    CommitCandidate {
+        request: CandidateCommitRequest,
+        in_flight: Arc<std::sync::atomic::AtomicBool>,
+        reply: SyncSender<Result<CandidateCommitReceipt, ControlError>>,
+    },
     CreateProject {
         id: String,
         name: String,
@@ -697,6 +759,7 @@ enum ActorCommand {
 pub struct ControlHandle {
     commands: SyncSender<ActorCommand>,
     response_timeout: Duration,
+    candidate_in_flight: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl ControlHandle {
@@ -764,6 +827,7 @@ impl ControlHandle {
     ) -> Result<RootTask, ControlError> {
         self.create_root_with_budget(RootCreate {
             id,
+            session_id: None,
             goal,
             criteria,
             run_limit,
@@ -996,6 +1060,33 @@ impl ControlHandle {
             .map_err(response_error)?
     }
 
+    /// Persists an opaque canonical candidate only when the task and canonical
+    /// revisions still match. Replays return the durable receipt, never replay bytes.
+    pub fn commit_candidate(
+        &self,
+        request: CandidateCommitRequest,
+    ) -> Result<CandidateCommitReceipt, ControlError> {
+        if self
+            .candidate_in_flight
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
+        {
+            return Err(ControlError::QueueFull);
+        }
+        let (reply, response) = sync_channel(1);
+        if let Err(error) = self.commands.try_send(ActorCommand::CommitCandidate {
+            request,
+            in_flight: self.candidate_in_flight.clone(),
+            reply,
+        }) {
+            self.candidate_in_flight.store(false, Ordering::Release);
+            return Err(queue_error(error));
+        }
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
     pub fn create_project(&self, id: String, name: String) -> Result<ProjectRecord, ControlError> {
         let (reply, response) = sync_channel(1);
         self.commands
@@ -1200,15 +1291,18 @@ impl ControlActor {
         if recovered {
             store.persist(&ledger, &profile)?;
         }
+        let canonical_content = CanonicalContentStore::open(data_dir, &ledger.canonical_sessions)
+            .map_err(canonical_store_error)?;
         let (commands, receiver) = sync_channel(queue_capacity);
         let join = thread::Builder::new()
             .name("vak-control".into())
-            .spawn(move || actor_loop(receiver, &mut store, profile, ledger, workspace_admission))
+            .spawn(move || actor_loop(receiver, &mut store, profile, ledger, workspace_admission, canonical_content))
             .map_err(store_io)?;
         Ok(Self {
             handle: ControlHandle {
                 commands,
                 response_timeout,
+                candidate_in_flight: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             },
             join: Some(join),
         })
@@ -1228,12 +1322,141 @@ impl Drop for ControlActor {
     }
 }
 
+fn commit_candidate(
+    store: &mut ControlStore,
+    profile: &CapacityProfile,
+    ledger: &mut CapacityLedger,
+    canonical_content: &mut CanonicalContentStore,
+    request: CandidateCommitRequest,
+) -> Result<CandidateCommitReceipt, ControlError> {
+    request.validate().map_err(|error| match error {
+        canonical::CanonicalStoreError::InvalidIdentity => {
+            ControlError::Admission(AdmissionError::InvalidIdentity)
+        }
+        canonical::CanonicalStoreError::InvalidCandidate => {
+            ControlError::Admission(AdmissionError::InvalidCandidate)
+        }
+        canonical::CanonicalStoreError::TooLarge => ControlError::Store(StoreError::TooLarge),
+        other => ControlError::Store(canonical_store_error(other)),
+    })?;
+    let request_fingerprint = request.fingerprint();
+    if let Some(receipt) = ledger.candidate_receipts.get(&request.commit_id) {
+        return if receipt.request_fingerprint == request_fingerprint {
+            Ok(receipt.clone())
+        } else {
+            Err(ControlError::Admission(
+                AdmissionError::CandidateIdentityConflict,
+            ))
+        };
+    }
+    if ledger.candidate_receipts.len() >= MAX_CANDIDATE_RECEIPTS {
+        return Err(ControlError::Admission(
+            AdmissionError::CandidateCommitLedgerFull,
+        ));
+    }
+    let Some(root) = ledger.roots.get(request.fence.root_id()) else {
+        return Err(ControlError::Admission(AdmissionError::RootNotFound));
+    };
+    if root.session_id() != Some(request.session_id.as_str()) {
+        return Err(ControlError::Admission(AdmissionError::CandidateSessionMismatch));
+    }
+    if root.status() != RootStatus::Running {
+        return Err(ControlError::TaskState(StateError::InvalidTransition(
+            root.status(),
+        )));
+    }
+    if root.revision() != request.fence.root_revision()
+        || root.contract_revision() != request.fence.contract_revision()
+        || root.cancellation_epoch() != request.fence.cancellation_epoch()
+    {
+        return Err(ControlError::TaskState(StateError::ExecutionFenceStale));
+    }
+    if root
+        .workspace_grant()
+        .is_some_and(|grant| !ledger.workspace_grant_is_current(grant))
+    {
+        return Err(ControlError::TaskState(StateError::WorkspaceGrantStale));
+    }
+    let prior = ledger.canonical_sessions.get(&request.session_id);
+    if prior.is_some_and(|record| record.root_id != request.fence.root_id()) {
+        return Err(ControlError::Admission(AdmissionError::CanonicalSessionOwned));
+    }
+    let current_revision = prior.map_or(0, |record| record.revision);
+    if current_revision != request.expected_canonical_revision {
+        return Err(ControlError::Admission(
+            AdmissionError::CanonicalRevisionConflict,
+        ));
+    }
+    if prior.is_none() && ledger.canonical_sessions.len() >= MAX_ROOTS {
+        return Err(ControlError::Admission(AdmissionError::RootLedgerFull));
+    }
+    let canonical_revision = current_revision
+        .checked_add(1)
+        .ok_or(ControlError::Store(StoreError::Corrupt))?;
+    let digest = canonical::digest(&request.candidate_bytes);
+    let persisted_digest = canonical_content
+        .write_candidate(
+            &request.session_id,
+            canonical_revision,
+            &request.candidate_bytes,
+        )
+        .map_err(|error| ControlError::Store(canonical_store_error(error)))?;
+    if persisted_digest != digest {
+        return Err(ControlError::Store(StoreError::Corrupt));
+    }
+    let root_revision = root.revision();
+    let record = CanonicalSessionRecord {
+        root_id: request.fence.root_id().to_owned(),
+        revision: canonical_revision,
+        previous_revision: prior.map(|record| record.revision),
+        digest: digest.clone(),
+    };
+    let receipt = CandidateCommitReceipt {
+        commit_id: request.commit_id.clone(),
+        session_id: request.session_id.clone(),
+        root_id: request.fence.root_id().to_owned(),
+        root_revision,
+        contract_revision: request.fence.contract_revision(),
+        cancellation_epoch: request.fence.cancellation_epoch(),
+        expected_canonical_revision: current_revision,
+        canonical_revision,
+        digest,
+        request_fingerprint,
+    };
+    let mut candidate = ledger.clone();
+    candidate
+        .canonical_sessions
+        .insert(request.session_id, record);
+    candidate
+        .candidate_receipts
+        .insert(request.commit_id, receipt.clone());
+    store.persist(&candidate, profile).map_err(ControlError::Store)?;
+    *ledger = candidate;
+    canonical_content
+        .cleanup(&ledger.canonical_sessions)
+        .map_err(|error| ControlError::Store(canonical_store_error(error)))?;
+    Ok(receipt)
+}
+
+fn canonical_store_error(error: canonical::CanonicalStoreError) -> StoreError {
+    match error {
+        canonical::CanonicalStoreError::TooLarge => StoreError::TooLarge,
+        canonical::CanonicalStoreError::UnsupportedDurability => StoreError::UnsupportedDurability,
+        canonical::CanonicalStoreError::Io(message) => StoreError::Io(message),
+        canonical::CanonicalStoreError::InvalidIdentity
+        | canonical::CanonicalStoreError::InvalidCandidate
+        | canonical::CanonicalStoreError::Conflict
+        | canonical::CanonicalStoreError::Corrupt => StoreError::Corrupt,
+    }
+}
+
 fn actor_loop(
     receiver: Receiver<ActorCommand>,
     store: &mut ControlStore,
     profile: CapacityProfile,
     mut ledger: CapacityLedger,
     workspace_admission: WorkspaceAdmissionPolicy,
+    mut canonical_content: CanonicalContentStore,
 ) {
     while let Ok(command) = receiver.recv() {
         match command {
@@ -1296,10 +1519,17 @@ fn actor_loop(
                 }
             }
             ActorCommand::CreateRoot {
-                request,
+                mut request,
                 workspace_binding,
                 reply,
             } => {
+                if let Some((session_id, _)) = workspace_binding.as_ref() {
+                    if request.session_id.as_deref().is_some_and(|bound| bound != session_id) {
+                        let _ = reply.send(Err(ControlError::Admission(AdmissionError::CandidateSessionMismatch)));
+                        continue;
+                    }
+                    request.session_id = Some(session_id.clone());
+                }
                 let id = request.id.clone();
                 if let Some(existing) = ledger.roots.get(&id) {
                     let scope_matches =
@@ -1308,6 +1538,7 @@ fn actor_loop(
                             (Some((session_id, revision)), Some(grant)) => {
                                 grant.session_id == *session_id
                                     && grant.binding_revision == *revision
+                                    && request.session_id.as_deref() == Some(session_id.as_str())
                             }
                             _ => false,
                         };
@@ -1909,6 +2140,25 @@ fn actor_loop(
                     Some(_) => Ok(()),
                 };
                 let _ = reply.send(result);
+            }
+            ActorCommand::CommitCandidate {
+                request,
+                in_flight,
+                reply,
+            } => {
+                let result = commit_candidate(
+                    store,
+                    &profile,
+                    &mut ledger,
+                    &mut canonical_content,
+                    request,
+                );
+                let fatal = matches!(result, Err(ControlError::Store(_)));
+                in_flight.store(false, Ordering::Release);
+                let _ = reply.send(result);
+                if fatal {
+                    break;
+                }
             }
             ActorCommand::CreateProject { id, name, reply } => {
                 let project = match ProjectRecord::new(id, name) {
@@ -2582,6 +2832,7 @@ mod tests {
         let queued = handle
             .create_root_with_budget(RootCreate {
                 id: "task-budget".into(),
+                session_id: None,
                 goal: "Complete the requested work".into(),
                 criteria: "Preserve the original acceptance criteria".into(),
                 run_limit: 2,
@@ -2647,6 +2898,88 @@ mod tests {
     }
 
     #[test]
+    fn candidate_commit_is_fenced_idempotent_and_selected_before_ack() {
+        let data = temp_data_dir();
+        let profile = profile();
+        let timeout = Duration::from_secs(2);
+        let actor = ControlActor::open(&data, "profile-1", profile.clone(), 8, timeout).unwrap();
+        let handle = actor.handle();
+        let queued = handle
+            .create_root_with_budget(RootCreate {
+                id: "task-candidate".into(),
+                session_id: Some("session-candidate".into()),
+                goal: "Prepare a verified candidate".into(),
+                criteria: "Keep the exact candidate under native revision control".into(),
+                run_limit: 2,
+                budget_limits: BudgetLimits::new(2, 2).unwrap(),
+                requirements: vec![Requirement::new("outcome".into(), true).unwrap()],
+                delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0).unwrap(),
+            })
+            .unwrap();
+        let running = handle
+            .mutate_root(
+                queued.id().into(),
+                queued.revision(),
+                RootMutation::StartAttempt,
+            )
+            .unwrap();
+        let first_bytes = br#"{"session":"session-candidate","surfaces":[{"id":"main","version":1}]}"#.to_vec();
+        let first = CandidateCommitRequest {
+            session_id: "session-candidate".into(),
+            commit_id: "commit-candidate-1".into(),
+            fence: running.execution_fence(),
+            expected_canonical_revision: 0,
+            candidate_bytes: first_bytes.clone(),
+        };
+        let mut wrong_session = first.clone();
+        wrong_session.session_id = "another-session".into();
+        assert_eq!(
+            handle.commit_candidate(wrong_session),
+            Err(ControlError::Admission(AdmissionError::CandidateSessionMismatch))
+        );
+        let receipt = handle.commit_candidate(first.clone()).unwrap();
+        assert_eq!(receipt.canonical_revision, 1);
+        assert_eq!(receipt.root_revision, running.revision());
+        assert_eq!(fs::read(data.join("content/sessions/session-candidate/generation-00000000000000000001.json")).unwrap(), first_bytes);
+        assert_eq!(handle.commit_candidate(first.clone()).unwrap(), receipt);
+
+        let mut conflicting = first.clone();
+        conflicting.candidate_bytes = br#"{"session":"different"}"#.to_vec();
+        assert_eq!(
+            handle.commit_candidate(conflicting),
+            Err(ControlError::Admission(AdmissionError::CandidateIdentityConflict))
+        );
+        let second = CandidateCommitRequest {
+            session_id: "session-candidate".into(),
+            commit_id: "commit-candidate-2".into(),
+            fence: running.execution_fence(),
+            expected_canonical_revision: 1,
+            candidate_bytes: br#"{"session":"session-candidate","surfaces":[{"id":"main","version":2}]}"#.to_vec(),
+        };
+        let second_receipt = handle.commit_candidate(second).unwrap();
+        assert_eq!(second_receipt.canonical_revision, 2);
+        assert!(data.join("content/sessions/session-candidate/generation-00000000000000000001.json").exists());
+        assert!(data.join("content/sessions/session-candidate/generation-00000000000000000002.json").exists());
+        assert_eq!(
+            handle.commit_candidate(CandidateCommitRequest {
+                session_id: "session-candidate".into(),
+                commit_id: "commit-candidate-stale".into(),
+                fence: running.execution_fence(),
+                expected_canonical_revision: 0,
+                candidate_bytes: br#"{"stale":true}"#.to_vec(),
+            }),
+            Err(ControlError::Admission(AdmissionError::CanonicalRevisionConflict))
+        );
+        drop(handle);
+        drop(actor);
+
+        let recovered = ControlActor::open(&data, "profile-1", profile, 8, timeout).unwrap();
+        assert_eq!(recovered.handle().commit_candidate(first).unwrap(), receipt);
+        drop(recovered);
+        fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
     fn native_root_creation_retries_across_recovery_without_accepting_conflicts() {
         let data = temp_data_dir();
         let timeout = Duration::from_secs(2);
@@ -2656,6 +2989,7 @@ mod tests {
         let handle = actor.handle();
         let request = RootCreate {
             id: "task-create-retry".into(),
+            session_id: None,
             goal: "Recover task creation safely".into(),
             criteria: "Return the original durable task".into(),
             run_limit: 2,
@@ -2733,6 +3067,7 @@ mod tests {
         let queued = handle
             .create_root_with_budget(RootCreate {
                 id: "task-budget-race".into(),
+                session_id: None,
                 goal: "Finish the bounded operation".into(),
                 criteria: "Do not exceed the model-call limit".into(),
                 run_limit: 1,
@@ -2843,6 +3178,7 @@ mod tests {
             .create_root_in_workspace(
                 RootCreate {
                     id: id.into(),
+                    session_id: None,
                     goal: "Inspect the fixed workspace".into(),
                     criteria: "Return supported findings".into(),
                     run_limit: 2,
@@ -3992,6 +4328,7 @@ mod tests {
             .create_root_in_workspace(
                 RootCreate {
                     id: "task-fixed-scope".into(),
+                    session_id: None,
                     goal: "Inspect the selected workspace".into(),
                     criteria: "Return traceable findings".into(),
                     run_limit: 2,
@@ -4019,6 +4356,7 @@ mod tests {
             handle.create_root_in_workspace(
                 RootCreate {
                     id: "task-revoked-scope".into(),
+                    session_id: None,
                     goal: "Inspect the selected workspace".into(),
                     criteria: "Return traceable findings".into(),
                     run_limit: 2,

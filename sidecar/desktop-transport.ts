@@ -3,6 +3,7 @@
 import type { Readable, Writable } from "node:stream";
 import { randomUUID } from "node:crypto";
 import type { ProviderTransport, ProviderTransportContext } from "@vak/providers";
+import type { HostCandidateCommitRequest, HostCandidateCommitReceipt } from "@vak/host";
 import { DESKTOP_PROTOCOL } from "../shared/desktop-protocol.ts";
 export { DESKTOP_PROTOCOL };
 
@@ -27,7 +28,9 @@ const PROVIDER_OPERATIONS: Record<string, Map<string, string>> = {
 };
 type Pending = { controller: AbortController; ack?: () => void };
 type ControlHealth = { status: "ready" | "unavailable" | "overloaded" };
-type ControlPending = { resolve(value: ControlHealth): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
+type ControlResult = ControlHealth | { status: "committed"; receipt: HostCandidateCommitReceipt };
+type CandidateIdentity = { commitId: string; session: string; rootId: string; rootRevision: number; contractRevision: number; cancellationEpoch: number; expectedCanonicalRevision: number };
+type ControlPending = { kind: "health" | "candidate"; candidate?: CandidateIdentity; resolve(value: ControlResult): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 type ProviderPending = {
   resolve(response: Response): void;
   reject(error: Error): void;
@@ -42,7 +45,7 @@ type ProviderPending = {
   abort?: () => void;
 };
 
-export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth>; providerFetch: ProviderTransport } {
+export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth>; commitCandidate(candidate: HostCandidateCommitRequest): Promise<HostCandidateCommitReceipt>; providerFetch: ProviderTransport } {
   const active = new Map<string, Pending>();
   const controlPending = new Map<string, ControlPending>();
   const providerPending = new Map<string, ProviderPending>();
@@ -88,7 +91,7 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
         reject(new Error("Native control health request timed out"));
       }, 5000);
       timer.unref();
-      controlPending.set(id, { resolve, reject, timer });
+      controlPending.set(id, { kind: "health", resolve: (value) => resolve(value as ControlHealth), reject, timer });
       void send({ id, type: "control_request", operation: "health" }).catch((error: unknown) => {
         const pending = controlPending.get(id);
         if (!pending) return;
@@ -96,6 +99,53 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
         controlPending.delete(id);
         pending.reject(error instanceof Error ? error : new Error("Native control write failed"));
       });
+    });
+  }
+  function commitCandidate(candidate: HostCandidateCommitRequest): Promise<HostCandidateCommitReceipt> {
+    if (closed) return Promise.reject(new Error("Native control connection closed"));
+    if ([...controlPending.values()].some((pending) => pending.kind === "candidate")) return Promise.reject(new Error("Native candidate commit is already in flight"));
+    if (!/^[A-Za-z0-9_-]{1,120}$/.test(candidate.session) || !/^[A-Za-z0-9_-]{1,120}$/.test(candidate.commitId)
+      || !/^[A-Za-z0-9_-]{1,120}$/.test(candidate.fence.rootId)
+      || ![candidate.expectedCanonicalRevision, candidate.fence.rootRevision, candidate.fence.contractRevision, candidate.fence.cancellationEpoch].every((value) => Number.isSafeInteger(value) && value >= 0)) return Promise.reject(new Error("Native candidate identity or fence is invalid"));
+    if (Buffer.byteLength(JSON.stringify(candidate)) > 8 * 1024 * 1024) return Promise.reject(new Error("Native candidate exceeds the 8 MiB limit"));
+    const id = `ctl-${randomUUID()}`;
+    const operation = { candidate_commit: {
+      session_id: candidate.session,
+      commit_id: candidate.commitId,
+      fence: {
+        root_id: candidate.fence.rootId,
+        root_revision: candidate.fence.rootRevision,
+        contract_revision: candidate.fence.contractRevision,
+        cancellation_epoch: candidate.fence.cancellationEpoch,
+      },
+      expected_canonical_revision: candidate.expectedCanonicalRevision,
+      candidate: {
+        provider: candidate.provider, model: candidate.model, result: candidate.result,
+        reply: candidate.reply, baseVersions: candidate.baseVersions, surfaces: candidate.surfaces,
+      },
+    } };
+    return new Promise<ControlResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        controlPending.delete(id);
+        reject(new Error("Native candidate commit timed out; retry with the same commit identity"));
+      }, 30_000);
+      timer.unref();
+      controlPending.set(id, { kind: "candidate", candidate: {
+        commitId: candidate.commitId, session: candidate.session, rootId: candidate.fence.rootId,
+        rootRevision: candidate.fence.rootRevision, contractRevision: candidate.fence.contractRevision,
+        cancellationEpoch: candidate.fence.cancellationEpoch,
+        expectedCanonicalRevision: candidate.expectedCanonicalRevision,
+      }, resolve, reject, timer });
+      void send({ id, type: "control_request", operation }).catch((error: unknown) => {
+        const pending = controlPending.get(id);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        controlPending.delete(id);
+        pending.reject(error instanceof Error ? error : new Error("Native candidate commit write failed"));
+      });
+    }).then((result) => {
+      if (result.status !== "committed") throw new Error(`Native candidate commit ${result.status}`);
+      return result.receipt;
     });
   }
   const providerFetch: ProviderTransport = (provider, input, init = {}, context?: ProviderTransportContext) => {
@@ -236,12 +286,34 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
     const f = frame as Record<string, unknown>, id = f.id;
     if (f.v !== DESKTOP_PROTOCOL || typeof id !== "string" || !ID.test(id)) throw new Error("Incompatible desktop frame");
     if (f.type === "control_response") {
-      if (Object.keys(f).length !== 4 || !id.startsWith("ctl-") || !["ready", "unavailable", "overloaded"].includes(String(f.status))) throw new Error("Invalid native control response");
+      if (!id.startsWith("ctl-") || !["ready", "unavailable", "overloaded", "committed", "refused"].includes(String(f.status))) throw new Error("Invalid native control response");
       const pending = controlPending.get(id);
       if (pending) {
+        const expectedKeys = pending.kind === "health" ? ["v", "id", "type", "status"] : f.status === "committed" ? ["v", "id", "type", "status", "receipt"] : ["v", "id", "type", "status", "error"];
+        if (Object.keys(f).length !== expectedKeys.length || Object.keys(f).some((key) => !expectedKeys.includes(key))) throw new Error("Invalid native control response fields");
+        if (pending.kind === "health" && !["ready", "unavailable", "overloaded"].includes(String(f.status))) throw new Error("Unexpected native health response");
+        if (pending.kind === "candidate" && f.status === "committed") {
+          const receipt = f.receipt as Record<string, unknown> | null;
+          const identity = pending.candidate!;
+          const receiptKeys = ["commit_id", "session_id", "root_id", "root_revision", "contract_revision", "cancellation_epoch", "expected_canonical_revision", "canonical_revision", "digest", "request_fingerprint"];
+          if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)
+            || Object.keys(receipt).length !== receiptKeys.length || Object.keys(receipt).some((key) => !receiptKeys.includes(key))
+            || receipt.commit_id !== identity.commitId || receipt.session_id !== identity.session || receipt.root_id !== identity.rootId
+            || receipt.root_revision !== identity.rootRevision || receipt.contract_revision !== identity.contractRevision
+            || receipt.cancellation_epoch !== identity.cancellationEpoch || receipt.expected_canonical_revision !== identity.expectedCanonicalRevision
+            || receipt.canonical_revision !== identity.expectedCanonicalRevision + 1
+            || typeof receipt.digest !== "string" || !/^[a-f0-9]{64}$/.test(receipt.digest)
+            || typeof receipt.request_fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(receipt.request_fingerprint)) throw new Error("Invalid native candidate receipt");
+        } else if (pending.kind === "candidate" && (typeof f.error !== "string" || f.error.length > 128)) throw new Error("Invalid native candidate refusal");
         clearTimeout(pending.timer);
         controlPending.delete(id);
-        pending.resolve({ status: f.status as ControlHealth["status"] });
+        if (f.status === "committed") {
+          const receipt = f.receipt as { canonical_revision: number; root_revision: number };
+          pending.resolve({ status: "committed", receipt: { canonicalRevision: receipt.canonical_revision, rootRevision: receipt.root_revision } });
+        } else if (pending.kind === "candidate" && f.status === "refused") pending.reject(new Error(`Native candidate commit refused: ${String(f.error)}`));
+        else pending.resolve({ status: f.status as ControlHealth["status"] });
+      } else if (Object.keys(f).some((key) => !["v", "id", "type", "status", "receipt", "error"].includes(key))) {
+        throw new Error("Invalid late native control response");
       }
       return;
     }
@@ -351,5 +423,5 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
   input.on("end", close);
   input.on("error", (error) => { close(); failed(error); });
   output.on("error", (error) => { close(); failed(error); });
-  return { close, pingControl, providerFetch };
+  return { close, pingControl, commitCandidate, providerFetch };
 }

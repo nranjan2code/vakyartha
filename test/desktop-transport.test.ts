@@ -6,6 +6,7 @@ import { PassThrough } from "node:stream";
 import { Server } from "node:net";
 import { test } from "node:test";
 import { desktopTransport } from "../sidecar/desktop-transport.ts";
+import type { HostCandidateCommitRequest } from "@vak/host";
 import { DESKTOP_PROTOCOL } from "../shared/desktop-protocol.ts";
 import { startAppServer } from "../sidecar/server.ts";
 
@@ -80,6 +81,38 @@ test("native control health uses its own typed identity and bounded response", a
   assert.match(String(frames[0]!.id), /^ctl-[a-f0-9-]{36}$/);
   input.write(JSON.stringify({ v: DESKTOP_PROTOCOL, id: frames[0]!.id, type: "control_response", status: "ready" }) + "\n");
   assert.deepEqual(await pending, { status: "ready" });
+});
+
+test("native candidate commit sends only the fenced proposal and validates its durable receipt", async (t) => {
+  const input = new PassThrough(), output = new PassThrough();
+  const frames: Record<string, unknown>[] = [];
+  const bridge = desktopTransport(async () => new Response(null), "token", input, output, (error) => { throw error; });
+  t.after(() => bridge.close());
+  output.on("data", (chunk) => { frames.push(JSON.parse(String(chunk))); });
+  const candidate = {
+    candidateId: "d8998d68-f1a7-4498-839f-fb04ab231e8c", commitId: "commit_1",
+    session: "session_1", provider: "ollama", model: "qwen3.5:4b-mlx",
+    fence: { rootId: "root_1", rootRevision: 2, contractRevision: 3, cancellationEpoch: 1 },
+    expectedCanonicalRevision: 0,
+    result: { stop: "end", turns: 1 }, reply: "finished", baseVersions: [], surfaces: [],
+  } as HostCandidateCommitRequest;
+  const pending = bridge.commitCandidate(candidate);
+  for (let i = 0; i < 100 && !frames.length; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+  const request = frames[0]!;
+  assert.equal(request.type, "control_request");
+  assert.equal(String(request.id).startsWith("ctl-"), true);
+  assert.deepEqual(request.operation, { candidate_commit: {
+    session_id: "session_1", commit_id: "commit_1",
+    fence: { root_id: "root_1", root_revision: 2, contract_revision: 3, cancellation_epoch: 1 },
+    expected_canonical_revision: 0,
+    candidate: { provider: "ollama", model: "qwen3.5:4b-mlx", result: { stop: "end", turns: 1 }, reply: "finished", baseVersions: [], surfaces: [] },
+  } });
+  input.write(JSON.stringify({ v: DESKTOP_PROTOCOL, id: request.id, type: "control_response", status: "committed", receipt: {
+    commit_id: "commit_1", session_id: "session_1", root_id: "root_1", root_revision: 2,
+    contract_revision: 3, cancellation_epoch: 1, expected_canonical_revision: 0,
+    canonical_revision: 1, digest: "a".repeat(64), request_fingerprint: "b".repeat(64),
+  } }) + "\n");
+  assert.deepEqual(await pending, { canonicalRevision: 1, rootRevision: 2 });
 });
 
 test("native provider transport strips credentials and streams bounded response chunks", async (t) => {
