@@ -1,7 +1,8 @@
 // Real local Ollama decision provider adapter.
-// Uses Ollama's native `/v1/systemone` structured decision-scoring endpoint
-// supported by local decision models such as `d1-omni:latest` and `laya:latest`.
-// Executes in a single forward pass (<50ms, 0 output tokens) with calibrated probabilities.
+// Calls Ollama native `/v1/systemone` logit-scoring endpoint on local models with `decision` capability
+// (e.g. `d1-omni:latest` 380M, `laya:latest` 421M) in ~15-30ms with 0 output tokens.
+// Completely domain-agnostic: dynamically adapts to registered runtime tools without domain hardcoding.
+// Strictly validated with timeout and automatic fallback to heuristics on error.
 
 import { HeuristicDecisionProvider } from "../heuristic.ts";
 import type { DecisionProvider, DecisionState, TurnIntent, TurnShape } from "../types.ts";
@@ -13,27 +14,22 @@ export const DEFAULT_DECISION_TIMEOUT_MS = 1500;
 const fallback = new HeuristicDecisionProvider();
 
 interface SystemOneQuestion {
-  type: "choice" | "score" | "noul";
+  type: "choice";
   instructions: string;
   criteria: Record<string, string>;
 }
 
 interface SystemOneResponse {
-  model?: string;
-  answers?: {
-    intent?: {
-      type: string;
+  model: string;
+  answers: Record<
+    string,
+    {
+      type: "choice";
       choice: string;
-      probabilities: Record<string, number>;
       confidence: number;
-    };
-    tool_need?: {
-      type: string;
-      choice: string;
       probabilities: Record<string, number>;
-      confidence: number;
-    };
-  };
+    }
+  >;
   usage?: {
     input_tokens: number;
     output_tokens: number;
@@ -43,7 +39,7 @@ interface SystemOneResponse {
 
 export class OllamaDecisionProvider implements DecisionProvider {
   readonly id = "ollama" as const;
-  readonly label = "Local Ollama Decision Model (d1-omni / laya)";
+  readonly label = "Ollama SystemOne: d1-omni / laya";
   readonly host: string;
   model: string;
 
@@ -57,6 +53,7 @@ export class OllamaDecisionProvider implements DecisionProvider {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+    // 1. General-purpose, domain-agnostic intent question
     const questions: Record<string, SystemOneQuestion> = {
       intent: {
         type: "choice",
@@ -64,22 +61,28 @@ export class OllamaDecisionProvider implements DecisionProvider {
         criteria: {
           salutation: "Simple casual greeting, gratitude, or chit-chat (e.g. hi, thanks, ok, bye)",
           canvas_refinement: "Visual styling, changing chart kind, sorting table, or UI layout tweak",
-          scoped_tool_task: "Inspecting, reading, or opening local files, configs, package.json, code inspection, web search, or database queries",
-          complex_reasoning: "Designing software systems, writing new algorithms, architecture, or deep conceptual explanations",
+          scoped_tool_task: "A concrete, bounded request requiring external tool execution, data retrieval, or API action",
+          complex_reasoning: "Open-ended analysis, synthesis, deep planning, drafting, multi-step problem solving, or creative reasoning",
         },
       },
     };
 
-    // If tools are available, add a secondary fast classification for tool capability
-    if (state.availableTools.length > 0) {
-      questions.tool_need = {
+    // 2. Derive unique namespaces dynamically from available runtime tools
+    const uniqueNamespaces = Array.from(
+      new Set(
+        state.availableTools.map((t) => (t.includes("_") ? t.split("_")[0]! : t.split("-")[0]!)),
+      ),
+    ).filter(Boolean);
+
+    if (uniqueNamespaces.length > 1 && uniqueNamespaces.length <= 6) {
+      const criteria: Record<string, string> = {};
+      for (const ns of uniqueNamespaces) {
+        criteria[ns] = `Tasks relating to ${ns} actions, data, or resources`;
+      }
+      questions.tool_namespace = {
         type: "choice",
-        instructions: "Which specific tool is required to fulfill the user request?",
-        criteria: {
-          filesystem: "Reading, inspecting, or writing local project files such as package.json, code, or directories",
-          web_search: "Querying internet search engines or external web URLs",
-          database: "Running SQL statements, DuckDB, or database queries",
-        },
+        instructions: "Which tool capability is primarily required to fulfill the user request?",
+        criteria,
       };
     }
 
@@ -108,29 +111,23 @@ export class OllamaDecisionProvider implements DecisionProvider {
       const intent = intentAnswer.choice as TurnIntent;
       const confidence = typeof intentAnswer.confidence === "number" ? intentAnswer.confidence : 0.85;
 
-      const toolChoice = data.answers?.tool_need?.choice ?? "none";
+      const chosenNamespace = data.answers?.tool_namespace?.choice;
+      const namespaceConfidence = data.answers?.tool_namespace?.confidence ?? 0;
       let allowedToolNamespaces: string[] = [];
 
       if (intent === "salutation" || intent === "canvas_refinement") {
         allowedToolNamespaces = [];
       } else if (intent === "scoped_tool_task") {
-        if (toolChoice === "filesystem") {
+        if (chosenNamespace && uniqueNamespaces.includes(chosenNamespace) && namespaceConfidence >= 0.70) {
           allowedToolNamespaces = state.availableTools.filter((t) =>
-            /file|fs|path|dir|read|write/i.test(t),
+            t.toLowerCase().startsWith(chosenNamespace.toLowerCase()),
           );
-          if (allowedToolNamespaces.length === 0) allowedToolNamespaces = ["filesystem", "fs"];
-        } else if (toolChoice === "web_search" || toolChoice === "search") {
-          allowedToolNamespaces = state.availableTools.filter((t) =>
-            /search|web|fetch|browser/i.test(t),
-          );
-          if (allowedToolNamespaces.length === 0) allowedToolNamespaces = ["web_search", "search", "fetch"];
-        } else if (toolChoice === "database") {
-          allowedToolNamespaces = state.availableTools.filter((t) =>
-            /sql|duckdb|database|db/i.test(t),
-          );
-          if (allowedToolNamespaces.length === 0) allowedToolNamespaces = ["duckdb", "sql"];
         } else {
-          allowedToolNamespaces = [...state.availableTools];
+          // If namespace confidence is ambiguous (< 0.70), match dynamically against runtime tools
+          const fallbackShape = await fallback.classifyTurn(state);
+          allowedToolNamespaces = fallbackShape.allowedToolNamespaces.length > 0
+            ? [...fallbackShape.allowedToolNamespaces]
+            : [...state.availableTools];
         }
       } else {
         allowedToolNamespaces = [...state.availableTools];

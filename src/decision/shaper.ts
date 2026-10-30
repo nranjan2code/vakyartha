@@ -12,7 +12,9 @@ import type { DecisionConfig, DecisionProvider, DecisionState, TurnShape } from 
 export interface ChatTurnPayload {
   message: string;
   history?: unknown[];
-  tools?: Array<{ name: string; description?: string; parameters?: unknown }>;
+  tools?: Array<{ name: string; namespace?: string; description?: string; parameters?: unknown }>;
+  skills?: Array<{ name: string; description?: string }>;
+  surfaces?: Array<{ id: string; title?: string; componentTypes: string[] }>;
   systemPrompt?: string;
   maxSteps?: number;
   toolRounds?: number;
@@ -121,8 +123,15 @@ export async function shapeTurn(
   const provider = getActiveDecisionProvider(config);
   const state: DecisionState = {
     message: payload.message,
-    activeSurfaceKind: payload.surfaceKind,
+    activeSurfaceKind: payload.surfaceKind ?? payload.surfaces?.[0]?.componentTypes?.[0],
+    activeSurfaces: payload.surfaces,
+    activeSkills: payload.skills,
     availableTools: originalTools.map((t) => t.name),
+    runtimeTools: originalTools.map((t) => ({
+      name: t.name,
+      namespace: t.namespace ?? (t.name.includes("_") ? t.name.split("_")[0]! : t.name.split("-")[0]!),
+      description: t.description,
+    })),
     currentProvider: payload.provider,
     currentModel: payload.model,
   };

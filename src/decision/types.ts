@@ -49,6 +49,23 @@ export interface TurnShape {
   readonly latencyMs?: number;
 }
 
+export interface RuntimeSurfaceSnapshot {
+  readonly id: string;
+  readonly title?: string;
+  readonly componentTypes: readonly string[];
+}
+
+export interface RuntimeSkillSnapshot {
+  readonly name: string;
+  readonly description?: string;
+}
+
+export interface RuntimeToolSnapshot {
+  readonly name: string;
+  readonly namespace: string;
+  readonly description?: string;
+}
+
 export interface DecisionState {
   /** The current user message */
   readonly message: string;
@@ -56,11 +73,20 @@ export interface DecisionState {
   /** Summary or content of the previous turn, if any */
   readonly lastTurnSummary?: string;
 
-  /** Active surface kind on canvas (e.g. "table", "chart", "form"), if any */
+  /** Active surface kind on canvas (legacy/shorthand), if any */
   readonly activeSurfaceKind?: string;
+
+  /** Active visual projections currently rendered on the canvas */
+  readonly activeSurfaces?: readonly RuntimeSurfaceSnapshot[];
+
+  /** Active enabled skills loaded in the session */
+  readonly activeSkills?: readonly RuntimeSkillSnapshot[];
 
   /** List of currently enabled tool names / identifiers in the workspace */
   readonly availableTools: readonly string[];
+
+  /** Detailed runtime snapshots of enabled MCP tools */
+  readonly runtimeTools?: readonly RuntimeToolSnapshot[];
 
   /** Currently selected primary model provider */
   readonly currentProvider?: string;

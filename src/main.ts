@@ -707,6 +707,59 @@ function updateSend(): void {
   send.disabled = !runningHere && ((!input.value.trim() && !attached.length) || !current.model);
 }
 
+interface RuntimeDiscoveryCache {
+  timestamp: number;
+  tools: Array<{ name: string; namespace: string; description?: string }>;
+  skills: Array<{ name: string; description?: string }>;
+}
+
+let runtimeDiscoveryCache: RuntimeDiscoveryCache | null = null;
+
+async function getRuntimeDiscovery(): Promise<{
+  tools: Array<{ name: string; namespace: string; description?: string }>;
+  skills: Array<{ name: string; description?: string }>;
+}> {
+  const now = Date.now();
+  if (runtimeDiscoveryCache && now - runtimeDiscoveryCache.timestamp < 5000) {
+    return runtimeDiscoveryCache;
+  }
+
+  try {
+    const [integrationsList, skillsList] = await Promise.all([
+      api<Array<{
+        enabled: boolean;
+        status: string;
+        entry: { id: string; name: string };
+        tools: Array<{ name: string; title?: string; description?: string; policy?: string }>;
+      }>>("/api/integrations").catch(() => []),
+      api<Array<{ name: string; description?: string; enabled: boolean }>>("/api/skills").catch(() => []),
+    ]);
+
+    const tools: Array<{ name: string; namespace: string; description?: string }> = [];
+    for (const integration of integrationsList || []) {
+      if (!integration.enabled || integration.status !== "ready") continue;
+      const namespace = integration.entry.id;
+      for (const tool of integration.tools || []) {
+        if (tool.policy === "off") continue;
+        tools.push({
+          name: `${namespace}__${tool.name}`,
+          namespace,
+          description: tool.description || tool.title,
+        });
+      }
+    }
+
+    const skills: Array<{ name: string; description?: string }> = (skillsList || [])
+      .filter((s) => s.enabled)
+      .map((s) => ({ name: s.name, description: s.description }));
+
+    runtimeDiscoveryCache = { timestamp: now, tools, skills };
+    return runtimeDiscoveryCache;
+  } catch {
+    return { tools: [], skills: [] };
+  }
+}
+
 async function runTurn(req: { message?: string; continue?: boolean; action?: VakActionDetail["action"] & { data: Record<string, unknown> } }): Promise<void> {
   if (isRunning(session)) {
     const note = newTurn("Wait for the current response, or stop it before starting another.");
@@ -811,10 +864,19 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
     try {
       const decisionCfg = getDecisionConfig();
       if (decisionCfg.enabled) {
-        const activeSurfaces = client.store.list().map((s) => s.id);
+        const liveSurfaces = client.store.list().map((s) => ({
+          id: s.id,
+          title: s.title,
+          componentTypes: Array.from(s.nodes.values()).map((n) => n.type),
+        }));
+        const { tools: runtimeTools, skills: runtimeSkills } = await getRuntimeDiscovery();
+
         const shaped = await shapeTurn({
           message: req.message,
-          surfaceKind: activeSurfaces[0],
+          surfaceKind: liveSurfaces[0]?.componentTypes[0] ?? liveSurfaces[0]?.id,
+          surfaces: liveSurfaces,
+          skills: runtimeSkills,
+          tools: runtimeTools,
           maxSteps: maxStepsLimit,
           toolRounds: toolRoundsLimit,
           provider,

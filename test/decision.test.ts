@@ -77,6 +77,23 @@ test("HeuristicDecisionProvider: classifies and prunes scoped tool tasks", async
   assert.equal(searchShape.intent, "scoped_tool_task");
   assert.ok(searchShape.allowedToolNamespaces.includes("web_search"));
   assert.ok(!searchShape.allowedToolNamespaces.includes("duckdb_query"));
+
+  // Domain-agnostic tests: Healthcare, CRM/Sales, and Travel/Weather
+  const healthcareShape = await provider.classifyTurn({
+    message: "fetch patient vitals and check drug interactions",
+    availableTools: ["patient_records_fetch", "drug_interaction_check", "accounting_ledger_query"],
+  });
+  assert.equal(healthcareShape.intent, "scoped_tool_task");
+  assert.ok(healthcareShape.allowedToolNamespaces.includes("patient_records_fetch"));
+  assert.ok(!healthcareShape.allowedToolNamespaces.includes("accounting_ledger_query"));
+
+  const crmShape = await provider.classifyTurn({
+    message: "send a notification on slack about customer renewal",
+    availableTools: ["slack_post_message", "salesforce_query", "github_create_pr"],
+  });
+  assert.equal(crmShape.intent, "scoped_tool_task");
+  assert.ok(crmShape.allowedToolNamespaces.includes("slack_post_message"));
+  assert.ok(!crmShape.allowedToolNamespaces.includes("github_create_pr"));
 });
 
 test("HeuristicDecisionProvider: preserves full context on complex reasoning tasks", async () => {
@@ -381,6 +398,65 @@ test("OpenAIDecisionProvider: live classification with OpenAI gpt-4o-mini struct
   assert.deepEqual(shape.allowedToolNamespaces, []);
   assert.ok(shape.confidence >= 0.85);
 });
+
+test("shapeTurn: dynamically consumes runtime surfaces, skills, and tools without domain hardcoding", async () => {
+  const dynamicTools = [
+    { name: "crm_salesforce__get_deal", namespace: "crm_salesforce", description: "Get CRM opportunity" },
+    { name: "slack__post_message", namespace: "slack", description: "Post to a channel" },
+    { name: "weather__forecast", namespace: "weather", description: "Check local weather forecast" },
+    { name: "duckdb__execute", namespace: "duckdb", description: "Run local analytical SQL" },
+  ];
+
+  const dynamicSkills = [
+    { name: "sales-triage", description: "Triage inbound customer deals" },
+    { name: "data-analytics", description: "Analyze tabular records" },
+  ];
+
+  const dynamicSurfaces = [
+    { id: "sales_dashboard", title: "Quarterly Deals", componentTypes: ["chart", "table"] },
+  ];
+
+  const config = {
+    ...getDecisionConfig(),
+    enabled: true,
+    providerId: "heuristic" as const,
+    stripSalutations: true,
+    optimizeContext: true,
+    pruneTools: true,
+  };
+
+  // 1. Dynamic canvas refinement detection from live surface snapshots
+  const canvasTurn = await shapeTurn(
+    {
+      message: "switch the chart to a donut and sort table by deal value",
+      surfaces: dynamicSurfaces,
+      skills: dynamicSkills,
+      tools: dynamicTools,
+    },
+    config,
+  );
+
+  assert.equal(canvasTurn.shape.intent, "canvas_refinement");
+  assert.equal(canvasTurn.shape.historyPolicy, "last_turn_only");
+  assert.equal(canvasTurn.payload.tools?.length, 0); // No external tools needed for canvas tweaks
+
+  // 2. Dynamic tool pruning for runtime-scoped task
+  const toolTurn = await shapeTurn(
+    {
+      message: "post a message on slack to announce the deal closed",
+      surfaces: dynamicSurfaces,
+      skills: dynamicSkills,
+      tools: dynamicTools,
+    },
+    config,
+  );
+
+  assert.equal(toolTurn.shape.intent, "scoped_tool_task");
+  assert.ok(toolTurn.payload.tools?.some((t) => t.name === "slack__post_message"));
+  assert.ok(!toolTurn.payload.tools?.some((t) => t.name === "weather__forecast"));
+  assert.ok(toolTurn.prunedToolCount > 0);
+});
+
 
 
 

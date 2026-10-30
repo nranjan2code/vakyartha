@@ -594,6 +594,7 @@ Accepted at the user's direction: separate System 1 decision scoring from System
    - `DecisionChainRunner` enables multi-stage decision pipelines with conditional branching (e.g. *Domain Triage $\rightarrow$ Operation Type $\rightarrow$ Security Risk Gate*) with composite confidence aggregation.
    - Built-in `decision-eval` skill enables running LLMs to delegate discrete criteria verification and security scoring to local System 1 decision models during complex agentic workflows.
 
-5. **Runtime Boundary & Settings:**
+5. **Runtime Boundary, Discovery & Dynamic Plug-in Contract:**
    - Pure TypeScript execution in `src/decision/` respecting the Rust Root of Trust. Rust continues to enforce egress and mutation approvals.
+   - **Zero Hardcoding & Full Domain Agnosticism:** Never hardcodes static domain or tool registries. MCP tools, procedures, and capabilities are discovered dynamically at runtime via `/api/integrations` (active tools where `enabled && status === 'ready'` and `policy !== 'off'`). Active skills are loaded dynamically from `/api/skills` (`enabled === true`). Active canvas visual projections are queried directly from the live `client.store.list()`. Works uniformly across any domain (Healthcare EHR, CRM/Sales, Financial Dashboards, Dev Tools, Customer Triage).
    - Managed via user preferences in Settings > Models (`decision:enabled`, `decision:provider`, `decision:model`, `decision:pruneTools`, `decision:stripSalutations`, `decision:optimizeContext`). Default is enabled with local Ollama `d1-omni:latest`. [Contract and architecture](DECISION-MODELS.md).

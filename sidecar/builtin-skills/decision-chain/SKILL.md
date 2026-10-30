@@ -128,6 +128,44 @@ const visualReportingChain = {
 };
 ```
 
+### Pipeline 3: Universal Customer Inquiry & Support Escalation Gate
+
+```typescript
+const supportTriageChain = {
+  name: "support_triage_pipeline",
+  steps: [
+    {
+      name: "intent",
+      instructions: "Classify the nature of the customer communication",
+      criteria: {
+        informational: "Product questions, business hours, documentation, or general FAQ",
+        transactional: "Order status, return request, subscription change, or billing inquiry",
+        complaint_or_outage: "Service disruption, damaged item, billing error, or severe dissatisfaction"
+      }
+    },
+    {
+      name: "financial_impact",
+      instructions: "Assess whether a refund or transaction modification is requested",
+      condition: (answers) => answers.intent?.choice === "transactional" || answers.intent?.choice === "complaint_or_outage",
+      criteria: {
+        zero_cost: "Status check, tracking number lookup, or self-service update",
+        sub_hundred: "Refund or credit under $100 within automatic policy limits",
+        high_value: "Disputed charge or adjustment over $100 requiring supervisory review"
+      }
+    },
+    {
+      name: "escalation_gate",
+      instructions: "Determine whether human agent takeover is required",
+      condition: (answers) => answers.financial_impact?.choice === "high_value" || answers.intent?.choice === "complaint_or_outage",
+      criteria: {
+        automated_resolution: "Issue matches standard automated policy and customer sentiment is calm",
+        human_handoff: "Severe distress, legal mention, or adjustment exceeds autonomous authority"
+      }
+    }
+  ]
+};
+```
+
 ## 5. Skill Chaining
 
 - **`decision-eval`**: The base skill providing single-step criteria formulation rules.

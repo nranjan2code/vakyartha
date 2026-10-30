@@ -1,6 +1,7 @@
 // Deterministic, zero-latency heuristic decision provider.
 // Executes in <1ms without network calls or token expenditure.
-// Serves as an ultra-fast path for obvious intents and an infallible fallback.
+// Completely domain-agnostic: matches intents linguistically and dynamically derives
+// tool requirements from whatever tools are active in the runtime.
 
 import type { DecisionProvider, DecisionState, TurnIntent, TurnShape } from "./types.ts";
 
@@ -13,25 +14,89 @@ const SALUTATION_PATTERNS = [
 ];
 
 const CANVAS_REFINEMENT_PATTERNS = [
-  /\b(?:make|change|turn|switch|set)\s+(?:the\s+|it\s+)?(?:color|theme|view|chart|graph|table|background|font)\b/i,
+  /\b(?:make|change|turn|switch|set)\s+(?:the\s+|it\s+)?(?:color|theme|view|chart|graph|table|background|font|layout)\b/i,
   /\b(?:sort\s+by|filter\s+by|group\s+by|show\s+(?:more|fewer|less)\s+rows)\b/i,
-  /\b(?:chart\s+to|change\s+to\s+(?:bar|pie|line|scatter|table|donut))\b/i,
-  /\b(?:refresh\s+data|clear\s+canvas|reset\s+view|highlight\s+row)\b/i,
+  /\b(?:chart\s+to|change\s+to\s+(?:bar|pie|line|scatter|table|donut|area|candlestick))\b/i,
+  /\b(?:refresh\s+data|clear\s+canvas|reset\s+view|highlight\s+row|update\s+surface)\b/i,
 ];
 
-const FILE_TOOL_PATTERNS = [
-  /\b(?:read|open|show|inspect|cat|tail|view|find)\s+(?:file|directory|folder|path|code|logs?|readme|package\.json)\b/i,
-  /\b\w+\.(?:ts|js|json|md|rs|toml|yaml|yml|css|html|csv|sql|py)\b/i,
-];
+const COMMON_TOOL_STEMS: Record<string, string[]> = {
+  filesystem: ["file", "files", "dir", "folder", "path", "read", "write", "open", "json", "ts", "js", "code", "inspect"],
+  fs: ["file", "files", "dir", "folder", "path", "read", "write", "open"],
+  search: ["web", "google", "online", "browse", "lookup", "url", "fetch", "internet"],
+  web: ["search", "google", "online", "browse", "fetch", "url", "http", "internet"],
+  db: ["sql", "query", "database", "table", "duckdb", "select"],
+  duckdb: ["sql", "query", "database", "table", "select"],
+  sql: ["query", "database", "table", "db", "select"],
+  mail: ["email", "send", "message", "inbox"],
+  email: ["mail", "send", "message", "inbox"],
+  slack: ["channel", "message", "chat", "post"],
+  jira: ["issue", "ticket", "task", "bug"],
+  linear: ["issue", "ticket", "task", "bug"],
+  gcal: ["calendar", "event", "meeting", "schedule"],
+  calendar: ["event", "meeting", "schedule", "gcal"],
+  weather: ["forecast", "temperature", "rain", "sunny", "climate"],
+  patient: ["vitals", "health", "ehr", "medical", "doctor", "drug"],
+  drug: ["interaction", "medicine", "pharmacy", "prescription"],
+};
 
-const SEARCH_TOOL_PATTERNS = [
-  /\b(?:search\s+for|search\s+the\s+web|google|lookup|look\s+up|find\s+online|browse)\b/i,
-  /\b(?:latest\s+news|stock\s+price|documentation\s+for|weather\s+in)\b/i,
-];
+/**
+ * Dynamically matches tools from availableTools against user prompt tokens.
+ * Completely domain-agnostic: derives semantic tokens from tool names, namespaces,
+ * and standard semantic stems without hardcoding rigid domain routing.
+ */
+function matchDynamicTools(prompt: string, availableTools: readonly string[]): string[] {
+  if (availableTools.length === 0) return [];
 
-const DB_TOOL_PATTERNS = [
-  /\b(?:query|sql|select\s+.*from|duckdb|database|tables?|schema)\b/i,
-];
+  const lowerPrompt = prompt.toLowerCase();
+  const promptWords = new Set(
+    lowerPrompt
+      .replace(/[^a-z0-9_\-\s.]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length >= 2),
+  );
+
+  const matched = new Set<string>();
+
+  for (const tool of availableTools) {
+    const lowerTool = tool.toLowerCase();
+    const toolTokens = lowerTool
+      .replace(/[^a-z0-9]/g, " ")
+      .split(/\s+/)
+      .filter((t) => t.length >= 2);
+
+    // 1. Direct tool name substring match in prompt
+    if (lowerPrompt.includes(lowerTool)) {
+      matched.add(tool);
+      continue;
+    }
+
+    // 2. Token overlap with prompt words (including singular/plural variations)
+    let hasOverlap = toolTokens.some((tok) => {
+      if (promptWords.has(tok)) return true;
+      if (tok.endsWith("s") && promptWords.has(tok.slice(0, -1))) return true;
+      if (!tok.endsWith("s") && promptWords.has(`${tok}s`)) return true;
+      return false;
+    });
+
+    // 3. Match via standard semantic stems
+    if (!hasOverlap) {
+      for (const tok of toolTokens) {
+        const stems = COMMON_TOOL_STEMS[tok];
+        if (stems && stems.some((stem) => promptWords.has(stem) || lowerPrompt.includes(stem))) {
+          hasOverlap = true;
+          break;
+        }
+      }
+    }
+
+    if (hasOverlap) {
+      matched.add(tool);
+    }
+  }
+
+  return Array.from(matched);
+}
 
 export class HeuristicDecisionProvider implements DecisionProvider {
   readonly id = "heuristic" as const;
@@ -41,7 +106,7 @@ export class HeuristicDecisionProvider implements DecisionProvider {
     const start = performance.now();
     const text = state.message.trim();
 
-    // 1. Check for salutations and casual banter
+    // 1. Salutations and casual conversational banter (domain-agnostic)
     if (SALUTATION_PATTERNS.some((pat) => pat.test(text))) {
       return {
         intent: "salutation",
@@ -57,7 +122,7 @@ export class HeuristicDecisionProvider implements DecisionProvider {
       };
     }
 
-    // 2. Check for canvas / surface visual refinement
+    // 2. Active canvas visual refinement (domain-agnostic UI adjustment)
     if (state.activeSurfaceKind && CANVAS_REFINEMENT_PATTERNS.some((pat) => pat.test(text))) {
       return {
         intent: "canvas_refinement",
@@ -73,50 +138,35 @@ export class HeuristicDecisionProvider implements DecisionProvider {
       };
     }
 
-    // 3. Check for specific tool task categories
-    const matchingToolNamespaces: string[] = [];
+    // 3. Dynamic tool task matching against registered tools
+    const matchedTools = matchDynamicTools(text, state.availableTools);
 
-    if (FILE_TOOL_PATTERNS.some((pat) => pat.test(text))) {
-      matchingToolNamespaces.push("filesystem", "files", "fs");
-    }
-    if (SEARCH_TOOL_PATTERNS.some((pat) => pat.test(text))) {
-      matchingToolNamespaces.push("search", "fetch", "web", "browser");
-    }
-    if (DB_TOOL_PATTERNS.some((pat) => pat.test(text))) {
-      matchingToolNamespaces.push("duckdb", "db", "sql", "database");
-    }
-
-    if (matchingToolNamespaces.length > 0) {
-      // Intersect with available tools
-      const filtered = state.availableTools.filter((t) =>
-        matchingToolNamespaces.some((ns) => t.toLowerCase().includes(ns)),
-      );
-
+    if (matchedTools.length > 0) {
       return {
         intent: "scoped_tool_task",
         confidence: 0.88,
         historyPolicy: "recent_window",
-        allowedToolNamespaces: filtered.length > 0 ? filtered : matchingToolNamespaces,
+        allowedToolNamespaces: matchedTools,
         includeSurfaceGrammar: true,
         stepLimit: 6,
-        toolBudget: 4,
+        toolBudget: Math.min(4, matchedTools.length + 1),
         suggestedTier: "primary",
-        reason: `Matched specialized tool keywords (${matchingToolNamespaces.join(", ")}); pruned unrelated tools.`,
+        reason: `Dynamically matched ${matchedTools.length} relevant tool(s) from user prompt.`,
         latencyMs: Math.round((performance.now() - start) * 100) / 100,
       };
     }
 
-    // 4. Default: complex reasoning or general task
+    // 4. Default: Complex reasoning, open-ended generative task, or full capability
     return {
       intent: "complex_reasoning",
-      confidence: 0.75,
+      confidence: 0.8,
       historyPolicy: "full",
-      allowedToolNamespaces: state.availableTools,
+      allowedToolNamespaces: [...state.availableTools],
       includeSurfaceGrammar: true,
       stepLimit: 12,
       toolBudget: 8,
       suggestedTier: "primary",
-      reason: "General or multi-step reasoning task; preserved standard context and tool catalog.",
+      reason: "General or complex task; preserved full context and registered tools.",
       latencyMs: Math.round((performance.now() - start) * 100) / 100,
     };
   }

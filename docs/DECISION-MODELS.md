@@ -162,6 +162,30 @@ Controls are exposed under **Settings > Models > Decision & Turn Optimization** 
 
 ---
 
-## 9. Real Multi-Turn Benchmark & Empirical Evaluation
+## 10. Dynamic Runtime Discovery & Domain Agnosticism
+
+Vakyartha is an open, general-purpose agentic system. The Decision Engine is strictly **domain-agnostic** and operates with **zero hardcoded tool lists, file patterns, or domain routes**.
+
+### 1. Dynamic Discovery at Turn Initialization
+Before every turn in `src/main.ts#runTurn`, the system captures the live state of the workspace:
+1. **Active MCP Integrations & Tools (`/api/integrations`):** Discovers all servers where `i.enabled && i.status === "ready"`. Collects active tools whose policy is not `"off"`, noting their namespace (`<server>__<tool>`), human title, and schema summary.
+2. **Active Skills (`/api/skills`):** Discovers all enabled built-in or user-authored procedural skills (`s.enabled === true`), including their procedure instructions.
+3. **Active Canvas Projections (`client.store.list()`):** Snapshots all active `<vak-surface>` elements on screen, their titles, and their active component types (`table`, `chart`, `form`, `stat`, `section`).
+
+### 2. Universal Domain Adaptability
+Because decisions are evaluated against runtime-discovered capabilities rather than hardcoded domain lists, the system seamlessly routes and prunes across any domain:
+- **Financial Dashboards:** Recognizes stock tickers, price quotes, analytical DuckDB queries, and financial chart components.
+- **Healthcare & Clinical Operations:** Evaluates EHR queries, patient vital lookups, drug interaction checks, and medical record tables.
+- **CRM & Sales Operations:** Routes pipeline opportunities, contact updates, deal values, and Slack/email team notifications.
+- **Customer Support & Triage:** Chains multi-step escalation, priority scoring, refund thresholds, and human-handoff gates.
+- **Software Engineering & Data Analysis:** Operates across Git, local file systems, unit tests, and analytical SQL.
+
+### 3. Dynamic Tool Stemming & Semantic Intersection
+On scoped tool tasks, the engine intersects the user prompt against the names, namespaces, and descriptions of currently enabled tools. Unrelated tools are pruned from the primary model's context window, minimizing prompt bloat, eliminating tool hallucinations, and accelerating response generation.
+
+---
+
+## 11. Real Multi-Turn Benchmark & Empirical Evaluation
 
 For empirical multi-turn benchmarks, token savings measurements, and latency profiles across local Ollama (`laya:latest`, `d1-omni:latest`) and cloud OpenAI decision models, see the complete report in [`docs/decision/BENCHMARK-STOCK-DASHBOARD.md`](decision/BENCHMARK-STOCK-DASHBOARD.md).
+

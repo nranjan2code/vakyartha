@@ -64,10 +64,10 @@ export class OpenRouterDecisionProvider implements DecisionProvider {
 
     const systemPrompt = `You are a high-speed AI decision model and turn classifier.
 Analyze the user message and classify the turn into exactly one intent:
-- "salutation": simple greeting, hello, gratitude, or casual banter ("Hi", "Thanks", "Ok")
+- "salutation": simple casual greeting, gratitude, or conversational banter ("Hi", "Thanks", "Ok", "Bye")
 - "canvas_refinement": visual styling, changing chart kind, sorting table, or UI layout tweak
-- "scoped_tool_task": reading/inspecting local files, configs, package.json, web search, or database queries
-- "complex_reasoning": open-ended coding, software architecture, algorithm design, or deep multi-step planning
+- "scoped_tool_task": concrete, bounded request requiring external tool execution, API action, or data retrieval
+- "complex_reasoning": open-ended analysis, synthesis, deep planning, drafting, multi-step problem solving, or creative reasoning
 
 Respond ONLY with a valid JSON object matching this exact schema:
 {
