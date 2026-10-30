@@ -280,6 +280,8 @@ mod tests {
                 worker_lease_id: None,
                 worker_exit_receipt: None,
                 worker_exit_code: None,
+                active_ms: 0,
+                charged_ms: 0,
             },
             "local-model".into(),
         )

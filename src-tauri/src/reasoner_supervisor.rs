@@ -165,10 +165,11 @@ fn run_inner(
     {
         return Err(refused());
     }
-    if let Some(task) = control.reasoner_task_definition(run.id.clone())?
-        && (context.inputs != task.inputs || context.active_ms > task.limits.active_ms)
-    {
-        return Err(refused());
+    if let Some((task, cumulative_active_ms)) = control.reasoner_task_definition(run.id.clone())? {
+        let remaining_ms = task.limits.active_ms.saturating_sub(cumulative_active_ms);
+        if context.inputs != task.inputs || context.active_ms > remaining_ms {
+            return Err(refused());
+        }
     }
     control.check_execution_fence(root.execution_fence())?;
     let mut job = json!({
@@ -614,7 +615,15 @@ fn execute(
         let _ = child.kill();
         let _ = wait(&mut child, Instant::now() + Duration::from_secs(5));
     }
-    let run = control.finish_reasoner(id)?;
+    let (active_ms, charged_ms) = if let Some(clock) = pipe.clock.as_ref() {
+        let active_budget_ms = job["activeMs"].as_u64().unwrap_or(0);
+        let remaining_active_ms = clock.active.as_millis() as u64;
+        let elapsed = active_budget_ms.saturating_sub(remaining_active_ms);
+        (elapsed, elapsed)
+    } else {
+        (0, 0)
+    };
+    let run = control.finish_reasoner(id, active_ms, charged_ms)?;
     execution?;
     if run.worker_exit_code != Some(0) || cancel.load(Ordering::Acquire) {
         return Err(refused());

@@ -705,7 +705,10 @@ pub enum RootMutation {
 enum RootRunAction {
     Read,
     SettleWorker,
-    FinishReasoner,
+    FinishReasoner {
+        active_ms: u64,
+        charged_ms: u64,
+    },
     AbandonReasoner,
     Confirm(String),
     #[cfg(test)]
@@ -713,7 +716,7 @@ enum RootRunAction {
 }
 
 enum ActorCommand {
-    ReasonerTaskDefinition { run_id: String, reply: SyncSender<Result<Option<tasks::TaskRequest>, ControlError>> },
+    ReasonerTaskDefinition { run_id: String, reply: SyncSender<Result<Option<(tasks::TaskRequest, u64)>, ControlError>> },
     AdmitProductRun { id: String, revision: u64, request_id: String, reply: SyncSender<Result<root_runs::RootRun, ControlError>> },
     #[cfg(test)]
     PrepareProductFixture { id: String, revision: u64, request_id: String, reply: SyncSender<Result<root_runs::RootRun, ControlError>> },
@@ -1233,7 +1236,7 @@ impl ControlHandle {
 
     /// Native context adapter only; original file snapshots never come from a
     /// reasoning worker or a task DTO synthesized by the presentation layer.
-    pub(crate) fn reasoner_task_definition(&self, run_id: String) -> Result<Option<tasks::TaskRequest>, ControlError> {
+    pub(crate) fn reasoner_task_definition(&self, run_id: String) -> Result<Option<(tasks::TaskRequest, u64)>, ControlError> {
         let (reply, response) = sync_channel(1);
         self.commands.try_send(ActorCommand::ReasonerTaskDefinition { run_id, reply }).map_err(queue_error)?;
         response.recv_timeout(self.response_timeout).map_err(response_error)?
@@ -1275,8 +1278,8 @@ impl ControlHandle {
         response.recv_timeout(self.response_timeout).map_err(response_error)?
     }
 
-    pub fn finish_reasoner(&self, run_id: String) -> Result<root_runs::RootRun, ControlError> {
-        self.root_run_command(run_id, RootRunAction::FinishReasoner)
+    pub fn finish_reasoner(&self, run_id: String, active_ms: u64, charged_ms: u64) -> Result<root_runs::RootRun, ControlError> {
+        self.root_run_command(run_id, RootRunAction::FinishReasoner { active_ms, charged_ms })
     }
     pub fn abandon_reasoner_before_spawn(&self, run_id: String) -> Result<root_runs::RootRun, ControlError> {
         self.root_run_command(run_id, RootRunAction::AbandonReasoner)
@@ -2026,7 +2029,17 @@ fn actor_loop(
         match command {
             ActorCommand::ReasonerTaskDefinition { run_id, reply } => {
                 let result = ledger.root_runs.get(&run_id).ok_or(ControlError::Admission(AdmissionError::RootRunNotFound))
-                    .map(|run| ledger.product_tasks.get(&run.root_id).map(|record| record.request.clone()));
+                    .map(|run| {
+                        ledger.product_tasks.get(&run.root_id).map(|record| {
+                            let cumulative_active_ms = ledger
+                                .root_runs
+                                .values()
+                                .filter(|r| r.root_id == run.root_id && r.id != run_id)
+                                .map(|r| r.charged_ms)
+                                .sum::<u64>();
+                            (record.request.clone(), cumulative_active_ms)
+                        })
+                    });
                 let _ = reply.send(result);
             }
             ActorCommand::AdmitProductRun { id, revision, request_id, reply } => {
@@ -2695,11 +2708,14 @@ fn actor_loop(
                     RootRunAction::Confirm(receipt) => root_runs::confirm(&mut candidate, &run_id, &receipt),
                     #[cfg(test)]
                     RootRunAction::Settle(receipt) => root_runs::settle(&mut candidate, &run_id, &receipt),
-                    RootRunAction::FinishReasoner => store.dir.parent().ok_or(ControlError::Store(StoreError::Corrupt))
-                        .and_then(|native| worker_completion::finish(&mut candidate, native, &run_id)),
+                    RootRunAction::FinishReasoner { active_ms, charged_ms } => store.dir.parent().ok_or(ControlError::Store(StoreError::Corrupt))
+                        .and_then(|native| worker_completion::finish(&mut candidate, native, &run_id, active_ms, charged_ms)),
                     RootRunAction::AbandonReasoner => worker_completion::abandon_before_spawn(&mut candidate, &run_id),
                     RootRunAction::SettleWorker => store.dir.parent().ok_or(ControlError::Store(StoreError::Corrupt))
-                        .and_then(|native| worker_completion::finish(&mut candidate, native, &run_id))
+                        .and_then(|native| {
+                            let (active_ms, charged_ms) = candidate.root_runs.get(&run_id).map(|r| (r.active_ms, r.charged_ms)).unwrap_or((0, 0));
+                            worker_completion::finish(&mut candidate, native, &run_id, active_ms, charged_ms)
+                        })
                         .and_then(|run| root_runs::settle(&mut candidate, &run_id, run.worker_exit_receipt.as_deref().expect("verified worker exit"))),
                     RootRunAction::Read => unreachable!("read handled above"),
                 };

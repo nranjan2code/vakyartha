@@ -30,6 +30,10 @@ pub struct RootRun {
     pub worker_lease_id: Option<u64>,
     pub worker_exit_receipt: Option<String>,
     pub worker_exit_code: Option<i32>,
+    #[serde(default)]
+    pub active_ms: u64,
+    #[serde(default)]
+    pub charged_ms: u64,
 }
 
 pub(super) fn prepare(
@@ -110,6 +114,8 @@ pub(super) fn prepare(
             worker_lease_id: None,
             worker_exit_receipt: None,
             worker_exit_code: None,
+            active_ms: 0,
+            charged_ms: 0,
         },
     );
     Ok(root)

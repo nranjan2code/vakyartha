@@ -151,9 +151,17 @@ pub(super) fn finish(
     ledger: &mut CapacityLedger,
     native: &Path,
     id: &str,
+    active_ms: u64,
+    charged_ms: u64,
 ) -> Result<super::root_runs::RootRun, ControlError> {
     let exit = verified_exit(native, id)?;
-    release(ledger, id, exit.receipt, Some(exit.code))
+    let mut run = release(ledger, id, exit.receipt, Some(exit.code))?;
+    let run_mut = ledger.root_runs.get_mut(id).expect("checked invocation");
+    run_mut.active_ms = active_ms;
+    run_mut.charged_ms = charged_ms;
+    run.active_ms = active_ms;
+    run.charged_ms = charged_ms;
+    Ok(run)
 }
 pub(super) fn abandon_before_spawn(
     ledger: &mut CapacityLedger,
@@ -312,7 +320,7 @@ mod tests {
         let mut evidence = options.open(&invocation.completion_record).unwrap();
         evidence.write_all(&serde_json::to_vec(&serde_json::json!({"version":1,"invocation_id":first,"cleanup_verified":true,"exit_code":0})).unwrap()).unwrap();
         evidence.sync_all().unwrap();
-        let cleaned = handle.finish_reasoner(first.clone()).unwrap();
+        let cleaned = handle.finish_reasoner(first.clone(), 100, 100).unwrap();
         assert_eq!(
             cleaned.status,
             RunStatus::Running,
@@ -330,7 +338,7 @@ mod tests {
             handle.read_root_run(second.clone()).unwrap().status,
             RunStatus::Interrupted
         );
-        assert!(handle.finish_reasoner(second.clone()).is_err());
+        assert!(handle.finish_reasoner(second.clone(), 0, 0).is_err());
         assert!(
             handle.abandon_reasoner_before_spawn(second).is_err(),
             "restart cannot infer that a prepared worker was never spawned"

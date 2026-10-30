@@ -7,6 +7,11 @@ Status: active implementation, 2026-10-30. This log records source changes and e
 Completed the explicit execution snapshot adapter connecting existing context, skills, continuation history, and decision engine telemetry into the single-agent Work path and turn execution loops while preserving strict process isolation and the indestructible Rust engine root of trust.
 
 Key achievements and invariants:
+- **Cumulative Active-Time Accounting and Limits**:
+  - `src-tauri/src/control/root_runs.rs`: Added `active_ms: u64` and `charged_ms: u64` to `RootRun` with `#[serde(default)]`.
+  - `src-tauri/src/reasoner_supervisor.rs`: When reasoning completes, computes elapsed active duration from `RunClock` and persists via `control.finish_reasoner(id, active_ms, charged_ms)`.
+  - `src-tauri/src/control.rs`: `reasoner_task_definition` returns `(TaskRequest, cumulative_active_ms)` calculating the cumulative active duration of all prior settled runs for the task. Bounded remaining time in supervisor: `remaining_ms = task.limits.active_ms.saturating_sub(cumulative_active_ms)`, failing closed if exceeded.
+  - `src-tauri/src/control/tasks.rs`: `view()` accurately populates `runHistory[].activeMs` and `runHistory[].chargedMs`, and aggregates `budget.activeMs` matching the exact sum of all runs' charged active time, satisfying the contract constraint `runHistory.reduce((sum, r) => sum + r.chargedMs, 0) === budget.activeMs`.
 - **Reasoner Supervisor Snapshot Adapter**:
   - `src-tauri/src/reasoner_supervisor.rs`: Added `SkillRef` and `ContinuationMessage` to `Context`. In `run_inner`, bounded skills (<=16 skills, name <=120 chars alphanumeric/_/-, description <=1000 chars, no `\0`) and continuation (<=16 messages, role in user/assistant/system, content <=16,000 chars, no `\0`). Transmitted in private job frame over Unix domain socket to the isolated task worker.
   - `sidecar/task-worker-runtime.ts`: Updated `TaskWorkerJob` and `parseTaskWorkerJob` with strict optional keys validation and input fingerprinting. Updated `generateTaskCandidate` to inject procedural skill instructions and prior continuation history into the isolated candidate generation turn without granting ambient authority or external tool access. Re-bundled `src-tauri/resources/task-worker.mjs`.
@@ -25,7 +30,7 @@ Key achievements and invariants:
   - `sidecar/finops.ts`: Added `recordDecisionUsage` to `Finops` and attached it to `c.turn` in the scoped store.
   - `sidecar/server.ts`: In `/api/chat`, buffered incoming request payload to extract `decisionUsage`, streamed to `host.handle`, and attributed System 1 token metrics directly to `finops`.
 - **Verification**:
-  - 151 Rust tests passed (including real-worker tests with sandbox helper and Node).
+  - 152 Rust tests passed (including real-worker tests with sandbox helper and Node).
   - 325 app tests passed (1 paid test skipped).
   - 423 framework tests passed.
   - `npm run typecheck` passed with 0 errors.

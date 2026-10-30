@@ -362,7 +362,7 @@ pub(super) fn view(ledger: &CapacityLedger, id: &str) -> Result<Value, ControlEr
     let mut run_history = Vec::new();
     let surfaces = extract_surfaces(ledger, id);
     let mut accepted_runs = Vec::new();
-    for (i, run) in runs.into_iter().enumerate() {
+    for (i, run) in runs.iter().enumerate() {
         let is_latest = i + 1 == num_runs;
         let run_state = match run.status {
             super::root_runs::RunStatus::Prepared
@@ -410,8 +410,8 @@ pub(super) fn view(ledger: &CapacityLedger, id: &str) -> Result<Value, ControlEr
             "state": run_state,
             "started": record.created,
             "ended": record.updated,
-            "activeMs": 0,
-            "chargedMs": 0,
+            "activeMs": run.active_ms,
+            "chargedMs": run.charged_ms,
             "toolCalls": 0,
             "modelRequests": if run.status == super::root_runs::RunStatus::Settled { 1 } else { 0 },
             "note": run_note,
@@ -455,7 +455,7 @@ pub(super) fn view(ledger: &CapacityLedger, id: &str) -> Result<Value, ControlEr
         "budget": {
             "modelRequests": root.model_requests_used(),
             "toolCalls": root.tool_calls_used(),
-            "activeMs": 0
+            "activeMs": runs.iter().map(|r| r.charged_ms).sum::<u64>(),
         },
         "state": state, "created": record.created, "updated": record.updated,
         "note": note,
@@ -1054,6 +1054,59 @@ mod tests {
         ledger.product_tasks.get_mut("task").unwrap().request.goal =
             "Changed original definition".into();
         assert_eq!(validate(&ledger), Err(StoreError::Corrupt));
+    }
+
+    #[test]
+    fn task_run_history_and_budget_cumulative_active_time_match_contract() {
+        let mut ledger = CapacityLedger::default();
+        let valid = request();
+        create(&mut ledger, valid, "2026-10-30T00:00:00.000Z").unwrap();
+        let run1 = super::super::root_runs::RootRun {
+            id: "run-1".into(),
+            request_id: "req-1".into(),
+            root_id: "task".into(),
+            session_id: Some("task".into()),
+            lease_id: 1,
+            admission_revision: 1,
+            cancellation_epoch: 0,
+            status: super::super::root_runs::RunStatus::Settled,
+            supervisor_receipt: None,
+            exit_receipt: Some("exit-1".into()),
+            worker_lease_id: None,
+            worker_exit_receipt: None,
+            worker_exit_code: Some(0),
+            active_ms: 42_000,
+            charged_ms: 42_000,
+        };
+        let run2 = super::super::root_runs::RootRun {
+            id: "run-2".into(),
+            request_id: "req-2".into(),
+            root_id: "task".into(),
+            session_id: Some("task".into()),
+            lease_id: 2,
+            admission_revision: 2,
+            cancellation_epoch: 0,
+            status: super::super::root_runs::RunStatus::Settled,
+            supervisor_receipt: None,
+            exit_receipt: Some("exit-2".into()),
+            worker_lease_id: None,
+            worker_exit_receipt: None,
+            worker_exit_code: Some(0),
+            active_ms: 18_000,
+            charged_ms: 18_000,
+        };
+        ledger.root_runs.insert("run-1".into(), run1);
+        ledger.root_runs.insert("run-2".into(), run2);
+        let task_view = view(&ledger, "task").unwrap();
+        assert_eq!(task_view["budget"]["activeMs"], 60_000);
+        let history = task_view["runHistory"].as_array().unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0]["activeMs"], 42_000);
+        assert_eq!(history[0]["chargedMs"], 42_000);
+        assert_eq!(history[1]["activeMs"], 18_000);
+        assert_eq!(history[1]["chargedMs"], 18_000);
+        let total_charged: u64 = history.iter().map(|r| r["chargedMs"].as_u64().unwrap()).sum();
+        assert_eq!(total_charged, task_view["budget"]["activeMs"].as_u64().unwrap());
     }
 
     #[test]
