@@ -2,6 +2,10 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Projection fenced candidate commit API — 2026-10-30
+
+Projection `6fd13f3` adds a bounded four-ticket, 8 MiB-per-candidate, ten-minute `candidateId`; `commitCandidate` submits the retained exact proposal, base versions and task fence to an app-owned canonical callback. Callback failure keeps the candidate bound to the first commit identity/fence for a safe idempotent retry; a success receipt consumes it. The contract prevents mutation through the returned proposal, and framework tests cover retries, changed fences, one-use completion, count bounds and discard. Projection passes 417/417 tests/replay, 22/22 focused host tests, typecheck and package generation. The app moved its framework pin to the pushed commit and `npm install` reports zero vulnerabilities. The callback, native durable prepare/fence/commit, receipt query across restart and post-ack publication remain unimplemented; the process-local candidate ticket is discarded on host restart. No task path uses this API and no I3/outcome gate closes.
+
 ## App provider transport injection seam — 2026-10-30
 
 Added optional `AppServerOptions.providerTransport` and route it through both the model/voice/skill-evaluation provider factory and the channel provider factory via one helper. Host injection overrides factory-supplied transport while preserving per-turn options such as Ollama `think`; without a callback the existing provider construction is unchanged. Focused tests pass 2/2. Under the pinned Node 26.13.0 Linux ARM64 Docker environment, the full app suite passes 256/256 runnable tests (21 platform/feature-gated skips) and typecheck passes. The desktop sidecar has not yet supplied the Rust private-pipe bridge, so this seam remains dormant and providers still use default fetch in product execution. It does not close mediation, authority, budget, cancellation or outcome gates.
@@ -16,7 +20,7 @@ Projection commit `c51987ba62cb0bd5537b1d3dbd39b837f7e440ca` adds an optional `P
 
 ## Provider transport seam code-audit correction — 2026-10-30
 
-Current app and pinned Projection source were compared directly. Projection `65f183c` publicly exports provider-aware `ProviderTransport` injection through each provider factory; `sidecar/server.ts:modelProviders()` currently calls `entry.make(options)` without passing a transport, leaving providers on default `fetch`. The app can inject a transport without another framework change. The missing work is the native private-pipe request/stream protocol, exact operation authorization, approval/receipt lifecycle and TypeScript secret removal. Separately, `VakHost` still persists canonical sessions through `sessionsDir`; the protected native prepare/fence/commit persistence adapter remains a real public-API gap. No execution path changed in this audit.
+Current app and pinned Projection source were compared directly. Projection `65f183c` publicly exports provider-aware `ProviderTransport` injection through each provider factory; `sidecar/server.ts:modelProviders()` still calls `entry.make(options)` without a transport, leaving providers on default `fetch`. The app can inject a transport without another framework change. The missing work is the native private-pipe request/stream protocol, exact operation authorization, approval/receipt lifecycle and TypeScript secret removal. Projection `6fd13f3` adds the `runCandidate`/`commitCandidate` callback seam; the app still lacks its durable native implementation and recovery. No product execution path changed in this audit.
 
 ## Fixed-loopback local generation transport primitive — 2026-10-30
 
