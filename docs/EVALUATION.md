@@ -1,5 +1,11 @@
 # Agent outcome evaluation
 
+## Native provider approval/budget handoff — 2026-10-30
+
+The Rust actor now validates provider proposals against an immutable admitted local-model policy, retains exact normalized bytes in four bounded ephemeral tickets, and persists provider capacity, cumulative request charge and redacted operation identity before returning a move-only native dispatch object. Concurrent approvals cannot duplicate it; restart discards pending consent and retains uncertain dispatch charges without replay. Native provider I/O settlement is separate from worker cleanup and cannot mark the task successful. Six approval tests plus the real packaged reasoner handoff pass; full real-worker suites pass 124 macOS/126 Linux, strict Clippy and native WebKit. [Evidence and ordering diagram](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-provider-approval-and-durable-budget-handoff--2026-10-30).
+
+Product execution is still disabled. The approval controller is exercised through Rust tests; trusted UI consent, actual broker network dispatch/cancellation, canonical publication/recovery and the rest of the acceptance contract remain unconnected. The app is not installed; no final Astra review or original outcome gate closes. Older entries below retain historical scope.
+
 ## Separate contained task reasoner — 2026-10-30
 
 The runtime now packages a separate one-invocation task reasoner with explicit bounded context, the public Projection candidate API and a provider-only channel. Rust assigns a fresh per-run scratch grant; app-worker files, sibling runs and native stores are outside its grants. Native channel validation rejects cross-run/session/model proposals, replayed operations and canonical/task command families. Returned candidates remain untrusted proposals. Actual contained worker tests cover refused generation without canonical writes and exact cleanup settlement; deterministic provider-parser/Projection tests preserve multiple surfaces and exact values without direct fetch. Final checks pass 288 app tests/typecheck, 118 macOS/120 Linux native tests with all real worker gates included, strict Clippy and native WebKit. [Current evidence and limits](agent-runtime/IMPLEMENTATION-PROGRESS.md#separate-contained-reasoning-entry-and-bound-task-channel--2026-10-30).

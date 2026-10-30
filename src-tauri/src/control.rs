@@ -11,7 +11,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 14;
+const STORE_VERSION: u16 = 15;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 const MAX_CANDIDATE_RECEIPTS: usize = 10_000;
@@ -28,6 +28,7 @@ fn native_store_root(data_dir: &Path) -> PathBuf {
 pub mod bridge;
 mod approval;
 mod broker;
+pub mod generation;
 pub mod canonical;
 pub mod delegation;
 pub mod folder;
@@ -93,6 +94,8 @@ pub enum AdmissionError {
     InvalidTask,
     TaskCapabilityUnavailable,
     WorkerCompletionUnavailable,
+    ProviderApprovalRefused,
+    ProviderBudgetExhausted,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -171,6 +174,7 @@ pub struct CapacityLedger {
     candidate_receipts: BTreeMap<String, CandidateCommitReceipt>,
     root_runs: BTreeMap<String, root_runs::RootRun>,
     product_tasks: BTreeMap<String, tasks::TaskRecord>,
+    provider_operations: BTreeMap<String, generation::OperationRecord>,
 }
 
 impl CapacityLedger {
@@ -355,6 +359,7 @@ impl CapacityLedger {
             candidate_receipts: self.candidate_receipts.clone(),
             root_runs: self.root_runs.clone(),
             product_tasks: self.product_tasks.clone(),
+            provider_operations: self.provider_operations.clone(),
         }
     }
 
@@ -374,6 +379,7 @@ impl CapacityLedger {
             candidate_receipts: snapshot.candidate_receipts,
             root_runs: snapshot.root_runs,
             product_tasks: snapshot.product_tasks,
+            provider_operations: snapshot.provider_operations,
             ..Self::default()
         };
         if ledger.canonical_sessions.len() > MAX_ROOTS
@@ -583,6 +589,7 @@ impl CapacityLedger {
         }
         root_runs::validate(&ledger)?;
         tasks::validate(&ledger)?;
+        generation::validate(&ledger)?;
         Ok(ledger)
     }
 }
@@ -599,6 +606,7 @@ struct LedgerSnapshot {
     candidate_receipts: BTreeMap<String, CandidateCommitReceipt>,
     root_runs: BTreeMap<String, root_runs::RootRun>,
     product_tasks: BTreeMap<String, tasks::TaskRecord>,
+    provider_operations: BTreeMap<String, generation::OperationRecord>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -681,6 +689,10 @@ enum RootRunAction {
 }
 
 enum ActorCommand {
+    IssueProviderApproval { run_id: String, operation_id: String, attempt: u32, body: Vec<u8>, in_flight: Arc<std::sync::atomic::AtomicBool>, reply: SyncSender<Result<generation::Approval, ControlError>> },
+    DecideProviderApproval { ticket_id: String, fingerprint: String, decision: generation::Decision, reply: SyncSender<Result<generation::Dispatch, ControlError>> },
+    SettleProvider { id: String, receipt: generation::ResultReceipt, reply: SyncSender<Result<generation::OperationRecord, ControlError>> },
+    ReadProvider { id: String, reply: SyncSender<Result<generation::OperationRecord, ControlError>> },
     PrepareWorkerCompletion { run_id: String, reply: SyncSender<Result<worker_completion::WorkerInvocation, ControlError>> },
     ProductTask { command: tasks::TaskCommand, reply: SyncSender<Result<serde_json::Value, ControlError>> },
 
@@ -867,9 +879,41 @@ pub struct ControlHandle {
     commands: SyncSender<ActorCommand>,
     response_timeout: Duration,
     candidate_in_flight: Arc<std::sync::atomic::AtomicBool>,
+    provider_in_flight: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl ControlHandle {
+    /// Trusted reasoning supervisor only. No IPC command offers this method.
+    pub fn issue_provider_approval(&self, run_id: String, operation_id: String, attempt: u32, body: Vec<u8>) -> Result<generation::Approval, ControlError> {
+        if body.len() > 8_388_608 { return Err(ControlError::Admission(AdmissionError::ProviderApprovalRefused)); }
+        self.provider_in_flight.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).map_err(|_| ControlError::QueueFull)?;
+        let (reply, response) = sync_channel(1);
+        if let Err(error) = self.commands.try_send(ActorCommand::IssueProviderApproval { run_id, operation_id, attempt, body, in_flight: self.provider_in_flight.clone(), reply }) {
+            self.provider_in_flight.store(false, Ordering::Release); return Err(queue_error(error));
+        }
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    /// Trusted approval controller only. The returned move-only value never
+    /// crosses into the UI or reasoning process.
+    pub fn decide_provider_approval(&self, ticket_id: String, fingerprint: String, decision: generation::Decision) -> Result<generation::Dispatch, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::DecideProviderApproval { ticket_id, fingerprint, decision, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    /// Only the native broker's settled I/O may supply this receipt.
+    pub fn settle_provider_operation(&self, id: String, receipt: generation::ResultReceipt) -> Result<generation::OperationRecord, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::SettleProvider { id, receipt, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    pub fn read_provider_operation(&self, id: String) -> Result<generation::OperationRecord, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::ReadProvider { id, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
     pub fn ping(&self) -> Result<(), ControlError> {
         let (reply, response) = sync_channel(1);
         self.commands
@@ -933,6 +977,7 @@ impl ControlHandle {
         delegation: DelegationPolicy,
     ) -> Result<RootTask, ControlError> {
         self.create_root_with_budget(RootCreate {
+            local_model: None,
             id,
             session_id: None,
             goal,
@@ -1554,6 +1599,7 @@ impl ControlActor {
                 recovered = true;
             }
         }
+        recovered |= generation::recover(&mut ledger);
         if recovered {
             store.persist(&ledger, &profile)?;
         }
@@ -1570,6 +1616,7 @@ impl ControlActor {
                 commands,
                 response_timeout,
                 candidate_in_flight: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                provider_in_flight: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             },
             join: Some(join),
         })
@@ -1728,8 +1775,41 @@ fn actor_loop(
     mut host_sessions: host_sessions::HostSessionStore,
 ) {
     let mut admitted_host_sessions = std::collections::BTreeSet::new();
+    let mut provider_approvals = generation::Approvals::default();
     while let Ok(command) = receiver.recv() {
+        provider_approvals.prune(&ledger);
         match command {
+            ActorCommand::IssueProviderApproval { run_id, operation_id, attempt, body, in_flight, reply } => {
+                let result = provider_approvals.issue(&ledger, run_id, operation_id, attempt, body);
+                in_flight.store(false, Ordering::Release);
+                let _ = reply.send(result);
+            }
+            ActorCommand::DecideProviderApproval { ticket_id, fingerprint, decision, reply } => {
+                let mut candidate = ledger.clone();
+                match provider_approvals.decide(&mut candidate, &profile, &ticket_id, &fingerprint, decision) {
+                    Err(error) => { let _ = reply.send(Err(error)); }
+                    Ok(dispatch) => {
+                        if let Err(error) = store.persist(&candidate, &profile) {
+                            let _ = reply.send(Err(ControlError::Store(error))); break;
+                        }
+                        ledger = candidate;
+                        let _ = reply.send(dispatch.ok_or(ControlError::Admission(AdmissionError::ProviderBudgetExhausted)));
+                    }
+                }
+            }
+            ActorCommand::SettleProvider { id, receipt, reply } => {
+                let mut candidate = ledger.clone();
+                match generation::settle(&mut candidate, &id, receipt) {
+                    Err(error) => { let _ = reply.send(Err(error)); }
+                    Ok(record) => {
+                        if let Err(error) = store.persist(&candidate, &profile) { let _ = reply.send(Err(ControlError::Store(error))); break; }
+                        ledger = candidate; let _ = reply.send(Ok(record));
+                    }
+                }
+            }
+            ActorCommand::ReadProvider { id, reply } => {
+                let _ = reply.send(ledger.provider_operations.get(&id).cloned().ok_or(ControlError::Admission(AdmissionError::ProviderApprovalRefused)));
+            }
             ActorCommand::PrepareWorkerCompletion { run_id, reply } => {
                 let result = store.dir.parent().ok_or(ControlError::Store(StoreError::Corrupt))
                     .and_then(|native| worker_completion::prepare(&ledger, native, &run_id));
@@ -1829,13 +1909,14 @@ fn actor_loop(
                 }
             }
             ActorCommand::Release { lease, reply } => {
-                if ledger
-                    .root_runs
-                    .values()
-                    .any(|run| run.lease_id == lease.id())
-                {
+                let owned_resource = if ledger.root_runs.values().any(|run| run.lease_id == lease.id()) {
+                    Some(Resource::Generation)
+                } else if ledger.provider_operations.values().any(|record| record.lease_id == lease.id()) {
+                    Some(Resource::ProviderRequest)
+                } else { None };
+                if let Some(resource) = owned_resource {
                     let _ = reply.send(Err(ControlError::Admission(
-                        AdmissionError::ReservedForControl(Resource::Generation),
+                        AdmissionError::ReservedForControl(resource),
                     )));
                     continue;
                 }
@@ -2356,10 +2437,11 @@ fn actor_loop(
                 if matches!(
                     mutation,
                     RootMutation::RequestReview | RootMutation::AcceptReview(_)
-                ) && candidate
+                ) && (candidate
                     .root_runs
                     .values()
                     .any(|run| run.root_id == id && run.status != root_runs::RunStatus::Settled)
+                    || generation::unsettled(&candidate, &id))
                 {
                     let _ = reply.send(Err(ControlError::Admission(
                         AdmissionError::RootRunUnsettled,
@@ -3345,6 +3427,7 @@ mod tests {
         assert_eq!(created["runs"], 0);
         assert_eq!(created["inputs"][0]["sha256"], canonical::digest(b"Original input"));
         let shadow = RootCreate {
+            local_model: None,
             id: "shadow-root".into(), session_id: Some(request.id.clone()),
             goal: request.goal.clone(), criteria: request.criteria.clone(), run_limit: 2,
             budget_limits: BudgetLimits::new(12, 0).unwrap(),
@@ -3510,10 +3593,11 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         let data = temp_data_dir();
         let resources = data.with_extension("task-runtime"); fs::create_dir_all(&resources).unwrap();
         fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/task-worker.mjs"), resources.join("task-worker.mjs")).expect("bundle the task worker before running this gate");
-        let profile = CapacityProfile::new(BTreeMap::from([(Resource::Generation, 1)]), BTreeMap::from([(Resource::Generation, 1)]), 32).unwrap();
+        let profile = CapacityProfile::new(BTreeMap::from([(Resource::Generation, 1), (Resource::ProviderRequest, 1)]), BTreeMap::from([(Resource::Generation, 1), (Resource::ProviderRequest, 1)]), 32).unwrap();
         let actor = ControlActor::open(&data, "one-slot", profile, 16, Duration::from_secs(2)).unwrap();
         let handle = actor.handle();
         let root = handle.create_root_with_budget(RootCreate {
+            local_model: Some(state::LocalModelPolicy { model: "qwen3.5:4b-mlx".into(), max_output_tokens: 256, max_request_bytes: 8_388_608 }),
             id: "root".into(), session_id: Some("task-session".into()), goal: "Check explicit context".into(), criteria: "Never publish a refused generation".into(), run_limit: 2,
             budget_limits: BudgetLimits::new(1, 0).unwrap(), requirements: vec![Requirement::new("check".into(), true).unwrap()], delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0).unwrap(),
         }).unwrap();
@@ -3542,8 +3626,16 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         let Event::Provider(proposal) = receive(&mut protocol) else { panic!("expected a bound provider proposal"); };
         assert_eq!(serde_json::from_str::<serde_json::Value>(&proposal.body).unwrap()["model"], "qwen3.5:4b-mlx");
         assert!(!proposal.operation_id.is_empty()); assert_eq!(proposal.attempt, 0);
-        // This driver deliberately has no dispatch capability. Refusal is not
-        // model inference, user approval, a successful output or completion.
+        // The Rust test controller simulates the trusted approval interaction;
+        // this is not product UI consent and no model/network request is sent.
+        let ticket = handle.issue_provider_approval(run.id.clone(), proposal.operation_id.clone(), proposal.attempt, proposal.body.as_bytes().to_vec()).unwrap();
+        assert_eq!(handle.read_root(root.id().into()).unwrap().model_requests_used(), 0);
+        let dispatch = handle.decide_provider_approval(ticket.ticket_id.clone(), ticket.fingerprint.clone(), generation::Decision::AllowOnce).unwrap();
+        let (operation, permit, exact_bytes) = dispatch.into_request();
+        assert_eq!(exact_bytes, broker::prepare_generation_body(&permit, proposal.body.as_bytes()).unwrap());
+        assert_eq!(handle.read_root(root.id().into()).unwrap().model_requests_used(), 1);
+        assert!(handle.decide_provider_approval(ticket.ticket_id, ticket.fingerprint, generation::Decision::AllowOnce).is_err());
+        handle.settle_provider_operation(operation.id, generation::ResultReceipt { id: "harness-refused-before-network".into(), status_code: None, response_bytes: 0 }).unwrap();
         protocol.finish_provider(&proposal.id).unwrap();
         owner.write_all(format!("{}\n", serde_json::json!({"v":2,"id":proposal.id,"type":"provider_error","message":"Native provider dispatch is not enabled"})).as_bytes()).unwrap();
         let Event::Candidate(candidate) = receive(&mut protocol) else { panic!("expected the retained failed candidate"); };
@@ -3554,6 +3646,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
             thread::sleep(Duration::from_millis(10));
         }
         drop(owner);
+        let root = handle.read_root(root.id().into()).unwrap();
         handle.mutate_root(root.id().into(), root.revision(), RootMutation::Stop { status: RootStatus::Failed, cause: StopCause::ExecutionError, reason: "Provider dispatch was refused".into() }).unwrap();
         assert_eq!(handle.settle_worker_completion(run.id).unwrap().status, root_runs::RunStatus::Settled);
         assert_eq!(handle.read_root(root.id().into()).unwrap().status(), RootStatus::Failed);
@@ -3577,6 +3670,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         let create = |id: &str| {
             handle
                 .create_root_with_budget(RootCreate {
+            local_model: None,
                     id: id.into(),
                     session_id: Some("shared-chat".into()),
                     goal: "Perform bounded work".into(),
@@ -3849,6 +3943,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         let mut ledger = CapacityLedger::default();
         let root = RootTask::create_with_grant(
             RootCreate {
+            local_model: None,
                 id: "root".into(),
                 session_id: Some("chat".into()),
                 goal: "Bound work".into(),
@@ -3991,6 +4086,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         let handle = actor.handle();
         let queued = handle
             .create_root_with_budget(RootCreate {
+            local_model: None,
                 id: "task-budget".into(),
                 session_id: None,
                 goal: "Complete the requested work".into(),
@@ -4062,6 +4158,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         let handle = actor.handle();
         let queued = handle
             .create_root_with_budget(RootCreate {
+            local_model: None,
                 id: "task-candidate".into(),
                 session_id: Some("session-candidate".into()),
                 goal: "Prepare a verified candidate".into(),
@@ -4167,6 +4264,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
             ControlActor::open(&data, "unconfigured-v1", profile.clone(), 16, timeout).unwrap();
         let handle = actor.handle();
         let request = RootCreate {
+            local_model: None,
             id: "root-for-chat".into(),
             session_id: Some("chat-runtime-1".into()),
             goal: "Bind provider runs to native tasks".into(),
@@ -4179,6 +4277,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         let first = handle.create_root_with_budget(request.clone()).unwrap();
         let second = handle
             .create_root_with_budget(RootCreate {
+            local_model: None,
                 id: "second-root".into(),
                 ..request.clone()
             })
@@ -4217,6 +4316,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
             ControlActor::open(&data, "unconfigured-v1", profile.clone(), 16, timeout).unwrap();
         let handle = actor.handle();
         let request = RootCreate {
+            local_model: None,
             id: "task-create-retry".into(),
             session_id: None,
             goal: "Recover task creation safely".into(),
@@ -4291,6 +4391,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         let handle = actor.handle();
         let queued = handle
             .create_root_with_budget(RootCreate {
+            local_model: None,
                 id: "task-budget-race".into(),
                 session_id: None,
                 goal: "Finish the bounded operation".into(),
@@ -4398,6 +4499,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         handle
             .create_root_in_workspace(
                 RootCreate {
+            local_model: None,
                     id: id.into(),
                     session_id: None,
                     goal: "Inspect the fixed workspace".into(),
@@ -5528,6 +5630,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         let root = handle
             .create_root_in_workspace(
                 RootCreate {
+            local_model: None,
                     id: "task-fixed-scope".into(),
                     session_id: None,
                     goal: "Inspect the selected workspace".into(),
@@ -5556,6 +5659,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         assert_eq!(
             handle.create_root_in_workspace(
                 RootCreate {
+            local_model: None,
                     id: "task-revoked-scope".into(),
                     session_id: None,
                     goal: "Inspect the selected workspace".into(),

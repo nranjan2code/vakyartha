@@ -2,6 +2,7 @@
 //!
 //! The digest identifies the disclosed operation. Authorization still returns
 //! the exact retained bytes; it never reconstructs a request from the digest.
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
@@ -28,25 +29,25 @@ impl From<&super::state::ExecutionFence> for ApprovalFence {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct OperationDisclosure {
-    pub(super) provider: String,
-    pub(super) model: String,
-    pub(super) operation: String,
-    pub(super) destination: String,
-    pub(super) max_output_tokens: u32,
-    pub(super) preview: String,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct OperationDisclosure {
+    pub provider: String,
+    pub model: String,
+    pub operation: String,
+    pub destination: String,
+    pub max_output_tokens: u32,
+    pub preview: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct PendingApproval {
-    pub(super) ticket_id: String,
-    pub(super) fingerprint: String,
-    pub(super) disclosure: OperationDisclosure,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PendingApproval {
+    pub ticket_id: String,
+    pub fingerprint: String,
+    pub disclosure: OperationDisclosure,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ApprovalDecision {
+pub enum ApprovalDecision {
     AllowOnce,
     Deny,
 }
@@ -192,6 +193,10 @@ impl ApprovalTickets {
 
     pub(super) fn clear(&mut self) {
         self.pending.clear();
+    }
+
+    pub(super) fn discard(&mut self, id: &str) {
+        self.pending.remove(id);
     }
 
     #[cfg(test)]

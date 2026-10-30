@@ -2,6 +2,43 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Native provider approval and durable budget handoff — 2026-10-30
+
+The control actor now owns bounded ephemeral provider tickets and their durable operation handoff. An immutable `LocalModelPolicy` in native root admission fixes the local model, per-request output ceiling (at most 4096) and request byte bound (at most 8 MiB). Desktop local task admission derives that policy from the saved original task request; roots without one cannot issue provider tickets. The first path supports only the registered loopback local generation route, fixed supported options and no external tool declarations. It does not authorize hosted providers or create endpoint exceptions.
+
+A trusted reasoning supervisor submits the native run identity plus worker operation/attempt and bounded payload. Inside the actor, ticket issuance requires a confirmed running invocation, active generation lease, matching root/session/epoch and current workspace grant. The broker’s existing payload rules validate/normalize the bytes against the admitted model/output/tool policy. The actor retains those exact normalized bytes under the existing domain-separated approval fingerprint and disclosure. Four tickets are allowed globally; stale, revoked, cancelled and five-minute-expired tickets are discarded. At most one large issue request can be outstanding across handle clones, including after its caller times out; the actor releases that bound only after processing the queued payload.
+
+```mermaid
+sequenceDiagram
+    participant W as Contained reasoner
+    participant D as Trusted native driver
+    participant A as Native control actor
+    participant S as Native control snapshot
+    W->>D: Invocation-bound provider proposal
+    D->>A: Issue ticket for existing native run
+    A->>A: Check run, model, workspace and exact normalized payload
+    A-->>D: Disclosure and one-use fingerprint
+    Note over D,A: Trusted approval UI is still pending; tests use a Rust controller
+    D->>A: Allow once for displayed ticket and fingerprint
+    A->>A: Consume ticket and recheck current authority
+    A->>A: Reserve provider slot and charge model request
+    A->>S: Persist redacted operation, budget and lease together
+    A-->>D: Move-only native dispatch object with exact bytes
+    Note over D: Current harness performs no network I/O
+    D->>A: Native I/O settlement receipt
+    A->>S: Persist receipt and release provider slot together
+```
+
+Allow-once consumes the ticket, rechecks its fence, reserves `ProviderRequest` capacity and charges the cumulative native request budget in one candidate ledger. The actor synchronizes the candidate snapshot before returning a move-only, non-serializable dispatch object. Concurrent decisions produce at most one object; no durable record lookup can reconstruct or replay its request bytes. Denied, mismatched, stale or unconfigured requests cannot charge/dispatch. Capacity failure rolls back the candidate; an exhausted model budget instead persists the native limit stop, releases newly reserved/invalidated queue capacity and returns no dispatch. Ticket issuance and product provider/model selection are not consent.
+
+Durable provider records contain run/root/operation-attempt identity, admitted fence, charged revision, lease, byte count, request digest, approval fingerprint and bounded numeric settlement metadata; they contain no payload or preview. The snapshot is schema 15, with no schema-14 reader or data reset. Restart discards every pending ticket, marks dispatch-committed records interrupted and retains their provider charges. Cancellation, worker exit and missing acknowledgements are not provider I/O settlement. Generic lease release cannot free a provider-owned hold; unresolved provider records block another root attempt and review/acceptance even after the worker exits. Native settlement checks receipt identity/bounds, releases only its exact provider lease and supports identical retries; conflicting receipts fail. Settlement does not imply task success, source truth, external-effect reversal or permission to repeat a request.
+
+The durable handoff is the authorization ordering point. Cancellation processed first invalidates the ticket; cancellation after a committed handoff can encounter an already authorized/in-flight effect. The eventual broker driver must supply native cancellation/I/O lifecycle handling and reconcile uncertain operations rather than promise a transaction spanning persistence and the network. That physical dispatch/cancellation path is not connected by this change. The admitted local payload currently preserves the framework’s 30-minute model-residency hint; global resident-model/resource accounting remains required before enablement and no hard CPU/memory/disk guarantee is claimed.
+
+Verification: six native approval tests cover eight concurrent decisions, exact normalized bytes, request-content omission from durable files, stale/mismatched/denied tickets, model/output/tool/endpoint substitution, global four-ticket pressure, expiry, unavailable provider capacity without budget charge, generic refund refusal, review blocking after passed checks plus worker exit, durable budget exhaustion, restart/uncertain charge retention, exact/conflicting settlement, corrupted lease/digest/revision associations and failed durable selection returning no dispatch. The packaged real Node reasoner runs through native ticket creation, a test controller’s allow-once, exact handoff, deliberate pre-network refusal, retained failed candidate and separate provider/worker settlement. That controller is test authority, not a product UI consent proof; no model or external endpoint was called. Full Rust 1.99.1 suites including all real-worker gates pass 124 on macOS and 126 in pinned ARM64 Linux Docker; strict Clippy passes. The final native WebKit smoke passes with schema 15 and retains the execution-unavailable Work behavior. Receipt: `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-desktop-private-jEJ49C`. Existing app code is unchanged; its latest full Node 26.13.0 result remains 288/288 plus typecheck. This source checkpoint is not installed.
+
+Limits: the new actor API is Rust-only. It has no Tauri approval decision command or worker protocol operation, and no production broker driver consumes the dispatch object. The app capacity profile remains empty, product Work execution is disabled and the ordinary desktop provider route still refuses dispatch. Trusted approval UI, actual network cancellation/backpressure/settlement, canonical semantic validation/publication and recovery, scheduler, workspace/IA, broader drift/QoS/delegation, original local-provider outcomes, installed build and final Astra review remain open. No new dependency was added.
+
 ## Separate contained reasoning entry and bound task channel — 2026-10-30
 
 A new self-contained `task-worker.mjs` entry runs one explicit candidate invocation using Projection’s public `runCandidate`; it does not start the application server or construct a canonical session adapter, task journal, output writer, integration launcher or credential store. The shared provider framing was extracted from the desktop transport, retaining its credential stripping, registered routes, bounded streaming/backpressure, cancellation and late-response handling. The reasoning channel permits one in-flight provider proposal. Only the primary local provider is admitted by this first worker contract; there is no hosted-provider fallback or inference in the new native tests.

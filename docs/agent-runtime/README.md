@@ -6,6 +6,8 @@ Native supervision proof now includes protected helper cleanup records and durab
 
 A separate contained task reasoning entry, fresh per-run scratch and native invocation-bound proposal channel are now packaged and proved through harnesses. It cannot use app/canonical session command families; product execution and provider dispatch remain unavailable. [Current evidence](IMPLEMENTATION-PROGRESS.md#separate-contained-reasoning-entry-and-bound-task-channel--2026-10-30).
 
+Native provider tickets now bind an immutable local-model policy to exact request bytes and durable budget/capacity commitment. Rust tests prove races, restart uncertainty and settlement; production consent, network dispatch and canonical publication remain disabled. [Current evidence](IMPLEMENTATION-PROGRESS.md#native-provider-approval-and-durable-budget-handoff--2026-10-30).
+
 The design applies to one agent first. Delegation is an optional extension of the same task contract, authority, budgets, evidence and recovery. The default is zero children; neither task length nor a role name justifies creating one.
 
 ## Reading map

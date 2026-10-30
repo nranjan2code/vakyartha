@@ -137,9 +137,35 @@ impl BudgetLimits {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct LocalModelPolicy {
+    pub model: String,
+    pub max_output_tokens: u32,
+    pub max_request_bytes: u32,
+}
+
+impl LocalModelPolicy {
+    pub fn validate(&self) -> Result<(), StateError> {
+        if self.model.is_empty()
+            || self.model.len() > 240
+            || !self
+                .model
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"._:/-".contains(&byte))
+            || !(1..=4096).contains(&self.max_output_tokens)
+            || !(1..=8_388_608).contains(&self.max_request_bytes)
+        {
+            return Err(StateError::InvalidLimit);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RootCreate {
     pub id: String,
     pub session_id: Option<String>,
+    pub local_model: Option<LocalModelPolicy>,
     pub goal: String,
     pub criteria: String,
     pub run_limit: u32,
@@ -474,6 +500,7 @@ impl RootTask {
     ) -> Result<Self, StateError> {
         Self::create_with_grant(
             RootCreate {
+                local_model: None,
                 id,
                 session_id: None,
                 goal,
@@ -537,6 +564,9 @@ impl RootTask {
     pub fn session_id(&self) -> Option<&str> {
         self.creation_request.session_id.as_deref()
     }
+    pub fn local_model(&self) -> Option<&LocalModelPolicy> {
+        self.creation_request.local_model.as_ref()
+    }
     pub fn creation_request_matches(&self, request: &RootCreate) -> bool {
         self.creation_request == *request
     }
@@ -565,6 +595,9 @@ impl RootTask {
     }
     pub fn model_requests_used(&self) -> u32 {
         self.model_request_ids.len() as u32
+    }
+    pub(super) fn has_model_request(&self, id: &str) -> bool {
+        self.model_request_ids.contains(id)
     }
     pub fn tool_calls_used(&self) -> u32 {
         self.tool_call_ids.len() as u32
@@ -1232,9 +1265,10 @@ impl RootTask {
                 .workspace_grant
                 .as_ref()
                 .is_some_and(|grant| grant.validate().is_err())
-            || self.workspace_grant.as_ref().is_some_and(|grant| {
-                self.session_id() != Some(grant.session_id.as_str())
-            })
+            || self
+                .workspace_grant
+                .as_ref()
+                .is_some_and(|grant| self.session_id() != Some(grant.session_id.as_str()))
             || self.children.len() > usize::from(self.delegation.max_children())
             || self
                 .children
@@ -1459,6 +1493,9 @@ fn unique_references(values: &[String]) -> bool {
 }
 
 fn validate_create_request(request: &RootCreate) -> Result<(), StateError> {
+    if let Some(policy) = &request.local_model {
+        policy.validate()?;
+    }
     if !valid_identity(&request.id) {
         return Err(StateError::InvalidIdentity);
     }
@@ -1543,6 +1580,7 @@ mod tests {
     fn root_with_limits(model_requests: u32, tool_calls: u32) -> RootTask {
         RootTask::create_with_grant(
             RootCreate {
+                local_model: None,
                 id: "root-budget".into(),
                 session_id: None,
                 goal: "Deliver the checked result".into(),

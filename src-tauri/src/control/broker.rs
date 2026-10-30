@@ -335,7 +335,10 @@ fn valid_model_id(model: &str) -> bool {
         && !model.chars().any(char::is_control)
 }
 
-fn prepare_generation_body(permit: &GenerationPermit, body: &[u8]) -> Result<Vec<u8>, BrokerError> {
+pub(super) fn prepare_generation_body(
+    permit: &GenerationPermit,
+    body: &[u8],
+) -> Result<Vec<u8>, BrokerError> {
     if body.len() > permit.max_request_bytes {
         return Err(BrokerError::RequestTooLarge);
     }

@@ -199,6 +199,15 @@ impl TaskRequest {
 
 fn root_create(request: &TaskRequest) -> Result<RootCreate, ControlError> {
     Ok(RootCreate {
+        local_model: if request.provider == "ollama" {
+            Some(super::state::LocalModelPolicy {
+                model: request.model.clone(),
+                max_output_tokens: 4096,
+                max_request_bytes: 8_388_608,
+            })
+        } else {
+            None
+        },
         id: request.id.clone(),
         session_id: Some(request.id.clone()),
         goal: request.goal.clone(),
