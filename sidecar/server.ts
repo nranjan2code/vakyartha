@@ -737,6 +737,8 @@ ${skills.index()}`;
       }
       const builtin = /^\/api\/apps\/builtin\/([a-z0-9][a-z0-9_-]{1,63})$/.exec(p);
       if (builtin && req.method === "POST") { json(res, 201, await apps.installBuiltin(builtin[1]!)); return true; }
+      const updateMatch = /^\/api\/apps\/([a-z0-9][a-z0-9_-]{1,63})\/update$/.exec(p);
+      if (updateMatch && req.method === "POST") { json(res, 200, await apps.updateAppToLatest(updateMatch[1]!)); return true; }
       if (p === "/api/apps/drafts" && req.method === "GET") { json(res, 200, apps.listDrafts()); return true; }
       if (p === "/api/apps" && req.method === "GET") {
         json(res, 200, apps.listApps());

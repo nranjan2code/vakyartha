@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -12,6 +12,7 @@ import { paise, records, handleAction as financeAction, project as financeProjec
 import { project as voiceProject, handleAction as voiceAction } from '../sidecar/builtin-apps/voice-desk/server.ts';
 import { AppRegistry } from '../sidecar/sandbox-pool/app-registry.ts';
 import { SandboxPoolManager } from '../sidecar/sandbox-pool/pool-manager.ts';
+import { fingerprint } from '../sidecar/sandbox-pool/package.ts';
 import { APP_DOCUMENTS } from '../shared/app-scaffold.ts';
 const fixture='<rss version="2.0"><channel><item><title><![CDATA[Science &amp; facts]]></title><link>https://example.org/article?utm_source=feed</link><pubDate>Wed, 28 Oct 2026 10:00:00 GMT</pubDate><description><![CDATA[<p>Source excerpt</p>]]></description></item></channel></rss>';
 const feed={name:'Test feed',category:'Science',url:'https://example.org/feed.xml'};
@@ -84,7 +85,23 @@ test('voice-desk initializes clean state, supports typing, notes lifecycle and a
   assert.equal(activeNote.actions[0].task,'Benchmark latency with local 4B');
   assert.equal(activeNote.actions[0].owner,'Nisheeth');
 
-  // Export
+  // Toggle action item completion
+  await voiceAction('toggle_action',{id:activeNote.actions[0].id},c,'toggle_action');
+  assert.equal(activeNote.actions[0].status,'Done');
+
+  // Note switching via select_note
+  await voiceAction('select_note',{id:'note-1'},c,'select_note');
+  assert.equal(c.state.activeId,'note-1');
+  assert.equal(c.state.activeTitle,'Welcome to Voice Desk');
+
+  // Voice dock polish & read
+  const cleanRes=await voiceAction('clean_note',null,c,'clean_note');
+  assert.match((cleanRes.updates[0]!.data as any).statusMessage,/applied/);
+  const readRes=await voiceAction('read_note',null,c,'read_note');
+  assert.match((readRes.updates[0]!.data as any).statusMessage,/Reading aloud/);
+
+  // Switch back and export
+  await voiceAction('/selectedNoteId',c.state.notes[0].id,c);
   const exportRes=await voiceAction('export_markdown',null,c,'export_markdown');
   assert.match((exportRes.updates[0]!.data as any).statusMessage,/ready for export/);
 
@@ -94,4 +111,50 @@ test('voice-desk initializes clean state, supports typing, notes lifecycle and a
 
   // Unknown action throws
   await assert.rejects(voiceAction('bad_action',null,c,'bad_action'),/Unknown Voice Desk action/);
+});
+
+test('app registry detects updates and updates built-in app while preserving durable state', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'vak-app-update-'));
+  const pool = new SandboxPoolManager();
+  const registry = new AppRegistry({ dataDir: dir, pool });
+  try {
+    const app = await registry.installBuiltin('voice-desk');
+    assert.equal(app.manifest.id, 'voice-desk');
+
+    let list = registry.listApps();
+    let vd = list.find(a => a.id === 'voice-desk');
+    assert.ok(vd);
+    assert.equal(vd.isBuiltin, true);
+    assert.equal(vd.updateAvailable, false);
+
+    // Simulate an older version installed
+    const recordFile = path.join(dir, 'app-state', 'voice-desk.json');
+    const record = JSON.parse(readFileSync(recordFile, 'utf8'));
+    record.published.manifest.version = '0.0.1';
+    record.fingerprint = fingerprint(record.published);
+    record.state = { notes: [{ id: 'custom-note', title: 'My Custom Note', tags: '#personal', content: 'Important ideas', rawTranscript: '', updatedAt: '2026-10-30', actions: [], decisions: [] }] };
+    writeFileSync(recordFile, JSON.stringify(record));
+
+    registry.reloadApps();
+
+    // Now listApps should detect updateAvailable = true
+    list = registry.listApps();
+    vd = list.find(a => a.id === 'voice-desk');
+    assert.ok(vd);
+    assert.equal(vd.updateAvailable, true);
+
+    // Update app to latest
+    const updated = await registry.updateAppToLatest('voice-desk');
+    assert.equal(updated.manifest.id, 'voice-desk');
+    assert.equal((updated.state as any).notes[0].title, 'My Custom Note'); // Preserves user durable state!
+
+    // After update, updateAvailable is false
+    list = registry.listApps();
+    vd = list.find(a => a.id === 'voice-desk');
+    assert.equal(vd?.updateAvailable, false);
+  } finally {
+    await registry.shutdown();
+    await pool.shutdown();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

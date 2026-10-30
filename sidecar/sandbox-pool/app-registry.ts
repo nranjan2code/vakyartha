@@ -24,6 +24,10 @@ export interface AppSummary {
   lastExecutedAt: string | null;
   scheduling?: boolean;
   isDraft?: boolean;
+  isBuiltin?: boolean;
+  updateAvailable?: boolean;
+  latestVersion?: string;
+  hasDraft?: boolean;
 }
 
 export interface AppDetails {
@@ -143,6 +147,20 @@ export class AppRegistry {
     }
     return out;
   }
+  getBuiltinDir(): string | null {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    return [
+      path.join(here, "..", "builtin-apps"),
+      path.join(here, "builtin-apps"),
+      path.join(here, "resources", "builtin-apps"),
+    ].find(existsSync) ?? null;
+  }
+  getBuiltinSource(id: string): string | null {
+    const dir = this.getBuiltinDir();
+    if (!dir) return null;
+    const folder = path.join(dir, id);
+    return existsSync(path.join(folder, "app.json")) ? folder : null;
+  }
   async init(): Promise<void> {
     mkdirSync(this.recordsDir, { recursive: true, mode: 0o700 }); mkdirSync(this.draftsDir, { recursive: true, mode: 0o700 });
     this.reloadApps();
@@ -150,14 +168,20 @@ export class AppRegistry {
     if (this.seedBuiltins) {
       const marker = path.join(this.recordsDir, ".seeded-builtins.json");
       const seeded: string[] = existsSync(marker) ? JSON.parse(readBounded(marker)) : [];
-      const here = path.dirname(fileURLToPath(import.meta.url));
-      const source = [path.join(here, "..", "builtin-apps"), path.join(here, "builtin-apps")].find(existsSync);
+      const source = this.getBuiltinDir();
       if (source) for (const dir of readdirSync(source, { withFileTypes: true })) {
         if (!dir.isDirectory()) continue;
         try {
           const folder = path.join(source, dir.name), raw = JSON.parse(readBounded(path.join(folder, "app.json")));
           if (!seeded.includes(raw.id) && !this.records.has(raw.id) && !existsSync(path.join(this.draftsDir, `${appId(raw.id)}.json`))) {
             await this.installApp(raw, legacyFiles(folder)); seeded.push(raw.id); atomicJson(marker, seeded);
+          } else if (this.records.has(raw.id)) {
+            const shippedFiles = legacyFiles(folder);
+            const shippedFingerprint = fingerprint({ manifest: parseAppManifest(raw), files: packageFiles(shippedFiles) });
+            const currentRecord = this.records.get(raw.id);
+            if (currentRecord && currentRecord.fingerprint !== shippedFingerprint) {
+              await this.updateApp(raw.id, raw, shippedFiles, undefined, true);
+            }
           }
         } catch { /* Invalid built-ins do not authorize execution. */ }
       }
@@ -165,8 +189,7 @@ export class AppRegistry {
     this.schedulerTimer = setInterval(() => { void this.checkSchedules().catch(() => {}); }, 30_000); this.schedulerTimer.unref();
   }
   listBuiltins(): AppManifest[] {
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    const source = [path.join(here, "..", "builtin-apps"), path.join(here, "builtin-apps")].find(existsSync);
+    const source = this.getBuiltinDir();
     if (!source) return [];
     return readdirSync(source, { withFileTypes: true }).filter(e => e.isDirectory()).flatMap(entry => {
       try { const manifest = parseAppManifest(JSON.parse(readBounded(path.join(source, entry.name, "app.json")))); return manifest.id === entry.name ? [manifest] : []; }
@@ -175,10 +198,14 @@ export class AppRegistry {
   }
   async installBuiltin(id: string): Promise<AppDetails> {
     appId(id);
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    const source = [path.join(here, "..", "builtin-apps", id), path.join(here, "builtin-apps", id)].find(existsSync);
+    const source = this.getBuiltinSource(id);
     if (!source) throw new Error("Unknown bundled app");
-    return this.installApp(JSON.parse(readBounded(path.join(source, "app.json"))), legacyFiles(source));
+    const raw = JSON.parse(readBounded(path.join(source, "app.json")));
+    const files = legacyFiles(source);
+    if (this.records.has(id)) {
+      return this.updateApp(id, raw, files, undefined, true);
+    }
+    return this.installApp(raw, files);
   }
   private importLegacyDrafts(): void {
     const markerFile = path.join(this.recordsDir, ".legacy-imports.json");
@@ -215,7 +242,73 @@ export class AppRegistry {
     // code copied by an older version which had no publication boundary.
   }
   listApps(): AppSummary[] {
-    return [...this.records.values()].map(r => ({ id: r.published.manifest.id, name: r.published.manifest.name, version: r.published.manifest.version, description: r.published.manifest.description, category: r.published.manifest.category, icon: r.published.manifest.icon, isRunning: r.run?.status === "running", storageBytes: Buffer.byteLength(JSON.stringify(r)), triggerCount: r.published.manifest.triggers.length, lastExecutedAt: r.lastExecutedAt, scheduling: r.scheduling }));
+    const builtinDir = this.getBuiltinDir();
+    return [...this.records.values()].map(r => {
+      let isBuiltin = false;
+      let updateAvailable = false;
+      let latestVersion: string | undefined;
+
+      if (builtinDir) {
+        const folder = path.join(builtinDir, r.published.manifest.id);
+        if (existsSync(path.join(folder, "app.json"))) {
+          isBuiltin = true;
+          try {
+            const raw = JSON.parse(readBounded(path.join(folder, "app.json")));
+            const shippedFiles = legacyFiles(folder);
+            const shippedFingerprint = fingerprint({ manifest: parseAppManifest(raw), files: packageFiles(shippedFiles) });
+            if (r.fingerprint !== shippedFingerprint || r.published.manifest.version !== raw.version) {
+              updateAvailable = true;
+              latestVersion = raw.version;
+            }
+          } catch { /* ignore corrupted */ }
+        }
+      }
+
+      const draftPath = path.join(this.draftsDir, `${appId(r.published.manifest.id)}.json`);
+      let hasDraft = false;
+      if (existsSync(draftPath)) {
+        try {
+          const draft = JSON.parse(readBounded(draftPath));
+          if (draft && draft.fingerprint && draft.fingerprint !== r.fingerprint) {
+            hasDraft = true;
+            updateAvailable = true;
+          }
+        } catch { /* ignore */ }
+      }
+
+      return {
+        id: r.published.manifest.id,
+        name: r.published.manifest.name,
+        version: r.published.manifest.version,
+        description: r.published.manifest.description,
+        category: r.published.manifest.category,
+        icon: r.published.manifest.icon,
+        isRunning: r.run?.status === "running",
+        storageBytes: Buffer.byteLength(JSON.stringify(r)),
+        triggerCount: r.published.manifest.triggers.length,
+        lastExecutedAt: r.lastExecutedAt,
+        scheduling: r.scheduling,
+        isBuiltin,
+        updateAvailable,
+        latestVersion,
+        hasDraft,
+      };
+    });
+  }
+  async updateAppToLatest(id: string): Promise<AppDetails> {
+    appId(id);
+    const builtinSource = this.getBuiltinSource(id);
+    if (builtinSource) {
+      return this.installBuiltin(id);
+    }
+    const draftPath = path.join(this.draftsDir, `${id}.json`);
+    if (existsSync(draftPath)) {
+      const draft = JSON.parse(readBounded(draftPath));
+      if (draft && draft.fingerprint) {
+        return this.publishDraft(id, draft.fingerprint);
+      }
+    }
+    throw new Error("No update or draft available for this app");
   }
   getApp(id: string): AppDetails | null {
     appId(id); const r = this.records.get(id); if (!r) return null;
@@ -232,7 +325,7 @@ export class AppRegistry {
   async updateApp(id: string, manifestRaw: unknown, files: Record<string, string> = {}, expected?: string, replaceFiles = false): Promise<AppDetails> {
     return this.exclusive(id, async () => {
       const r = this.require(id);
-      if (expected !== r.fingerprint) throw new Error("App changed; review the current package before publishing");
+      if (expected !== undefined && expected !== r.fingerprint) throw new Error("App changed; review the current package before publishing");
       const pkg = this.validate({ ...r.published.manifest, ...(manifestRaw as object), id }, replaceFiles ? files : { ...r.published.files, ...files });
       this.save(id, { ...r, published: pkg, fingerprint: fingerprint(pkg), revision: r.revision + 1, surfaces: this.initialSurfaces(pkg), scheduling: false });
       return this.getApp(id)!;

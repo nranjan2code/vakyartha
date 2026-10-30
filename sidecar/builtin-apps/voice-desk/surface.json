@@ -5,10 +5,19 @@
     "version": 1,
     "data": {
       "noteCount": "1",
-      "actionCount": "2",
+      "actionCount": "1",
       "decisionCount": "1",
       "tagCount": "2",
-      "statusMessage": "Ready. Dictate with ⌘D or edit notes below.",
+      "statusMessage": "Ready to capture. Speak with ⌘D or edit below.",
+      "selectedNoteId": "note-1",
+      "noteOptions": [
+        {
+          "label": "📄 Welcome to Voice Desk",
+          "value": "note-1"
+        }
+      ],
+      "noteDate": "2026-10-30",
+      "activeExcerpt": "Welcome to Voice Desk. Speak naturally via dictation (⌘D) or type your thoughts directly...",
       "notes": [
         {
           "id": "note-1",
@@ -55,65 +64,124 @@
           "gap": "md"
         },
         "children": [
-          "status-text",
-          "metrics-grid",
-          "new-note-form",
+          "voice-studio-dock",
           "editor-split"
         ]
       },
       {
-        "id": "status-text",
-        "type": "text",
+        "id": "voice-studio-dock",
+        "type": "card",
         "props": {
-          "content": "{/statusMessage}",
-          "variant": "caption"
-        }
-      },
-      {
-        "id": "metrics-grid",
-        "type": "grid",
-        "props": {
-          "columns": 4,
-          "minItemWidth": "sm",
-          "gap": "md"
+          "title": "🎙️ Voice Studio Dock",
+          "subtitle": "{/statusMessage}",
+          "tone": "info"
         },
         "children": [
-          "stat-notes",
-          "stat-actions",
-          "stat-decisions",
-          "stat-tags"
+          "voice-actions-row"
         ]
       },
       {
-        "id": "stat-notes",
-        "type": "stat",
+        "id": "voice-actions-row",
+        "type": "stack",
         "props": {
-          "label": "Total Notes",
-          "value": "{/noteCount}"
+          "direction": "horizontal",
+          "gap": "sm"
+        },
+        "children": [
+          "btn-dictate",
+          "btn-save",
+          "btn-clean",
+          "btn-read",
+          "btn-export"
+        ]
+      },
+      {
+        "id": "btn-dictate",
+        "type": "button",
+        "props": {
+          "label": "🎙️ Dictate Note (⌘D)",
+          "action": "dictate_note",
+          "style": "primary"
         }
       },
       {
-        "id": "stat-actions",
-        "type": "stat",
+        "id": "btn-save",
+        "type": "button",
         "props": {
-          "label": "Action Items",
-          "value": "{/actionCount}"
+          "label": "💾 Save Changes",
+          "action": "save_note",
+          "style": "primary"
         }
       },
       {
-        "id": "stat-decisions",
-        "type": "stat",
+        "id": "btn-clean",
+        "type": "button",
         "props": {
-          "label": "Decisions Logged",
-          "value": "{/decisionCount}"
+          "label": "✨ Polish Content",
+          "action": "clean_note",
+          "style": "secondary"
         }
       },
       {
-        "id": "stat-tags",
-        "type": "stat",
+        "id": "btn-read",
+        "type": "button",
         "props": {
-          "label": "Categorized Tags",
-          "value": "{/tagCount}"
+          "label": "🔊 Read Aloud",
+          "action": "read_note",
+          "style": "secondary"
+        }
+      },
+      {
+        "id": "btn-export",
+        "type": "button",
+        "props": {
+          "label": "📥 Export Markdown",
+          "action": "export_markdown",
+          "style": "secondary"
+        }
+      },
+      {
+        "id": "editor-split",
+        "type": "split",
+        "props": {
+          "ratio": "1:2",
+          "gap": "md"
+        },
+        "children": [
+          "pane-notes-sidebar",
+          "pane-editor"
+        ]
+      },
+      {
+        "id": "pane-notes-sidebar",
+        "type": "stack",
+        "props": {
+          "direction": "vertical",
+          "gap": "sm"
+        },
+        "children": [
+          "heading-library",
+          "select-active-note",
+          "new-note-form",
+          "active-note-card",
+          "notes-summary-stats"
+        ]
+      },
+      {
+        "id": "heading-library",
+        "type": "text",
+        "props": {
+          "content": "### 📚 Notes Library",
+          "variant": "subheading"
+        }
+      },
+      {
+        "id": "select-active-note",
+        "type": "select",
+        "props": {
+          "label": "Open Note",
+          "bind": "/selectedNoteId",
+          "options": "{/noteOptions}"
         }
       },
       {
@@ -131,67 +199,59 @@
         "id": "input-new-title",
         "type": "input",
         "props": {
-          "label": "New note title",
+          "label": "New Note Title",
           "bind": "/newNoteTitle",
-          "placeholder": "e.g. Sprint Brainstorm"
+          "placeholder": "e.g. Brainstorm, Meeting..."
         }
       },
       {
-        "id": "editor-split",
-        "type": "split",
+        "id": "active-note-card",
+        "type": "card",
         "props": {
-          "ratio": "1:2",
-          "gap": "md"
+          "title": "{/activeTitle}",
+          "subtitle": "Last edited: {/noteDate} · {/activeTags}",
+          "body": "{/activeExcerpt}"
         },
         "children": [
-          "pane-list",
-          "pane-editor"
+          "btn-delete-active"
         ]
       },
       {
-        "id": "pane-list",
-        "type": "stack",
+        "id": "btn-delete-active",
+        "type": "button",
         "props": {
-          "direction": "vertical",
+          "label": "🗑️ Delete Note",
+          "action": "delete_note",
+          "style": "danger"
+        }
+      },
+      {
+        "id": "notes-summary-stats",
+        "type": "grid",
+        "props": {
+          "columns": 2,
+          "minItemWidth": "sm",
           "gap": "sm"
         },
         "children": [
-          "heading-notes",
-          "notes-table"
+          "stat-notes",
+          "stat-actions"
         ]
       },
       {
-        "id": "heading-notes",
-        "type": "text",
+        "id": "stat-notes",
+        "type": "stat",
         "props": {
-          "content": "### Notes",
-          "variant": "subheading"
+          "label": "Notes in Library",
+          "value": "{/noteCount}"
         }
       },
       {
-        "id": "notes-table",
-        "type": "table",
+        "id": "stat-actions",
+        "type": "stat",
         "props": {
-          "columns": [
-            {
-              "key": "title",
-              "label": "Title"
-            },
-            {
-              "key": "tags",
-              "label": "Tags"
-            }
-          ],
-          "rows": {
-            "records": "{/notes}",
-            "fields": [
-              "title",
-              "tags"
-            ]
-          },
-          "sortable": true,
-          "searchable": true,
-          "pageSize": 6
+          "label": "Pending Tasks",
+          "value": "{/actionCount}"
         }
       },
       {
@@ -199,24 +259,20 @@
         "type": "stack",
         "props": {
           "direction": "vertical",
-          "gap": "sm"
+          "gap": "md"
         },
         "children": [
-          "heading-active",
+          "heading-editor",
           "active-form",
-          "heading-actions",
-          "actions-table",
-          "action-add-form",
-          "heading-raw",
-          "text-raw",
-          "action-buttons"
+          "card-deliverables",
+          "card-raw-audio"
         ]
       },
       {
-        "id": "heading-active",
+        "id": "heading-editor",
         "type": "text",
         "props": {
-          "content": "### Note Editor",
+          "content": "### ✍️ Note Document",
           "variant": "subheading"
         }
       },
@@ -225,12 +281,24 @@
         "type": "form",
         "props": {
           "submit": "save_note",
-          "submitLabel": "Save Changes"
+          "submitLabel": "💾 Save Changes"
+        },
+        "children": [
+          "editor-meta-grid",
+          "textarea-active-content"
+        ]
+      },
+      {
+        "id": "editor-meta-grid",
+        "type": "grid",
+        "props": {
+          "columns": 2,
+          "minItemWidth": "sm",
+          "gap": "md"
         },
         "children": [
           "input-active-title",
-          "input-active-tags",
-          "textarea-active-content"
+          "input-active-tags"
         ]
       },
       {
@@ -238,34 +306,39 @@
         "type": "input",
         "props": {
           "label": "Note Title",
-          "bind": "/activeTitle"
+          "bind": "/activeTitle",
+          "placeholder": "Document title..."
         }
       },
       {
         "id": "input-active-tags",
         "type": "input",
         "props": {
-          "label": "Tags",
+          "label": "Topic Tags",
           "bind": "/activeTags",
-          "placeholder": "#tag1 #tag2"
+          "placeholder": "#voice #strategy..."
         }
       },
       {
         "id": "textarea-active-content",
         "type": "textarea",
         "props": {
-          "label": "Note Content",
+          "label": "Note Body (Markdown formatting, bullets and paragraphs supported)",
           "bind": "/activeContent",
-          "placeholder": "Type or dictate notes here…"
+          "placeholder": "Speak with ⌘D or start typing your thoughts here..."
         }
       },
       {
-        "id": "heading-actions",
-        "type": "text",
+        "id": "card-deliverables",
+        "type": "card",
         "props": {
-          "content": "#### Action Items",
-          "variant": "subheading"
-        }
+          "title": "✅ Action Items & Deliverables",
+          "subtitle": "Tasks extracted from speech or added manually"
+        },
+        "children": [
+          "actions-table",
+          "action-add-form"
+        ]
       },
       {
         "id": "actions-table",
@@ -274,25 +347,21 @@
           "columns": [
             {
               "key": "task",
-              "label": "Task"
+              "label": "Task Description"
             },
             {
               "key": "owner",
-              "label": "Owner"
+              "label": "Assignee"
             },
             {
               "key": "status",
               "label": "Status"
             }
           ],
-          "rows": {
-            "records": "{/actions}",
-            "fields": [
-              "task",
-              "owner",
-              "status"
-            ]
-          }
+          "rows": "{/actions}",
+          "sortable": true,
+          "searchable": true,
+          "pageSize": 5
         }
       },
       {
@@ -300,75 +369,51 @@
         "type": "form",
         "props": {
           "submit": "add_action",
-          "submitLabel": "+ Add Task"
+          "submitLabel": "+ Add Action"
         },
         "children": [
-          "input-action-text",
-          "input-action-owner"
+          "action-add-grid"
         ]
       },
       {
-        "id": "input-action-text",
+        "id": "action-add-grid",
+        "type": "grid",
+        "props": {
+          "columns": 2,
+          "minItemWidth": "sm",
+          "gap": "sm"
+        },
+        "children": [
+          "input-new-action-task",
+          "input-new-action-owner"
+        ]
+      },
+      {
+        "id": "input-new-action-task",
         "type": "input",
         "props": {
-          "label": "Task description",
+          "label": "New Action Task",
           "bind": "/newActionText",
-          "placeholder": "e.g. Review pull request"
+          "placeholder": "e.g. Schedule review meeting..."
         }
       },
       {
-        "id": "input-action-owner",
+        "id": "input-new-action-owner",
         "type": "input",
         "props": {
           "label": "Assignee",
           "bind": "/newActionOwner",
-          "placeholder": "Name or You"
+          "placeholder": "e.g. You, Alex..."
         }
       },
       {
-        "id": "heading-raw",
-        "type": "text",
+        "id": "card-raw-audio",
+        "type": "card",
         "props": {
-          "content": "#### Audio Transcript Archive",
-          "variant": "caption"
-        }
-      },
-      {
-        "id": "text-raw",
-        "type": "text",
-        "props": {
-          "content": "{/activeRaw}",
-          "variant": "code"
-        }
-      },
-      {
-        "id": "action-buttons",
-        "type": "stack",
-        "props": {
-          "direction": "horizontal",
-          "gap": "sm"
-        },
-        "children": [
-          "btn-delete",
-          "btn-export"
-        ]
-      },
-      {
-        "id": "btn-delete",
-        "type": "button",
-        "props": {
-          "label": "Delete Active Note",
-          "action": "delete_note",
-          "style": "danger"
-        }
-      },
-      {
-        "id": "btn-export",
-        "type": "button",
-        "props": {
-          "label": "Export Note to Markdown",
-          "action": "export_markdown",
-          "style": "secondary"
+          "title": "🎙️ Original Audio Transcript (Verbatim Memory)",
+          "subtitle": "Raw speech captured before speech-to-text normalizer",
+          "body": "{/activeRaw}",
+          "tone": "neutral"
         }
       }
     ]
@@ -397,7 +442,7 @@
           "status": "Done"
         }
       ],
-      "coverage": "Central register of all action items distilled across Voice Desk notes."
+      "coverage": "Central register of 2 action items across 1 Voice Desk notes."
     },
     "nodes": [
       {
@@ -408,21 +453,22 @@
           "gap": "md"
         },
         "children": [
-          "coverage-text",
-          "actions-grid",
+          "card-register-header",
+          "actions-summary",
           "all-actions-table"
         ]
       },
       {
-        "id": "coverage-text",
-        "type": "text",
+        "id": "card-register-header",
+        "type": "card",
         "props": {
-          "content": "{/coverage}",
-          "variant": "caption"
+          "title": "📋 Central Action Register",
+          "subtitle": "{/coverage}",
+          "tone": "info"
         }
       },
       {
-        "id": "actions-grid",
+        "id": "actions-summary",
         "type": "grid",
         "props": {
           "columns": 3,
@@ -447,16 +493,18 @@
         "id": "stat-open",
         "type": "stat",
         "props": {
-          "label": "To Do",
-          "value": "{/openCount}"
+          "label": "Pending Tasks",
+          "value": "{/openCount}",
+          "tone": "warning"
         }
       },
       {
         "id": "stat-done",
         "type": "stat",
         "props": {
-          "label": "Completed",
-          "value": "{/doneCount}"
+          "label": "Completed Tasks",
+          "value": "{/doneCount}",
+          "tone": "success"
         }
       },
       {
@@ -466,11 +514,11 @@
           "columns": [
             {
               "key": "noteTitle",
-              "label": "Source Note"
+              "label": "Note Document"
             },
             {
               "key": "task",
-              "label": "Task"
+              "label": "Deliverable"
             },
             {
               "key": "owner",
@@ -481,17 +529,10 @@
               "label": "Status"
             }
           ],
-          "rows": {
-            "records": "{/allActions}",
-            "fields": [
-              "noteTitle",
-              "task",
-              "owner",
-              "status"
-            ]
-          },
+          "rows": "{/allActions}",
           "sortable": true,
-          "searchable": true
+          "searchable": true,
+          "pageSize": 10
         }
       }
     ]

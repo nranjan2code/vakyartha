@@ -210,8 +210,9 @@ export class AppsPage {
         a.category.toLowerCase().includes(this.#query)
     );
 
+    const updateCount = this.#apps.filter((a) => a.updateAvailable).length;
     if (resultsEl) {
-      resultsEl.textContent = `${filtered.length} application${filtered.length === 1 ? "" : "s"}${filtered.length !== this.#apps.length ? ` · ${this.#apps.length} total` : ""}`;
+      resultsEl.textContent = `${filtered.length} application${filtered.length === 1 ? "" : "s"}${filtered.length !== this.#apps.length ? ` · ${this.#apps.length} total` : ""}${updateCount > 0 ? ` · ${updateCount} update${updateCount === 1 ? "" : "s"} available` : ""}`;
     }
 
     document.getElementById("apps-pages")?.remove();
@@ -230,13 +231,20 @@ export class AppsPage {
     grid.replaceChildren(
       ...this.#paging.slice(filtered, this.#query).map((app) => {
         const isRunning = app.isRunning;
+        const hasUpdate = Boolean(app.updateAvailable);
         return el("div", { className: "artifact-card app-card" },
           el("div", { className: "artifact-cover app-cover" },
             el("span", { className: "artifact-kind", textContent: app.category.toUpperCase() }),
-            el("span", {
-              className: `app-status ${isRunning ? "live" : ""}`,
-              textContent: isRunning ? "Running" : "Idle",
-            }),
+            hasUpdate
+              ? el("span", {
+                  className: "app-badge-update",
+                  title: app.latestVersion ? `Version ${app.latestVersion} available` : "Update available",
+                  textContent: app.latestVersion ? `v${app.latestVersion} Update` : "Update available",
+                })
+              : el("span", {
+                  className: `app-status ${isRunning ? "live" : ""}`,
+                  textContent: isRunning ? "Running" : "Idle",
+                }),
             el("span", { className: "artifact-symbol app-symbol" },
               icon(app.category === "finance" ? "chart" : "cpu", 28)
             )
@@ -249,10 +257,25 @@ export class AppsPage {
             }),
             el("div", { className: "app-stats" },
               el("span", {}, icon("folder", 12), document.createTextNode(` ${formatBytes(app.storageBytes)}`)),
-              el("span", {}, icon("clock", 12), document.createTextNode(` ${app.triggerCount} trigger${app.triggerCount === 1 ? "" : "s"}`))
+              el("span", {}, icon("clock", 12), document.createTextNode(` ${app.triggerCount} trigger${app.triggerCount === 1 ? "" : "s"}`)),
+              hasUpdate
+                ? el("span", { className: "app-stat-update" }, icon("spark", 12), document.createTextNode(app.hasDraft ? " Draft update" : " Shipped update"))
+                : false
             )
           ),
           el("div", { className: "app-card-foot" },
+            hasUpdate
+              ? el("button", {
+                  type: "button",
+                  className: "primary small app-btn-update",
+                  title: `Update ${app.name} to latest version`,
+                  onclick: (e: MouseEvent) => {
+                    e.stopPropagation();
+                    const target = e.currentTarget as HTMLButtonElement;
+                    void this.#updateApp(app.id, app.name, target);
+                  },
+                }, icon("refresh", 13), document.createTextNode(" Update"))
+              : false,
             el("button", {
               type: "button",
               className: "ghost small app-btn-open",
@@ -288,6 +311,28 @@ export class AppsPage {
       resultsEl.classList.remove("error");
       this.#renderGrid();
     }, 3500);
+  }
+
+  async #updateApp(id: string, name: string, btn?: HTMLButtonElement): Promise<void> {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Updating…";
+    }
+    try {
+      await api<AppDetails>(`/api/apps/${encodeURIComponent(id)}/update`, { method: "POST" });
+      this.#feedback(`Updated ${name} to latest version.`);
+      window.dispatchEvent(new CustomEvent("vak:app-updated", { detail: { id } }));
+      await this.refresh();
+      if (this.#activeApp && this.#activeApp.manifest.id === id) {
+        await this.runApp(id);
+      }
+    } catch (err) {
+      this.#feedback(`Failed to update ${name}: ${(err as Error).message}`, true);
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Update";
+      }
+    }
   }
 
   async runApp(appId: string, surface?: string): Promise<void> {
@@ -345,6 +390,19 @@ export class AppsPage {
       title: "Open Fleet Console (⌘⇧A)",
     }, icon("sliders", 13), document.createTextNode(" Fleet Console"));
 
+    const hasUpdate = Boolean(this.#apps.find((a) => a.id === app.manifest.id)?.updateAvailable);
+    const updateRunnerBtn = hasUpdate
+      ? el("button", {
+          type: "button",
+          className: "primary small app-runner-update",
+          onclick: (e: MouseEvent) => {
+            const target = e.currentTarget as HTMLButtonElement;
+            void this.#updateApp(app.manifest.id, app.manifest.name, target);
+          },
+          title: "Update this application to latest version",
+        }, icon("refresh", 13), document.createTextNode(" Update Available"))
+      : false;
+
     const header = el("div", { className: "app-runner-top", "data-tauri-drag-region": "" },
       back,
       el("div", { className: "app-runner-head-info" },
@@ -352,7 +410,7 @@ export class AppsPage {
         el("h1", { className: "app-runner-name", textContent: app.manifest.name }),
         el("span", { className: `app-status ${isRunning ? "live" : ""}`, textContent: isRunning ? "Running" : "Idle" })
       ),
-      el("div", { className: "app-runner-actions" }, ...(app.manifest.triggers.length ? [pollBtn] : []))
+      el("div", { className: "app-runner-actions" }, ...(updateRunnerBtn ? [updateRunnerBtn] : []), ...(app.manifest.triggers.length ? [pollBtn] : []))
     );
 
     const surfaceMount = el("div", { className: "app-runner-content" });
@@ -458,6 +516,10 @@ export class AppsPage {
       if (!cached) surfaceEl.addEventListener("vak-action", (event: Event) => {
         event.stopPropagation();
         const detail = (event as CustomEvent<VakActionDetail>).detail;
+        if (detail.action.action === "dictate_note") {
+          window.dispatchEvent(new CustomEvent("vak:start-dictation"));
+          return;
+        }
         dispatch({ controlId: detail.action.source, value: detail.action.data ?? detail.data, action: detail.action.action });
       });
 
