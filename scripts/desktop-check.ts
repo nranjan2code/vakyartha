@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-const run = promisify(execFile), root = process.cwd(), out = mkdtempSync(path.join(tmpdir(), "vak-desktop-private-")), workspace = `${out}-workspace`, nextWorkspace = `${out}-workspace-next`;
+const run = promisify(execFile), root = process.cwd(), out = mkdtempSync(path.join(tmpdir(), "vak-desktop-private-")), nativeOut = path.join(path.dirname(out), `.${path.basename(out)}-native`), workspace = `${out}-workspace`, nextWorkspace = `${out}-workspace-next`;
 if (process.platform !== "darwin") throw new Error("The native transport check currently targets macOS");
 await run("npm", ["run", "build"]);
 const host = /host: (\S+)/.exec((await run("rustc", ["-vV"])).stdout)?.[1];
@@ -33,7 +33,7 @@ try {
   }
   assert.ok(existsSync(log) && readFileSync(log, "utf8").includes("NATIVE_PRIVATE_PASS"), `Native probe failed; see ${out}`);
   assert.deepEqual(readFileSync(legacyChat), legacyBytes, "Legacy chat source was changed during migration");
-  assert.equal(statSync(path.join(out, "host-sessions", "session-legacy-chat.json")).mode & 0o077, 0, "Native chat storage permissions are too broad");
+  assert.equal(statSync(path.join(nativeOut, "host-sessions", "session-legacy-chat.json")).mode & 0o077, 0, "Native chat storage permissions are too broad");
   const folder = path.join(out, "attachments/ipc-check"), uploads = readdirSync(folder).filter((file) => file.endsWith(".wav"));
   assert.equal(uploads.length, 1);
   const expected = Buffer.alloc(1024 * 1024 + 44);

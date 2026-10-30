@@ -61,7 +61,9 @@ pub(super) struct HostSessionStore {
 
 impl HostSessionStore {
     pub(super) fn open(data_dir: &Path) -> Result<Self, super::StoreError> {
-        let root = data_dir.join("host-sessions");
+        let native_root = super::native_store_root(data_dir);
+        super::ensure_private_root(&native_root)?;
+        let root = native_root.join("host-sessions");
         ensure_private_dir(&root)?;
         let mut store = Self { root, legacy_dir: data_dir.join("sessions"), summaries: BTreeMap::new(), migration_receipt: None };
         store.recover()?;

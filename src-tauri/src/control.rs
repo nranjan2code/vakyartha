@@ -18,6 +18,38 @@ const MAX_CANDIDATE_RECEIPTS: usize = 10_000;
 const MAX_ADMITTED_HOST_SESSIONS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+/// Keep Rust-owned authority and canonical bytes outside the sidecar's data root.
+/// A contained worker can receive explicit grants for its own data without
+/// inheriting a path to this sibling store.
+fn native_store_root(data_dir: &Path) -> PathBuf {
+    let name = data_dir.file_name().unwrap_or_default().to_string_lossy();
+    data_dir.with_file_name(format!(".{name}-native"))
+}
+
+fn ensure_private_root(path: &Path) -> Result<(), StoreError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            match fs::create_dir(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(store_io(error)),
+            }
+        }
+        Err(error) => return Err(store_io(error)),
+    }
+    let metadata = fs::symlink_metadata(path).map_err(store_io)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(StoreError::Corrupt);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(store_io)?;
+    }
+    Ok(())
+}
+
 pub mod bridge;
 mod approval;
 mod broker;
@@ -1376,7 +1408,9 @@ impl ControlActor {
         if queue_capacity == 0 || response_timeout.is_zero() {
             return Err(StoreError::InvalidProfile);
         }
-        let (mut store, mut ledger) = ControlStore::open(data_dir, profile_revision, &profile)?;
+        let native_dir = native_store_root(data_dir);
+        ensure_private_root(&native_dir)?;
+        let (mut store, mut ledger) = ControlStore::open(&native_dir, profile_revision, &profile)?;
         let workspace_admission = WorkspaceAdmissionPolicy::new(data_dir).map_err(store_io)?;
         let mut recovered = false;
         let mut invalidated_child_leases = Vec::new();
@@ -1400,7 +1434,7 @@ impl ControlActor {
         if recovered {
             store.persist(&ledger, &profile)?;
         }
-        let canonical_content = CanonicalContentStore::open(data_dir, &ledger.canonical_sessions)
+        let canonical_content = CanonicalContentStore::open(&native_dir, &ledger.canonical_sessions)
             .map_err(canonical_store_error)?;
         let host_sessions = host_sessions::HostSessionStore::open(data_dir)?;
         let (commands, receiver) = sync_channel(queue_capacity);
@@ -3001,11 +3035,19 @@ mod tests {
         };
         let actor = open().unwrap();
         actor.handle().ping().unwrap();
+        let native_dir = native_store_root(&data);
+        assert!(native_dir.join("control").is_dir());
+        assert!(!data.join("control").exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(&native_dir).unwrap().permissions().mode() & 0o777, 0o700);
+        }
         assert!(matches!(open(), Err(StoreError::WriterAlreadyOpen)));
         drop(actor);
         let reopened = open().unwrap();
         drop(reopened);
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -3015,6 +3057,9 @@ mod tests {
         let open = || ControlActor::open(&data, "unconfigured-v1", CapacityProfile::unconfigured().unwrap(), 16, timeout);
         let actor = open().unwrap();
         let handle = actor.handle();
+        let native_sessions = native_store_root(&data).join("host-sessions");
+        assert!(native_sessions.is_dir());
+        assert!(!data.join("host-sessions").exists());
         handle.admit_host_session("unused-1".into()).unwrap();
         handle.release_host_session_admission("unused-1".into()).unwrap();
         assert!(matches!(handle.load_host_session("unused-1".into()), Err(ControlError::Admission(AdmissionError::InvalidIdentity))));
@@ -3038,7 +3083,7 @@ mod tests {
         handle.remove_host_session("chat-1".into(), Some(1)).unwrap();
         assert!(handle.list_host_sessions().unwrap().is_empty());
         drop(recovered);
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -3114,7 +3159,7 @@ mod tests {
         assert_eq!(recovered.model_requests_used(), 1);
         assert_eq!(recovered.tool_calls_used(), 1);
         drop(reopened);
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -3160,7 +3205,7 @@ mod tests {
         let receipt = handle.commit_candidate(first.clone()).unwrap();
         assert_eq!(receipt.canonical_revision, 1);
         assert_eq!(receipt.root_revision, running.revision());
-        assert_eq!(fs::read(data.join("content/sessions/session-candidate/generation-00000000000000000001.json")).unwrap(), first_bytes);
+        assert_eq!(fs::read(native_store_root(&data).join("content/sessions/session-candidate/generation-00000000000000000001.json")).unwrap(), first_bytes);
         assert_eq!(handle.commit_candidate(first.clone()).unwrap(), receipt);
         assert_eq!(handle.read_candidate_receipt("commit-candidate-1".into()).unwrap(), Some(receipt.clone()));
         assert_eq!(handle.read_candidate_receipt("unknown-commit".into()).unwrap(), None);
@@ -3180,8 +3225,8 @@ mod tests {
         };
         let second_receipt = handle.commit_candidate(second).unwrap();
         assert_eq!(second_receipt.canonical_revision, 2);
-        assert!(data.join("content/sessions/session-candidate/generation-00000000000000000001.json").exists());
-        assert!(data.join("content/sessions/session-candidate/generation-00000000000000000002.json").exists());
+        assert!(native_store_root(&data).join("content/sessions/session-candidate/generation-00000000000000000001.json").exists());
+        assert!(native_store_root(&data).join("content/sessions/session-candidate/generation-00000000000000000002.json").exists());
         assert_eq!(
             handle.commit_candidate(CandidateCommitRequest {
                 session_id: "session-candidate".into(),
@@ -3199,7 +3244,7 @@ mod tests {
         assert_eq!(recovered.handle().read_candidate_receipt("commit-candidate-1".into()).unwrap(), Some(receipt.clone()));
         assert_eq!(recovered.handle().commit_candidate(first).unwrap(), receipt);
         drop(recovered);
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -3277,7 +3322,7 @@ mod tests {
         );
         drop(recovered_handle);
         drop(recovered_actor);
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -3357,7 +3402,7 @@ mod tests {
         assert_eq!(stopped.model_requests_used(), 1);
         drop(handle);
         drop(actor);
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     fn profile_with_queued_children(limit: u32) -> CapacityProfile {
@@ -3649,7 +3694,7 @@ mod tests {
             .read_root("task-delegation".into())
             .unwrap();
         assert_eq!(recovered, stopped);
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -3703,7 +3748,7 @@ mod tests {
                 .all(|child| child.status() == state::ChildStatus::Invalidated)
         );
         drop(recovered_actor);
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -3882,7 +3927,7 @@ mod tests {
             .unwrap();
         let recovered_child = recovered.children().values().next().unwrap();
         assert_eq!(recovered_child, &returned);
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -3992,7 +4037,7 @@ mod tests {
             started.attempt().unwrap().id(),
             interrupted.attempt().unwrap().id()
         );
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -4161,10 +4206,20 @@ mod tests {
             .unwrap()
             .as_nanos();
         let sequence = TEST_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
+        let root = std::env::temp_dir().join(format!(
             "vak-control-{}-{stamp}-{sequence}",
             std::process::id()
-        ))
+        ));
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    fn remove_test_data(data: &Path) {
+        fs::remove_dir_all(data).unwrap();
+        let native = native_store_root(data);
+        if native.exists() {
+            fs::remove_dir_all(native).unwrap();
+        }
     }
 
     #[test]
@@ -4230,7 +4285,7 @@ mod tests {
                 .unwrap_err(),
             AdmissionError::RequestAlreadySettled
         );
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -4255,7 +4310,7 @@ mod tests {
         }
         drop(store);
         let (_, _) = ControlStore::open(&data, "profile-1", &profile()).unwrap();
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -4270,7 +4325,7 @@ mod tests {
 
         let (store, _) = ControlStore::open(&data, "profile-1", &profile()).unwrap();
         drop(store);
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[cfg(unix)]
@@ -4287,7 +4342,7 @@ mod tests {
         let mode = fs::metadata(&lock_path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
         drop(store);
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -4325,7 +4380,7 @@ mod tests {
         assert!(probe("busy").success());
         drop(store);
         assert!(probe("available").success());
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -4353,7 +4408,7 @@ mod tests {
             ControlStore::open(&data, "profile-1", &profile()).unwrap_err(),
             StoreError::Corrupt
         );
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -4377,7 +4432,7 @@ mod tests {
         );
         assert!(!data.join("control/.generation-123-4.tmp").exists());
         assert!(!data.join("control/.current-123-5.tmp").exists());
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -4395,7 +4450,7 @@ mod tests {
             ControlStore::open(&data, "profile-1", &profile()).unwrap_err(),
             StoreError::Corrupt
         );
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -4511,14 +4566,13 @@ mod tests {
         );
         drop(handle);
         drop(restarted);
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
     fn workspace_grants_share_native_durability_and_revocation_survives_restart() {
         let data = temp_data_dir();
         let source = temp_data_dir();
-        fs::create_dir(&source).unwrap();
         let timeout = Duration::from_secs(2);
         let actor = ControlActor::open(&data, "profile-1", profile(), 8, timeout).unwrap();
         let handle = actor.handle();
@@ -4604,7 +4658,6 @@ mod tests {
             .unwrap();
         assert_eq!(persisted_membership.project_id(), Some("project-0001"));
         let second_source = temp_data_dir();
-        fs::create_dir(&second_source).unwrap();
         let second_workspace = restarted_handle
             .register_workspace("workspace-002".into(), second_source.clone())
             .unwrap();
@@ -4651,7 +4704,7 @@ mod tests {
         drop(restarted);
         fs::remove_dir_all(second_source).unwrap();
         fs::remove_dir_all(source).unwrap();
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -4659,8 +4712,6 @@ mod tests {
         let data = temp_data_dir();
         let first_source = temp_data_dir();
         let second_source = temp_data_dir();
-        fs::create_dir(&first_source).unwrap();
-        fs::create_dir(&second_source).unwrap();
         let timeout = Duration::from_secs(2);
         let profile = profile_with_queued_children(2);
         let actor = ControlActor::open(&data, "profile-1", profile, 16, timeout).unwrap();
@@ -4783,7 +4834,7 @@ mod tests {
         drop(actor);
         fs::remove_dir_all(first_source).unwrap();
         fs::remove_dir_all(second_source).unwrap();
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 
     #[test]
@@ -4824,8 +4875,8 @@ mod tests {
         assert_eq!(saturated, 6);
         drop(handle);
         drop(actor);
-        let (_, ledger) = ControlStore::open(&data, "profile-1", &profile()).unwrap();
+        let (_, ledger) = ControlStore::open(&native_store_root(&data), "profile-1", &profile()).unwrap();
         assert_eq!(ledger.active_leases(), 2);
-        fs::remove_dir_all(data).unwrap();
+        remove_test_data(&data);
     }
 }

@@ -1,17 +1,19 @@
 # Data identity, folder authority and storage layout
 
-Status: code-inspected baseline and proposed target, 2026-10-29. Follows the user's request to check source before trusting older folder/IA documentation. [Information architecture](INFORMATION-ARCHITECTURE.md) defines navigation; [implementation design](IMPLEMENTATION-DESIGN.md) defines native ownership. Proposed directories are not current on-disk migrations.
+Status: code-inspected baseline and proposed target, 2026-10-29; native-only root split implemented 2026-10-30. Follows the user's request to check source before trusting older folder/IA documentation. [Information architecture](INFORMATION-ARCHITECTURE.md) defines navigation; [implementation design](IMPLEMENTATION-DESIGN.md) defines native ownership. The split does not yet establish process isolation: the same-user sidecar can still derive and read the sibling path until it runs under an enforced worker.
 
 ## 1. Direct answer: what lives where
 
 Source files stay in the user-selected folder. Private app state stays in the app's private data root. Project/workspace views are metadata references to that state, not additional copies of chats, task journals or files. Nothing creates a hidden app database or credential store in a selected source folder.
 
-| Current runtime | Current private data root |
+| Current runtime | Current app data root |
 | --- | --- |
 | Installed macOS app | `~/Library/Application Support/com.nranjan2code.vakyartha/` |
 | Desktop development | `<repository>/.vak/desktop/`, unless explicitly overridden by development configuration |
 | Browser development | `<repository>/.vak/web/`; its explicit transcript override may use that root directly |
 | Other native platforms | Native platform app-data resolver; effective path must be shown, not guessed from a folder selection |
+
+On desktop, Rust-owned authority and canonical snapshots now use `<native-data>`, a hidden `.<data-directory-name>-native` sibling beside `<data>`. This path is created owner-only and is not passed to the sidecar. Existing local files under `<data>/control`, `<data>/content` and `<data>/host-sessions` are left untouched; the app does not read or migrate them after this root change. The sidecar remains same-UID and uncontained, so path separation becomes an enforcement boundary only after the worker launch cutover.
 
 Environment/dev data is not committed. Stored secrets remain in the canonical platform vault; never copy them into workspace/project metadata, transcripts, export packages or backup manifests. A provider-sent snapshot is already disclosed data; later folder revocation cannot unsend it.
 
@@ -24,7 +26,7 @@ Inspected `sidecar/workspace-registry.ts`, `sidecar/sandbox-realms.ts`, `sidecar
 | `Project` | UUID, name, canonical folder string, revision and optional shared Realm; current creation requires a folder |
 | `WorkspaceBinding` | Keyed by session ID; folder string, optional project/Realm IDs, mode, sharing flag, revision and access state |
 | `<data>/workspaces.json` | TS-written projects and bindings; no independent stable `workspaceId` entity or durable physical folder identity |
-| Desktop `<data>/host-sessions/` | Revisioned canonical conversation/surface snapshots written only by the native Rust actor through the framework's `HostSessionStore` adapter |
+| Desktop `<native-data>/host-sessions/` | Revisioned canonical conversation/surface snapshots written only by the native Rust actor through the framework's `HostSessionStore` adapter |
 | Browser `<data>/sessions/` | Framework host filesystem store used only by browser development; session readers use the active backend |
 | `<data>/tasks/` | Current TS task journals; a task links its canonical session |
 | `<data>/outputs/<task>--<run>.md` | Current private task Markdown outputs with hash/version receipts |
@@ -38,7 +40,7 @@ Direct editing writes admitted originals; copy/review operates in a Realm. Share
 
 The Rust control actor is started with the desktop engine and its current control snapshot is schema 12. It models Project, Workspace, WorkspaceBinding and ProjectMembership as separate records, captures canonical folder identity, and can register workspaces, bind/revoke/rebind a session, change project membership, create/fence roots, and revalidate a grant. Trusted shell commands can use this native state, but the TypeScript `WorkspaceRegistry` still owns the active product workspace routes; do not infer a single-writer cutover from the native registry. Both admission paths reject system/private roots, reserved path components and the app-data root or its ancestors. No sandbox command receives the native grant through an enforced dispatch path yet. See [implementation progress](IMPLEMENTATION-PROGRESS.md) for evidence and limits.
 
-**Current native candidate state (2026-10-30):** the native actor persists exact bounded candidate proposals as immutable `<private-data>/content/sessions/<session-id>/generation-<revision>.json` files. The selected revision, digest, execution fence and exact-retry receipt live in the actor's single-writer control snapshot. This remains an intermediate task commit boundary: product task runs do not yet call the candidate API, and candidate bytes are not published into canonical sessions. Do not treat `content/sessions` as current chat state.
+**Current native candidate state (2026-10-30):** the native actor persists exact bounded candidate proposals as immutable `<native-data>/content/sessions/<session-id>/generation-<revision>.json` files. The selected revision, digest, execution fence and exact-retry receipt live in `<native-data>/control`. This remains an intermediate task commit boundary: product task runs do not yet call the candidate API, and candidate bytes are not published into canonical sessions. Do not treat `content/sessions` as current chat state.
 
 Projection `822622e` exports a revisioned `HostSessionStore`, now wired in desktop mode through the private sidecar pipe to the Rust actor. Compare-and-set revisions, owner-only files, recovery and trusted UI admission protect logical writes; the worker cannot self-admit a chat ID. **This is not a confidentiality boundary against a compromised desktop sidecar:** Node runs as the same OS user and can currently read the app-data directory directly, including `host-sessions/`. Owner-only permissions do not distinguish the app's Rust process from its sidecar. Protecting these bytes from a fully compromised worker requires a proved OS-enforced process boundary or moving sensitive reads into a broker that returns only operation-scoped data; neither is implemented. The private-pipe API and admission check must not be described as preventing direct file reads. Browser development continues to use `<data>/sessions/`. FinOps reads canonical snapshots through the active backend rather than assuming a filesystem path.
 
@@ -82,7 +84,15 @@ Native registry owns project/workspace/binding/membership records and revisions.
 Keep the same private root, with explicit bounded namespaces. `control/registry` uses the same native sole-writer generation/selection primitive as root control; do not leave a live TS `workspaces.json` writer beside it.
 
 ```text
-<private-data>/
+<data>/                            sidecar app data; TS tasks remain here currently
+  attachments/<session-id>/       existing session-owned asset namespace
+  media/                         existing media owner; no second asset library
+  apps/                          existing package owner
+  app-drafts/                    existing draft owner
+  app-state/                     existing app/domain owner
+  sandbox/                       helper-owned Realm/control layout unchanged
+  logs/                          numeric telemetry and protected diagnostic streams
+.<data-directory-name>-native/    sibling; Rust-owned protected state
   control/
     format.json
     registry/                     projects, workspaces, bindings, membership,
@@ -94,13 +104,6 @@ Keep the same private root, with explicit bounded namespaces. `control/registry`
     inputs/<root-id>/             explicitly captured immutable input snapshots
     outputs/<root-id>/<run-id>/   private task exports and receipts
   host-sessions/                  native-written canonical chat snapshots
-  attachments/<session-id>/       existing session-owned asset namespace
-  media/                         existing media owner; no second asset library
-  apps/                          existing package owner
-  app-drafts/                    existing draft owner
-  app-state/                     existing app/domain owner
-  sandbox/                       helper-owned Realm/control layout unchanged
-  logs/                          numeric telemetry and protected diagnostic streams
 ```
 
 These are entity namespaces, not one private state directory per project name or source-path hash. Renaming/moving a project or associating a task with another project does not move its content, duplicate it or reset execution history. Workspace/project pages query references under the current native registry. Historical task scope remains in its admitted run record even if the sidebar grouping changes.
