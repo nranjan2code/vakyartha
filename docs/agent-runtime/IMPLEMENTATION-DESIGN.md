@@ -147,6 +147,24 @@ The canonical framework service stays the sole semantic session/surface mutation
 
 ## 6. Narrow protocol and caller identity
 
+Canonical session identity is one-to-many with task-root identity: a chat may have historical or concurrent roots. The native actor may index this relation for bounded lookup, but a provider request's `sessionId`/`runId` must never be mapped to a root by choosing the first, newest, or only-looking root. Before a dispatch path exists, the trusted scheduler must register a native execution binding that names the root and attempt/run identity; every operation must prove that binding is still active and current at the actor's atomic dispatch boundary. Worker-supplied root IDs or run IDs are selectors to validate, never grants. Until that binding and atomic fence consumption exist, provider traffic stays refused.
+
+```mermaid
+sequenceDiagram
+    participant UI as Trusted UI / scheduler
+    participant Actor as Rust control actor
+    participant Worker as Reasoning worker
+    participant Broker as Native provider broker
+    UI->>Actor: Admit root and task session
+    Actor-->>UI: Durable root identity and revision
+    UI->>Actor: Register bounded execution attempt
+    Actor-->>Worker: Confined invocation with bound run context
+    Worker->>Broker: Provider operation + run correlation
+    Broker->>Actor: Validate binding, fence, policy, approval, budget
+    Actor-->>Broker: One-use dispatch authority
+    Broker-->>Worker: Bounded provider stream
+```
+
 Reuse existing private transport framing/backpressure where it meets the contract. Add a bounded native-owned control channel for worker requests on the same supervised private connection; do not expose a generic `/api/*` dispatcher as worker authority. Existing UI presentation routes can remain adapters but cannot mutate the native task store indirectly through Node.
 
 | Caller | Proposed operation family | Receiver derives/checks |

@@ -1,7 +1,7 @@
 //! Pure native admission primitives. The app does not enable this ledger until
 //! every protected workload is routed through the owning control actor.
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -152,6 +152,9 @@ pub struct CapacityLedger {
     used: BTreeMap<Resource, u32>,
     used_by_root: HashMap<String, BTreeMap<Resource, u32>>,
     roots: BTreeMap<String, RootTask>,
+    /// Rebuilt from durable roots; sessions can own multiple historical or
+    /// concurrent tasks, so all associated roots remain indexed.
+    roots_by_session: BTreeMap<String, BTreeSet<String>>,
     registry: RegistryState,
     canonical_sessions: BTreeMap<String, CanonicalSessionRecord>,
     candidate_receipts: BTreeMap<String, CandidateCommitReceipt>,
@@ -395,14 +398,22 @@ impl CapacityLedger {
                 return Err(StoreError::Corrupt);
             }
         }
-        if ledger.roots.len() > MAX_ROOTS
-            || ledger
-                .roots
-                .iter()
-                .any(|(id, root)| id != root.id() || root.validate().is_err())
-        {
+        if ledger.roots.len() > MAX_ROOTS {
             return Err(StoreError::Corrupt);
         }
+        let mut roots_by_session = BTreeMap::<String, BTreeSet<String>>::new();
+        for (id, root) in &ledger.roots {
+            if id != root.id() || root.validate().is_err() {
+                return Err(StoreError::Corrupt);
+            }
+            if let Some(session) = root.session_id() {
+                roots_by_session
+                    .entry(session.to_owned())
+                    .or_default()
+                    .insert(id.clone());
+            }
+        }
+        ledger.roots_by_session = roots_by_session;
         ledger
             .registry
             .validate()
@@ -703,6 +714,10 @@ enum ActorCommand {
     ReadRoot {
         id: String,
         reply: SyncSender<Result<RootTask, ControlError>>,
+    },
+    ReadRootsForSession {
+        session_id: String,
+        reply: SyncSender<Result<Vec<String>, ControlError>>,
     },
     ReadCandidateReceipt {
         commit_id: String,
@@ -1043,6 +1058,18 @@ impl ControlHandle {
         let (reply, response) = sync_channel(1);
         self.commands
             .try_send(ActorCommand::ReadRoot { id, reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    /// Lists bounded root identities associated with a host session. This is
+    /// lookup metadata; it does not establish which root owns an active run.
+    pub fn root_ids_for_session(&self, session_id: String) -> Result<Vec<String>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::ReadRootsForSession { session_id, reply })
             .map_err(queue_error)?;
         response
             .recv_timeout(self.response_timeout)
@@ -1696,6 +1723,13 @@ fn actor_loop(
                     }
                 };
                 let mut candidate = ledger.clone();
+                if let Some(session_id) = root.session_id() {
+                    candidate
+                        .roots_by_session
+                        .entry(session_id.to_owned())
+                        .or_default()
+                        .insert(root.id().to_owned());
+                }
                 candidate.roots.insert(root.id().to_owned(), root.clone());
                 match store.persist(&candidate, &profile) {
                     Ok(_) => {
@@ -2236,6 +2270,17 @@ fn actor_loop(
                     .get(&id)
                     .cloned()
                     .ok_or(ControlError::Admission(AdmissionError::RootNotFound));
+                let _ = reply.send(result);
+            }
+            ActorCommand::ReadRootsForSession { session_id, reply } => {
+                let result = if valid_identity(&session_id) {
+                    match ledger.roots_by_session.get(&session_id) {
+                        Some(root_ids) => Ok(root_ids.iter().cloned().collect()),
+                        None => Err(ControlError::Admission(AdmissionError::RootNotFound)),
+                    }
+                } else {
+                    Err(ControlError::Admission(AdmissionError::InvalidIdentity))
+                };
                 let _ = reply.send(result);
             }
             ActorCommand::ReadCandidateReceipt { commit_id, reply } => {
@@ -3218,6 +3263,56 @@ mod tests {
         let recovered = ControlActor::open(&data, "profile-1", profile, 8, timeout).unwrap();
         assert_eq!(recovered.handle().read_candidate_receipt("commit-candidate-1".into()).unwrap(), Some(receipt.clone()));
         assert_eq!(recovered.handle().commit_candidate(first).unwrap(), receipt);
+        drop(recovered);
+        remove_test_data(&data);
+    }
+
+    #[test]
+    fn host_session_indexes_multiple_durable_roots_across_restart() {
+        let data = temp_data_dir();
+        let timeout = Duration::from_secs(2);
+        let profile = CapacityProfile::unconfigured().unwrap();
+        let actor =
+            ControlActor::open(&data, "unconfigured-v1", profile.clone(), 16, timeout).unwrap();
+        let handle = actor.handle();
+        let request = RootCreate {
+            id: "root-for-chat".into(),
+            session_id: Some("chat-runtime-1".into()),
+            goal: "Bind provider runs to native tasks".into(),
+            criteria: "Preserve every root associated with the chat".into(),
+            run_limit: 2,
+            budget_limits: BudgetLimits::new(2, 2).unwrap(),
+            requirements: vec![Requirement::new("bound-run".into(), true).unwrap()],
+            delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0).unwrap(),
+        };
+        let first = handle.create_root_with_budget(request.clone()).unwrap();
+        let second = handle
+            .create_root_with_budget(RootCreate {
+                id: "second-root".into(),
+                ..request.clone()
+            })
+            .unwrap();
+        assert_eq!(
+            handle
+                .root_ids_for_session("chat-runtime-1".into())
+                .unwrap(),
+            vec![first.id().to_owned(), second.id().to_owned()]
+        );
+        assert_eq!(
+            handle.root_ids_for_session("../chat-runtime-1".into()),
+            Err(ControlError::Admission(AdmissionError::InvalidIdentity))
+        );
+        drop(handle);
+        drop(actor);
+
+        let recovered = ControlActor::open(&data, "unconfigured-v1", profile, 16, timeout).unwrap();
+        assert_eq!(
+            recovered
+                .handle()
+                .root_ids_for_session("chat-runtime-1".into())
+                .unwrap(),
+            vec![first.id().to_owned(), second.id().to_owned()]
+        );
         drop(recovered);
         remove_test_data(&data);
     }
