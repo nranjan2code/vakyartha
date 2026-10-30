@@ -49,6 +49,7 @@ const chatsNav = $<HTMLElement>("chats");
 let client: VakClient;
 // ?session=… opens that chat: the link the MCP server and the bench hand out.
 let session = new URLSearchParams(location.search).get("session") ?? prefs.get("session") ?? crypto.randomUUID();
+let currentSessionView: SessionView | undefined;
 const admittedSessions = new Map<string, Promise<void>>();
 function admitSession(id: string): Promise<void> {
   let pending = admittedSessions.get(id);
@@ -325,6 +326,7 @@ function newChat(): void {
   $("workspace").hidden = false;
   clearThread();
   session = crypto.randomUUID();
+  currentSessionView = undefined;
   void admitSession(session).catch((error: unknown) => report(`chat admission: ${String(error)}`));
   attached = [];
   showAttached();
@@ -402,6 +404,7 @@ async function openChat(id: string, keepLibrary = false, redraw = false): Promis
     return;
   }
   if (session !== id) return;
+  currentSessionView = view;
   watch(id);
   for (const snap of view.surfaces) loadSnapshot(snap);
   if (!view.timeline.length) showEmpty();
@@ -849,6 +852,7 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
   let toolRoundsLimit = rawToolRounds === "unlimited" ? 100 : (Number(rawToolRounds) || undefined);
   let effectiveThink = opt("think") === "true";
   let effectiveEffort = opt("effort") || undefined;
+  let decisionUsage: unknown = undefined;
 
   if (req.message) {
     try {
@@ -860,9 +864,14 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
           componentTypes: Array.from(s.nodes.values()).map((n) => n.type),
         }));
         const { tools: runtimeTools, skills: runtimeSkills } = await getRuntimeDiscovery();
+        const priorHistory = currentSessionView?.timeline.map((entry) => ({
+          role: entry.kind === "user" ? "user" : "assistant",
+          content: "text" in entry && typeof entry.text === "string" ? entry.text : "",
+        })) ?? [];
 
         const shaped = await shapeTurn({
           message: req.message,
+          history: priorHistory,
           surfaceKind: liveSurfaces[0]?.componentTypes[0] ?? liveSurfaces[0]?.id,
           surfaces: liveSurfaces,
           skills: runtimeSkills,
@@ -872,6 +881,8 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
           provider,
           model,
         }, decisionCfg);
+
+        decisionUsage = shaped.shape.decisionUsage;
 
         // Host history option specifies the total turns to inspect:
         // history = 1 means only the current turn (0 prior history).
@@ -918,6 +929,7 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         maxSteps: maxStepsLimit,
         toolRounds: toolRoundsLimit,
         ...req,
+        ...(decisionUsage ? { decisionUsage } : {}),
       },
       onEvent,
       ctrl.signal,

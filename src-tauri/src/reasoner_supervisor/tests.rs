@@ -152,6 +152,8 @@ impl Harness {
             initial_surfaces: vec![],
             max_steps: 2,
             active_ms: 10_000,
+            skills: vec![],
+            continuation: vec![],
         }
     }
 }

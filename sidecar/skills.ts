@@ -688,11 +688,10 @@ export class Skills {
       if (!request.responseSchema && isSalutationMessage(lastUserMsg)) {
         selected = true;
         const cleanSystem = (prepared.system ?? "").replace(index, "").trim();
-        const cleanTools = prepared.tools?.filter((t) => t.name !== "use_skill" && t.name !== "read_skill_file");
         yield* provider.stream({
           ...prepared,
           system: cleanSystem,
-          tools: cleanTools?.length ? cleanTools : undefined,
+          tools: undefined,
         });
         return;
       }

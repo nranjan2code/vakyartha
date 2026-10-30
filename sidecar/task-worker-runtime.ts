@@ -17,14 +17,23 @@ export interface TaskWorkerJob {
   goal: string; criteria: string; instructions: string;
   inputs: TaskFileInput[]; initialSurfaces: SurfaceSnapshot[];
   maxSteps: number; maxTokens: number; activeMs: number;
+  skills?: Array<{ name: string; description?: string }>;
+  continuation?: Array<{ role: string; content: string }>;
 }
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const text = (value: unknown, max: number): value is string => typeof value === "string" && Boolean(value.trim()) && Buffer.byteLength(value) <= max && !value.includes("\0");
 const integer = (value: unknown, min: number, max: number): value is number => Number.isSafeInteger(value) && Number(value) >= min && Number(value) <= max;
 export function parseTaskWorkerJob(value: unknown): TaskWorkerJob {
-  const keys = ["runId", "session", "provider", "model", "goal", "criteria", "instructions", "inputs", "initialSurfaces", "maxSteps", "maxTokens", "activeMs"];
-  if (!object(value) || Object.keys(value).length !== keys.length || Object.keys(value).some(key => !keys.includes(key))
-    || typeof value.runId !== "string" || !/^run-[1-9][0-9]{0,19}$/.test(value.runId)
+  const requiredKeys = ["runId", "session", "provider", "model", "goal", "criteria", "instructions", "inputs", "initialSurfaces", "maxSteps", "maxTokens", "activeMs"];
+  const optionalKeys = ["skills", "continuation"];
+  if (!object(value)) throw new Error("Invalid task worker context");
+  for (const key of Object.keys(value)) {
+    if (!requiredKeys.includes(key) && !optionalKeys.includes(key)) throw new Error("Invalid task worker context key: " + key);
+  }
+  for (const key of requiredKeys) {
+    if (!Object.hasOwn(value, key)) throw new Error("Missing required task worker context key: " + key);
+  }
+  if (typeof value.runId !== "string" || !/^run-[1-9][0-9]{0,19}$/.test(value.runId)
     || typeof value.session !== "string" || !/^[A-Za-z0-9_-]{1,120}$/.test(value.session)
     || value.provider !== "ollama" || !text(value.model, 240) || !text(value.goal, 8000) || !text(value.criteria, 4000)
     || typeof value.instructions !== "string" || Buffer.byteLength(value.instructions) > 64_000 || value.instructions.includes("\0")
@@ -32,6 +41,12 @@ export function parseTaskWorkerJob(value: unknown): TaskWorkerJob {
     || !Array.isArray(value.initialSurfaces) || value.initialSurfaces.length > 16 || Buffer.byteLength(JSON.stringify(value.initialSurfaces)) > MAX_CONTEXT) throw new Error("Invalid task worker context");
   const inputs = parseTaskFiles(value.inputs, true);
   if (inputs.some(input => createHash("sha256").update(input.content).digest("hex") !== input.sha256)) throw new Error("Invalid task input fingerprint");
+  if (value.skills !== undefined) {
+    if (!Array.isArray(value.skills) || value.skills.length > 16 || value.skills.some(s => !object(s) || typeof s.name !== "string" || !/^[a-zA-Z0-9_-]{1,120}$/.test(s.name) || (s.description !== undefined && (typeof s.description !== "string" || s.description.length > 1000)))) throw new Error("Invalid skills context");
+  }
+  if (value.continuation !== undefined) {
+    if (!Array.isArray(value.continuation) || value.continuation.length > 16 || value.continuation.some(c => !object(c) || typeof c.role !== "string" || !["user", "assistant", "system"].includes(c.role) || typeof c.content !== "string" || c.content.length > 16000 || c.content.includes("\0"))) throw new Error("Invalid continuation context");
+  }
   // Projection validates every surface in its isolated store. This parser only
   // bounds the envelope; it does not interpret model output or grant completion.
   return structuredClone({ ...value, inputs }) as unknown as TaskWorkerJob;
@@ -47,9 +62,17 @@ export async function generateTaskCandidate(job: TaskWorkerJob, scratch: string,
     profiles: new ProfileCache(path.join(scratch, "profiles.json")),
     instructions: job.instructions, log: () => {},
   });
+  let skillInstructions = "";
+  if (job.skills && job.skills.length > 0) {
+    skillInstructions = "\n\nAvailable procedural skills:\n" + job.skills.map(s => `- ${s.name}: ${s.description ?? "Procedural guidance"}`).join("\n");
+  }
+  let continuationContext = "";
+  if (job.continuation && job.continuation.length > 0) {
+    continuationContext = "\n\nContinuation history from prior runs:\n" + job.continuation.map(c => `[${c.role}]: ${c.content}`).join("\n\n");
+  }
   return host.runCandidate({ session: job.session, provider: job.provider, model: job.model, message: job.goal, initialSurfaces: job.initialSurfaces }, {
     signal, tools: [], maxSteps: job.maxSteps, maxTokens: job.maxTokens,
-    instructions: `Completion criteria supplied by the user: ${JSON.stringify(job.criteria)}\n${inputInstructions(job.inputs)}\nReturn a candidate for independent review. Do not claim canonical publication, saved output or task completion.`,
+    instructions: `Completion criteria supplied by the user: ${JSON.stringify(job.criteria)}\n${inputInstructions(job.inputs)}${skillInstructions}${continuationContext}\nReturn a candidate for independent review. Do not claim canonical publication, saved output or task completion.`,
   });
 }
 

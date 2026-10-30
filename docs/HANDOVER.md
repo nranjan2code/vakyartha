@@ -1,5 +1,15 @@
 # Vakyartha handover — 2026-10-30
 
+## Execution snapshot adapter, task journal tracking, decision turn shaping and FinOps telemetry — 2026-10-30
+
+In `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` (branch `codex/agent-runtime-implementation`), completed the explicit execution snapshot adapter, task record journal tracking, decision engine turn shaping with conversation history, and FinOps System 1 telemetry attribution.
+
+Key implementations and invariants:
+- **Reasoner supervisor snapshot adapter**: Integrated typed `skills: Vec<SkillRef>` and `continuation: Vec<ContinuationMessage>` into `Context` (`src-tauri/src/reasoner_supervisor.rs`). Added strict bounds checking on skill count/length/characters and continuation messages/roles/content. Sent in `job` frame over Unix socket to `task-worker.mjs`. Updated `sidecar/task-worker-runtime.ts` to format procedural skills and prior continuation into candidate instructions without granting ambient authority or tool execution access. Re-bundled `src-tauri/resources/task-worker.mjs`.
+- **Task journal and activity lifecycle**: Added `pending: Vec<Value>` and `activity: Vec<Value>` to `TaskRecord` (`src-tauri/src/control/tasks.rs`) with `#[serde(default)]` for full schema persistence compatibility. `Create`, `AdmitRun`, `WaitForInput`, `Input`, `Complete`, and `Cancel` commands maintain accurate `pending` inputs and timestamped `activity` records conforming strictly to `shared/task-contract.ts`.
+- **Decision engine shaper and FinOps attribution**: `src/main.ts` now tracks `currentSessionView` across session switches, formats and passes prior conversation history to `shapeTurn`, and extracts `decisionUsage` to forward in `client.turn`. `sidecar/skills.ts` prunes all tools on pure salutations (`isSalutationMessage`), preventing speculative tool calls and context bloating. `sidecar/server.ts` extracts `decisionUsage` in `/api/chat` and attributes System 1 token metrics directly to `Finops` turns.
+- **Validation**: All 151 Rust tests (including all 7 real-worker tests with sandbox helper and Node) passed. All 325 app tests passed (1 paid test skipped). All 423 framework tests passed. `npm run typecheck` passed with 0 errors.
+
 ## Single-agent Work path, native admission, lifecycle, review and output integrated — 2026-10-30
 
 In `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` (branch `codex/agent-runtime-implementation`), completed the single-agent Work path through native admission, lifecycle transitions, review snapshots, outcome requirement passage, user review acceptance, and output content generation.

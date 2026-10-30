@@ -26,6 +26,19 @@ pub(crate) struct Runtime<'a> {
     pub data: &'a Path,
     pub service: &'a str,
 }
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SkillRef {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ContinuationMessage {
+    pub role: String,
+    pub content: String,
+}
+
 /// Explicit content from the existing context adapter, never an authority grant.
 /// Run/session/model/goal/criteria and output ceilings are selected natively.
 pub(crate) struct Context {
@@ -34,6 +47,8 @@ pub(crate) struct Context {
     pub initial_surfaces: Vec<Value>,
     pub max_steps: u32,
     pub active_ms: u64,
+    pub skills: Vec<SkillRef>,
+    pub continuation: Vec<ContinuationMessage>,
 }
 pub(crate) struct ReasonedCandidate {
     pub candidate: Value,
@@ -134,6 +149,19 @@ fn run_inner(
                 || file.content.len() > 16_000
                 || file.content.contains('\0')
         })
+        || context.skills.len() > 16
+        || context.skills.iter().any(|s| {
+            s.name.is_empty()
+                || s.name.len() > 120
+                || !s.name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                || s.description.as_ref().is_some_and(|d| d.len() > 1000 || d.contains('\0'))
+        })
+        || context.continuation.len() > 16
+        || context.continuation.iter().any(|c| {
+            !matches!(c.role.as_str(), "user" | "assistant" | "system")
+                || c.content.len() > 16_000
+                || c.content.contains('\0')
+        })
     {
         return Err(refused());
     }
@@ -143,10 +171,31 @@ fn run_inner(
         return Err(refused());
     }
     control.check_execution_fence(root.execution_fence())?;
-    let job = json!({"runId":run.id,"session":run.session_id,"provider":"ollama","model":policy.model,
-        "goal":root.goal(),"criteria":root.criteria(),"instructions":context.instructions,
-        "inputs":context.inputs.iter().map(|file| json!({"name":file.name,"content":file.content,"bytes":file.content.len(),"sha256":crate::control::canonical::digest(file.content.as_bytes())})).collect::<Vec<_>>(),
-        "initialSurfaces":context.initial_surfaces,"maxSteps":context.max_steps,"maxTokens":policy.max_output_tokens,"activeMs":context.active_ms});
+    let mut job = json!({
+        "runId": run.id,
+        "session": run.session_id,
+        "provider": "ollama",
+        "model": policy.model,
+        "goal": root.goal(),
+        "criteria": root.criteria(),
+        "instructions": context.instructions,
+        "inputs": context.inputs.iter().map(|file| json!({
+            "name": file.name,
+            "content": file.content,
+            "bytes": file.content.len(),
+            "sha256": crate::control::canonical::digest(file.content.as_bytes())
+        })).collect::<Vec<_>>(),
+        "initialSurfaces": context.initial_surfaces,
+        "maxSteps": context.max_steps,
+        "maxTokens": policy.max_output_tokens,
+        "activeMs": context.active_ms,
+    });
+    if !context.skills.is_empty() {
+        job["skills"] = serde_json::to_value(&context.skills).map_err(|_| refused())?;
+    }
+    if !context.continuation.is_empty() {
+        job["continuation"] = serde_json::to_value(&context.continuation).map_err(|_| refused())?;
+    }
     let channel = TaskChannel::new(&run, policy.model.clone()).map_err(|_| refused())?;
     let invocation = control.prepare_worker_completion(run.id.clone())?;
     execute(

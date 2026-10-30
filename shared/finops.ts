@@ -42,6 +42,14 @@ export interface Turn {
   externalCalls: number;
   errors: number;
   complete: boolean;
+  decisionUsage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+    latencyMs?: number;
+    model?: string;
+    provider?: string;
+  };
 }
 export interface Rate {
   provider: string;

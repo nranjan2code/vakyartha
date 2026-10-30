@@ -2,6 +2,34 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Execution snapshot adapter, task journal tracking, decision turn shaping and FinOps attribution — 2026-10-30
+
+Completed the explicit execution snapshot adapter connecting existing context, skills, continuation history, and decision engine telemetry into the single-agent Work path and turn execution loops while preserving strict process isolation and the indestructible Rust engine root of trust.
+
+Key achievements and invariants:
+- **Reasoner Supervisor Snapshot Adapter**:
+  - `src-tauri/src/reasoner_supervisor.rs`: Added `SkillRef` and `ContinuationMessage` to `Context`. In `run_inner`, bounded skills (<=16 skills, name <=120 chars alphanumeric/_/-, description <=1000 chars, no `\0`) and continuation (<=16 messages, role in user/assistant/system, content <=16,000 chars, no `\0`). Transmitted in private job frame over Unix domain socket to the isolated task worker.
+  - `sidecar/task-worker-runtime.ts`: Updated `TaskWorkerJob` and `parseTaskWorkerJob` with strict optional keys validation and input fingerprinting. Updated `generateTaskCandidate` to inject procedural skill instructions and prior continuation history into the isolated candidate generation turn without granting ambient authority or external tool access. Re-bundled `src-tauri/resources/task-worker.mjs`.
+- **Task Record Journal and Activity Tracking**:
+  - `src-tauri/src/control/tasks.rs`: Added `pending: Vec<Value>` and `activity: Vec<Value>` to `TaskRecord` with `#[serde(default)]` for full persistence compatibility.
+  - `TaskCommand::Create`: Initializes initial goal message in `pending` and records `"Task created"` in `activity`.
+  - `TaskCommand::AdmitRun`: Drains the consumed input from `pending` and records `"Run admitted"` in `activity`.
+  - `TaskCommand::WaitForInput`: Records `"Waiting for input"` in `activity`.
+  - `TaskCommand::Input`: Normalizes input message/id, appends to `record.pending`, and records `"Input accepted"` in `activity`.
+  - `TaskCommand::Complete` and `TaskCommand::Cancel`: Record `"Task completed"` and `"Task cancelled"` in `activity`.
+  - `tasks::view`: Returns `record.activity` and `record.pending` conforming to `shared/task-contract.ts`.
+- **Decision Engine Shaper and FinOps Telemetry Wiring**:
+  - `src/main.ts`: Tracks `currentSessionView` across session switches. Formats and passes conversation `history` to `shapeTurn`. Extracts `shaped.shape.decisionUsage` and forwards it in `client.turn` payload.
+  - `sidecar/skills.ts`: In `skills.provider`, pruned all tools (`tools: undefined`) on pure salutations (`isSalutationMessage`), preventing speculative tool calls and context bloating.
+  - `shared/finops.ts`: Added `decisionUsage` to `Turn` interface.
+  - `sidecar/finops.ts`: Added `recordDecisionUsage` to `Finops` and attached it to `c.turn` in the scoped store.
+  - `sidecar/server.ts`: In `/api/chat`, buffered incoming request payload to extract `decisionUsage`, streamed to `host.handle`, and attributed System 1 token metrics directly to `finops`.
+- **Verification**:
+  - 151 Rust tests passed (including real-worker tests with sandbox helper and Node).
+  - 325 app tests passed (1 paid test skipped).
+  - 423 framework tests passed.
+  - `npm run typecheck` passed with 0 errors.
+
 ## Native single-agent Work path, admission, lifecycle, review and output — 2026-10-30
 
 Integrated the next real user-started single-agent Work path using the existing native actor, reasoning supervisor (`reasoner_supervisor.rs`), consent/I/O (`provider_io.rs`), and canonical supervisor (`canonical_supervisor.rs`).

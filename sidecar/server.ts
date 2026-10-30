@@ -1338,7 +1338,27 @@ ${skills.index()}`;
   const handle = async (req: HostRequest, res: HostResponse) => {
     try {
       if (req.method === "POST" && new URL(req.url ?? "/", "http://localhost").pathname === "/api/chat") {
-        await finops.chat(async () => { await host.handle(req, res); });
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        const raw = Buffer.concat(chunks);
+        let decisionUsage: import("../shared/finops.ts").Turn["decisionUsage"] = undefined;
+        try {
+          const body = JSON.parse(raw.toString("utf8"));
+          if (body && typeof body === "object" && body.decisionUsage) {
+            decisionUsage = body.decisionUsage;
+          }
+        } catch {}
+        const { Readable } = await import("node:stream");
+        const streamedReq = Object.assign(Readable.from(raw), {
+          headers: req.headers,
+          method: req.method,
+          url: req.url,
+          socket: (req as { socket?: unknown }).socket,
+        }) as HostRequest;
+        await finops.chat(async () => {
+          if (decisionUsage) finops.recordDecisionUsage(decisionUsage);
+          await host.handle(streamedReq, res);
+        });
         return;
       }
       if (await host.handle(req, res)) return;

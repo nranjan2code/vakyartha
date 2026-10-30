@@ -58,12 +58,16 @@ pub struct TaskRequest {
     pub schedule: Option<Value>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskRecord {
     pub request: TaskRequest,
     pub created: String,
     pub updated: String,
+    #[serde(default)]
+    pub pending: Vec<Value>,
+    #[serde(default)]
+    pub activity: Vec<Value>,
 }
 
 fn invalid() -> ControlError {
@@ -255,6 +259,15 @@ pub(super) fn create(
     ledger.product_tasks.insert(
         id.clone(),
         TaskRecord {
+            pending: vec![json!({
+                "id": format!("{id}-1"),
+                "kind": "message",
+                "message": request.goal.clone(),
+            })],
+            activity: vec![json!({
+                "at": now,
+                "text": "Task created",
+            })],
             request,
             created: now.into(),
             updated: now.into(),
@@ -450,8 +463,8 @@ pub(super) fn view(ledger: &CapacityLedger, id: &str) -> Result<Value, ControlEr
         "runHistory": run_history,
         "operations": [],
         "accepted": accepted_runs,
-        "activity": [],
-        "pending": [],
+        "activity": record.activity.clone(),
+        "pending": record.pending.clone(),
         "inputs": request.inputs.iter().map(|file| json!({
             "name": file.name,
             "content": file.content,
@@ -727,6 +740,11 @@ pub(super) fn apply(
                 .get_mut(&id)
                 .expect("task checked above");
             record.updated = std::cmp::max(now(), record.created.clone());
+            record.pending.retain(|item| item.get("id").and_then(|v| v.as_str()) != Some(&request_id));
+            record.activity.push(json!({
+                "at": record.updated.clone(),
+                "text": "Run admitted",
+            }));
             Ok(json!({
                 "ok": true,
                 "runId": run.id,
@@ -753,9 +771,13 @@ pub(super) fn apply(
                 .get_mut(&id)
                 .expect("task checked above");
             record.updated = std::cmp::max(now(), record.created.clone());
+            record.activity.push(json!({
+                "at": record.updated.clone(),
+                "text": "Waiting for input",
+            }));
             view(ledger, &id)
         }
-        TaskCommand::Input { id, revision, input: _ } => {
+        TaskCommand::Input { id, revision, input } => {
             if !ledger.product_tasks.contains_key(&id) {
                 return Err(ControlError::Admission(AdmissionError::RootNotFound));
             }
@@ -780,6 +802,19 @@ pub(super) fn apply(
                 .get_mut(&id)
                 .expect("task checked above");
             record.updated = std::cmp::max(now(), record.created.clone());
+            let next_seq = record.pending.len() + ledger.root_runs.len() + 1;
+            let mut normalized = input.clone();
+            if normalized.get("id").is_none() {
+                normalized["id"] = json!(format!("{id}-{next_seq}"));
+            }
+            if normalized.get("kind").is_none() && normalized.get("message").is_some() {
+                normalized["kind"] = json!("message");
+            }
+            record.pending.push(normalized);
+            record.activity.push(json!({
+                "at": record.updated.clone(),
+                "text": "Input accepted",
+            }));
             view(ledger, &id)
         }
         TaskCommand::Complete {
@@ -835,6 +870,10 @@ pub(super) fn apply(
                 .get_mut(&id)
                 .expect("task checked above");
             record.updated = std::cmp::max(now(), record.created.clone());
+            record.activity.push(json!({
+                "at": record.updated.clone(),
+                "text": "Task completed",
+            }));
             view(ledger, &id)
         }
         TaskCommand::Output {
@@ -891,6 +930,10 @@ pub(super) fn apply(
                     .get_mut(&id)
                     .expect("task checked above");
                 record.updated = std::cmp::max(now(), record.created.clone());
+                record.activity.push(json!({
+                    "at": record.updated.clone(),
+                    "text": "Task cancelled",
+                }));
             }
             view(ledger, &id)
         }

@@ -7,7 +7,7 @@ import type { HostSessionSnapshot, HostSessionStore } from "@vak/host";
 import type { TaskRunIdentity } from "../shared/task-contract.ts";
 import { emptyShape, type FinopsView, type Rate, type Shape, type Step, type Turn } from "../shared/finops.ts";
 
-type Context = { task?: TaskRunIdentity; turn?: Turn; session?: string; at: string; started: number };
+type Context = { task?: TaskRunIdentity; turn?: Turn; session?: string; at: string; started: number; decisionUsage?: Turn["decisionUsage"] };
 export function messageShape(messages: Message[]): Shape {
   const s = emptyShape();
   for (const m of messages) {
@@ -43,12 +43,21 @@ export class Finops {
     if (c) c.session = id;
   }
 
+  recordDecisionUsage(usage: Turn["decisionUsage"]): void {
+    const c = this.scope.getStore();
+    if (c) {
+      c.decisionUsage = usage;
+      if (c.turn) c.turn.decisionUsage = usage;
+    }
+  }
+
   async chat(work: () => Promise<void>, task?: TaskRunIdentity): Promise<void> {
     const c: Context = { ...(task ? { task: { ...task } } : {}), at: new Date().toISOString(), started: performance.now() };
     await this.scope.run(c, async () => {
       try { await work(); }
       finally {
         if (c.turn) {
+          if (c.decisionUsage && !c.turn.decisionUsage) c.turn.decisionUsage = c.decisionUsage;
           c.turn.ms = performance.now() - c.started;
           try {
             const filename = c.turn.session.replace(/[^\w-]/g, "_").slice(0, 120) || "default";
@@ -87,7 +96,9 @@ export class Finops {
         const c = owner.scope.getStore();
         if (!c) { yield* provider.stream(req); return; }
         const turn = c.turn ??= {
-          ...(c.task ? { task: c.task } : {}), id: randomUUID(), session: c.session ?? "default", at: c.at, provider: provider.id, model: req.model, local,
+          ...(c.task ? { task: c.task } : {}),
+          ...(c.decisionUsage ? { decisionUsage: c.decisionUsage } : {}),
+          id: randomUUID(), session: c.session ?? "default", at: c.at, provider: provider.id, model: req.model, local,
           ms: 0, source: "recorded", context: messageShape(req.messages), output: emptyShape(), steps: [],
           projectionCalls: 0, externalCalls: 0, errors: 0, complete: true,
         };
