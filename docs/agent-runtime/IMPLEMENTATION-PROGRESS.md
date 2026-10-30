@@ -2,6 +2,10 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Host-session filesystem threat boundary correction — 2026-10-30
+
+Review of the live desktop process topology found that the Node sidecar and Rust host run as the same OS user. The sidecar's private-pipe store adapter and trusted UI admission protect the canonical write API, but do not stop a compromised sidecar from opening `<data>/host-sessions/` directly; owner-only permissions cannot distinguish two same-user processes. No direct-read exploit was run. The storage guide now states this limitation and the required closure: a proved OS-enforced sidecar boundary or a broker design that keeps protected bytes inaccessible and returns operation-scoped data. Existing admission and CAS tests are not evidence for that confidentiality claim. This is an open containment gate and blocks any claim that the desktop worker survives full compromise without access to canonical session bytes.
+
 ## Desktop canonical session store cutover — 2026-10-30
 
 Desktop mode now supplies Projection's revisioned `HostSessionStore` through a bounded typed private-pipe operation set owned by the Rust control actor. Trusted Tauri UI admits a chat ID before the worker can load/save/remove it; actor snapshots use revision compare-and-set, 8 MiB/session and 10,000-session bounds, owner-only directories, atomic replacement and fail-closed recovery. Listing returns summaries only. Browser development retains the framework's filesystem store. FinOps chat attribution and historical reconstruction now read through the configured canonical backend, so desktop no longer depends on scanning the old sessions folder. First-run legacy import is count/size/digest planned, explicitly confirmed, copy-only and receipted; declining leaves legacy records unchanged. No legacy data was migrated during development.
