@@ -236,6 +236,34 @@ test("tool limits count calls independently of model rounds and stop before the 
   } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
 });
 
+test("framework step exhaustion persists a distinct stop cause and no output receipt", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-task-step-limit-"));
+  const deps: Parameters<typeof Tasks.open>[0] = {
+    dir, ready: () => {}, warn: () => {}, instructions: () => "test", observe: async (_session, work) => work(),
+    files: new TaskFiles(path.join(dir, "outputs"), path.join(dir, "transcripts")),
+    view: async (id) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }),
+    tools: async () => [],
+    run: async () => ({ stop: "max_steps", limit: "steps" }),
+  };
+  let tasks = await Tasks.open(deps);
+  try {
+    const task = await tasks.create({ goal: "Create two independent report surfaces", criteria: "Both surfaces contain exact checked values", provider: "local", model: "fixture", spending: { kind: "local_only" }, integrations: [], output: { kind: "markdown" } });
+    await until(() => tasks.get(task.id).state === "failed");
+    const failed = tasks.get(task.id);
+    assert.equal(failed.runHistory[0]!.stop, "max_steps");
+    assert.equal(failed.runHistory[0]!.stopCause, "step_budget_exhausted");
+    assert.equal(failed.runHistory[0]!.state, "failed");
+    assert.equal(failed.runHistory[0]!.output, undefined);
+    await tasks.close();
+    tasks = await Tasks.open({
+      ...deps,
+      run: async () => ({ stop: "end" }),
+    });
+    assert.equal(tasks.get(task.id).runHistory[0]!.stopCause, "step_budget_exhausted");
+    assert.equal(tasks.get(task.id).runHistory[0]!.output, undefined);
+  } finally { await tasks.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
 test("task admission fails closed for invalid input and unavailable capabilities", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "vak-task-admission-"));
   const tasks = await Tasks.open({ dir, run: async () => ({ stop: "end" }), view: async (id) => ({ id, title: "", updated: "", timeline: [], surfaces: [] }), tools: async () => [], instructions: () => "", observe: async (_session, work) => work(), ready: () => { throw new Error("Capability unavailable"); }, warn: () => {} });

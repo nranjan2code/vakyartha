@@ -49,11 +49,12 @@ export interface TaskOperation {
   reconciliation?: { at: string; note: string };
 }
 export type TaskRunState = "running" | "review" | "accepted" | "failed" | "cancelled" | "interrupted";
-export type TaskStopCause = "user_cancelled" | "active_time_limit" | "model_budget_exhausted" | "tool_budget_exhausted" | "state_persist_failed" | "external_effect_uncertain" | "application_shutdown" | "execution_error" | "unknown";
+export type TaskStopCause = "user_cancelled" | "active_time_limit" | "model_budget_exhausted" | "step_budget_exhausted" | "tool_budget_exhausted" | "state_persist_failed" | "external_effect_uncertain" | "application_shutdown" | "execution_error" | "unknown";
 export const TASK_STOP_CAUSE_LABELS: Record<TaskStopCause, string> = {
   user_cancelled: "Cancelled by you",
   active_time_limit: "Active time limit reached",
   model_budget_exhausted: "Model request limit reached",
+  step_budget_exhausted: "Agent step limit reached",
   tool_budget_exhausted: "Tool call limit reached",
   state_persist_failed: "Checkpoint could not be saved",
   external_effect_uncertain: "External effect needs review",
@@ -234,7 +235,7 @@ function parseTaskRun(value: unknown): TaskRun {
   const output = raw.output === undefined ? undefined : parseOutputReceipt(raw.output);
   const retrievals = raw.retrievals === undefined ? undefined : array(raw.retrievals, 8).map(parseResearchReceipt);
   const stopCause = raw.stopCause === undefined ? undefined : raw.stopCause;
-  if (stopCause !== undefined && !["user_cancelled", "active_time_limit", "model_budget_exhausted", "tool_budget_exhausted", "state_persist_failed", "external_effect_uncertain", "application_shutdown", "execution_error", "unknown"].includes(String(stopCause))) throw new Error("Invalid run stop cause");
+  if (stopCause !== undefined && !["user_cancelled", "active_time_limit", "model_budget_exhausted", "step_budget_exhausted", "tool_budget_exhausted", "state_persist_failed", "external_effect_uncertain", "application_shutdown", "execution_error", "unknown"].includes(String(stopCause))) throw new Error("Invalid run stop cause");
   if (retrievals && (new Set(retrievals.map((read) => read.url)).size !== retrievals.length || retrievals.some((read) => Date.parse(read.retrievedAt) < Date.parse(started) || ended && Date.parse(read.retrievedAt) > Date.parse(ended)))) throw new Error("Retrieval receipts must be unique and belong to this run");
   if ((raw.state === "accepted") !== Boolean(review) || (review && review.runId !== raw.id)) throw new Error("Acceptance requires a matching user review");
   return { ...(review ? { review } : {}), ...(retrievals ? { retrievals } : {}), ...(output ? { output } : {}), ...(stopCause ? { stopCause: stopCause as TaskStopCause } : {}), id: taskString(raw.id, 120), sequence, inputId: taskString(raw.inputId, 120), inputKind: raw.inputKind, state: raw.state as TaskRunState, started, activeMs: integer(raw.activeMs, TASK_LIMITS.activeMs), chargedMs: integer(raw.chargedMs, TASK_LIMITS.activeMs), toolCalls: integer(raw.toolCalls, TASK_LIMITS.tools), modelRequests: integer(raw.modelRequests, TASK_LIMITS.rounds), note: typeof raw.note === "string" && raw.note.length <= 4000 ? raw.note : "", ...(ended ? { ended } : {}), ...(recovered ? { recovered } : {}), ...(raw.stop === undefined ? {} : { stop: taskString(raw.stop, 120) }) };

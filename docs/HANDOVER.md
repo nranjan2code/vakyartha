@@ -1,5 +1,9 @@
 # Vakyartha handover — 2026-10-30
 
+## Framework step-budget recovery signal — 2026-10-30
+
+Three retained local selected-file report runs stopped at `max_steps` after 12 model requests. All failed independent-surface, exact-value and verified-output checks; source naming failed once. The TypeScript task journal previously recorded this framework step stop as a generic execution error. It now persists `step_budget_exhausted`, keeps the task failed, creates no output receipt and does not replay automatically. A focused regression proves the cause survives journal reopen. Node 26.13.0 focused task tests pass 21/21, typecheck passes, and the full serial app suite passes 283/283. The original report outcome remains failed and unclosed; this slice changes diagnosis/recovery state only. See [failure evidence](agent-runtime/LOCAL-FAILURE-LESSONS.md#selected-file-report-budget-exhaustion--2026-10-26) and [runtime progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#distinguish-framework-step-exhaustion-in-run-recovery--2026-10-30).
+
 ## Native session-to-task root index — 2026-10-30
 
 The actor derives a bounded session-to-many-root-ID index from durable task roots on open and updates it with each root commit. Multiple task roots per chat remain supported for task history and concurrent work; the first unique-root assumption was rejected after existing workspace rebind/revocation tests failed. The index API returns only bounded IDs. It does not select an active root or authorize execution; the provider pipe still refuses every model request. Rust tests pass 102/102 with strict Clippy, and Linux Docker tests pass 104/104 with strict Clippy. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-root-association-index--2026-10-30).

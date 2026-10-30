@@ -2,6 +2,12 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Distinguish framework step exhaustion in run recovery — 2026-10-30
+
+The latest three retained local selected-file report evaluations (2026-10-26 17:29, 17:34 and 17:40 UTC) all ended at the framework `max_steps` limit after 12 model requests. Across them, independent-surface checks failed 3/3, exact visible-value checks failed 3/3, and verified output receipts failed 3/3; source naming failed in 1/3. The runs also show surface churn (four surfaces in one attempt, one in another), while the third produced one combined form/table. These are frozen outcome failures, not evidence that a particular prompt or added agent fixes the task.
+
+The active TypeScript task journal previously collapsed an explicit framework `{ stop: "max_steps", limit: "steps" }` into generic `execution_error`. It now persists `step_budget_exhausted` separately from provider request and tool-call exhaustion, retains the framework stop string, leaves the failed result without a fabricated output receipt, and requires a user initiated continuation. The new regression reopens the journal and verifies the typed cause and absence of a receipt. This improves diagnosis and safe stopping; it does not repair the original result or authorize completion. Original source/value/interaction/output gates remain open.
+
 ## Desktop provider egress fail-closed cutover — 2026-10-30
 
 Projection `aa9a6be` adds public host-owned `sessionId`/`runId` correlation metadata to each generation request and carries it through provider transport callbacks and retries. Vakyartha pins that public API and now passes the desktop private native `providerFetch` into `startAppServer`, including the startup interval where no transport is ready (which rejects). Desktop model calls therefore cannot fall back to the TypeScript default network fetch. The sidecar rejects missing/invalid execution identities and forwards them over private IPC; Rust requires and validates both fields on the registered operation frame.

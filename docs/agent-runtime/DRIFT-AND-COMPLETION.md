@@ -117,6 +117,8 @@ Optional branches cannot hold the task open indefinitely. Once mandatory work is
 
 These are proposed reason codes, not a claim that every code is an existing `TaskState`. Map them deliberately onto the task aggregate before implementation. Uncertain effects are an explicit operation state, not a successful stop reason.
 
+The active task adapter now preserves the framework's explicit `max_steps` / `limit: steps` result as `step_budget_exhausted`, separately from provider request, tool-call and active-time limits. The 2026-10-26 selected-file report evaluations reached that step limit three times without passing independent-surface or exact-value checks or producing a verified output receipt. A budget stop must retain partial canonical state and failed evidence, must not mint a saved-output receipt or mark the task complete, and must not automatically replay. A continuation is a new user-admitted attempt under the remaining root-wide allowance. The current TypeScript journal implements only the typed stop and no-auto-retry portion; native authority, root-wide budget enforcement and durable candidate/evidence recovery remain open.
+
 For open-ended research, define coverage, source bounds, freshness and budget up front. There is no generally provable endpoint for “find everything.” Disclose bounded coverage; absence of more results is not evidence of exhaustive knowledge. Waiting for a person uses its separate expiry policy, not active compute time.
 
 ## 6. Single-agent and delegated consistency

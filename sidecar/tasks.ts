@@ -17,7 +17,7 @@ import { parseSchedule, SCHEDULE_GRACE_MS } from "../shared/schedule.ts";
 interface Dependencies {
   files?: TaskFiles;
   dir: string;
-  run(input: HostTurn, options: HostRunOptions): Promise<{ stop: string }>;
+  run(input: HostTurn, options: HostRunOptions): Promise<{ stop: string; limit?: "steps" | "tools" }>;
   view(session: string): Promise<SessionView>;
   remove?(session: string): Promise<void>;
   tools(session: string): Promise<AgentTool[]>;
@@ -569,7 +569,10 @@ export class Tasks {
         run.stop = result.stop;
         t.pending.shift();
         if (e.ctrl.signal.aborted) throw e.ctrl.signal.reason ?? new Error("Run stopped");
-        if (!["end", "projected"].includes(result.stop)) throw new Error(t.note === "Working" ? `Run ended: ${result.stop}` : t.note);
+        if (!["end", "projected"].includes(result.stop)) {
+          if (result.stop === "max_steps" && result.limit === "steps") e.stopCause ??= "step_budget_exhausted";
+          throw new Error(t.note === "Working" ? `Run ended: ${result.stop}` : t.note);
+        }
         await this.exportResult(t, run);
         if (e.ctrl.signal.aborted) throw e.ctrl.signal.reason ?? new Error("Run stopped during output save");
         t.state = t.pending.length ? "queued" : "needs_input";
