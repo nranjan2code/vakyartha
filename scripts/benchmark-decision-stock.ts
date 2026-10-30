@@ -401,7 +401,7 @@ async function runBenchmark() {
 
     console.log(`  Turn ${turn.turnNumber} [${turn.label}]:`);
     console.log(`    Decision: ${decision.intent} in ${decision.latencyMs}ms | Tools sent: ${shapedTools ? shapedTools.length : 0}`);
-    console.log(`    Prompt Tokens: ${out.usage.prompt_tokens} (saved ${metricsA[turn.turnNumber - 1].promptTokens - out.usage.prompt_tokens})`);
+    console.log(`    Prompt Tokens: ${out.usage.prompt_tokens} (saved ${(metricsA[turn.turnNumber - 1]?.promptTokens ?? 0) - out.usage.prompt_tokens})`);
     console.log(`    Total Latency: ${decision.latencyMs + out.latencyMs}ms\n`);
   }
 
