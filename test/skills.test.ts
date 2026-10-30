@@ -75,6 +75,18 @@ test("built-in folders seed reviewed references and update the whole package", a
   assert.equal(installed.update, undefined);
   assert.equal(installed.files?.length, 2);
   assert.match(upgraded.fileText(name, "references/market-dashboard-example.json").text, /"history"/);
+
+  // Outdated or mismatched manifest with corrupt disk files still allows updating to official bundled package
+  const statePath2 = path.join(d, "skills", "skills.json");
+  const state2 = JSON.parse(readFileSync(statePath2, "utf8"));
+  state2[name].files = [{ path: "references/market-dashboard-example.json", bytes: 100, sha256: "corrupt" }];
+  writeFileSync(statePath2, JSON.stringify(state2));
+  writeFileSync(path.join(d, "skills", name, "files", "references", "market-dashboard-example.json"), "tampered content");
+  const brokenManager = new Skills(d);
+  const brokenPreview = brokenManager.view().find(skill => skill.name === name)!.update!;
+  assert.ok(brokenPreview);
+  brokenManager.updateBuiltin(name, brokenPreview.fingerprint, brokenPreview.currentFingerprint);
+  assert.match(brokenManager.fileText(name, "references/market-dashboard-example.json").text, /"history"/);
 });
 
 test("builtin updates require a current preview and preserve edits, removals and disabled state", () => {

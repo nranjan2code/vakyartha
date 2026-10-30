@@ -243,7 +243,9 @@ export class Skills {
   updateBuiltin(name: string, fingerprint: string, currentFingerprint: string): void {
     const current = this.view().find(skill => skill.name === name);
     if (!current?.update || current.update.fingerprint !== fingerprint || current.update.currentFingerprint !== currentFingerprint) throw new Error("The skill changed; review its update again");
-    for (const file of this.saved[name]?.files ?? []) this.fileText(name, file.path);
+    for (const file of this.saved[name]?.files ?? []) {
+      try { this.fileText(name, file.path); } catch { /* Corrupt or missing disk files on a built-in skill do not block restoring the authentic package */ }
+    }
     const pkg = BUILTIN_PACKAGES.find(value => value.name === name)!;
     this.writeBuiltinPackage(pkg, { ...this.saved[name]!, enabled: this.isRequired(name) || this.saved[name]!.enabled, builtin: true });
   }
