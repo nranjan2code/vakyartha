@@ -15,6 +15,7 @@ import { disposeFinops, finopsPage } from "./finops-page.ts";
 import { TASK_LIMITS, parseTaskSummaries } from "../shared/task-contract.ts";
 import { loadVoices, voicePage, voiceSection, voiceSettingsPage } from "./voice/index.ts";
 import { group, pill, plainField, row, secretField, segmented, select, type Setting, title, toggle } from "./ui.ts";
+import { getDecisionConfig, saveDecisionConfig, type DecisionConfig } from "./decision/index.ts";
 import { disposeMediaPage } from "./media-page.ts";
 import { sandboxPage } from "./sandbox-page.ts";
 import type { MediaProvider } from "../shared/media.ts";
@@ -271,6 +272,66 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     }
   });
 
+  const decisionGroup = el("div", { className: "group" });
+  function updateDecisionUi(): void {
+    const cfg = getDecisionConfig();
+    const providerOptions: [string, string][] = [
+      ["ollama", "Local Ollama (d1-omni / laya)"],
+      ["openrouter", "OpenRouter (Microsoft-Decision-1)"],
+      ["heuristic", "Built-in Fast Heuristics (0ms)"],
+    ];
+
+    const modelOptionsList: [string, string][] = cfg.providerId === "openrouter"
+      ? [
+          ["microsoft/decision-1", "microsoft/decision-1 (9B calibrated decider)"],
+          ["meta-llama/llama-3.2-3b-instruct", "meta-llama/llama-3.2-3b-instruct"],
+        ]
+      : [
+          ["d1-omni:latest", "d1-omni:latest (380M decision+vision)"],
+          ["laya:latest", "laya:latest (420M decision)"],
+          ["qwen2.5:3b", "qwen2.5:3b"],
+          ["qwen3.5:4b-mlx", "qwen3.5:4b-mlx"],
+        ];
+
+    const providerSelect = select(providerOptions, cfg.providerId, (v) => {
+      saveDecisionConfig({ providerId: v as DecisionConfig["providerId"] });
+      updateDecisionUi();
+    });
+
+    const modelSelect = select(modelOptionsList, cfg.modelId, (v) => {
+      saveDecisionConfig({ modelId: v });
+    });
+
+    decisionGroup.replaceChildren(
+      el("div", { className: "group-title", textContent: "Decision & Turn Optimization" }),
+      row(
+        "Dynamic turn shaping",
+        "Uses local decision models to classify intent and strip unneeded context, tools, and grammar on greetings and casual turns.",
+        toggle(cfg.enabled, (on) => {
+          saveDecisionConfig({ enabled: on });
+          updateDecisionUi();
+        }),
+      ),
+      ...(cfg.enabled
+        ? [
+            row("Decision provider", "Engine used to score user intent in milliseconds.", providerSelect),
+            ...(cfg.providerId !== "heuristic" ? [row("Decision model", cfg.providerId === "ollama" ? "Installed local model with decision capabilities." : "Hosted decision model on OpenRouter.", modelSelect)] : []),
+            row(
+              "Prune MCP tools",
+              "Strip external tool schemas when no tools are needed, keeping the primary model focused.",
+              toggle(cfg.pruneTools, (on) => saveDecisionConfig({ pruneTools: on })),
+            ),
+            row(
+              "Strip greeting history",
+              "Omit past conversation turns on simple salutations ('Hi', 'Thanks') to drop token count from ~15k to ~50.",
+              toggle(cfg.stripSalutations, (on) => saveDecisionConfig({ stripSalutations: on })),
+            ),
+          ]
+        : []),
+    );
+  }
+  updateDecisionUi();
+
   void fillModels(focus && focus !== current.provider ? "" : current.model);
   if (current.model) void showPlan();
   return [
@@ -282,6 +343,7 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     ),
     group("How vak asks this model", el("div", { className: "row stack" }, plan, el("div", { className: "row-actions" }, calibrate, calibration))),
     limitsGroup,
+    decisionGroup,
   ];
 }
 

@@ -568,3 +568,32 @@ This decision formalizes the explicit boundary between the indestructible Rust e
 3. **Clean Architecture / Zero Users Principle:**
    - Because the app has 0 active production users, no backwards-compatibility shims or deprecated parallel stores are maintained.
    - The native vault and policy are verified via unit tests directly in the Rust crate and exposed to the desktop frontend via verified Tauri IPC commands (`vault_get`, `vault_set`, `vault_delete`, `check_egress_endpoint`).
+
+## ADR-053: Pluggable Decision Scoring, Dynamic Turn Shaping, and Decision Chaining (2026-10-30)
+
+Accepted at the user's direction: separate System 1 decision scoring from System 2 generative reasoning to eliminate the monolithic turn penalty and optimize local 4B model execution.
+
+1. **Context & Problem:**
+   - Every user turn—even greetings ("Hi", "Thanks") or minor UI adjustments ("Make the chart blue")—prepared an unpruned monolithic payload containing 3,000+ tokens of system instructions, up to 10,000 tokens of conversational history, and 5,000–15,000 tokens of MCP tool schemas.
+   - On the primary target (local 4B `qwen3.5:4b-mlx` via Ollama), prompt prefill latency took seconds, unified memory was saturated, and small models were prone to tool hallucination on casual chatter.
+
+2. **System 1 Decision Architecture:**
+   - Adopts Ollama's native `/v1/systemone` structured decision-scoring endpoint using local zero-token-output decision models (`d1-omni:latest` 380M, `laya:latest` 421M).
+   - In single forward passes (<50ms, 0 output tokens), the decision model evaluates text against explicit typed criteria, returning calibrated probability distributions.
+   - An infallible in-memory heuristic provider (<1ms) guarantees zero failure modes or turn stalls on timeout or offline daemon.
+
+3. **Dynamic Turn Shaper:**
+   - Evaluates incoming turns at turn initialization before prompt assembly.
+   - Shapes payloads dynamically:
+     - `salutation`: strips conversational history (0 prior turns), prunes all external MCP tools (`[]`), clamps `maxSteps` to 1.
+     - `canvas_refinement`: retains immediate prior turn only, strips external tools (`[]`), preserves surface authoring rules.
+     - `scoped_tool_task`: prunes MCP tools strictly to the required namespace (e.g. `filesystem`, `web_search`, `database`).
+     - `complex_reasoning`: preserves full context and enabled tool catalog.
+
+4. **Decision Chaining & Skill Availability:**
+   - `DecisionChainRunner` enables multi-stage decision pipelines with conditional branching (e.g. *Domain Triage $\rightarrow$ Operation Type $\rightarrow$ Security Risk Gate*) with composite confidence aggregation.
+   - Built-in `decision-eval` skill enables running LLMs to delegate discrete criteria verification and security scoring to local System 1 decision models during complex agentic workflows.
+
+5. **Runtime Boundary & Settings:**
+   - Pure TypeScript execution in `src/decision/` respecting the Rust Root of Trust. Rust continues to enforce egress and mutation approvals.
+   - Managed via user preferences in Settings > Models (`decision:enabled`, `decision:provider`, `decision:model`, `decision:pruneTools`, `decision:stripSalutations`). Default is enabled with local Ollama `d1-omni:latest`. [Contract and architecture](DECISION-MODELS.md).

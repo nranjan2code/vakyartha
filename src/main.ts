@@ -20,6 +20,7 @@ import { icon, tile } from "./icons.ts";
 import { closest, onContextMenu } from "./menu.ts";
 import { closeSettings, openSettings, settingsOpen } from "./settings.ts";
 import { closeSkillStudio, isSkillStudioOpen, openSkillStudio } from "./skills-studio.ts";
+import { getDecisionConfig, shapeTurn } from "./decision/index.ts";
 import type { SkillView } from "../shared/skills.ts";
 import { resolveMedia } from "./media.ts";
 
@@ -802,6 +803,37 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
     }
   };
 
+  let historyLimit = Number(opt("history", "10")) || undefined;
+  let maxStepsLimit = Number(prefs.get(`opt:${provider}:maxSteps`) || opt("maxSteps", "0")) || undefined;
+  let toolRoundsLimit = Number(prefs.get(`opt:${provider}:toolRounds`) || opt("toolRounds", "0")) || undefined;
+
+  if (req.message) {
+    try {
+      const decisionCfg = getDecisionConfig();
+      if (decisionCfg.enabled) {
+        const shaped = await shapeTurn({
+          message: req.message,
+          maxSteps: maxStepsLimit,
+          toolRounds: toolRoundsLimit,
+          provider,
+          model,
+        }, decisionCfg);
+
+        if (shaped.shape.historyPolicy === "strip_all" && decisionCfg.stripSalutations) {
+          historyLimit = 0;
+        } else if (shaped.shape.historyPolicy === "last_turn_only") {
+          historyLimit = 1;
+        } else if (shaped.shape.historyPolicy === "recent_window") {
+          historyLimit = 3;
+        }
+        maxStepsLimit = shaped.payload.maxSteps;
+        toolRoundsLimit = shaped.payload.toolRounds;
+      }
+    } catch {
+      // Infallible fallback: continue with unshaped defaults
+    }
+  }
+
   try {
     await client.turn(
       {
@@ -812,9 +844,9 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         generation: opt("generation", "auto"),
         effort: opt("effort") || undefined,
         // Long everyday chats would otherwise send every turn and overflow a small model's context.
-        history: Number(opt("history", "10")) || undefined,
-        maxSteps: Number(prefs.get(`opt:${provider}:maxSteps`) || opt("maxSteps", "0")) || undefined,
-        toolRounds: Number(prefs.get(`opt:${provider}:toolRounds`) || opt("toolRounds", "0")) || undefined,
+        history: historyLimit,
+        maxSteps: maxStepsLimit,
+        toolRounds: toolRoundsLimit,
         ...req,
       },
       onEvent,
