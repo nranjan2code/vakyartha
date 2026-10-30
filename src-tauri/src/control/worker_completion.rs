@@ -50,6 +50,11 @@ pub(super) fn prepare(
     {
         return Err(unavailable());
     }
+    prepare_path(native, run_id)
+}
+
+pub(super) fn prepare_path(native: &Path, run_id: &str) -> Result<WorkerInvocation, ControlError> {
+    path(native, run_id)?;
     crate::private_store::ensure_root(&native.join("executions")).map_err(|_| unavailable())?;
     super::sync_directory(native).map_err(ControlError::Store)?;
     let completion_record = native
@@ -68,6 +73,15 @@ pub(super) fn prepare(
 }
 
 pub(super) fn exit_receipt(native: &Path, run_id: &str) -> Result<String, ControlError> {
+    Ok(verified_exit(native, run_id)?.receipt)
+}
+
+pub(super) struct VerifiedExit {
+    pub receipt: String,
+    pub code: i32,
+}
+
+pub(super) fn verified_exit(native: &Path, run_id: &str) -> Result<VerifiedExit, ControlError> {
     let record = path(native, run_id)?;
     // The actor owns the native root. Refuse replacement links and permissive
     // evidence rather than following them into a worker-controlled namespace.
@@ -108,8 +122,8 @@ pub(super) fn exit_receipt(native: &Path, run_id: &str) -> Result<String, Contro
     {
         return Err(unavailable());
     }
-    Ok(format!(
-        "worker-exit-{run_id}-{}",
-        super::canonical::digest(&bytes)
-    ))
+    Ok(VerifiedExit {
+        receipt: format!("worker-exit-{run_id}-{}", super::canonical::digest(&bytes)),
+        code: completion.exit_code.expect("verified bounded exit code"),
+    })
 }

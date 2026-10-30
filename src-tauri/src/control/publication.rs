@@ -2,9 +2,7 @@
 //! still a proposal: the actor rechecks fences and selects immutable bytes in
 //! the same durable control generation as the publication receipt.
 use super::canonical::{CandidateCommitReceipt, CanonicalContentStore, CanonicalSessionRecord};
-use super::{
-    AdmissionError, CapacityLedger, CapacityProfile, ControlError, ControlStore, StoreError,
-};
+use super::{AdmissionError, CapacityLedger, ControlError, StoreError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -46,19 +44,15 @@ impl PublicationPreparation {
     pub fn frame(&self) -> Value {
         json!({"v":2,"type":"canonical_prepare","context":self.context})
     }
+    pub(super) fn candidate(&self) -> &CandidateCommitReceipt {
+        &self.candidate
+    }
     pub fn id(&self) -> &str {
         self.context["id"]
             .as_str()
             .expect("native context identity")
     }
     /// Called only by the native supervisor reading its canonical-role pipe.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "canonical-role supervisor is not enabled until product execution is connected"
-        )
-    )]
     pub(crate) fn response(self, bytes: &[u8]) -> Result<PublicationProposal, ControlError> {
         if bytes.len() > MAX_BYTES + 4096 {
             return Err(invalid());
@@ -102,7 +96,10 @@ impl PublicationPreparation {
     }
 }
 
-fn current(ledger: &CapacityLedger, receipt: &CandidateCommitReceipt) -> Result<(), ControlError> {
+pub(super) fn current(
+    ledger: &CapacityLedger,
+    receipt: &CandidateCommitReceipt,
+) -> Result<(), ControlError> {
     let root = ledger.roots.get(&receipt.root_id).ok_or_else(stale)?;
     if root.status() != super::state::RootStatus::Running
         || root.session_id() != Some(receipt.session_id.as_str())
@@ -199,18 +196,33 @@ pub(super) fn prepare(
     })
 }
 
+#[cfg(test)]
 pub(super) fn commit(
-    store: &mut ControlStore,
-    profile: &CapacityProfile,
+    store: &mut super::ControlStore,
+    profile: &super::CapacityProfile,
     ledger: &mut CapacityLedger,
     publications: &CanonicalContentStore,
     proposal: PublicationProposal,
 ) -> Result<PublicationReceipt, ControlError> {
+    let (next, receipt) = stage(ledger, publications, proposal)?;
+    store.persist(&next, profile).map_err(ControlError::Store)?;
+    *ledger = next;
+    publications
+        .cleanup(&ledger.published_sessions)
+        .map_err(io)?;
+    Ok(receipt)
+}
+
+pub(super) fn stage(
+    ledger: &CapacityLedger,
+    publications: &CanonicalContentStore,
+    proposal: PublicationProposal,
+) -> Result<(CapacityLedger, PublicationReceipt), ControlError> {
     let preparation = proposal.preparation;
     let digest = super::canonical::digest(&proposal.bytes);
     if let Some(receipt) = ledger.publication_receipts.get(preparation.id()) {
         return if receipt.digest == digest {
-            Ok(receipt.clone())
+            Ok((ledger.clone(), receipt.clone()))
         } else {
             Err(invalid())
         };
@@ -262,12 +274,13 @@ pub(super) fn commit(
     );
     next.publication_receipts
         .insert(receipt.id.clone(), receipt.clone());
-    store.persist(&next, profile).map_err(ControlError::Store)?;
-    *ledger = next;
-    publications
-        .cleanup(&ledger.published_sessions)
-        .map_err(io)?;
-    Ok(receipt)
+    Ok((next, receipt))
+}
+
+impl PublicationProposal {
+    pub(super) fn context_id(&self) -> &str {
+        self.preparation.id()
+    }
 }
 
 pub(super) fn load(
@@ -342,6 +355,7 @@ pub(super) fn validate(ledger: &CapacityLedger) -> Result<(), StoreError> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{CapacityProfile, ControlStore};
     use super::super::{
         ControlActor, Resource, canonical::CandidateCommitRequest, tasks::TaskRequest,
     };
@@ -375,9 +389,17 @@ mod tests {
             let native = super::super::native_store_root(&data);
             crate::private_store::ensure_root(&native).unwrap();
             let profile = CapacityProfile::new(
-                BTreeMap::from([(Resource::Generation, 2)]),
-                BTreeMap::from([(Resource::Generation, 1)]),
-                8,
+                BTreeMap::from([
+                    (Resource::Generation, 2),
+                    (Resource::VerificationExecution, 2),
+                    (Resource::ContainedProcess, 2),
+                ]),
+                BTreeMap::from([
+                    (Resource::Generation, 1),
+                    (Resource::VerificationExecution, 1),
+                    (Resource::ContainedProcess, 1),
+                ]),
+                32,
             )
             .unwrap();
             let (store, mut ledger) =
@@ -407,6 +429,50 @@ mod tests {
                 candidates,
                 publications,
             }
+        }
+        fn actor(self) -> (ControlActor, PathBuf, PathBuf, CapacityProfile) {
+            use super::super::{CanonicalStores, ControlHandle};
+            use std::{
+                sync::{Arc, atomic::AtomicBool, mpsc::sync_channel},
+                thread,
+            };
+            let data = self.data.clone();
+            let native = self.native.clone();
+            let profile = self.profile.clone();
+            let mut store = self.store;
+            store.persist(&self.ledger, &self.profile).unwrap();
+            let admission = super::super::WorkspaceAdmissionPolicy::new(&data).unwrap();
+            let sessions = super::super::host_sessions::HostSessionStore::open(&data).unwrap();
+            let (commands, receiver) = sync_channel(8);
+            let handle = ControlHandle {
+                commands,
+                response_timeout: Duration::from_secs(2),
+                candidate_in_flight: Arc::new(AtomicBool::new(false)),
+                provider_in_flight: Arc::new(AtomicBool::new(false)),
+            };
+            let join = thread::spawn(move || {
+                super::super::actor_loop(
+                    receiver,
+                    &mut store,
+                    self.profile,
+                    self.ledger,
+                    admission,
+                    CanonicalStores {
+                        candidates: self.candidates,
+                        publications: self.publications,
+                    },
+                    sessions,
+                )
+            });
+            (
+                ControlActor {
+                    handle,
+                    join: Some(join),
+                },
+                data,
+                native,
+                profile,
+            )
         }
         fn candidate(&mut self, number: u64) -> CandidateCommitReceipt {
             let previous = self
@@ -685,6 +751,585 @@ mod tests {
             None
         );
         assert!(!orphan.exists());
+        drop(actor);
+        fs::remove_dir_all(data).unwrap();
+        fs::remove_dir_all(native).unwrap();
+    }
+    #[cfg(unix)]
+    fn cleanup_record(
+        invocation: &super::super::canonical_runs::Invocation,
+        code: i32,
+        verified: bool,
+    ) {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .mode(0o600)
+            .open(&invocation.worker.completion_record)
+            .unwrap();
+        file.write_all(&serde_json::to_vec(&json!({"version":1,"invocation_id":invocation.id(),"cleanup_verified":verified,"exit_code":code})).unwrap()).unwrap();
+        file.sync_all().unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn canonical_holds_need_exact_cleanup_and_never_publish_after_restart() {
+        use super::super::{canonical_runs::Outcome, root_runs::RunStatus};
+        let mut h = Harness::new();
+        let candidate = h.candidate(1);
+        let (actor, data, native, profile) = h.actor();
+        let handle = actor.handle();
+        let first = handle.admit_canonical(candidate.commit_id.clone()).unwrap();
+        assert!(handle.admit_canonical(candidate.commit_id.clone()).is_err());
+        let lease = handle
+            .reserve(
+                first.id().into(),
+                "task-publish".into(),
+                BTreeMap::from([
+                    (Resource::VerificationExecution, 1),
+                    (Resource::ContainedProcess, 1),
+                ]),
+            )
+            .unwrap();
+        assert_eq!(
+            handle.release(lease),
+            Err(ControlError::Admission(AdmissionError::ReservedForControl(
+                Resource::VerificationExecution
+            )))
+        );
+        let cancelled_launch = handle
+            .abandon_canonical_before_spawn(first.id().into())
+            .unwrap();
+        assert_eq!(cancelled_launch.outcome, Some(Outcome::NotLaunched));
+        let second = handle.admit_canonical(candidate.commit_id.clone()).unwrap();
+        let id = second.id().to_owned();
+        handle
+            .confirm_canonical_started(id.clone(), "canonical-test-supervisor".into())
+            .unwrap();
+        assert!(handle.abandon_canonical_before_spawn(id.clone()).is_err());
+        assert!(handle.finish_canonical(id.clone(), None).is_err());
+        cleanup_record(&second, 0, false);
+        assert!(handle.finish_canonical(id.clone(), None).is_err());
+        assert_eq!(
+            handle.read_canonical_run(id.clone()).unwrap().status,
+            RunStatus::Running
+        );
+        drop(actor);
+        let actor = ControlActor::open(
+            &data,
+            "publication-tests",
+            profile,
+            8,
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let handle = actor.handle();
+        assert_eq!(
+            handle.read_canonical_run(id.clone()).unwrap().status,
+            RunStatus::Interrupted
+        );
+        assert!(handle.admit_canonical(candidate.commit_id.clone()).is_err());
+        cleanup_record(&second, 0, true);
+        let settled = handle.finish_canonical(id.clone(), None).unwrap();
+        assert_eq!(settled.status, RunStatus::Settled);
+        assert_eq!(settled.outcome, Some(Outcome::Rejected));
+        assert_eq!(handle.finish_canonical(id, None).unwrap(), settled);
+        assert_eq!(
+            handle
+                .read_publication_receipt(candidate.commit_id)
+                .unwrap(),
+            None
+        );
+        drop(actor);
+        fs::remove_dir_all(data).unwrap();
+        fs::remove_dir_all(native).unwrap();
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[ignore = "requires reviewed helper, Node and resources/canonical-worker.mjs"]
+    fn contained_canonical_supervisor_publishes_only_after_protected_cleanup() {
+        use super::super::canonical_runs::Outcome;
+        use std::sync::atomic::AtomicBool;
+        let mut h = Harness::new();
+        let candidate = h.candidate(1);
+        let (actor, data, native, profile) = h.actor();
+        let handle = actor.handle();
+        let resources = data.with_extension("canonical-runtime");
+        fs::create_dir(&resources).unwrap();
+        fs::copy(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/canonical-worker.mjs"),
+            resources.join("canonical-worker.mjs"),
+        )
+        .unwrap();
+        let helper = PathBuf::from(
+            std::env::var_os("VAK_TEST_WORKER_HELPER").expect("reviewed helper required"),
+        );
+        let node = PathBuf::from(std::env::var_os("VAK_TEST_WORKER_NODE").expect("Node required"));
+        assert!(
+            crate::canonical_supervisor::run(
+                &handle,
+                crate::canonical_supervisor::Runtime {
+                    helper: &helper,
+                    node: &node,
+                    resources: &resources,
+                    data: &data
+                },
+                candidate.commit_id.clone(),
+                &AtomicBool::new(true)
+            )
+            .is_err()
+        );
+        assert_eq!(
+            handle
+                .read_canonical_run("canonical-2".into())
+                .unwrap()
+                .outcome,
+            Some(Outcome::NotLaunched)
+        );
+        let run = crate::canonical_supervisor::run(
+            &handle,
+            crate::canonical_supervisor::Runtime {
+                helper: &helper,
+                node: &node,
+                resources: &resources,
+                data: &data,
+            },
+            candidate.commit_id.clone(),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(
+            matches!(run.outcome, Some(Outcome::Published { .. })),
+            "{run:?}"
+        );
+        assert_eq!(run.exit_code, Some(0));
+        let receipt = handle
+            .read_publication_receipt(candidate.commit_id.clone())
+            .unwrap()
+            .unwrap();
+        handle.admit_host_session("task-publish".into()).unwrap();
+        let (_, snapshot) = handle
+            .load_host_session("task-publish".into())
+            .unwrap()
+            .unwrap();
+        assert_eq!(snapshot["surfaces"][0]["data"]["amount"], json!(37.5));
+        assert_eq!(
+            handle.read_root("task-publish".into()).unwrap().status(),
+            super::super::state::RootStatus::Running
+        );
+        let scratch = data.join("canonical-workers").join(&run.id);
+        assert!(scratch.is_dir());
+        assert!(!data.join("worker").exists());
+        assert!(!scratch.join("sessions").exists());
+        assert!(!scratch.join("profiles.json").exists());
+        // Each resource was returned by the same generation selecting publication.
+        let lease = handle
+            .reserve(
+                "capacity-after-canonical".into(),
+                "task-publish".into(),
+                BTreeMap::from([
+                    (Resource::VerificationExecution, 1),
+                    (Resource::ContainedProcess, 1),
+                ]),
+            )
+            .unwrap();
+        handle.release(lease).unwrap();
+        drop(actor);
+        let actor = ControlActor::open(
+            &data,
+            "publication-tests",
+            profile,
+            8,
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let handle = actor.handle();
+        assert_eq!(handle.read_canonical_run(run.id.clone()).unwrap(), run);
+        assert_eq!(
+            handle
+                .read_publication_receipt(candidate.commit_id)
+                .unwrap(),
+            Some(receipt)
+        );
+        drop(actor);
+        fs::remove_dir_all(data).unwrap();
+        fs::remove_dir_all(native).unwrap();
+        fs::remove_dir_all(resources).unwrap();
+    }
+    #[test]
+    #[cfg(unix)]
+    fn canonical_cleanup_releases_holds_but_cancelled_fence_refuses_publication() {
+        use super::super::canonical_runs::{self, Outcome};
+        let mut h = Harness::new();
+        let candidate = h.candidate(1);
+        let invocation = canonical_runs::admit(
+            &mut h.ledger,
+            &h.profile,
+            &h.candidates,
+            &h.publications,
+            &h.native,
+            &candidate.commit_id,
+        )
+        .unwrap();
+        let id = invocation.id().to_owned();
+        let mut cancelled_before_start = h.ledger.clone();
+        let root = cancelled_before_start
+            .roots
+            .get_mut("task-publish")
+            .unwrap();
+        root.stop(
+            root.revision(),
+            super::super::state::RootStatus::Cancelled,
+            super::super::state::StopCause::UserCancelled,
+            "Cancelled before canonical start".into(),
+        )
+        .unwrap();
+        assert!(
+            canonical_runs::confirm(
+                &mut cancelled_before_start,
+                &id,
+                "stale-canonical-supervisor"
+            )
+            .is_err()
+        );
+        canonical_runs::confirm(&mut h.ledger, &id, "canonical-supervisor").unwrap();
+        let mut frame = response(&h.prepare(&candidate));
+        frame["id"] = invocation.frame()["context"]["id"].clone();
+        frame["snapshot"]["updated"] = invocation.frame()["context"]["at"].clone();
+        cleanup_record(&invocation, 0, true);
+        let proposal = invocation
+            .response(&serde_json::to_vec(&frame).unwrap())
+            .unwrap();
+        let root = h.ledger.roots.get_mut("task-publish").unwrap();
+        root.stop(
+            root.revision(),
+            super::super::state::RootStatus::Cancelled,
+            super::super::state::StopCause::UserCancelled,
+            "Cancelled".into(),
+        )
+        .unwrap();
+        let result = canonical_runs::finish(
+            &mut h.ledger,
+            &h.publications,
+            &h.native,
+            &id,
+            Some(proposal),
+        )
+        .unwrap();
+        assert_eq!(result.outcome, Some(Outcome::Rejected));
+        h.store.persist(&h.ledger, &h.profile).unwrap();
+        assert!(h.ledger.published_sessions.is_empty());
+        assert!(!h.ledger.active.contains_key(&result.lease_id));
+        let data = h.data.clone();
+        let native = h.native.clone();
+        drop(h);
+        fs::remove_dir_all(data).unwrap();
+        fs::remove_dir_all(native).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn failed_canonical_selection_preserves_holds_and_never_replays_prepared_output() {
+        use super::super::{canonical_runs::Outcome, root_runs::RunStatus};
+        let mut h = Harness::new();
+        let candidate = h.candidate(1);
+        let seed = h.prepare(&candidate);
+        let (actor, data, native, profile) = h.actor();
+        let handle = actor.handle();
+        let invocation = handle.admit_canonical(candidate.commit_id.clone()).unwrap();
+        let id = invocation.id().to_owned();
+        handle
+            .confirm_canonical_started(id.clone(), "canonical-failure-supervisor".into())
+            .unwrap();
+        let mut frame = response(&seed);
+        frame["id"] = invocation.frame()["context"]["id"].clone();
+        frame["snapshot"]["updated"] = invocation.frame()["context"]["at"].clone();
+        cleanup_record(&invocation, 0, true);
+        let proposal = invocation
+            .response(&serde_json::to_vec(&frame).unwrap())
+            .unwrap();
+        let pointer = native.join("control/current");
+        let selected = fs::read(&pointer).unwrap();
+        fs::remove_file(&pointer).unwrap();
+        fs::create_dir(&pointer).unwrap();
+        assert!(matches!(
+            handle.finish_canonical(id.clone(), Some(proposal)),
+            Err(ControlError::Store(_))
+        ));
+        drop(actor);
+        fs::remove_dir(&pointer).unwrap();
+        fs::write(&pointer, selected).unwrap();
+        let actor = ControlActor::open(
+            &data,
+            "publication-tests",
+            profile,
+            8,
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let handle = actor.handle();
+        assert_eq!(
+            handle.read_canonical_run(id.clone()).unwrap().status,
+            RunStatus::Interrupted
+        );
+        assert_eq!(
+            handle
+                .read_publication_receipt(candidate.commit_id)
+                .unwrap(),
+            None
+        );
+        assert!(
+            !native
+                .join("content/publications/task-publish/generation-00000000000000000001.json")
+                .exists()
+        );
+        let result = handle.finish_canonical(id, None).unwrap();
+        assert_eq!(result.outcome, Some(Outcome::Rejected));
+        assert_eq!(
+            handle.finish_canonical(result.id.clone(), None).unwrap(),
+            result
+        );
+        drop(actor);
+        fs::remove_dir_all(data).unwrap();
+        fs::remove_dir_all(native).unwrap();
+    }
+    #[test]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[ignore = "requires reviewed helper and Node paths"]
+    fn hostile_canonical_role_has_no_ambient_authority_and_cancels_with_cleanup() {
+        use super::super::canonical_runs::Outcome;
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        let mut h = Harness::new();
+        let candidate = h.candidate(1);
+        let (actor, data, native, _) = h.actor();
+        let handle = actor.handle();
+        fs::create_dir(data.join("worker")).unwrap();
+        fs::write(data.join("worker/private"), b"app-private").unwrap();
+        fs::create_dir_all(data.join("task-workers/other")).unwrap();
+        fs::write(data.join("task-workers/other/private"), b"sibling-private").unwrap();
+        let resources = data.with_extension("hostile-canonical");
+        fs::create_dir(&resources).unwrap();
+        let source = r#"import {Socket, createConnection} from 'node:net';
+import {readFileSync, writeFileSync} from 'node:fs';
+const channel = new Socket({fd:3, readable:true, writable:true}); channel.setEncoding('utf8');
+channel.write(JSON.stringify({v:2,type:'canonical_ready'})+'\n');
+let raw='', started=false;
+channel.on('data', chunk => { raw+=chunk; if(started||!raw.includes('\n'))return; started=true;
+const denied=path=>{try{readFileSync(path);return false;}catch(error){return ['EPERM','EACCES'].includes(error.code);}};
+let safe=denied(__NATIVE__)&&denied(__APP__)&&denied(__SIBLING__)&&!process.env.VAK_NPM_CLI&&!process.env.VAK_SANDBOX_BIN;
+try{writeFileSync(__OUTSIDE__,'escaped');safe=false;}catch(error){safe=safe&&['EPERM','EACCES'].includes(error.code);}
+let done=false; function finish(blocked){if(done)return;done=true;clearTimeout(timer);safe=safe&&blocked;writeFileSync(process.env.VAK_DATA_DIR+'/positive',safe?'contained':'escaped');channel.write(JSON.stringify({v:2,type:'provider_request',id:'forged'})+'\n',()=>process.exit(safe?0:13));}
+const timer=setTimeout(()=>finish(false),1000);
+try{const socket=createConnection({host:'127.0.0.1',port:9});socket.on('error',error=>finish(['EPERM','EACCES'].includes(error.code)));socket.on('connect',()=>{socket.destroy();finish(false);});}catch(error){finish(['EPERM','EACCES'].includes(error.code));}
+});"#;
+        let source = source
+            .replace(
+                "__NATIVE__",
+                &serde_json::to_string(&native.join("control/current")).unwrap(),
+            )
+            .replace(
+                "__APP__",
+                &serde_json::to_string(&data.join("worker/private")).unwrap(),
+            )
+            .replace(
+                "__SIBLING__",
+                &serde_json::to_string(&data.join("task-workers/other/private")).unwrap(),
+            )
+            .replace(
+                "__OUTSIDE__",
+                &serde_json::to_string(&data.join("outside-write")).unwrap(),
+            );
+        fs::write(resources.join("canonical-worker.mjs"), source).unwrap();
+        let helper = PathBuf::from(
+            std::env::var_os("VAK_TEST_WORKER_HELPER").expect("reviewed helper required"),
+        );
+        let node = PathBuf::from(std::env::var_os("VAK_TEST_WORKER_NODE").expect("Node required"));
+        let run = crate::canonical_supervisor::run(
+            &handle,
+            crate::canonical_supervisor::Runtime {
+                helper: &helper,
+                node: &node,
+                resources: &resources,
+                data: &data,
+            },
+            candidate.commit_id.clone(),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(run.outcome, Some(Outcome::Rejected));
+        assert_eq!(run.exit_code, Some(0));
+        assert_eq!(
+            fs::read(data.join("canonical-workers").join(run.id).join("positive")).unwrap(),
+            b"contained"
+        );
+        assert!(!data.join("outside-write").exists());
+        assert_eq!(
+            handle
+                .read_publication_receipt(candidate.commit_id.clone())
+                .unwrap(),
+            None
+        );
+        fs::write(resources.join("canonical-worker.mjs"), "import {Socket} from 'node:net'; const channel=new Socket({fd:3,readable:true,writable:true}); channel.write(JSON.stringify({v:2,type:'canonical_ready'})+'\\n'); channel.on('data',()=>{});channel.on('end',()=>setInterval(()=>{},1000));").unwrap();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let signal = cancel.clone();
+        let trigger = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(150));
+            signal.store(true, Ordering::Release);
+        });
+        let start = std::time::Instant::now();
+        let cancelled = crate::canonical_supervisor::run(
+            &handle,
+            crate::canonical_supervisor::Runtime {
+                helper: &helper,
+                node: &node,
+                resources: &resources,
+                data: &data,
+            },
+            candidate.commit_id.clone(),
+            &cancel,
+        )
+        .unwrap();
+        trigger.join().unwrap();
+        assert!(start.elapsed() < Duration::from_secs(8));
+        assert!(matches!(
+            cancelled.outcome,
+            Some(Outcome::Rejected | Outcome::WorkerFailed)
+        ));
+        assert!(cancelled.exit_receipt.is_some());
+        assert_eq!(
+            handle
+                .read_publication_receipt(candidate.commit_id)
+                .unwrap(),
+            None
+        );
+        drop(actor);
+        fs::remove_dir_all(data).unwrap();
+        fs::remove_dir_all(native).unwrap();
+        fs::remove_dir_all(resources).unwrap();
+    }
+    #[test]
+    fn canonical_admission_shares_global_capacity_across_independent_jobs() {
+        use super::super::{canonical_runs::Outcome, tasks};
+        let mut h = Harness::new();
+        h.profile = CapacityProfile::new(
+            BTreeMap::from([
+                (Resource::Generation, 3),
+                (Resource::VerificationExecution, 2),
+                (Resource::ContainedProcess, 2),
+            ]),
+            BTreeMap::from([
+                (Resource::Generation, 1),
+                (Resource::VerificationExecution, 1),
+                (Resource::ContainedProcess, 1),
+            ]),
+            32,
+        )
+        .unwrap();
+        let first = h.candidate(1);
+        let template = h.ledger.product_tasks["task-publish"].request.clone();
+        for (id, commit_id) in [
+            ("task-second", "second-commit"),
+            ("task-third", "third-commit"),
+        ] {
+            let mut request = template.clone();
+            request.id = id.into();
+            tasks::create(&mut h.ledger, request, AT).unwrap();
+            super::super::root_runs::prepare(
+                &mut h.ledger,
+                &h.profile,
+                id,
+                1,
+                &format!("start-{id}"),
+            )
+            .unwrap();
+            let run = h
+                .ledger
+                .root_runs
+                .values()
+                .find(|run| run.root_id == id)
+                .unwrap()
+                .id
+                .clone();
+            super::super::root_runs::confirm(&mut h.ledger, &run, &format!("supervisor-{id}"))
+                .unwrap();
+            let original = h
+                .candidates
+                .verify_current("task-publish", &h.ledger.canonical_sessions["task-publish"])
+                .unwrap();
+            let mut candidate: Value = serde_json::from_slice(&original).unwrap();
+            candidate["session"] = json!(id);
+            let request = CandidateCommitRequest {
+                session_id: id.into(),
+                commit_id: commit_id.into(),
+                fence: h.ledger.roots[id].execution_fence(),
+                expected_canonical_revision: 0,
+                candidate_bytes: serde_json::to_vec(&candidate).unwrap(),
+            };
+            super::super::commit_candidate(
+                &mut h.store,
+                &h.profile,
+                &mut h.ledger,
+                &mut h.candidates,
+                request,
+            )
+            .unwrap();
+        }
+        let (actor, data, native, _) = h.actor();
+        let handle = actor.handle();
+        // The actor knows a dropped reply never delivered its sole launch
+        // object, so it can settle this particular pre-spawn hold safely.
+        let (reply, receiver) = std::sync::mpsc::sync_channel(1);
+        drop(receiver);
+        handle
+            .commands
+            .send(super::super::ActorCommand::AdmitCanonical {
+                commit_id: first.commit_id.clone(),
+                reply,
+            })
+            .unwrap();
+        assert_eq!(
+            handle
+                .read_canonical_run("canonical-4".into())
+                .unwrap()
+                .outcome,
+            Some(Outcome::NotLaunched)
+        );
+        let first = handle.admit_canonical(first.commit_id).unwrap();
+        let second = handle.admit_canonical("second-commit".into()).unwrap();
+        assert!(matches!(
+            handle.admit_canonical("third-commit".into()),
+            Err(ControlError::Admission(
+                AdmissionError::CapacityUnavailable(Resource::VerificationExecution)
+            ))
+        ));
+        handle
+            .abandon_canonical_before_spawn(first.id().into())
+            .unwrap();
+        let third = handle.admit_canonical("third-commit".into()).unwrap();
+        assert_ne!(third.id(), first.id());
+        assert_eq!(
+            handle
+                .read_canonical_run(second.id().into())
+                .unwrap()
+                .status,
+            super::super::root_runs::RunStatus::Prepared
+        );
+        for invocation in [second, third] {
+            assert_eq!(
+                handle
+                    .abandon_canonical_before_spawn(invocation.id().into())
+                    .unwrap()
+                    .outcome,
+                Some(Outcome::NotLaunched)
+            );
+        }
         drop(actor);
         fs::remove_dir_all(data).unwrap();
         fs::remove_dir_all(native).unwrap();

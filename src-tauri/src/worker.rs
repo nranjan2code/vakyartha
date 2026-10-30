@@ -9,7 +9,7 @@ pub(crate) fn command(
     resources: &Path,
     data: &Path,
 ) -> Result<Command, String> {
-    command_inner(helper, node, resources, data, None)
+    command_inner(helper, node, resources, data, Role::App)
 }
 
 #[cfg_attr(
@@ -26,7 +26,28 @@ pub(crate) fn command_for_invocation(
     data: &Path,
     invocation: &crate::control::worker_completion::WorkerInvocation,
 ) -> Result<Command, String> {
-    command_inner(helper, node, resources, data, Some(invocation))
+    command_inner(helper, node, resources, data, Role::Reasoner(invocation))
+}
+
+pub(crate) fn command_for_canonical(
+    helper: &Path,
+    node: &Path,
+    resources: &Path,
+    data: &Path,
+    invocation: &crate::control::canonical_runs::Invocation,
+) -> Result<Command, String> {
+    command_inner(
+        helper,
+        node,
+        resources,
+        data,
+        Role::Canonical(&invocation.worker),
+    )
+}
+enum Role<'a> {
+    App,
+    Reasoner(&'a crate::control::worker_completion::WorkerInvocation),
+    Canonical(&'a crate::control::worker_completion::WorkerInvocation),
 }
 
 fn command_inner(
@@ -34,7 +55,7 @@ fn command_inner(
     node: &Path,
     resources: &Path,
     data: &Path,
-    invocation: Option<&crate::control::worker_completion::WorkerInvocation>,
+    role: Role<'_>,
 ) -> Result<Command, String> {
     if !cfg!(any(target_os = "macos", target_os = "linux")) {
         return Err("Contained desktop execution is unavailable on this platform".into());
@@ -44,11 +65,17 @@ fn command_inner(
     let resources = resources
         .canonicalize()
         .map_err(|_| "Desktop runtime resources are missing")?;
-    let script = existing_file(&resources.join(if invocation.is_some() {
-        "task-worker.mjs"
-    } else {
-        "sidecar.mjs"
-    }))?;
+    let (entry, namespace, prefix, invocation) = match role {
+        Role::App => ("sidecar.mjs", "worker", "", None),
+        Role::Reasoner(invocation) => ("task-worker.mjs", "task-workers", "run-", Some(invocation)),
+        Role::Canonical(invocation) => (
+            "canonical-worker.mjs",
+            "canonical-workers",
+            "canonical-",
+            Some(invocation),
+        ),
+    };
+    let script = existing_file(&resources.join(entry))?;
     if !script.starts_with(&resources) {
         return Err("Desktop runtime script escapes its resource directory".into());
     }
@@ -60,7 +87,7 @@ fn command_inner(
     if let Some(invocation) = invocation
         && (!invocation
             .run_id
-            .strip_prefix("run-")
+            .strip_prefix(prefix)
             .is_some_and(|id| id.parse::<u64>().is_ok_and(|number| number > 0))
             || invocation.completion_record
                 != native
@@ -70,7 +97,7 @@ fn command_inner(
         return Err("Worker completion must belong to the native run store".into());
     }
     let worker = if let Some(invocation) = invocation {
-        let runs = data.join("task-workers");
+        let runs = data.join(namespace);
         crate::private_store::ensure_root(&runs).map_err(|_| "Task scratch parent is unsafe")?;
         let scratch = runs.join(&invocation.run_id);
         let mut directory = std::fs::DirBuilder::new();

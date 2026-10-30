@@ -25,6 +25,7 @@ struct Backend {
 
 mod engine;
 mod worker;
+mod canonical_supervisor;
 mod policy;
 mod private_store;
 mod vault;

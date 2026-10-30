@@ -2,6 +2,39 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Protected canonical supervision and atomic settlement — 2026-10-30
+
+The native actor now admits a canonical invocation with both `VerificationExecution` and `ContainedProcess` capacity reserved in one durable generation. One unresolved canonical invocation is allowed per root; global/per-root capacity applies across independent jobs. It returns a move-only context once, and retains redacted invocation/lease/context/candidate identities in schema 17. The canonical role receives its own fresh `canonical-workers/<invocation-id>/` scratch, runtime reads and a private helper channel. App-worker data, sibling reasoners, native stores, credentials, integration tools and network authority are excluded.
+
+The Rust supervisor launches the packaged canonical entry outside the control actor, requires an exact ready frame, rechecks the task/candidate fence before supplying context, accepts one bounded response followed by EOF, and waits for private helper cleanup evidence. Native nonblocking context writes, response deadlines, cancellation polling and bounded teardown keep unresponsive work outside the actor. EOF requests graceful helper cancellation; forced helper termination never proves cleanup or refunds capacity. Startup failure before spawn may settle only a still-prepared native invocation as `not_launched`. An admission reply whose send fails proves the sole launch object was never delivered; the actor settles that hold without requiring nonexistent process evidence.
+
+```mermaid
+sequenceDiagram
+    participant A as Native actor
+    participant D as Native canonical supervisor
+    participant H as Containment helper
+    participant C as Canonical worker
+    participant S as Native control snapshot
+    A->>S: Persist canonical invocation and both capacity holds
+    A-->>D: Move-only context and native completion path
+    D->>H: Launch canonical entry with isolated scratch
+    H->>C: Private anonymous channel
+    C-->>D: Ready
+    D->>A: Confirm start against current task/candidate fence
+    D->>C: Original goal, selected candidate and canonical base
+    C-->>D: Semantically prepared snapshot, then EOF
+    H->>A: Private verified cleanup and actual exit code
+    D->>A: Return response through its native invocation binding
+    A->>A: Recheck fence, candidate, canonical base and successful cleanup
+    A->>S: Select publication and settle both holds together
+```
+
+There is now one production native publication entry: canonical completion. The earlier direct prepare/commit actor commands were removed. Snapshot selection, publication receipt, canonical outcome, protected exit evidence and lease settlement share one native commit. Invalid responses, cancellation and changed fences can settle proven cleanup without publishing. A failed selection retains the prior durable holds; restart removes unselected snapshot bytes and marks unresolved canonical work interrupted. It never replays the proposal, reconstructs a launch permit or automatically publishes a response retained in a previous process. Native receipt lookup remains available. Review/acceptance, another attempt and generic resource release cannot bypass an unsettled canonical run. Publication still does not pass original outcome checks or complete a task.
+
+Verification: 133 macOS and 135 pinned Linux Docker native tests pass, including all five real-worker gates; strict Clippy passes on both. The actual packaged canonical worker produces the original 37.5 snapshot, publishes after verified zero-exit cleanup, returns both capacity slots and survives reopen. A hostile canonical fixture cannot read native/app/sibling files, write outside scratch or connect to loopback; a forged provider command cannot publish. Another fixture ignores EOF but is cancelled with verified cleanup and no publication. Storage/fence tests cover missing/false evidence, cancellation before start and before commit, restart retention, exact settlement retry and failed control-pointer selection. Three independent jobs prove a shared two-slot bound and independent release. Final focused canonical tests and Clippy also cover safe settlement after a failed launch-object reply on both platforms. Native WebKit smoke passes; receipt: `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-desktop-private-ov4djX`. TypeScript/framework source is unchanged; the prior 290 app/422 framework checks remain historical evidence rather than newly repeated runs. No model call, dependency, installed build or decision-feature change.
+
+Next product dependency: trusted approval UI and actual native provider I/O/cancellation/settlement, then the Work dispatcher connecting reasoner, canonical supervisor and publication acknowledgement. Product execution stays disabled and its capacity profile remains empty. Skill/tool/continuation parity, scheduler, workspace/IA cutover, drift controls, broader multi-job QoS, CPU/memory/disk enforcement, original model outcomes, installed proof and final Astra review remain open. This checkpoint closes the protected canonical mechanism, not the end-to-end product contract.
+
 ## Canonical preparation and native publication selection — 2026-10-30
 
 Projection `cb8762b` adds public `prepareCandidatePublication`: a pure check of JSON candidates, complete graph/binding/wire semantics and exact canonical base versions. It preserves supplied values and interactive surfaces, rejects failed/partial stops, and returns a detached session snapshot without model work, repair, writes or broadcasts. All 422 framework tests/replay, typecheck and package generation pass.

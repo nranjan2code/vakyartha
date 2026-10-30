@@ -11,7 +11,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 16;
+const STORE_VERSION: u16 = 17;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 const MAX_CANDIDATE_RECEIPTS: usize = 10_000;
@@ -31,6 +31,7 @@ mod broker;
 pub mod generation;
 pub mod canonical;
 pub mod publication;
+pub mod canonical_runs;
 pub mod delegation;
 pub mod folder;
 pub mod host_sessions;
@@ -178,6 +179,7 @@ pub struct CapacityLedger {
     provider_operations: BTreeMap<String, generation::OperationRecord>,
     published_sessions: BTreeMap<String, CanonicalSessionRecord>,
     publication_receipts: BTreeMap<String, publication::PublicationReceipt>,
+    canonical_runs: BTreeMap<String, canonical_runs::CanonicalRun>,
 }
 
 impl CapacityLedger {
@@ -365,6 +367,7 @@ impl CapacityLedger {
             provider_operations: self.provider_operations.clone(),
             published_sessions: self.published_sessions.clone(),
             publication_receipts: self.publication_receipts.clone(),
+            canonical_runs: self.canonical_runs.clone(),
         }
     }
 
@@ -387,6 +390,7 @@ impl CapacityLedger {
             provider_operations: snapshot.provider_operations,
             published_sessions: snapshot.published_sessions,
             publication_receipts: snapshot.publication_receipts,
+            canonical_runs: snapshot.canonical_runs,
             ..Self::default()
         };
         if ledger.canonical_sessions.len() > MAX_ROOTS
@@ -598,6 +602,7 @@ impl CapacityLedger {
         tasks::validate(&ledger)?;
         generation::validate(&ledger)?;
         publication::validate(&ledger)?;
+        canonical_runs::validate(&ledger)?;
         Ok(ledger)
     }
 }
@@ -617,6 +622,7 @@ struct LedgerSnapshot {
     provider_operations: BTreeMap<String, generation::OperationRecord>,
     published_sessions: BTreeMap<String, CanonicalSessionRecord>,
     publication_receipts: BTreeMap<String, publication::PublicationReceipt>,
+    canonical_runs: BTreeMap<String, canonical_runs::CanonicalRun>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -824,15 +830,8 @@ enum ActorCommand {
         fence: ExecutionFence,
         reply: SyncSender<Result<(), ControlError>>,
     },
-    PreparePublication {
-        commit_id: String,
-        reply: SyncSender<Result<publication::PublicationPreparation, ControlError>>,
-    },
-    CommitPublication {
-        proposal: publication::PublicationProposal,
-        in_flight: Arc<std::sync::atomic::AtomicBool>,
-        reply: SyncSender<Result<publication::PublicationReceipt, ControlError>>,
-    },
+    AdmitCanonical { commit_id: String, reply: SyncSender<Result<canonical_runs::Invocation, ControlError>> },
+    CanonicalCommand { id: String, action: CanonicalAction, in_flight: Option<Arc<std::sync::atomic::AtomicBool>>, reply: SyncSender<Result<canonical_runs::CanonicalRun, ControlError>> },
     ReadPublicationReceipt {
         commit_id: String,
         reply: SyncSender<Result<Option<publication::PublicationReceipt>, ControlError>>,
@@ -896,6 +895,8 @@ enum ActorCommand {
     },
     Shutdown,
 }
+
+enum CanonicalAction { Read, Confirm(String), Finish(Option<Box<canonical_runs::Proposal>>), AbandonBeforeSpawn }
 
 #[derive(Clone)]
 pub struct ControlHandle {
@@ -1383,25 +1384,32 @@ impl ControlHandle {
             .map_err(response_error)?
     }
 
-    /// Native-only: never exposed through the reasoner or general app bridge.
-    pub fn prepare_publication(&self, commit_id: String) -> Result<publication::PublicationPreparation, ControlError> {
+    /// Admission returns a one-use native launch context after both holds persist.
+    pub fn admit_canonical(&self, commit_id: String) -> Result<canonical_runs::Invocation, ControlError> {
         let (reply, response) = sync_channel(1);
-        self.commands.try_send(ActorCommand::PreparePublication { commit_id, reply }).map_err(queue_error)?;
+        self.commands.try_send(ActorCommand::AdmitCanonical { commit_id, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+    pub fn read_canonical_run(&self, id: String) -> Result<canonical_runs::CanonicalRun, ControlError> { self.canonical_command(id, CanonicalAction::Read) }
+    pub(crate) fn confirm_canonical_started(&self, id: String, receipt: String) -> Result<canonical_runs::CanonicalRun, ControlError> { self.canonical_command(id, CanonicalAction::Confirm(receipt)) }
+    pub(crate) fn finish_canonical(&self, id: String, proposal: Option<canonical_runs::Proposal>) -> Result<canonical_runs::CanonicalRun, ControlError> { self.canonical_command(id, CanonicalAction::Finish(proposal.map(Box::new))) }
+    pub(crate) fn abandon_canonical_before_spawn(&self, id: String) -> Result<canonical_runs::CanonicalRun, ControlError> { self.canonical_command(id, CanonicalAction::AbandonBeforeSpawn) }
+    fn canonical_command(&self, id: String, action: CanonicalAction) -> Result<canonical_runs::CanonicalRun, ControlError> {
+        let in_flight = if matches!(action, CanonicalAction::Finish(Some(_))) {
+            if self.candidate_in_flight.compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed).is_err() { return Err(ControlError::QueueFull); }
+            Some(self.candidate_in_flight.clone())
+        } else { None };
+        let (reply, response) = sync_channel(1);
+        if let Err(error) = self.commands.try_send(ActorCommand::CanonicalCommand { id, action, in_flight: in_flight.clone(), reply }) {
+            if let Some(flag) = in_flight { flag.store(false, Ordering::Release); }
+            return Err(queue_error(error));
+        }
         response.recv_timeout(self.response_timeout).map_err(response_error)?
     }
 
     pub fn read_publication_receipt(&self, commit_id: String) -> Result<Option<publication::PublicationReceipt>, ControlError> {
         let (reply, response) = sync_channel(1);
         self.commands.try_send(ActorCommand::ReadPublicationReceipt { commit_id, reply }).map_err(queue_error)?;
-        response.recv_timeout(self.response_timeout).map_err(response_error)?
-    }
-
-    pub fn commit_publication(&self, proposal: publication::PublicationProposal) -> Result<publication::PublicationReceipt, ControlError> {
-        if self.candidate_in_flight.compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed).is_err() { return Err(ControlError::QueueFull); }
-        let (reply, response) = sync_channel(1);
-        if let Err(error) = self.commands.try_send(ActorCommand::CommitPublication { proposal, in_flight: self.candidate_in_flight.clone(), reply }) {
-            self.candidate_in_flight.store(false, Ordering::Release); return Err(queue_error(error));
-        }
         response.recv_timeout(self.response_timeout).map_err(response_error)?
     }
 
@@ -1645,6 +1653,7 @@ impl ControlActor {
             }
         }
         recovered |= generation::recover(&mut ledger);
+        recovered |= canonical_runs::recover(&mut ledger);
         if recovered {
             store.persist(&ledger, &profile)?;
         }
@@ -1966,7 +1975,7 @@ fn actor_loop(
                     Some(Resource::Generation)
                 } else if ledger.provider_operations.values().any(|record| record.lease_id == lease.id()) {
                     Some(Resource::ProviderRequest)
-                } else { None };
+                } else if canonical_runs::owns(&ledger, lease.id()) { Some(Resource::VerificationExecution) } else { None };
                 if let Some(resource) = owned_resource {
                     let _ = reply.send(Err(ControlError::Admission(
                         AdmissionError::ReservedForControl(resource),
@@ -2494,7 +2503,8 @@ fn actor_loop(
                     .root_runs
                     .values()
                     .any(|run| run.root_id == id && run.status != root_runs::RunStatus::Settled)
-                    || generation::unsettled(&candidate, &id))
+                    || generation::unsettled(&candidate, &id)
+                    || canonical_runs::unsettled(&candidate, &id))
                 {
                     let _ = reply.send(Err(ControlError::Admission(
                         AdmissionError::RootRunUnsettled,
@@ -2829,20 +2839,52 @@ fn actor_loop(
                 };
                 let _ = reply.send(result);
             }
-            ActorCommand::PreparePublication { commit_id, reply } => {
-                let result = publication::prepare(&ledger, &canonical_content, &published_content, &commit_id, tasks::now());
+            ActorCommand::AdmitCanonical { commit_id, reply } => {
+                let mut next = ledger.clone();
+                let result = canonical_runs::admit(&mut next, &profile, &canonical_content, &published_content, store.dir.parent().expect("native control parent"), &commit_id);
+                match result {
+                    Ok(invocation) => match store.persist(&next, &profile) {
+                        Ok(_) => {
+                            ledger = next;
+                            // A failed send proves the sole launch object was
+                            // never delivered. No process can have used it.
+                            if let Err(undelivered) = reply.send(Ok(invocation)) {
+                                let invocation = undelivered.0.expect("undelivered native admission");
+                                let mut next = ledger.clone();
+                                if canonical_runs::abandon_before_spawn(&mut next, invocation.id()).is_err() || store.persist(&next, &profile).is_err() { break; }
+                                ledger = next;
+                            }
+                        }
+                        Err(error) => { let _ = reply.send(Err(ControlError::Store(error))); break; }
+                    },
+                    Err(error) => { let _ = reply.send(Err(error)); }
+                }
+            }
+            ActorCommand::CanonicalCommand { id, action, in_flight, reply } => {
+                let mut next = ledger.clone();
+                let read_only = matches!(action, CanonicalAction::Read);
+                let result = match action {
+                    CanonicalAction::Read => next.canonical_runs.get(&id).cloned().ok_or(ControlError::Admission(AdmissionError::WorkerCompletionUnavailable)),
+                    CanonicalAction::Confirm(receipt) => canonical_runs::confirm(&mut next, &id, &receipt),
+                    CanonicalAction::Finish(proposal) => canonical_runs::finish(&mut next, &published_content, store.dir.parent().expect("native control parent"), &id, proposal.map(|proposal| *proposal)),
+                    CanonicalAction::AbandonBeforeSpawn => canonical_runs::abandon_before_spawn(&mut next, &id),
+                };
+                let result = result.and_then(|run| {
+                    if !read_only {
+                        store.persist(&next, &profile).map_err(ControlError::Store)?;
+                        ledger = next;
+                        published_content.cleanup(&ledger.published_sessions).map_err(|error| ControlError::Store(canonical_store_error(error)))?;
+                    }
+                    Ok(run)
+                });
+                if let Some(flag) = in_flight { flag.store(false, Ordering::Release); }
+                let fatal = matches!(result, Err(ControlError::Store(_)));
                 let _ = reply.send(result);
+                if fatal { break; }
             }
             ActorCommand::ReadPublicationReceipt { commit_id, reply } => {
                 let receipt = ledger.publication_receipts.values().find(|value| value.candidate.commit_id == commit_id).cloned();
                 let _ = reply.send(Ok(receipt));
-            }
-            ActorCommand::CommitPublication { proposal, in_flight, reply } => {
-                let result = publication::commit(store, &profile, &mut ledger, &published_content, proposal);
-                in_flight.store(false, Ordering::Release);
-                let fatal = matches!(result, Err(ControlError::Store(_)));
-                let _ = reply.send(result);
-                if fatal { break; }
             }
             ActorCommand::CommitCandidate {
                 request,

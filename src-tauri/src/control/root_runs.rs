@@ -60,7 +60,7 @@ pub(super) fn prepare(
             AdmissionError::ConflictingRequestIdentity,
         ));
     }
-    if super::generation::unsettled(ledger, root_id) {
+    if super::generation::unsettled(ledger, root_id) || super::canonical_runs::unsettled(ledger, root_id) {
         return Err(ControlError::Admission(AdmissionError::RootRunUnsettled));
     }
     if ledger

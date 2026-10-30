@@ -1,5 +1,11 @@
 # Vakyartha handover — 2026-10-30
 
+## Protected canonical supervision and atomic settlement — 2026-10-30
+
+Canonical preparation now runs through a native supervisor with separate scratch, private helper evidence, durable verification/process holds and bounded I/O/cancellation. Publication selection and verified cleanup settlement share one commit; direct publication actor commands have been removed. Restart retains uncertain holds without replaying output. Actual packaged and hostile-worker tests pass on macOS/Linux, including cross-job capacity, denied authority, cancellation and storage-failure recovery: 133/135 native tests, strict Clippy and WebKit. [Evidence and diagram](agent-runtime/IMPLEMENTATION-PROGRESS.md#protected-canonical-supervision-and-atomic-settlement--2026-10-30).
+
+Product execution remains disabled. Trusted consent UI and actual provider dispatch, the Work dispatcher and publication acknowledgement are next. Broader tools/skills/continuation, scheduling, workspace/IA, drift/QoS, original model outcomes, installed proof and final Astra review remain open. The decision-feature checkout is untouched.
+
 ## Canonical preparation and native publication selection — 2026-10-30
 
 The public Projection canonical validator and separate pure canonical worker now feed a native publication selection/receipt boundary (schema 16). Candidate and published content are separate; task session load/list reads only the selected publication, and ordinary host writes remain refused. Restart, stale/cancelled responses and failed pointer selection are covered. Validation passes 290 app tests/typecheck, 127 macOS/129 Linux native tests including all real-worker gates, strict Clippy and WebKit. [Evidence and diagram](agent-runtime/IMPLEMENTATION-PROGRESS.md#canonical-preparation-and-native-publication-selection--2026-10-30).
