@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { HeuristicDecisionProvider } from "../src/decision/heuristic.ts";
 import { OllamaDecisionProvider, DEFAULT_OLLAMA_HOST } from "../src/decision/providers/ollama.ts";
 import { OpenRouterDecisionProvider } from "../src/decision/providers/openrouter.ts";
+import { OpenAIDecisionProvider } from "../src/decision/providers/openai.ts";
 import { DecisionChainRunner, type DecisionChainDefinition } from "../src/decision/chain.ts";
 import { getDecisionConfig, saveDecisionConfig, shapeTurn, type ChatTurnPayload } from "../src/decision/shaper.ts";
 
@@ -343,5 +344,43 @@ test("OpenRouterDecisionProvider: falls back to heuristics on network error or i
   assert.equal(shape.intent, "scoped_tool_task");
   assert.ok(shape.reason?.includes("unavailable or timed out"));
 });
+
+test("OpenAIDecisionProvider: falls back to heuristics gracefully when API key is missing", async () => {
+  const provider = new OpenAIDecisionProvider(undefined);
+
+  const shape = await provider.classifyTurn({
+    message: "Good afternoon!",
+    availableTools: ["filesystem", "web_search"],
+  });
+
+  assert.equal(shape.intent, "salutation");
+  assert.equal(shape.historyPolicy, "strip_all");
+  assert.ok(shape.reason?.includes("API key not configured"));
+});
+
+test("OpenAIDecisionProvider: live classification with OpenAI gpt-4o-mini structured outputs if Keychain key available", async () => {
+  let key: string | undefined;
+  try {
+    const { execSync } = await import("node:child_process");
+    key = execSync("security find-generic-password -s com.nranjan2code.vakyartha -a OPENAI_API_KEY -w", { encoding: "utf8" }).trim();
+  } catch {
+    key = process.env.OPENAI_API_KEY;
+  }
+
+  if (!key) return; // Skip live network call if no local key present
+
+  const provider = new OpenAIDecisionProvider(key, "gpt-4o-mini");
+
+  const shape = await provider.classifyTurn({
+    message: "Hi there!",
+    availableTools: ["filesystem_read", "web_search"],
+  });
+
+  assert.equal(shape.intent, "salutation");
+  assert.equal(shape.historyPolicy, "strip_all");
+  assert.deepEqual(shape.allowedToolNamespaces, []);
+  assert.ok(shape.confidence >= 0.85);
+});
+
 
 

@@ -6,6 +6,7 @@ import { prefs } from "../core.ts";
 import { HeuristicDecisionProvider } from "./heuristic.ts";
 import { DEFAULT_DECISION_TIMEOUT_MS, DEFAULT_OLLAMA_DECISION_MODEL, OllamaDecisionProvider } from "./providers/ollama.ts";
 import { DEFAULT_OPENROUTER_MODEL, OpenRouterDecisionProvider } from "./providers/openrouter.ts";
+import { DEFAULT_OPENAI_MODEL, OpenAIDecisionProvider } from "./providers/openai.ts";
 import type { DecisionConfig, DecisionProvider, DecisionState, TurnShape } from "./types.ts";
 
 export interface ChatTurnPayload {
@@ -33,6 +34,7 @@ export interface ShapedTurnResult {
 const heuristicProvider = new HeuristicDecisionProvider();
 const ollamaProvider = new OllamaDecisionProvider();
 const openrouterProvider = new OpenRouterDecisionProvider();
+const openaiProvider = new OpenAIDecisionProvider();
 
 export function getDecisionConfig(): DecisionConfig {
   const enabled = prefs.get("decision:enabled") !== "false";
@@ -69,6 +71,10 @@ export function getActiveDecisionProvider(config: DecisionConfig = getDecisionCo
   if (config.providerId === "ollama") {
     ollamaProvider.model = config.modelId || DEFAULT_OLLAMA_DECISION_MODEL;
     return ollamaProvider;
+  }
+  if (config.providerId === "openai") {
+    openaiProvider.model = config.modelId || DEFAULT_OPENAI_MODEL;
+    return openaiProvider;
   }
   if (config.providerId === "openrouter") {
     openrouterProvider.model = config.modelId || DEFAULT_OPENROUTER_MODEL;

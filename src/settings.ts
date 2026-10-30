@@ -277,6 +277,7 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     const cfg = getDecisionConfig();
     const providerOptions: [string, string][] = [
       ["ollama", "Local Ollama (d1-omni / laya)"],
+      ["openai", "OpenAI (GPT-4o-mini Structured Outputs)"],
       ["openrouter", "OpenRouter (Microsoft-Decision-1)"],
       ["heuristic", "Built-in Fast Heuristics (0ms)"],
     ];
@@ -286,12 +287,17 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
           ["microsoft/decision-1", "microsoft/decision-1 (9B calibrated decider)"],
           ["meta-llama/llama-3.2-3b-instruct", "meta-llama/llama-3.2-3b-instruct"],
         ]
-      : [
-          ["d1-omni:latest", "d1-omni:latest (380M decision+vision)"],
-          ["laya:latest", "laya:latest (420M decision)"],
-          ["qwen2.5:3b", "qwen2.5:3b"],
-          ["qwen3.5:4b-mlx", "qwen3.5:4b-mlx"],
-        ];
+      : cfg.providerId === "openai"
+        ? [
+            ["gpt-4o-mini", "gpt-4o-mini (fast strict JSON schema)"],
+            ["gpt-4o", "gpt-4o (standard)"],
+          ]
+        : [
+            ["d1-omni:latest", "d1-omni:latest (380M decision+vision)"],
+            ["laya:latest", "laya:latest (420M decision)"],
+            ["qwen2.5:3b", "qwen2.5:3b"],
+            ["qwen3.5:4b-mlx", "qwen3.5:4b-mlx"],
+          ];
 
     const providerSelect = select(providerOptions, cfg.providerId, (v) => {
       saveDecisionConfig({ providerId: v as DecisionConfig["providerId"] });
@@ -315,7 +321,7 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
       ...(cfg.enabled
         ? [
             row("Decision provider", "Engine used to score user intent in milliseconds.", providerSelect),
-            ...(cfg.providerId !== "heuristic" ? [row("Decision model", cfg.providerId === "ollama" ? "Installed local model with decision capabilities." : "Hosted decision model on OpenRouter.", modelSelect)] : []),
+            ...(cfg.providerId !== "heuristic" ? [row("Decision model", cfg.providerId === "ollama" ? "Installed local model with decision capabilities." : cfg.providerId === "openai" ? "Fast OpenAI model using strict structured outputs." : "Hosted decision model on OpenRouter.", modelSelect)] : []),
             row(
               "Prune MCP tools",
               "Strip external tool schemas when no tools are needed, keeping the primary model focused.",

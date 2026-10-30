@@ -151,7 +151,7 @@ All settings live in Vakyartha's reactive preferences store:
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `vak:decision:enabled` | `boolean` | `"true"` | Master switch for dynamic turn shaping |
-| `vak:decision:provider` | `string` | `"ollama"` | Active decision provider (`ollama` or `heuristic`) |
+| `vak:decision:provider` | `string` | `"ollama"` | Active decision provider (`ollama`, `openai`, `openrouter`, or `heuristic`) |
 | `vak:decision:model` | `string` | `"d1-omni:latest"` | Local decision model name |
 | `vak:decision:timeout` | `number` | `1500` | Hard timeout ceiling (ms) before heuristic fallback |
 | `vak:decision:pruneTools` | `boolean` | `"true"` | Prunes irrelevant MCP tools on non-tool turns |
