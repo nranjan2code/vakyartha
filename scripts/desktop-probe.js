@@ -83,6 +83,9 @@
  let staleTaskCancel=false;
  try{await ipc.invoke('control_task',{command:{kind:'cancel',id:productTask.id,revision:productTask.revision+1}});staleTaskCancel=true;}catch{}
  check(!staleTaskCancel,'native task cancellation accepted a stale revision');
+ const unicodeTask=await ipc.invoke('control_task',{command:{kind:'create',request:{...productRequest,id:'unicode-product-task',goal:'  '+'😀'.repeat(70)}}});
+ const unicodeSummary=(await ipc.invoke('control_task',{command:{kind:'list'}})).find(task=>task.id===unicodeTask.id);
+ check(unicodeSummary.goal==='😀'.repeat(60)&&unicodeSummary.goal.length===120,'native task summary violates the UI text bound');
   const info=await request('/api/info');check(info.status===200,'private info failed');
  await ipc.invoke('control_admit_host_session',{sessionId:'unused-admission'});
  await ipc.invoke('control_release_host_session_admission',{sessionId:'unused-admission'});
@@ -114,6 +117,8 @@
  const cancelledTask=await ipc.invoke('control_task',{command:{kind:'read',id:productTask.id}});
  check(cancelledTask.state==='cancelled'&&cancelledTask.runs===0,'Work cancellation did not use native task control');
  await ipc.invoke('control_task',{command:{kind:'remove',id:productTask.id,revision:cancelledTask.revision}});
+ const cancelledUnicode=await ipc.invoke('control_task',{command:{kind:'cancel',id:unicodeTask.id,revision:unicodeTask.revision}});
+ await ipc.invoke('control_task',{command:{kind:'remove',id:unicodeTask.id,revision:cancelledUnicode.revision}});
  check((await ipc.invoke('control_task',{command:{kind:'list'}})).length===0,'native task deletion left its product record');
   const timings=[];
   for(let i=0;i<20;i++){const start=performance.now();check((await request('/api/info')).status===200,'repeated IPC failed');timings.push(performance.now()-start);}

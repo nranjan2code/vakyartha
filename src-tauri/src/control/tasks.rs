@@ -163,9 +163,11 @@ impl TaskRequest {
                         .chars()
                         .any(|character| character.is_control() || matches!(character, '/' | '\\'))
                     || !["txt", "md", "csv", "json"].iter().any(|extension| {
-                        file.name
-                            .to_ascii_lowercase()
-                            .ends_with(&format!(".{extension}"))
+                        file.name.len() > extension.len() + 1
+                            && file
+                                .name
+                                .to_ascii_lowercase()
+                                .ends_with(&format!(".{extension}"))
                     })
                     || file.content.len() > 16_000
                     || file.content.contains('\0')
@@ -302,8 +304,21 @@ pub(super) fn list(ledger: &CapacityLedger) -> Result<Value, ControlError> {
     records.into_iter().map(|record| {
         let root = ledger.roots.get(&record.request.id).ok_or(ControlError::Store(StoreError::Corrupt))?;
         let cancelled = root.status() == RootStatus::Cancelled;
-        Ok(json!({"id":record.request.id,"session":record.request.id,"goal":record.request.goal.chars().take(120).collect::<String>(),"state":if cancelled {"cancelled"} else {"queued"},"updated":record.updated,"revision":root.revision(),"note":if cancelled {"Stopped before native execution."} else {"Saved. Execution is currently unavailable; no model or tool has been started."}}))
+        Ok(json!({"id":record.request.id,"session":record.request.id,"goal":summary_goal(&record.request.goal),"state":if cancelled {"cancelled"} else {"queued"},"updated":record.updated,"revision":root.revision(),"note":if cancelled {"Stopped before native execution."} else {"Saved. Execution is currently unavailable; no model or tool has been started."}}))
     }).collect::<Result<Vec<_>, _>>().map(Value::Array)
+}
+
+fn summary_goal(goal: &str) -> String {
+    // The shared UI contract bounds JavaScript UTF-16 units. Truncate at a
+    // Unicode scalar boundary so an astral character is never split.
+    let mut units = 0;
+    goal.trim()
+        .chars()
+        .take_while(|character| {
+            units += character.len_utf16();
+            units <= 120
+        })
+        .collect()
 }
 
 pub(super) fn validate(ledger: &CapacityLedger) -> Result<(), StoreError> {
@@ -463,6 +478,12 @@ mod tests {
         };
         assert!(bad.validate().is_err());
         let mut bad = valid.clone();
+        bad.inputs = vec![InputFile {
+            name: ".txt".into(),
+            content: "x".into(),
+        }];
+        assert!(bad.validate().is_err());
+        let mut bad = valid.clone();
         bad.provider = "hosted".into();
         assert!(bad.validate().is_err());
         let mut bad = valid.clone();
@@ -508,6 +529,10 @@ mod tests {
             !summary.contains("private source marker")
                 && !summary.contains("Original criteria")
                 && !summary.contains("sha256")
+        );
+        assert_eq!(
+            summary_goal(&format!("  {}", "😀".repeat(70))),
+            "😀".repeat(60)
         );
         ledger.product_tasks.get_mut("task").unwrap().request.goal =
             "Changed original definition".into();

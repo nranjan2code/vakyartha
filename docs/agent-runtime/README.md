@@ -1,6 +1,6 @@
 # Agent execution and bounded delegation
 
-Design baseline: 2026-10-29. Status: architecture and active implementation. Tauri starts the native actor on macOS/Linux; private protocol v2 now carries health and exact candidate-commit operations; and native control can persist a root/session-fenced immutable candidate generation with a durable receipt. These are still unexposed foundations: TypeScript remains the product task/workspace writer, the actor profile refuses execution, candidate commits are not published to canonical sessions, and no delivery or outcome gate has passed. Diagrams show the target unless explicitly labelled current behavior. Track live changes and verification in [implementation progress](IMPLEMENTATION-PROGRESS.md).
+Design baseline: 2026-10-29. Status: architecture and active implementation. Tauri starts the native actor on macOS/Linux; private protocol v2 now carries health and exact candidate-commit operations; and native control can persist a root/session-fenced immutable candidate generation with a durable receipt. Desktop Work definitions and revisioned list/read/cancel/delete controls now use the native actor; the desktop TypeScript task journal/pump is removed. TypeScript still owns product workspace routes. Task execution/scheduling is explicitly unavailable, the actor profile refuses execution, candidate commits are not published to canonical sessions, and no full delivery or outcome gate has passed. Browser development retains its separate task backend. Diagrams show the target unless explicitly labelled current behavior. Track live changes and verification in [implementation progress](IMPLEMENTATION-PROGRESS.md).
 
 The design applies to one agent first. Delegation is an optional extension of the same task contract, authority, budgets, evidence and recovery. The default is zero children; neither task length nor a role name justifies creating one.
 
@@ -49,7 +49,7 @@ The proposal separates three questions: whether a task may delegate, whether del
 
 | Area | Inspected foundation | Proposed extension |
 | --- | --- | --- |
-| Task execution | App task journal, serialized execution slot, bounded runs and cumulative reservations in `sidecar/tasks.ts` | Explicit child lineage, shared root reservations and dependency-aware scheduling |
+| Task execution | Browser development task journal/runner in `sidecar/tasks.ts`; desktop native metadata controls with execution unavailable | Explicit child lineage, shared root reservations and dependency-aware scheduling |
 | Result review | Selected typed result checks, output receipts and revision-bound user review | General requirement/evidence record, drift checkpoints and typed stopping reasons |
 | Integrations | Existing catalog, schemas, policies, approval waits, logging and configured scopes | Derive narrower child scope through the same lifecycle; no second connector path |
 | Surfaces | Canonical sessions, multiple interactive surfaces and local view interactions | Child candidates accepted through existing owners; preserve drafts and independent surfaces |

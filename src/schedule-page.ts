@@ -8,7 +8,7 @@ import { $, api, ask, el } from "./core.ts";
 import { icon } from "./icons.ts";
 import { current } from "./models.ts";
 import { openSettings } from "./settings.ts";
-import { admitNativeChat, downloadMarkdown, releaseNativeChatAdmission } from "./backend.ts";
+import { downloadMarkdown } from "./backend.ts";
 
 interface Capability { id: string; name: string; summary: string; ready: boolean; free: boolean; access: string[] }
 type Filter = "all" | "upcoming" | "attention" | "active" | "history";
@@ -393,7 +393,6 @@ export class SchedulePage {
     if (later && (!Number.isFinite(at.getTime()) || at.getTime() <= Date.now())) { error.textContent = "Choose a future date and time."; return; }
     this.creationBusy = true; $<HTMLButtonElement>("task-create-start").disabled = true;
     const taskId = crypto.randomUUID();
-    let taskCreated = false;
     try {
       const layout = $<HTMLSelectElement>("task-result-layout").value;
       const entries = $<HTMLTextAreaElement>("task-result-inputs").value.split("\n").map((value) => value.trim()).filter(Boolean);
@@ -408,14 +407,11 @@ export class SchedulePage {
       const chosen = [...$("task-capabilities").querySelectorAll<HTMLInputElement>("input:checked")];
       const confirmedFree = chosen.filter((c) => c.dataset.free !== "true").map((c) => c.value);
       if (confirmedFree.length && !(await ask("You selected a server you configured. Continue only after checking its source, permissions and that there are no service fees for this work.", "I checked; continue"))) return;
-      await admitNativeChat(taskId);
       const response = await api<unknown>("/api/tasks", { method: "POST", body: JSON.stringify({ id: taskId, goal: $<HTMLTextAreaElement>("task-goal").value, criteria: $<HTMLTextAreaElement>("task-criteria").value, provider: current.provider, model: current.model, ...(resultPolicy ? { resultPolicy } : {}), inputs: inputs.map(({ name, content }) => ({ name, content })), ...(outputKind ? { output: { kind: outputKind } } : {}), diagnosticDays: Number($<HTMLSelectElement>("task-diagnostic-days").value), limits, spending: $<HTMLSelectElement>("task-spending").value === "api_allowed" ? { kind: "api_allowed", acknowledged: $<HTMLInputElement>("task-spending-ack").checked } : { kind: "local_only" }, integrations: chosen.map((c) => c.value), confirmedFree, ...(later ? { schedule: { kind: "once", at: at.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, status: "armed", missed: "review" } } : {}) }) });
-      taskCreated = true;
       const task = parseTaskView(response);
       $<HTMLFormElement>("task-create-form").reset(); this.formReady = false;
       await this.refresh(); await this.showDetail(task.id);
     } catch (err) {
-      if (!taskCreated) await releaseNativeChatAdmission(taskId).catch(() => {});
       error.textContent = (err as Error).message;
     }
     finally { this.creationBusy = false; $<HTMLButtonElement>("task-create-start").disabled = false; }
