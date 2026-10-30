@@ -326,6 +326,11 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
               "Omit past conversation turns on simple salutations ('Hi', 'Thanks') to drop token count from ~15k to ~50.",
               toggle(cfg.stripSalutations, (on) => saveDecisionConfig({ stripSalutations: on })),
             ),
+            row(
+              "Context assembly optimization",
+              "Shape multi-turn context dynamically based on turn intent rather than sending a static last-N turns sliding window.",
+              toggle(cfg.optimizeContext, (on) => saveDecisionConfig({ optimizeContext: on })),
+            ),
           ]
         : []),
     );

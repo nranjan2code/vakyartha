@@ -582,12 +582,12 @@ Accepted at the user's direction: separate System 1 decision scoring from System
    - In single forward passes (<50ms, 0 output tokens), the decision model evaluates text against explicit typed criteria, returning calibrated probability distributions.
    - An infallible in-memory heuristic provider (<1ms) guarantees zero failure modes or turn stalls on timeout or offline daemon.
 
-3. **Dynamic Turn Shaper:**
-   - Evaluates incoming turns at turn initialization before prompt assembly.
+3. **Dynamic Turn Shaper & Semantic Context Assembly:**
+   - Evaluates incoming turns at turn initialization before prompt assembly, replacing naive static sliding windows (e.g. indiscriminate "last 10 turns") with semantic context shaping.
    - Shapes payloads dynamically:
-     - `salutation`: strips conversational history (0 prior turns), prunes all external MCP tools (`[]`), clamps `maxSteps` to 1.
-     - `canvas_refinement`: retains immediate prior turn only, strips external tools (`[]`), preserves surface authoring rules.
-     - `scoped_tool_task`: prunes MCP tools strictly to the required namespace (e.g. `filesystem`, `web_search`, `database`).
+     - `salutation`: strips conversational history (0 prior turns, `history: 1`), prunes all external MCP tools (`[]`), clamps `maxSteps` to 1. Reduces token overhead by >95%.
+     - `canvas_refinement`: retains immediate prior turn only (`history: 2`), strips external tools (`[]`), preserves surface authoring rules and canonical surface projection note (`shownSurfacesNote`).
+     - `scoped_tool_task`: retains focused working memory (`history: 4`), prunes MCP tools strictly to the required namespace (e.g. `filesystem`, `web_search`, `database`).
      - `complex_reasoning`: preserves full context and enabled tool catalog.
 
 4. **Decision Chaining & Skill Availability:**
@@ -596,4 +596,4 @@ Accepted at the user's direction: separate System 1 decision scoring from System
 
 5. **Runtime Boundary & Settings:**
    - Pure TypeScript execution in `src/decision/` respecting the Rust Root of Trust. Rust continues to enforce egress and mutation approvals.
-   - Managed via user preferences in Settings > Models (`decision:enabled`, `decision:provider`, `decision:model`, `decision:pruneTools`, `decision:stripSalutations`). Default is enabled with local Ollama `d1-omni:latest`. [Contract and architecture](DECISION-MODELS.md).
+   - Managed via user preferences in Settings > Models (`decision:enabled`, `decision:provider`, `decision:model`, `decision:pruneTools`, `decision:stripSalutations`, `decision:optimizeContext`). Default is enabled with local Ollama `d1-omni:latest`. [Contract and architecture](DECISION-MODELS.md).

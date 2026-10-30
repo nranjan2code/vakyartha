@@ -86,7 +86,36 @@ When enabled, the Decision Engine classifies incoming user turns into one of fou
 
 ---
 
-## 5. Decision Chaining for Multi-Stage Decisions
+## 5. Multi-Turn Context Assembly Optimization vs Static Sliding Windows
+
+### The Problem with Static Sliding Windows
+Traditional agent apps use naive sliding windows (e.g. sending the last 10 turns indiscriminately):
+1. **Attention Distraction & Degradation:** Small local models (such as `qwen3.5:4b-mlx`) degrade significantly when bombarded with irrelevant historical conversation, old file dumps, or prior debugging chatter.
+2. **Loss of Critical Anchors:** If a user establishes foundational constraints in Turn 1, but proceeds through 11 conversational clarification turns, a fixed 10-turn window silently purges the root constraints.
+3. **Severe Token Bloat on Trivial Interactions:** Saying `"Hi"`, `"Thanks"`, or changing a button color sends thousands of prior tokens unnecessarily.
+
+### Semantic Context Shaping
+With **Context Assembly Optimization** enabled (`vak:decision:optimizeContext: true`), the Decision Engine dynamically adapts history assembly per turn:
+
+```mermaid
+flowchart TD
+    UserTurn["Incoming User Turn"] --> DecisionEval["Decision Engine Evaluation (<40ms)"]
+    DecisionEval --> Classify{"Intent & Dependencies"}
+    
+    Classify -- "Salutation / Banter" --> CleanSlate["Clean Slate (strip_all)<br>history = 1 (current turn only)<br>Drop 100% of historical tokens"]
+    Classify -- "Canvas / Surface Edit" --> SurfaceAnchor["Surface Anchor (last_turn_only)<br>history = 2 (prior reply + current turn)<br>Preserves canonical surface note, omits chatter"]
+    Classify -- "Scoped Tool Task" --> FocusedWindow["Working Window (recent_window)<br>history = 4 (recent 3 turns + current)<br>Keeps active task state, drops ancient tangents"]
+    Classify -- "Complex Reasoning" --> FullContext["Full Context (full)<br>history = configured limit (e.g. 10)<br>Preserves wide architectural context"]
+```
+
+- **`salutation` (`strip_all`)**: `history: 1` in host engine ensures only the current user message is sent. Previous messages are completely excluded.
+- **`canvas_refinement` (`last_turn_only`)**: `history: 2` delivers the immediate prior reply plus the current user action. Combined with `@vak/providers`'s `shownSurfacesNote`, the model sees the exact canonical node IDs and structured data schema needed for `vak_update` without conversational noise.
+- **`scoped_tool_task` (`recent_window`)**: `history: 4` keeps recent working context (e.g. a file read or query result from the prior turn) without dragging along unrelated past topics.
+- **`complex_reasoning` (`full`)**: Retains the user's configured history window (default 10 turns).
+
+---
+
+## 6. Decision Chaining for Multi-Stage Decisions
 
 For complex tasks where a single decision is insufficient, `DecisionChainRunner` ([`src/decision/chain.ts`](file:///Users/nisheethranjan/Projects/vakyartha/src/decision/chain.ts)) enables sequential, branching pipelines:
 
@@ -104,7 +133,7 @@ Because each step in `d1-omni` takes only ~15ms, a 3-step decision chain finishe
 
 ---
 
-## 6. Built-in Agent Skill: `decision-eval`
+## 7. Built-in Agent Skill: `decision-eval`
 
 Located at [`sidecar/builtin-skills/decision-eval/SKILL.md`](file:///Users/nisheethranjan/Projects/vakyartha/sidecar/builtin-skills/decision-eval/SKILL.md), this skill allows running LLMs to delegate discrete classification to the local decision model during their workflow.
 
@@ -115,7 +144,7 @@ Located at [`sidecar/builtin-skills/decision-eval/SKILL.md`](file:///Users/nishe
 
 ---
 
-## 7. Configuration & User Preferences
+## 8. Configuration & User Preferences
 
 All settings live in Vakyartha's reactive preferences store:
 
@@ -127,5 +156,6 @@ All settings live in Vakyartha's reactive preferences store:
 | `vak:decision:timeout` | `number` | `1500` | Hard timeout ceiling (ms) before heuristic fallback |
 | `vak:decision:pruneTools` | `boolean` | `"true"` | Prunes irrelevant MCP tools on non-tool turns |
 | `vak:decision:stripSalutations`| `boolean` | `"true"` | Strips past history and surface grammar on greetings |
+| `vak:decision:optimizeContext` | `boolean` | `"true"` | Shapes multi-turn context dynamically based on turn intent |
 
 Controls are exposed under **Settings > Models > Decision & Turn Optimization** in the desktop app.

@@ -113,8 +113,20 @@ test("OllamaDecisionProvider: live systemone classification with d1-omni", async
   });
 
   assert.equal(toolShape.intent, "scoped_tool_task");
+  assert.equal(toolShape.historyPolicy, "recent_window");
   assert.ok(toolShape.allowedToolNamespaces.includes("filesystem"));
   assert.ok(!toolShape.allowedToolNamespaces.includes("web_search"));
+
+  const canvasShape = await provider.classifyTurn({
+    message: "update the chart layout and change colors",
+    activeSurfaceKind: "chart",
+    availableTools: ["filesystem", "web_search"],
+  });
+
+  assert.equal(canvasShape.intent, "canvas_refinement");
+  assert.equal(canvasShape.historyPolicy, "last_turn_only");
+  assert.equal(canvasShape.includeSurfaceGrammar, true);
+  assert.deepEqual(canvasShape.allowedToolNamespaces, []);
 });
 
 test("OllamaDecisionProvider: gracefully falls back to heuristics on unreachable host", async () => {
@@ -205,6 +217,52 @@ test("Decision config persistence", () => {
   assert.equal(cfg.modelId, "laya:latest");
   assert.equal(cfg.pruneTools, true);
   assert.equal(cfg.stripSalutations, true);
+  assert.equal(cfg.optimizeContext, true);
+
+  saveDecisionConfig({ optimizeContext: false });
+  assert.equal(getDecisionConfig().optimizeContext, false);
+  saveDecisionConfig({ optimizeContext: true });
+});
+
+test("shapeTurn: optimizes multi-turn context assembly when optimizeContext is enabled", async () => {
+  const dummyHistory = [
+    { role: "user", content: "Turn 1" },
+    { role: "assistant", content: "Reply 1" },
+    { role: "user", content: "Turn 2" },
+    { role: "assistant", content: "Reply 2" },
+    { role: "user", content: "Turn 3" },
+    { role: "assistant", content: "Reply 3" },
+    { role: "user", content: "Turn 4" },
+    { role: "assistant", content: "Reply 4" },
+    { role: "user", content: "Turn 5" },
+    { role: "assistant", content: "Reply 5" },
+  ];
+
+  // 1. With optimizeContext: true, canvas_refinement preserves only last turn
+  saveDecisionConfig({ enabled: true, providerId: "heuristic", optimizeContext: true });
+  const shapedCanvas = await shapeTurn({
+    message: "change to bar chart",
+    surfaceKind: "chart",
+    history: dummyHistory,
+    tools: [{ name: "search" }],
+  });
+  assert.equal(shapedCanvas.shape.intent, "canvas_refinement");
+  assert.equal(shapedCanvas.shape.historyPolicy, "last_turn_only");
+  assert.equal(shapedCanvas.payload.history?.length, 1);
+  assert.equal((shapedCanvas.payload.history?.[0] as { content: string }).content, "Reply 5");
+
+  // 2. With optimizeContext: false, canvas_refinement retains all 10 turns
+  saveDecisionConfig({ enabled: true, providerId: "heuristic", optimizeContext: false });
+  const unshapedCanvas = await shapeTurn({
+    message: "change to bar chart",
+    surfaceKind: "chart",
+    history: dummyHistory,
+    tools: [{ name: "search" }],
+  });
+  assert.equal(unshapedCanvas.payload.history?.length, 10);
+
+  // Restore default
+  saveDecisionConfig({ optimizeContext: true });
 });
 
 test("DecisionChainRunner: executes multi-stage decision pipeline with conditional branching", async () => {

@@ -109,6 +109,9 @@ export interface DecisionConfig {
 
   /** Whether to strip conversational history and surface grammar on greetings */
   stripSalutations: boolean;
+
+  /** Whether to dynamically optimize multi-turn context assembly instead of fixed sliding windows */
+  optimizeContext: boolean;
 }
 
 export interface DecisionProvider {

@@ -811,20 +811,26 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
     try {
       const decisionCfg = getDecisionConfig();
       if (decisionCfg.enabled) {
+        const activeSurfaces = client.store.list().map((s) => s.id);
         const shaped = await shapeTurn({
           message: req.message,
+          surfaceKind: activeSurfaces[0],
           maxSteps: maxStepsLimit,
           toolRounds: toolRoundsLimit,
           provider,
           model,
         }, decisionCfg);
 
+        // Host history option specifies the total turns to inspect:
+        // history = 1 means only the current turn (0 prior history).
         if (shaped.shape.historyPolicy === "strip_all" && decisionCfg.stripSalutations) {
-          historyLimit = 0;
-        } else if (shaped.shape.historyPolicy === "last_turn_only") {
           historyLimit = 1;
-        } else if (shaped.shape.historyPolicy === "recent_window") {
-          historyLimit = 3;
+        } else if (decisionCfg.optimizeContext) {
+          if (shaped.shape.historyPolicy === "last_turn_only") {
+            historyLimit = 2; // Immediate prior turn + current turn
+          } else if (shaped.shape.historyPolicy === "recent_window") {
+            historyLimit = 4; // Recent 3 prior turns + current turn
+          }
         }
         maxStepsLimit = shaped.payload.maxSteps;
         toolRoundsLimit = shaped.payload.toolRounds;

@@ -41,6 +41,7 @@ export function getDecisionConfig(): DecisionConfig {
   const timeoutMs = Number(prefs.get("decision:timeout") ?? DEFAULT_DECISION_TIMEOUT_MS);
   const pruneTools = prefs.get("decision:pruneTools") !== "false";
   const stripSalutations = prefs.get("decision:stripSalutations") !== "false";
+  const optimizeContext = prefs.get("decision:optimizeContext") !== "false";
 
   return {
     enabled,
@@ -49,6 +50,7 @@ export function getDecisionConfig(): DecisionConfig {
     timeoutMs: Number.isNaN(timeoutMs) ? DEFAULT_DECISION_TIMEOUT_MS : timeoutMs,
     pruneTools,
     stripSalutations,
+    optimizeContext,
   };
 }
 
@@ -59,6 +61,7 @@ export function saveDecisionConfig(cfg: Partial<DecisionConfig>): void {
   if (cfg.timeoutMs !== undefined) prefs.set("decision:timeout", String(cfg.timeoutMs));
   if (cfg.pruneTools !== undefined) prefs.set("decision:pruneTools", String(cfg.pruneTools));
   if (cfg.stripSalutations !== undefined) prefs.set("decision:stripSalutations", String(cfg.stripSalutations));
+  if (cfg.optimizeContext !== undefined) prefs.set("decision:optimizeContext", String(cfg.optimizeContext));
   if (typeof window !== "undefined") window.dispatchEvent(new Event("vak:decision-config-changed"));
 }
 
@@ -121,13 +124,15 @@ export async function shapeTurn(
   const shape = await provider.classifyTurn(state, config.timeoutMs);
   const shapedPayload = { ...payload };
 
-  // 1. History Pruning
+  // 1. History Pruning & Context Optimization
   if (shape.historyPolicy === "strip_all" && config.stripSalutations) {
     shapedPayload.history = [];
-  } else if (shape.historyPolicy === "last_turn_only") {
-    shapedPayload.history = originalHistory.slice(-1);
-  } else if (shape.historyPolicy === "recent_window") {
-    shapedPayload.history = originalHistory.slice(-4);
+  } else if (config.optimizeContext) {
+    if (shape.historyPolicy === "last_turn_only") {
+      shapedPayload.history = originalHistory.slice(-1);
+    } else if (shape.historyPolicy === "recent_window") {
+      shapedPayload.history = originalHistory.slice(-4);
+    }
   }
 
   // 2. Tool Pruning
