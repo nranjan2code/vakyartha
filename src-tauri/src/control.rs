@@ -11,7 +11,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 18;
+const STORE_VERSION: u16 = 19;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 const MAX_CANDIDATE_RECEIPTS: usize = 10_000;
@@ -178,6 +178,7 @@ pub struct CapacityLedger {
     root_runs: BTreeMap<String, root_runs::RootRun>,
     product_tasks: BTreeMap<String, tasks::TaskRecord>,
     provider_operations: BTreeMap<String, generation::OperationRecord>,
+    provider_consents: BTreeMap<String, generation::ConsentRecord>,
     published_sessions: BTreeMap<String, CanonicalSessionRecord>,
     publication_receipts: BTreeMap<String, publication::PublicationReceipt>,
     canonical_runs: BTreeMap<String, canonical_runs::CanonicalRun>,
@@ -366,6 +367,7 @@ impl CapacityLedger {
             root_runs: self.root_runs.clone(),
             product_tasks: self.product_tasks.clone(),
             provider_operations: self.provider_operations.clone(),
+            provider_consents: self.provider_consents.clone(),
             published_sessions: self.published_sessions.clone(),
             publication_receipts: self.publication_receipts.clone(),
             canonical_runs: self.canonical_runs.clone(),
@@ -389,6 +391,7 @@ impl CapacityLedger {
             root_runs: snapshot.root_runs,
             product_tasks: snapshot.product_tasks,
             provider_operations: snapshot.provider_operations,
+            provider_consents: snapshot.provider_consents,
             published_sessions: snapshot.published_sessions,
             publication_receipts: snapshot.publication_receipts,
             canonical_runs: snapshot.canonical_runs,
@@ -621,6 +624,7 @@ struct LedgerSnapshot {
     root_runs: BTreeMap<String, root_runs::RootRun>,
     product_tasks: BTreeMap<String, tasks::TaskRecord>,
     provider_operations: BTreeMap<String, generation::OperationRecord>,
+    provider_consents: BTreeMap<String, generation::ConsentRecord>,
     published_sessions: BTreeMap<String, CanonicalSessionRecord>,
     publication_receipts: BTreeMap<String, publication::PublicationReceipt>,
     canonical_runs: BTreeMap<String, canonical_runs::CanonicalRun>,
@@ -706,8 +710,12 @@ enum RootRunAction {
 }
 
 enum ActorCommand {
-    IssueProviderApproval { run_id: String, operation_id: String, attempt: u32, body: Vec<u8>, in_flight: Arc<std::sync::atomic::AtomicBool>, reply: SyncSender<Result<generation::Approval, ControlError>> },
+    IssueProviderApproval { run_id: String, operation_id: String, attempt: u32, body: Vec<u8>, delivery: Option<generation::Delivery>, in_flight: Arc<std::sync::atomic::AtomicBool>, reply: SyncSender<Result<generation::Approval, ControlError>> },
+    #[cfg(test)]
     DecideProviderApproval { ticket_id: String, fingerprint: String, decision: generation::Decision, reply: SyncSender<Result<generation::Dispatch, ControlError>> },
+    ListProviderConsents { reply: SyncSender<Result<Vec<generation::ConsentView>, ControlError>> },
+    ReadProviderConsent { id: String, fingerprint: String, offset: usize, reply: SyncSender<Result<generation::RequestSlice, ControlError>> },
+    DecideProviderConsent { id: String, fingerprint: String, decision: generation::Decision, reply: SyncSender<Result<generation::ConsentReceipt, ControlError>> },
     BeginProvider { dispatch: Box<generation::Dispatch>, in_flight: Arc<std::sync::atomic::AtomicBool>, reply: SyncSender<Result<generation::StartedDispatch, ControlError>> },
     ProviderCurrent { id: String, reply: SyncSender<Result<(), ControlError>> },
     SettleProvider { id: String, receipt: generation::ResultReceipt, reply: SyncSender<Result<generation::OperationRecord, ControlError>> },
@@ -912,11 +920,24 @@ pub struct ControlHandle {
 
 impl ControlHandle {
     /// Trusted reasoning supervisor only. No IPC command offers this method.
+    #[cfg(test)]
     pub fn issue_provider_approval(&self, run_id: String, operation_id: String, attempt: u32, body: Vec<u8>) -> Result<generation::Approval, ControlError> {
+        self.issue_provider_approval_to(run_id, operation_id, attempt, body, None)
+    }
+
+    pub fn request_provider_consent(&self, run_id: String, operation_id: String, attempt: u32, body: Vec<u8>) -> Result<generation::PendingConsent, ControlError> {
+        let (reply, response) = sync_channel(1);
+        let closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut wait = generation::PendingConsent { approval: None, reply: response, closed: closed.clone(), finished: false };
+        let delivery = generation::Delivery { reply, closed, approval: None };
+        wait.approval = Some(self.issue_provider_approval_to(run_id, operation_id, attempt, body, Some(delivery))?);
+        Ok(wait)
+    }
+    fn issue_provider_approval_to(&self, run_id: String, operation_id: String, attempt: u32, body: Vec<u8>, delivery: Option<generation::Delivery>) -> Result<generation::Approval, ControlError> {
         if body.len() > 8_388_608 { return Err(ControlError::Admission(AdmissionError::ProviderApprovalRefused)); }
         self.provider_in_flight.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).map_err(|_| ControlError::QueueFull)?;
         let (reply, response) = sync_channel(1);
-        if let Err(error) = self.commands.try_send(ActorCommand::IssueProviderApproval { run_id, operation_id, attempt, body, in_flight: self.provider_in_flight.clone(), reply }) {
+        if let Err(error) = self.commands.try_send(ActorCommand::IssueProviderApproval { run_id, operation_id, attempt, body, delivery, in_flight: self.provider_in_flight.clone(), reply }) {
             self.provider_in_flight.store(false, Ordering::Release); return Err(queue_error(error));
         }
         response.recv_timeout(self.response_timeout).map_err(response_error)?
@@ -924,9 +945,23 @@ impl ControlHandle {
 
     /// Trusted approval controller only. The returned move-only value never
     /// crosses into the UI or reasoning process.
+    #[cfg(test)]
     pub fn decide_provider_approval(&self, ticket_id: String, fingerprint: String, decision: generation::Decision) -> Result<generation::Dispatch, ControlError> {
         let (reply, response) = sync_channel(1);
         self.commands.try_send(ActorCommand::DecideProviderApproval { ticket_id, fingerprint, decision, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    pub fn list_provider_consents(&self) -> Result<Vec<generation::ConsentView>, ControlError> {
+        let (reply, response) = sync_channel(1); self.commands.try_send(ActorCommand::ListProviderConsents { reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+    pub fn read_provider_consent(&self, id: String, fingerprint: String, offset: usize) -> Result<generation::RequestSlice, ControlError> {
+        let (reply, response) = sync_channel(1); self.commands.try_send(ActorCommand::ReadProviderConsent { id, fingerprint, offset, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+    pub fn decide_provider_consent(&self, id: String, fingerprint: String, decision: generation::Decision) -> Result<generation::ConsentReceipt, ControlError> {
+        let (reply, response) = sync_channel(1); self.commands.try_send(ActorCommand::DecideProviderConsent { id, fingerprint, decision, reply }).map_err(queue_error)?;
         response.recv_timeout(self.response_timeout).map_err(response_error)?
     }
 
@@ -1720,6 +1755,95 @@ impl Drop for ControlActor {
     }
 }
 
+fn decide_consent(
+    store: &mut ControlStore,
+    profile: &CapacityProfile,
+    ledger: &mut CapacityLedger,
+    approvals: &mut generation::Approvals,
+    id: &str,
+    fingerprint: &str,
+    decision: generation::Decision,
+) -> Result<generation::ConsentReceipt, ControlError> {
+    use generation::{ConsentRejection, ConsentState, Decision};
+    if let Some(record) = ledger.provider_consents.get(id) {
+        return if record.fingerprint == fingerprint && record.decision == decision {
+            Ok(record.receipt())
+        } else {
+            Err(ControlError::Admission(
+                AdmissionError::ProviderApprovalRefused,
+            ))
+        };
+    }
+    if ledger.provider_consents.len() >= MAX_CANDIDATE_RECEIPTS {
+        return Err(ControlError::Admission(
+            AdmissionError::ProviderApprovalRefused,
+        ));
+    }
+    let mut record = approvals.decision_scope(id, fingerprint, decision)?;
+    let delivery = approvals.take_delivery(id, fingerprint)?;
+    let mut next = ledger.clone();
+    let mut rejection = None;
+    let dispatch = if delivery.closed.load(Ordering::Acquire) {
+        approvals.cancel_ticket(id);
+        record.state = ConsentState::Cancelled;
+        rejection = Some(ConsentRejection::Cancelled);
+        None
+    } else {
+        let result = approvals.decide(&mut next, profile, id, fingerprint, decision);
+        if decision == Decision::Deny {
+            record.state = ConsentState::Denied;
+            rejection = Some(ConsentRejection::Denied);
+            None
+        } else {
+            match result {
+                Ok(Some(dispatch)) => {
+                    record.state = ConsentState::Allowed;
+                    record.operation_id = Some(dispatch.operation().id.clone());
+                    Some(dispatch)
+                }
+                Ok(None) => {
+                    record.state = ConsentState::Refused;
+                    rejection = Some(ConsentRejection::Refused);
+                    None
+                }
+                Err(_) => {
+                    next = ledger.clone();
+                    record.state = ConsentState::Refused;
+                    rejection = Some(ConsentRejection::Refused);
+                    None
+                }
+            }
+        }
+    };
+    next.provider_consents.insert(id.into(), record.clone());
+    store.persist(&next, profile).map_err(ControlError::Store)?;
+    *ledger = next;
+    if let Some(dispatch) = dispatch {
+        if delivery.reply.try_send(Ok(dispatch)).is_err() {
+            let mut next = ledger.clone();
+            generation::settle(
+                &mut next,
+                id,
+                generation::ResultReceipt {
+                    id: format!("consent-undelivered-{id}"),
+                    outcome: generation::IoOutcome::NotDispatched,
+                    status_code: None,
+                    response_bytes: 0,
+                },
+            )?;
+            record.state = ConsentState::Cancelled;
+            next.provider_consents.insert(id.into(), record.clone());
+            store.persist(&next, profile).map_err(ControlError::Store)?;
+            *ledger = next;
+        }
+    } else {
+        let _ = delivery
+            .reply
+            .try_send(Err(rejection.expect("native consent refusal")));
+    }
+    Ok(record.receipt())
+}
+
 fn commit_candidate(
     store: &mut ControlStore,
     profile: &CapacityProfile,
@@ -1866,12 +1990,17 @@ fn actor_loop(
     while let Ok(command) = receiver.recv() {
         provider_approvals.prune(&ledger);
         match command {
-            ActorCommand::IssueProviderApproval { run_id, operation_id, attempt, body, in_flight, reply } => {
-                let result = provider_approvals.issue(&ledger, run_id, operation_id, attempt, body);
+            ActorCommand::IssueProviderApproval { run_id, operation_id, attempt, body, delivery, in_flight, reply } => {
+                let result = provider_approvals.issue(&ledger, run_id, operation_id, attempt, body).and_then(|ticket| {
+                    if let Some(delivery) = delivery { provider_approvals.attach(&ticket, delivery)?; }
+                    Ok(ticket)
+                });
                 in_flight.store(false, Ordering::Release);
                 let _ = reply.send(result);
             }
+            #[cfg(test)]
             ActorCommand::DecideProviderApproval { ticket_id, fingerprint, decision, reply } => {
+                if provider_approvals.has_delivery(&ticket_id) { let _ = reply.send(Err(ControlError::Admission(AdmissionError::ProviderApprovalRefused))); continue; }
                 let mut candidate = ledger.clone();
                 match provider_approvals.decide(&mut candidate, &profile, &ticket_id, &fingerprint, decision) {
                     Err(error) => { let _ = reply.send(Err(error)); }
@@ -1883,6 +2012,13 @@ fn actor_loop(
                         let _ = reply.send(dispatch.ok_or(ControlError::Admission(AdmissionError::ProviderBudgetExhausted)));
                     }
                 }
+            }
+            ActorCommand::ListProviderConsents { reply } => { let _ = reply.send(Ok(provider_approvals.views(&ledger))); }
+            ActorCommand::ReadProviderConsent { id, fingerprint, offset, reply } => { let _ = reply.send(provider_approvals.consent_slice(&id, &fingerprint, offset)); }
+            ActorCommand::DecideProviderConsent { id, fingerprint, decision, reply } => {
+                let result = decide_consent(store, &profile, &mut ledger, &mut provider_approvals, &id, &fingerprint, decision);
+                let fatal = matches!(result, Err(ControlError::Store(_)));
+                let _ = reply.send(result); if fatal { break; }
             }
             ActorCommand::BeginProvider { dispatch, in_flight, reply } => {
                 let mut next = ledger.clone();

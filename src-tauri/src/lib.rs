@@ -222,6 +222,30 @@ fn control_create_root(
         .map_err(|_| "Native task request was refused".to_owned())
 }
 
+/// Permission UI reads only actor-issued disclosures. It cannot submit a model
+/// payload or receive a native dispatch object through this command family.
+#[tauri::command]
+async fn control_provider_consents(window: tauri::WebviewWindow, app: AppHandle) -> Result<Vec<control::generation::ConsentView>, String> {
+    engine::main_window(&window)?;
+    let handle = app.try_state::<ControlActor>().ok_or("Native permissions are unavailable")?.handle();
+    tauri::async_runtime::spawn_blocking(move || handle.list_provider_consents().map_err(|_| "Permission requests are unavailable".to_owned())).await.map_err(|_| "Permission requests are unavailable".to_owned())?
+}
+#[tauri::command]
+async fn control_provider_consent_request(window: tauri::WebviewWindow, app: AppHandle, ticket_id: String, fingerprint: String, offset: usize) -> Result<control::generation::RequestSlice, String> {
+    engine::main_window(&window)?;
+    if ticket_id.len() > 120 || fingerprint.len() != 64 || offset > 8_388_608 { return Err("Invalid permission request".into()); }
+    let handle = app.try_state::<ControlActor>().ok_or("Native permissions are unavailable")?.handle();
+    tauri::async_runtime::spawn_blocking(move || handle.read_provider_consent(ticket_id, fingerprint, offset).map_err(|_| "This request changed or ended; refresh permissions".to_owned())).await.map_err(|_| "Permission request is unavailable".to_owned())?
+}
+#[tauri::command]
+async fn control_provider_consent_decide(window: tauri::WebviewWindow, app: AppHandle, ticket_id: String, fingerprint: String, decision: String) -> Result<control::generation::ConsentReceipt, String> {
+    engine::main_window(&window)?;
+    if ticket_id.len() > 120 || fingerprint.len() != 64 { return Err("Invalid permission decision".into()); }
+    let decision = match decision.as_str() { "allow_once" => control::generation::Decision::AllowOnce, "deny" => control::generation::Decision::Deny, _ => return Err("Choose Allow once or Deny".into()) };
+    let handle = app.try_state::<ControlActor>().ok_or("Native permissions are unavailable")?.handle();
+    tauri::async_runtime::spawn_blocking(move || handle.decide_provider_consent(ticket_id, fingerprint, decision).map_err(|_| "The decision could not be confirmed; refresh permissions before continuing".to_owned())).await.map_err(|_| "Permission decision is unavailable".to_owned())?
+}
+
 /// Product task mutations originate in trusted application controls, never in
 /// the reasoning worker's general HTTP/proposal channel.
 #[tauri::command]
@@ -621,6 +645,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             backend,
             control_task,
+            control_provider_consents,
+            control_provider_consent_request,
+            control_provider_consent_decide,
             control_create_root,
             control_read_root,
             control_read_candidate_receipt,

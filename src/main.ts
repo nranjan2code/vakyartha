@@ -25,6 +25,7 @@ import { resolveMedia } from "./media.ts";
 
 window.addEventListener("vak:media-chat", (event) => { const id = (event as CustomEvent<unknown>).detail; if (typeof id === "string") { closeSettings(); void openChat(id); } });
 import { applyAppearance, surfaceMode } from "./theme.ts";
+import { startProviderConsents } from "./provider-consents.ts";
 import { TasksPanel } from "./tasks-panel.ts";
 import { WorkspacesPanel, type Project, type WorkspaceBinding } from "./workspaces-panel.ts";
 import { Drafts } from "./drafts.ts";
@@ -1875,6 +1876,7 @@ async function start(): Promise<void> {
   }
   try {
     setBackend(await connect());
+    startProviderConsents();
     await admitSession(session);
   } catch (err) {
     showNotice("The engine is not running.", String((err as Error).message ?? err));

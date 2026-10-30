@@ -2,7 +2,7 @@
 //!
 //! The digest identifies the disclosed operation. Authorization still returns
 //! the exact retained bytes; it never reconstructs a request from the digest.
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
@@ -46,10 +46,19 @@ pub struct PendingApproval {
     pub disclosure: OperationDisclosure,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ApprovalDecision {
     AllowOnce,
     Deny,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RequestSlice {
+    pub offset: usize,
+    pub next: usize,
+    pub total: usize,
+    pub text: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -129,8 +138,12 @@ impl ApprovalTickets {
         if self.pending.len() >= MAX_PENDING {
             return Err(ApprovalError::QueueFull);
         }
-        let preview_len = bytes.len().min(MAX_PREVIEW_BYTES);
-        disclosure.preview = String::from_utf8_lossy(&bytes[..preview_len]).into_owned();
+        let text = std::str::from_utf8(&bytes).map_err(|_| ApprovalError::InvalidRequest)?;
+        let mut preview_len = bytes.len().min(MAX_PREVIEW_BYTES);
+        while !text.is_char_boundary(preview_len) {
+            preview_len -= 1;
+        }
+        disclosure.preview = text[..preview_len].into();
         if bytes.len() > preview_len {
             disclosure.preview.push('…');
         }
@@ -183,6 +196,35 @@ impl ApprovalTickets {
             disclosure: ticket.disclosure,
             bytes: ticket.bytes,
             fingerprint: ticket.fingerprint,
+        })
+    }
+
+    pub(super) fn read_slice(
+        &self,
+        ticket_id: &str,
+        fingerprint: &str,
+        offset: usize,
+    ) -> Result<RequestSlice, ApprovalError> {
+        let ticket = self
+            .pending
+            .get(ticket_id)
+            .ok_or(ApprovalError::UnknownTicket)?;
+        if hex(&ticket.fingerprint) != fingerprint {
+            return Err(ApprovalError::FingerprintMismatch);
+        }
+        let text = std::str::from_utf8(&ticket.bytes).map_err(|_| ApprovalError::InvalidRequest)?;
+        if offset > text.len() || !text.is_char_boundary(offset) {
+            return Err(ApprovalError::InvalidRequest);
+        }
+        let mut next = offset.saturating_add(4096).min(text.len());
+        while !text.is_char_boundary(next) {
+            next -= 1;
+        }
+        Ok(RequestSlice {
+            offset,
+            next,
+            total: text.len(),
+            text: text[offset..next].into(),
         })
     }
 

@@ -11,7 +11,13 @@ use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
+mod consent;
+pub use super::approval::RequestSlice;
 pub use super::approval::{ApprovalDecision as Decision, PendingApproval as Approval};
+pub(super) use consent::Delivery;
+pub use consent::{
+    ConsentReceipt, ConsentRecord, ConsentRejection, ConsentState, ConsentView, PendingConsent,
+};
 
 const MAX_OPERATIONS: usize = 10_000;
 const APPROVAL_TTL: Duration = Duration::from_secs(300);
@@ -77,6 +83,7 @@ struct Pending {
 pub(super) struct Approvals {
     tickets: ApprovalTickets,
     pending: BTreeMap<String, Pending>,
+    deliveries: BTreeMap<String, Delivery>,
 }
 
 /// Move-only native value. It is never serialized, cloned, logged or returned
@@ -226,16 +233,27 @@ impl Approvals {
         let invalid: Vec<_> = self
             .pending
             .iter()
-            .filter(|(_, pending)| {
-                pending.created.elapsed() >= APPROVAL_TTL
-                    || running(ledger, &pending.run_id)
-                        .map_or(true, |root| root.execution_fence() != pending.fence)
+            .filter_map(|(id, pending)| {
+                let reason = if pending.created.elapsed() >= APPROVAL_TTL {
+                    Some(ConsentRejection::Expired)
+                } else if self.deliveries.get(id).is_some_and(|delivery| {
+                    delivery.closed.load(std::sync::atomic::Ordering::Acquire)
+                }) || running(ledger, &pending.run_id)
+                    .map_or(true, |root| root.execution_fence() != pending.fence)
+                {
+                    Some(ConsentRejection::Cancelled)
+                } else {
+                    None
+                };
+                reason.map(|reason| (id.clone(), reason))
             })
-            .map(|(id, _)| id.clone())
             .collect();
-        for id in invalid {
+        for (id, reason) in invalid {
             self.pending.remove(&id);
             self.tickets.discard(&id);
+            if let Some(delivery) = self.deliveries.remove(&id) {
+                let _ = delivery.reply.try_send(Err(reason));
+            }
         }
     }
 
@@ -251,13 +269,21 @@ impl Approvals {
         if !super::valid_identity(&operation_id)
             || attempt > 16
             || ledger.provider_operations.len() >= MAX_OPERATIONS
+            || ledger
+                .provider_consents
+                .len()
+                .saturating_add(self.pending.len())
+                >= MAX_OPERATIONS
         {
             return Err(refused());
         }
         let root = running(ledger, &run_id)?;
         let policy = root.local_model().ok_or_else(refused)?;
         let id = identity(&run_id, &operation_id, attempt);
-        if ledger.provider_operations.contains_key(&id) || self.pending.contains_key(&id) {
+        if ledger.provider_operations.contains_key(&id)
+            || ledger.provider_consents.contains_key(&id)
+            || self.pending.contains_key(&id)
+        {
             return Err(refused());
         }
         let bytes = prepare_generation_body(&permit(root)?, &body).map_err(|_| refused())?;
@@ -442,6 +468,7 @@ pub(super) fn recover(ledger: &mut CapacityLedger) -> bool {
 }
 
 pub(super) fn validate(ledger: &CapacityLedger) -> Result<(), StoreError> {
+    consent::validate(ledger)?;
     if ledger.provider_operations.len() > MAX_OPERATIONS {
         return Err(StoreError::Corrupt);
     }
@@ -521,7 +548,7 @@ mod tests {
     use super::*;
     use std::fs;
 
-    fn profile() -> CapacityProfile {
+    pub(super) fn profile() -> CapacityProfile {
         CapacityProfile::new(
             BTreeMap::from([(Resource::Generation, 4), (Resource::ProviderRequest, 1)]),
             BTreeMap::from([(Resource::Generation, 1), (Resource::ProviderRequest, 1)]),
@@ -529,7 +556,7 @@ mod tests {
         )
         .unwrap()
     }
-    fn request(id: &str, limit: u32) -> RootCreate {
+    pub(super) fn request(id: &str, limit: u32) -> RootCreate {
         RootCreate {
             id: id.into(),
             session_id: Some(format!("session-{id}")),
@@ -546,10 +573,10 @@ mod tests {
             delegation: DelegationPolicy::new(DelegationMode::Disabled, 0).unwrap(),
         }
     }
-    fn body() -> Vec<u8> {
+    pub(super) fn body() -> Vec<u8> {
         serde_json::to_vec(&json!({"model":"qwen3.5:4b-mlx","stream":true,"messages":[{"role":"user","content":"private-request-marker"}],"options":{"num_predict":256},"think":false,"keep_alive":"30m"})).unwrap()
     }
-    fn data() -> std::path::PathBuf {
+    pub(super) fn data() -> std::path::PathBuf {
         let parent = std::env::temp_dir().join(format!(
             "vak-provider-authority-{}-{}",
             std::process::id(),
@@ -558,7 +585,7 @@ mod tests {
         fs::create_dir_all(&parent).unwrap();
         parent.canonicalize().unwrap()
     }
-    fn start(handle: &super::super::ControlHandle, id: &str, limit: u32) -> String {
+    pub(super) fn start(handle: &super::super::ControlHandle, id: &str, limit: u32) -> String {
         let root = handle.create_root_with_budget(request(id, limit)).unwrap();
         handle
             .mutate_root(
@@ -577,7 +604,7 @@ mod tests {
             .unwrap();
         run.id
     }
-    fn cleanup(data: &std::path::Path) {
+    pub(super) fn cleanup(data: &std::path::Path) {
         fs::remove_dir_all(super::super::native_store_root(data)).unwrap();
         fs::remove_dir_all(data).unwrap();
     }
@@ -1162,3 +1189,6 @@ mod tests {
         assert_eq!(approvals.tickets.len(), 0);
     }
 }
+
+#[cfg(test)]
+mod consent_tests;

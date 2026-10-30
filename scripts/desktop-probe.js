@@ -20,6 +20,10 @@
  document.getElementById('ask-ok').click();
  await wait(()=>!document.querySelector('#ask[open]'));
   const backend=await ipc.invoke('backend');check(backend.url==='vak://localhost','unexpected backend');
+ const consents=await ipc.invoke('control_provider_consents');check(Array.isArray(consents)&&consents.length===0,'native permissions were manufactured without a waiting supervisor');
+ let refused=false;try{await ipc.invoke('control_provider_consent_decide',{ticketId:'unknown-request',fingerprint:'0'.repeat(64),decision:'allow_once'});}catch{refused=true;}check(refused,'unknown native request could be approved');
+ await wait(()=>document.querySelector('.native-consent-trigger'));check(getComputedStyle(document.querySelector('.native-consent-trigger')).display==='none','empty native permission queue occupied toolbar space');
+
  await ipc.invoke('vault_set',{account:'NATIVE_VAULT_PROBE',value:'synthetic-native-vault-value'});
  const presence=await ipc.invoke('vault_presence',{accounts:['NATIVE_VAULT_PROBE']});
  check(presence.NATIVE_VAULT_PROBE===true,'native credential presence failed');

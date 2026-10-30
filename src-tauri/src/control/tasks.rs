@@ -73,7 +73,7 @@ fn bounded(value: &str, max: usize) -> bool {
     !value.trim().is_empty() && value.len() <= max && !value.contains('\0')
 }
 
-fn valid_timestamp(value: &str) -> bool {
+pub(super) fn valid_timestamp(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() != 24
         || ![4, 7, 10, 13, 16, 19, 23].into_iter().all(|index| {

@@ -2,6 +2,40 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Trusted model-request consent controls — 2026-10-30
+
+The shell now reads provider permissions directly from the native actor through three app-window-only commands: list disclosures, read an exact request page, and decide Allow once/Deny against the displayed fingerprint. The app worker and reasoning pipe have no ticket-creation or decision opcode. The earlier raw native approval controller is test-only; production uses a waiting supervisor receiver. A dispatch object never crosses the UI boundary.
+
+The native registry attaches a move-only receiver to each bounded pending ticket. Closing the receiver, changing its root fence, cancellation, five-minute monotonic expiry or actor restart invalidates the request without granting egress. Exact requests are readable in UTF-8-safe pages of at most 4096 bytes, with the original fingerprint checked on every page. Preview truncation also preserves complete UTF-8 characters. UI decisions use the existing native normalization, policy, capacity and budget checks. A failed store selection produces no permit. If the receiver disappears after approval commits, native settlement releases its unsent provider hold while preserving the cumulative request charge.
+
+Schema 19 persists compact decision receipts for allowed, denied, refused and cancelled user choices. They bind the native root/run/fence, fingerprint, decision, timestamp and optional operation reference; request bodies and previews remain ephemeral. Pending tickets reserve decision-record capacity. Repeating the same decision returns the recorded receipt and never redelivers a permit; conflicting choices/fingerprints are refused. Denial survives restart, and an ended logical operation cannot silently acquire a new ticket under the same identity. Automatic expiry/cancellation notification remains part of the native pending lifecycle; task-level recovery/activity is still a dispatcher dependency.
+
+```mermaid
+sequenceDiagram
+    participant D as Native supervisor
+    participant A as Native actor
+    participant U as Trusted app controls
+    participant S as Native control store
+    D->>A: Request consent for bound run and exact bytes
+    A-->>D: Private native receiver
+    U->>A: List actor-issued disclosures
+    A-->>U: Task, model, destination, limits and fingerprint
+    U->>A: Read bounded exact request pages
+    U->>A: Allow once or Deny for displayed identity
+    A->>S: Persist decision and any approval/budget commitment
+    A-->>D: Native permit once, or typed rejection
+    A-->>U: Receipt metadata only
+    Note over A,U: Repeated decisions return the same receipt; no new permit
+```
+
+The toolbar indicator appears for waiting requests and opens only on a user action. Cards identify the task/model/destination/output ceiling, offer exact byte pages and explicit one-use decisions, and keep focus/details stable during polling. Unavailable authority disables controls. Ended requests and late page responses cannot resurrect a card. All request/goal text is rendered as text. No model-projected form supplies these controls, and no broader model grant is offered.
+
+Verification: 292 app tests/typecheck/build pass. Native suites pass 145 macOS/147 pinned Linux Docker with all five real-worker gates, plus strict Clippy. Native consent tests prove concurrent idempotent receipts with one actual permit/charge, exact UTF-8 bytes, denial/cancellation/expiry/restart, budget exhaustion, failed selection, and undelivered-permit settlement. WebKit checks pass at 1440/620/375 for paging, escaping, focus, unavailable authority, double clicks and late responses; screenshots were inspected. Fixture receipt: `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-native-consent-N3mieg` (later same-contract rerun retained in `/tmp/vak-consent-webkit.log`). Controls/collections/Canvas/Skills WebKit checks also pass. Native desktop smoke verifies the real commands, an empty queue, refusal of an unknown request and no toolbar space for an empty queue; final receipt: `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-desktop-private-4wXFFC`.
+
+Retained validation failure: a parallel desktop rebundle temporarily removed `resources/canonical-worker.mjs` while the macOS native suite copied it. This was validation ordering, not a relaxed runtime assertion. After the rebuild completed, the complete unchanged native suite passed; `/tmp/vak-consent-native-mac.log` retains the failed run and `/tmp/vak-consent-native-mac-final.log` retains the successful ordered run. Resource rebuilds and tests reading that directory must run sequentially.
+
+This connects the consent mechanism and UI, not a live product task. Native producer tests and UI fixtures exercise complementary boundaries; the native desktop smoke does not approve an actual model request. Work/chat/other generation dispatch, context/tool/skill parity, hosted-provider admission, continuation, scheduling, workspace/IA, drift/QoS and hard quotas, original outcomes, installed proof and final Astra review remain open. Product execution stays disabled under the empty profile. No dependency, inference run, installed-app change or decision-feature modification.
+
 ## Native provider I/O, cancellation and settlement — 2026-10-30
 
 An approved move-only dispatch now has a second native handoff immediately before I/O. The actor rechecks the confirmed invocation, charged root revision, cancellation epoch, contract/workspace authority, provider lease and exact approved digest/length, then durably records `io_started`. Only the returned native object can construct a request. Schema 18 records redacted I/O intent and explicit completed/cancelled/timed-out/transport/response-limit/consumer-closed/not-dispatched outcomes. A committed model-request charge is never refunded by I/O cancellation or failure.

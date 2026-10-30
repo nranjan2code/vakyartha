@@ -564,6 +564,7 @@ impl RootTask {
     pub fn session_id(&self) -> Option<&str> {
         self.creation_request.session_id.as_deref()
     }
+    pub fn goal(&self) -> &str { &self.goal }
     pub fn local_model(&self) -> Option<&LocalModelPolicy> {
         self.creation_request.local_model.as_ref()
     }

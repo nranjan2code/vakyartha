@@ -1,5 +1,11 @@
 # Vakyartha handover — 2026-10-30
 
+## Trusted model-request consent controls — 2026-10-30
+
+Trusted shell permission controls now read native disclosures, page the exact request and submit fingerprint-bound Allow once/Deny decisions. Native permits go only to the waiting supervisor. Schema 19 adds compact durable decision receipts; denial survives restart and repeated decisions return metadata without duplicating the permit or charge. Request bodies/previews stay ephemeral. Validation passes 292 app tests/typecheck/build, 145 macOS/147 Linux native tests, strict Clippy, dedicated wide/narrow WebKit permission tests, existing control/collection/Canvas/Skills checks and native desktop smoke. [Evidence, diagram and retained validation failure](agent-runtime/IMPLEMENTATION-PROGRESS.md#trusted-model-request-consent-controls--2026-10-30).
+
+The product dispatcher is still missing, so the default queue is empty and task execution stays disabled. Native producer tests and UI fixtures do not close a real model/task outcome. Work/chat/other generation integration, hosted policies, context/tools/skills/continuation, scheduling, workspace/IA, drift/QoS, original outcomes, installed proof and final Astra review remain open. The separate runtime worktree leaves the decision-feature work untouched.
+
 ## Native provider I/O, cancellation and settlement — 2026-10-30
 
 The native approval/budget handoff now feeds actual cancellable HTTP I/O with a durable start claim, exact-byte request preparation, bounded acknowledged streaming and explicit redacted outcomes (schema 18). Root cancellation, consumer loss and deadlines abort/join local I/O before provider capacity settles; model charges stay cumulative. Production blocking transport was replaced. Eight real loopback tests plus the complete native suites pass: 141 macOS/143 Linux, strict Clippy and WebKit. [Evidence and diagram](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-provider-io-cancellation-and-settlement--2026-10-30).
