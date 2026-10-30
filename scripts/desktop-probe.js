@@ -133,5 +133,5 @@
   const uploadStart=performance.now();const attached=await request('/api/attachments?session=ipc-check','POST',{type:'audio/wav',data:btoa(pieces.join(''))});check(attached.status===200,'binary attachment over IPC failed');
   const measurements={infoMedianMs:timings.sort((a,b)=>a-b)[10],uploadBytes:wav.length,uploadMs:performance.now()-uploadStart};
   await request('/api/client-log','POST',{level:'probe',message:'NATIVE_PRIVATE_PASS '+JSON.stringify({url:backend.url,canonicalProjection:true,rendered:true,finops:true,measurements})});
- }catch(error){await request('/api/client-log','POST',{level:'probe',message:'NATIVE_PRIVATE_FAIL '+error.message}).catch(()=>{});}
+ }catch(error){await request('/api/client-log','POST',{level:'probe',message:'NATIVE_PRIVATE_FAIL '+(error?.stack||error?.message||JSON.stringify(error)||String(error))}).catch(()=>{});}
 })();

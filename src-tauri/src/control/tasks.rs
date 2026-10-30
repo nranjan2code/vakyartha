@@ -311,6 +311,9 @@ fn map_status(status: RootStatus) -> &'static str {
 }
 
 fn status_note(status: RootStatus, runs_started: u32, stop_reason: Option<&str>) -> String {
+    if status == RootStatus::Cancelled && runs_started == 0 {
+        return "Stopped before native execution.".to_string();
+    }
     if let Some(reason) = stop_reason {
         return reason.to_string();
     }
