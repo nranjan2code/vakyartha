@@ -245,6 +245,12 @@ This is native domain/storage work only. The actor remains inactive in the app, 
 
 AR-01–AR-09, IA-01–IA-06, ISO-1–ISO-8 and all original output acceptance gates remain open unless a later dated evidence entry says otherwise.
 
+## Sidecar provider framing adapter — 2026-10-30
+
+The private TypeScript sidecar transport now has a dormant `providerFetch` adapter for the public Projection transport seam. It bounds request bodies and concurrent calls, rejects unsupported URL authority/query data and non-HTTPS hosted requests, strips provider credential headers before serializing, preserves Projection's stable operation ID/attempt, accepts only a small response-header allowlist, validates strict base64 chunk/sequence framing, and streams response chunks through a bounded Web stream with acknowledgement-based flow control. Cancellation, timeout, late native frames, and terminal errors are accounted for. The adapter is not passed by `sidecar/main.ts`, and Rust currently decodes only UI and health/control frames, so no model traffic uses this path.
+
+Evidence: desktop protocol tests pass 5/5; the full app suite passes 278/278 on the host. Digest-pinned Node 26.13.0 Linux Docker passes 257 runnable tests with 21 platform/feature-gated skips, zero failures and zero reported dependency vulnerabilities; TypeScript typecheck passes. Rust 1.99.1 Linux Docker passes 85/85 library tests and strict Clippy; host Rust library tests pass 83/83. This validates the adapter and current platform contracts only. Native typed provider request/response handling, trusted approval and task/workspace/revocation fences, atomic persisted dispatch/receipt, cancellation acknowledgement, native worker QoS and app cutover remain unimplemented. The product still uses provider default fetch; no authority or original outcome gate is closed.
+
 ## Delegation proposal validation started — 2026-10-29
 
 Added `control/delegation.rs`, a native deterministic shape validator for proposed child assignments. It leaves generic complexity and role-label requests inline, requires declared workflow mode for required-separation claims, bounds proposals to four children, requires bounded objective/acceptance/input references, and refuses overlapping writes or undeclared read/write dependencies. A positive result is named `EligibleForTrustedAdmission`; at this first checkpoint it was only a proposal gate. The actor remains inactive in product. The host and Docker Linux Rust library suites passed 46/46.

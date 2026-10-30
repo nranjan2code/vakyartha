@@ -2,19 +2,52 @@
 // URL listener or independently reachable endpoint exists in desktop mode.
 import type { Readable, Writable } from "node:stream";
 import { randomUUID } from "node:crypto";
+import type { ProviderTransport, ProviderTransportContext } from "@vak/providers";
 import { DESKTOP_PROTOCOL } from "../shared/desktop-protocol.ts";
 export { DESKTOP_PROTOCOL };
 
 const MAX_BODY = 32 * 1024 * 1024, MAX_FRAME = 48 * 1024 * 1024;
+const MAX_PROVIDER_BODY = 8 * 1024 * 1024, MAX_PROVIDER_CALLS = 4;
 const ID = /^[A-Za-z0-9-]{1,64}$/;
 type Pending = { controller: AbortController; ack?: () => void };
 type ControlHealth = { status: "ready" | "unavailable" | "overloaded" };
 type ControlPending = { resolve(value: ControlHealth): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
+type ProviderPending = {
+  resolve(response: Response): void;
+  reject(error: Error): void;
+  timer: ReturnType<typeof setTimeout>;
+  controller?: ReadableStreamDefaultController<Uint8Array>;
+  queued?: { seq: number; bytes: Uint8Array };
+  waitingPull?: () => void;
+  lastDelivered?: number;
+  ended: boolean;
+  settled: boolean;
+  signal?: AbortSignal;
+  abort?: () => void;
+};
 
-export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth> } {
+export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth>; providerFetch: ProviderTransport } {
   const active = new Map<string, Pending>();
   const controlPending = new Map<string, ControlPending>();
+  const providerPending = new Map<string, ProviderPending>();
+  const retiredProviderIds = new Set<string>();
   let closed = false;
+  function retireProvider(id: string): void {
+    retiredProviderIds.add(id);
+    if (retiredProviderIds.size > 256) retiredProviderIds.delete(retiredProviderIds.values().next().value!);
+  }
+  function lateProviderFrame(id: string): boolean {
+    if (providerPending.has(id)) return false;
+    if (retiredProviderIds.has(id)) return true;
+    throw new Error("Unexpected provider response identity");
+  }
+  function finishProvider(id: string, pending: ProviderPending): void {
+    pending.settled = true;
+    clearTimeout(pending.timer);
+    pending.signal?.removeEventListener("abort", pending.abort!);
+    providerPending.delete(id);
+    retireProvider(id);
+  }
   function send(message: Record<string, unknown>): Promise<void> {
     if (closed) return Promise.reject(new Error("Parent connection closed"));
     return new Promise((resolve, reject) => output.write(JSON.stringify({ v: DESKTOP_PROTOCOL, ...message }) + "\n", (error) => error ? reject(error) : resolve()));
@@ -26,6 +59,8 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
     active.clear();
     for (const p of controlPending.values()) { clearTimeout(p.timer); p.reject(new Error("Parent connection closed")); }
     controlPending.clear();
+    for (const p of providerPending.values()) { clearTimeout(p.timer); p.signal?.removeEventListener("abort", p.abort!); try { p.controller?.error(new Error("Parent connection closed")); } catch {} p.reject(new Error("Parent connection closed")); }
+    providerPending.clear();
   }
   function pingControl(): Promise<ControlHealth> {
     if (closed) return Promise.reject(new Error("Parent connection closed"));
@@ -47,6 +82,81 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
       });
     });
   }
+  const providerFetch: ProviderTransport = (provider, input, init = {}, context?: ProviderTransportContext) => {
+    if (closed) return Promise.reject(new Error("Native provider transport is unavailable"));
+    if (providerPending.size >= MAX_PROVIDER_CALLS) return Promise.reject(new Error("Native provider queue is full"));
+    const method = String(init.method ?? "GET").toUpperCase();
+    if (!/^[a-z][a-z0-9_-]{0,63}$/i.test(provider) || !["GET", "POST"].includes(method)) return Promise.reject(new Error("Unsupported native provider operation"));
+    let url: URL;
+    try { url = new URL(input instanceof Request ? input.url : String(input)); }
+    catch { return Promise.reject(new Error("Invalid provider URL")); }
+    if (url.username || url.password || url.hash || url.searchParams.size > 0 || (provider !== "ollama" && url.protocol !== "https:")) return Promise.reject(new Error("Provider URL contains unsupported authority or query data"));
+    const body = init.body;
+    if (body !== undefined && typeof body !== "string") return Promise.reject(new Error("Native provider requests require a bounded JSON body"));
+    if (body !== undefined && Buffer.byteLength(body) > MAX_PROVIDER_BODY) return Promise.reject(new Error("Provider request is too large"));
+    if (method === "GET" && body !== undefined) return Promise.reject(new Error("GET provider requests cannot include a body"));
+    const headers: Record<string, string> = {};
+    try {
+      new Headers(input instanceof Request ? input.headers : init.headers).forEach((value, name) => {
+        if (["authorization", "x-api-key", "x-goog-api-key", "api-key"].includes(name.toLowerCase())) return;
+        if (name.toLowerCase() !== "content-type" || value.length > 256 || /[\r\n]/.test(value)) throw new Error("Unsupported native provider header");
+        headers[name.toLowerCase()] = value;
+      });
+    } catch (error) { return Promise.reject(error instanceof Error ? error : new Error("Invalid provider headers")); }
+    const signal = init.signal ?? undefined;
+    if (signal?.aborted) return Promise.reject(new Error("Provider request was cancelled"));
+    const id = `gen-${randomUUID()}`;
+    const operation = context?.operationId && /^[A-Za-z0-9_-]{1,128}$/.test(context.operationId) ? context.operationId : randomUUID();
+    const attempt = context?.attempt ?? 0;
+    if (!Number.isSafeInteger(attempt) || attempt < 0 || attempt > 16) return Promise.reject(new Error("Invalid provider attempt identity"));
+    return new Promise<Response>((resolve, reject) => {
+      let abort: (() => void) | undefined;
+      const timer = setTimeout(() => {
+        const error = new Error("Native provider request timed out");
+        pending.settled = true;
+        providerPending.delete(id);
+        retireProvider(id);
+        signal?.removeEventListener("abort", abort!);
+        void send({ id, type: "provider_cancel" }).catch(() => {});
+        if (pending.controller) pending.controller.error(error);
+        else reject(error);
+      }, 125_000);
+      timer.unref();
+      const pending: ProviderPending = { resolve, reject, timer, ended: false, settled: false, signal };
+      providerPending.set(id, pending);
+      abort = () => {
+        if (pending.settled) return;
+        pending.settled = true;
+        clearTimeout(timer);
+        providerPending.delete(id);
+        retireProvider(id);
+        signal?.removeEventListener("abort", abort!);
+        pending.controller?.error(new Error("Provider request was cancelled"));
+        void send({ id, type: "provider_cancel" }).catch(() => {});
+        if (!pending.controller) reject(new Error("Provider request was cancelled"));
+      };
+      pending.abort = abort;
+      signal?.addEventListener("abort", abort, { once: true });
+      const message = {
+        id,
+        type: "provider_request",
+        provider,
+        url: url.toString(),
+        method,
+        headers,
+        ...(body === undefined ? {} : { body }),
+        operationId: operation,
+        attempt,
+      };
+      void send(message).catch((error: unknown) => {
+        if (providerPending.delete(id)) {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", abort!);
+          reject(error instanceof Error ? error : new Error("Native provider write failed"));
+        }
+      });
+    });
+  };
   async function run(id: string, frame: Record<string, unknown>): Promise<void> {
     const p: Pending = { controller: new AbortController() };
     active.set(id, p);
@@ -103,6 +213,88 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
       }
       return;
     }
+    if (f.type === "provider_headers") {
+      if (Object.keys(f).some((key) => !["v", "id", "type", "status", "headers"].includes(key)) || !id.startsWith("gen-") || !Number.isInteger(f.status) || Number(f.status) < 100 || Number(f.status) > 599 || [204, 205, 304].includes(Number(f.status)) || !f.headers || typeof f.headers !== "object" || Array.isArray(f.headers)) throw new Error("Invalid provider response headers");
+      if (lateProviderFrame(id)) return;
+      const pending = providerPending.get(id);
+      if (!pending || pending.settled || pending.controller) throw new Error("Unexpected provider response headers");
+      const headers = new Headers();
+      for (const [name, value] of Object.entries(f.headers as Record<string, unknown>)) {
+        if (!/^(content-type|retry-after)$/.test(name.toLowerCase()) || typeof value !== "string" || value.length > 256 || /[\r\n]/.test(value)) throw new Error("Invalid provider response header");
+        headers.set(name, value);
+      }
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) { pending.controller = controller; },
+        pull() {
+          if (pending.queued) {
+            const { seq, bytes } = pending.queued;
+            pending.queued = undefined;
+            pending.lastDelivered = seq;
+            pending.controller?.enqueue(bytes);
+            void send({ id, type: "provider_ack", seq }).catch(() => {});
+            if (pending.ended) {
+              pending.controller?.close();
+              finishProvider(id, pending);
+            }
+            return;
+          }
+          if (pending.ended) { pending.controller?.close(); return; }
+          return new Promise<void>((resolve) => { pending.waitingPull = resolve; });
+        },
+        cancel() {
+          if (!pending.settled) {
+            pending.settled = true;
+            clearTimeout(pending.timer);
+            providerPending.delete(id);
+            retireProvider(id);
+            pending.signal?.removeEventListener("abort", pending.abort!);
+            void send({ id, type: "provider_cancel" }).catch(() => {});
+          }
+        },
+      });
+      pending.resolve(new Response(stream, { status: Number(f.status), headers }));
+      return;
+    }
+    if (f.type === "provider_data") {
+      if (Object.keys(f).some((key) => !["v", "id", "type", "seq", "data"].includes(key)) || !id.startsWith("gen-") || !Number.isSafeInteger(f.seq) || typeof f.data !== "string" || f.data.length > 88_000) throw new Error("Invalid provider response data");
+      if (lateProviderFrame(id)) return;
+      const pending = providerPending.get(id);
+      if (!pending?.controller || pending.settled || pending.queued || Number(f.seq) !== (pending.lastDelivered ?? -1) + 1) throw new Error("Unexpected provider response data");
+      const bytes = Buffer.from(f.data, "base64");
+      if (bytes.byteLength > 64 * 1024 || bytes.toString("base64") !== f.data) throw new Error("Invalid provider response chunk");
+      pending.queued = { seq: Number(f.seq), bytes };
+      pending.waitingPull?.();
+      pending.waitingPull = undefined;
+      return;
+    }
+    if (f.type === "provider_end") {
+      if (Object.keys(f).length !== 3 || !id.startsWith("gen-")) throw new Error("Invalid provider response end");
+      if (lateProviderFrame(id)) return;
+      const pending = providerPending.get(id);
+      if (!pending?.controller || pending.settled || pending.ended) throw new Error("Unexpected provider response end");
+      pending.ended = true;
+      pending.waitingPull?.();
+      pending.waitingPull = undefined;
+      if (!pending.queued) {
+        pending.controller.close();
+        finishProvider(id, pending);
+      }
+      return;
+    }
+    if (f.type === "provider_error") {
+      if (Object.keys(f).some((key) => !["v", "id", "type", "message"].includes(key)) || !id.startsWith("gen-") || typeof f.message !== "string" || f.message.length > 512) throw new Error("Invalid provider response error");
+      if (lateProviderFrame(id)) return;
+      const pending = providerPending.get(id);
+      if (!pending || pending.settled) throw new Error("Unexpected provider response error");
+      const error = new Error(f.message || "Native provider request failed");
+      clearTimeout(pending.timer);
+      pending.signal?.removeEventListener("abort", pending.abort!);
+      providerPending.delete(id);
+      retireProvider(id);
+      if (pending.controller) pending.controller.error(error);
+      else pending.reject(error);
+      return;
+    }
     if (f.type === "ack") { active.get(id)?.ack?.(); return; }
     if (f.type === "cancel") { const p = active.get(id); p?.controller.abort(); p?.ack?.(); return; }
     if (f.type !== "request" || active.has(id) || active.size >= 32) throw new Error("Invalid or excessive desktop requests");
@@ -127,5 +319,5 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
   input.on("end", close);
   input.on("error", (error) => { close(); failed(error); });
   output.on("error", (error) => { close(); failed(error); });
-  return { close, pingControl };
+  return { close, pingControl, providerFetch };
 }

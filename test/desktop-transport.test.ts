@@ -82,6 +82,37 @@ test("native control health uses its own typed identity and bounded response", a
   assert.deepEqual(await pending, { status: "ready" });
 });
 
+test("native provider transport strips credentials and streams bounded response chunks", async (t) => {
+  const input = new PassThrough(), output = new PassThrough();
+  const frames: Record<string, unknown>[] = [];
+  const bridge = desktopTransport(async () => new Response(null), "token", input, output, (error) => { throw error; });
+  t.after(() => bridge.close());
+  output.on("data", (chunk) => {
+    const frame = JSON.parse(String(chunk)) as Record<string, unknown>;
+    frames.push(frame);
+  });
+  const pending = bridge.providerFetch("openai", "https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { authorization: "Bearer secret", "content-type": "application/json" },
+    body: "{}",
+  }, { operationId: "root_operation_1", attempt: 2 });
+  for (let i = 0; i < 100 && !frames.length; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+  const request = frames[0]!;
+  assert.equal(request.type, "provider_request");
+  assert.deepEqual(request.headers, { "content-type": "application/json" });
+  assert.equal(request.operationId, "root_operation_1");
+  assert.equal(request.attempt, 2);
+  assert.doesNotMatch(JSON.stringify(request), /secret/);
+  const id = String(request.id);
+  const send = (frame: Record<string, unknown>) => input.write(JSON.stringify({ v: DESKTOP_PROTOCOL, id, ...frame }) + "\n");
+  send({ type: "provider_headers", status: 200, headers: { "content-type": "application/json" } });
+  const response = await pending;
+  send({ type: "provider_data", seq: 0, data: Buffer.from("ok").toString("base64") });
+  send({ type: "provider_end" });
+  assert.equal(await response.text(), "ok");
+  assert.equal(frames.some((frame) => frame.type === "provider_ack" && frame.seq === 0), true);
+});
+
 test("private transport rejects incompatible frames and untrusted authority headers", async () => {
   const input = new PassThrough(), output = new PassThrough();
   const errors: Error[] = [], frames: Record<string, unknown>[] = [];
