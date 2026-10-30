@@ -1,5 +1,9 @@
 # Vakyartha handover — 2026-10-30
 
+## Current product/runtime source audit — 2026-10-30
+
+Before further Work implementation, audited runtime `ab25c07` against product `main` `625787d`. Existing task/review/output/scheduling and native primitives should be reused; newer product decision, skills, caching, diagrams and voice features must be incorporated. Product has 19 commits after the shared base; runtime has 111. Its framework pin is a descendant of the runtime API pin. [Source inventory, eight-area status and concrete integration gaps](agent-runtime/CODE-STATUS-AUDIT.md). Both app worktrees were clean; this was a source-only check with no inference or key access. Default product decision tests include an implicit live hosted call and must be gated before a combined suite. No outcome gate is closed.
+
 ## Native reasoner and assembled publication mechanism — 2026-10-30
 
 The native driver now carries a bound isolated reasoning run through human consent, exact-byte streamed I/O and verified cleanup. Schema 20 reserves its process once, releases process capacity independently of the root orchestration slot and retains uncertain ownership after restart. An actual packaged-worker fixture continues through separate canonical preparation and publication without marking the original result verified. Validation: 294 app tests/typecheck/bundling, 151 macOS/153 Linux native tests, strict Clippy and native desktop WebKit smoke pass. [Diagram, evidence and retained fixture failures](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-reasoning-supervisor-and-assembled-publication-path--2026-10-30).
