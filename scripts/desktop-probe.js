@@ -34,6 +34,22 @@
   let staleBindingAccepted=false;
   try{await ipc.invoke('control_create_root_in_workspace',{request:{...nativeRequest,id:'native-ipc-stale-task'},sessionId:'native-ipc-session',bindingRevision:binding.revision+1});staleBindingAccepted=true;}catch{}
   check(!staleBindingAccepted,'native root accepted a stale workspace revision');
+  const nextWorkspace=await ipc.invoke('control_register_workspace',{id:'native-ipc-workspace-next',path:__NEXT_WORKSPACE__});
+  const rebound=await ipc.invoke('control_rebind_workspace',{sessionId:'native-ipc-session',expectedRevision:binding.revision,workspaceId:nextWorkspace.id,realmId:null,mode:'direct'});
+  check(rebound.revision===binding.revision+1,'native workspace rebind did not advance its revision');
+  const reboundGrant=await ipc.invoke('control_read_workspace_grant',{sessionId:'native-ipc-session',expectedRevision:rebound.revision});
+  check(reboundGrant.workspace_id===nextWorkspace.id,'native workspace rebind did not replace the active grant');
+  check(scopedTask.workspace_grant?.workspace_id===workspace.id,'workspace rebind retargeted an existing root grant');
+  let oldRevisionAccepted=false;
+  try{await ipc.invoke('control_create_root_in_workspace',{request:{...nativeRequest,id:'native-ipc-rebound-stale-task'},sessionId:'native-ipc-session',bindingRevision:binding.revision});oldRevisionAccepted=true;}catch{}
+  check(!oldRevisionAccepted,'native root accepted a superseded workspace revision');
+  const reboundTask=await ipc.invoke('control_create_root_in_workspace',{request:{...nativeRequest,id:'native-ipc-rebound-task'},sessionId:'native-ipc-session',bindingRevision:rebound.revision});
+  check(reboundTask.workspace_grant?.workspace_id===nextWorkspace.id,'new root did not capture the rebound workspace');
+  const revoked=await ipc.invoke('control_revoke_workspace',{sessionId:'native-ipc-session',expectedRevision:rebound.revision});
+  check(revoked.state==='revoked'&&revoked.revision===rebound.revision+1,'native workspace revoke did not advance and close the grant');
+  let revokedGrantAccepted=false;
+  try{await ipc.invoke('control_read_workspace_grant',{sessionId:'native-ipc-session',expectedRevision:revoked.revision});revokedGrantAccepted=true;}catch{}
+  check(!revokedGrantAccepted,'native workspace revoke left a readable grant');
   let conflictingRequestAccepted=false;
   try{await ipc.invoke('control_create_root',{request:{...nativeRequest,criteria:'Conflicting request under a reused task identity'}});conflictingRequestAccepted=true;}catch{}
   check(!conflictingRequestAccepted,'native task creation accepted conflicting identity reuse');

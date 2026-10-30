@@ -255,6 +255,51 @@ fn control_bind_workspace(
         .map_err(|_| "Workspace binding was refused".to_owned())
 }
 
+/// Rebinds a session only when its current revision matches the caller's view.
+#[tauri::command]
+fn control_rebind_workspace(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    session_id: String,
+    expected_revision: u64,
+    workspace_id: String,
+    realm_id: Option<String>,
+    mode: WorkspaceMode,
+) -> Result<WorkspaceBinding, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native task control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .rebind_workspace(
+            session_id,
+            expected_revision,
+            workspace_id,
+            realm_id,
+            mode,
+        )
+        .map_err(|_| "Workspace rebind was refused".to_owned())
+}
+
+/// Revokes a session's workspace grant at its expected revision.
+#[tauri::command]
+fn control_revoke_workspace(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    session_id: String,
+    expected_revision: u64,
+) -> Result<WorkspaceBinding, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native task control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .revoke_workspace(session_id, expected_revision)
+        .map_err(|_| "Workspace revocation was refused".to_owned())
+}
+
 /// Creates a task with the actor's current grant for the named binding revision.
 #[tauri::command]
 fn control_create_root_in_workspace(
@@ -529,6 +574,8 @@ pub fn run() {
             control_read_root,
             control_register_workspace,
             control_bind_workspace,
+            control_rebind_workspace,
+            control_revoke_workspace,
             control_create_root_in_workspace,
             control_read_workspace_grant,
             engine_request,

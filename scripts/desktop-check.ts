@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-const run = promisify(execFile), root = process.cwd(), out = mkdtempSync(path.join(tmpdir(), "vak-desktop-private-")), workspace = `${out}-workspace`;
+const run = promisify(execFile), root = process.cwd(), out = mkdtempSync(path.join(tmpdir(), "vak-desktop-private-")), workspace = `${out}-workspace`, nextWorkspace = `${out}-workspace-next`;
 if (process.platform !== "darwin") throw new Error("The native transport check currently targets macOS");
 await run("npm", ["run", "build"]);
 const host = /host: (\S+)/.exec((await run("rustc", ["-vV"])).stdout)?.[1];
@@ -14,9 +14,10 @@ if (!host) throw new Error("Rust host triple unavailable");
 if (!existsSync(path.join(root, `src-tauri/binaries/vaksb-${host}`))) await run("npm", ["run", "bundle-sidecar"]);
 await run("cargo", ["build", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "tauri/custom-protocol"], { env: { ...process.env, TAURI_CONFIG: JSON.stringify({ identifier: `com.nranjan2code.vakyartha.runtime-check-${path.basename(out).slice(-6).toLowerCase()}`, app: { windows: [{ label: "main", visible: false }] } }) } });
 mkdirSync(workspace);
+mkdirSync(nextWorkspace);
 const log = path.join(out, "logs/engine.log"), stderr = createWriteStream(path.join(out, "native.stderr"), { mode: 0o600 });
 const probe = path.join(out, "desktop-probe.js");
-writeFileSync(probe, readFileSync(path.join(root, "scripts/desktop-probe.js"), "utf8").replaceAll("__WORKSPACE__", JSON.stringify(workspace)), { mode: 0o600 });
+writeFileSync(probe, readFileSync(path.join(root, "scripts/desktop-probe.js"), "utf8").replaceAll("__WORKSPACE__", JSON.stringify(workspace)).replaceAll("__NEXT_WORKSPACE__", JSON.stringify(nextWorkspace)), { mode: 0o600 });
 const child = spawn(path.join(root, "src-tauri/target/debug/vakyartha"), [], { env: { ...process.env, VAK_DATA_DIR: out, VAK_ENV_FILES: "", VAK_KEYCHAIN_SERVICE: "com.nranjan2code.vakyartha.native-private-check", VAK_DEBUG_JS: probe }, stdio: ["ignore", "ignore", "pipe"] });
 child.stderr.pipe(stderr);
 let nodeIds: string[] = [];
@@ -45,6 +46,7 @@ try {
   child.kill("SIGTERM");
   if (child.exitCode === null) await new Promise((resolve) => child.once("exit", resolve));
   await import("node:fs/promises").then(({ rm }) => rm(workspace, { recursive: true, force: true }));
+  await import("node:fs/promises").then(({ rm }) => rm(nextWorkspace, { recursive: true, force: true }));
 }
 const alive = (id: string) => { try { process.kill(Number(id), 0); return true; } catch { return false; } };
 for (let i = 0; i < 80 && nodeIds.some(alive); i++) await new Promise((resolve) => setTimeout(resolve, 100));
