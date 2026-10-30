@@ -714,6 +714,7 @@ enum RootRunAction {
 
 enum ActorCommand {
     ReasonerTaskDefinition { run_id: String, reply: SyncSender<Result<Option<tasks::TaskRequest>, ControlError>> },
+    AdmitProductRun { id: String, revision: u64, request_id: String, reply: SyncSender<Result<root_runs::RootRun, ControlError>> },
     #[cfg(test)]
     PrepareProductFixture { id: String, revision: u64, request_id: String, reply: SyncSender<Result<root_runs::RootRun, ControlError>> },
     IssueProviderApproval { run_id: String, operation_id: String, attempt: u32, body: Vec<u8>, delivery: Option<generation::Delivery>, in_flight: Arc<std::sync::atomic::AtomicBool>, reply: SyncSender<Result<generation::Approval, ControlError>> },
@@ -1238,13 +1239,15 @@ impl ControlHandle {
         response.recv_timeout(self.response_timeout).map_err(response_error)?
     }
 
-    /// Test-only admission while product dispatch remains disabled. This opcode
-    /// has no production build, webview command or worker protocol equivalent.
-    #[cfg(test)]
-    pub(crate) fn prepare_product_fixture(&self, id: String, revision: u64, request_id: String) -> Result<root_runs::RootRun, ControlError> {
+    pub fn admit_product_run(&self, id: String, revision: u64, request_id: String) -> Result<root_runs::RootRun, ControlError> {
         let (reply, response) = sync_channel(1);
-        self.commands.try_send(ActorCommand::PrepareProductFixture { id, revision, request_id, reply }).map_err(queue_error)?;
+        self.commands.try_send(ActorCommand::AdmitProductRun { id, revision, request_id, reply }).map_err(queue_error)?;
         response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prepare_product_fixture(&self, id: String, revision: u64, request_id: String) -> Result<String, ControlError> {
+        self.admit_product_run(id, revision, request_id).map(|run| run.id)
     }
 
     /// Trusted-supervisor entry points. These are not worker protocol operations.
@@ -2026,11 +2029,27 @@ fn actor_loop(
                     .map(|run| ledger.product_tasks.get(&run.root_id).map(|record| record.request.clone()));
                 let _ = reply.send(result);
             }
+            ActorCommand::AdmitProductRun { id, revision, request_id, reply } => {
+                let mut next = ledger.clone();
+                let result = if !next.product_tasks.contains_key(&id) { Err(ControlError::Admission(AdmissionError::InvalidTask)) }
+                else { root_runs::prepare(&mut next, &profile, &id, revision, &request_id).and_then(|_| {
+                    if let Some(record) = next.product_tasks.get_mut(&id) {
+                        record.updated = tasks::now();
+                    }
+                    store.persist(&next, &profile).map_err(ControlError::Store)?;
+                    let run = next.root_runs.values().find(|run| run.request_id == request_id).cloned().ok_or(ControlError::Admission(AdmissionError::RootRunNotFound))?;
+                    ledger = next; Ok(run)
+                }) };
+                let _ = reply.send(result);
+            }
             #[cfg(test)]
             ActorCommand::PrepareProductFixture { id, revision, request_id, reply } => {
                 let mut next = ledger.clone();
                 let result = if !next.product_tasks.contains_key(&id) { Err(ControlError::Admission(AdmissionError::InvalidTask)) }
                 else { root_runs::prepare(&mut next, &profile, &id, revision, &request_id).and_then(|_| {
+                    if let Some(record) = next.product_tasks.get_mut(&id) {
+                        record.updated = tasks::now();
+                    }
                     store.persist(&next, &profile).map_err(ControlError::Store)?;
                     let run = next.root_runs.values().find(|run| run.request_id == request_id).cloned().ok_or(ControlError::Admission(AdmissionError::RootRunNotFound))?;
                     ledger = next; Ok(run)
@@ -2122,7 +2141,15 @@ fn actor_loop(
                 }
                 let selected = match &command {
                     tasks::TaskCommand::Create { request } => Some(request.id.clone()),
-                    tasks::TaskCommand::Read { id } | tasks::TaskCommand::Cancel { id, .. } => Some(id.clone()),
+                    tasks::TaskCommand::Read { id }
+                    | tasks::TaskCommand::Cancel { id, .. }
+                    | tasks::TaskCommand::AdmitRun { id, .. }
+                    | tasks::TaskCommand::WaitForInput { id, .. }
+                    | tasks::TaskCommand::Input { id, .. }
+                    | tasks::TaskCommand::Review { id }
+                    | tasks::TaskCommand::Complete { id, .. }
+                    | tasks::TaskCommand::Output { id, .. }
+                    | tasks::TaskCommand::OutputContent { id, .. } => Some(id.clone()),
                     _ => None,
                 };
                 let removing = match &command { tasks::TaskCommand::Remove { id, .. } => Some(id.clone()), _ => None };
@@ -2139,6 +2166,10 @@ fn actor_loop(
                 let read_result = match &command {
                     tasks::TaskCommand::List => Some(tasks::list(&ledger)),
                     tasks::TaskCommand::Read { id } => Some(tasks::view(&ledger, id)),
+                    tasks::TaskCommand::Review { id } => Some(tasks::review(&ledger, id)),
+                    tasks::TaskCommand::OutputContent { id, run_id } => {
+                        Some(tasks::output_content(&ledger, id, run_id))
+                    }
                     tasks::TaskCommand::Create { request } if ledger.product_tasks.contains_key(&request.id) => {
                         Some(if ledger.product_tasks[&request.id].request == **request { tasks::view(&ledger, &request.id) } else { Err(ControlError::Admission(AdmissionError::DuplicateRoot)) })
                     }
@@ -2149,7 +2180,7 @@ fn actor_loop(
                     let _ = reply.send(result); continue;
                 }
                 let mut candidate = ledger.clone();
-                match tasks::apply(&mut candidate, command) {
+                match tasks::apply(&mut candidate, &profile, command) {
                     Err(error) => { let _ = reply.send(Err(error)); }
                     Ok(value) => {
                         if let Err(error) = store.persist(&candidate, &profile) {
@@ -4378,6 +4409,44 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
             Err(AdmissionError::UnconfiguredResource(Resource::Generation))
         );
         assert_eq!(ledger.active_leases(), 0);
+
+        let data = temp_data_dir();
+        fs::create_dir_all(&data).unwrap();
+        let actor = ControlActor::open(
+            &data,
+            "unconfigured-test",
+            profile,
+            32,
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        let handle = actor.handle();
+        let request = serde_json::from_value(serde_json::json!({
+            "id": "unconf-task",
+            "goal": "Test goal",
+            "criteria": "Test criteria",
+            "provider": "ollama",
+            "model": "qwen3.5:4b-mlx",
+            "integrations": [],
+            "confirmedFree": [],
+            "spending": {"kind": "local_only"},
+            "limits": {"runs": 1, "modelRequests": 1, "toolCalls": 0, "activeMs": 1000},
+            "inputs": [],
+            "diagnosticDays": 0
+        })).unwrap();
+        handle.product_task(tasks::TaskCommand::Create { request: Box::new(request) }).unwrap();
+        let admit_err = handle.admit_product_run("unconf-task".into(), 1, "req-1".into());
+        assert_eq!(admit_err, Err(ControlError::Admission(AdmissionError::UnconfiguredResource(Resource::Generation))));
+        let task_admit_err = handle.product_task(tasks::TaskCommand::AdmitRun {
+            id: "unconf-task".into(),
+            revision: 1,
+            request_id: "req-2".into(),
+        });
+        assert_eq!(task_admit_err, Err(ControlError::Admission(AdmissionError::UnconfiguredResource(Resource::Generation))));
+        let view = handle.product_task(tasks::TaskCommand::Read { id: "unconf-task".into() }).unwrap();
+        assert_eq!(view["state"], "queued");
+        drop(actor);
+        remove_test_data(&data);
     }
 
     #[test]

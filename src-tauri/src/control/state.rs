@@ -1079,7 +1079,10 @@ impl RootTask {
         receipt: Option<String>,
     ) -> Result<(), StateError> {
         self.check_revision(expected_revision)?;
-        if !matches!(self.status, RootStatus::Running | RootStatus::NeedsReview) {
+        if !matches!(
+            self.status,
+            RootStatus::Running | RootStatus::WaitingForInput | RootStatus::NeedsReview
+        ) {
             return Err(StateError::InvalidTransition(self.status));
         }
         if contract_revision != self.contract_revision {
@@ -1118,9 +1121,21 @@ impl RootTask {
         self.bump_revision()
     }
 
+    pub fn queue_continuation(&mut self, expected_revision: u64) -> Result<(), StateError> {
+        self.check_revision(expected_revision)?;
+        if !matches!(
+            self.status,
+            RootStatus::WaitingForInput | RootStatus::NeedsReview
+        ) {
+            return Err(StateError::InvalidTransition(self.status));
+        }
+        self.status = RootStatus::Queued;
+        self.bump_revision()
+    }
+
     pub fn request_review(&mut self, expected_revision: u64) -> Result<(), StateError> {
         self.check_revision(expected_revision)?;
-        if self.status != RootStatus::Running {
+        if self.status != RootStatus::Running && self.status != RootStatus::WaitingForInput {
             return Err(StateError::InvalidTransition(self.status));
         }
         if self

@@ -1,5 +1,16 @@
 # Vakyartha handover — 2026-10-30
 
+## Single-agent Work path, native admission, lifecycle, review and output integrated — 2026-10-30
+
+In `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` (branch `codex/agent-runtime-implementation`), completed the single-agent Work path through native admission, lifecycle transitions, review snapshots, outcome requirement passage, user review acceptance, and output content generation.
+
+Key implementations and invariants:
+- **Production admission and fail-closed capacity**: Replaced test-only admission with `admit_product_run` (`TaskCommand::AdmitRun` and `ControlHandle::admit_product_run`). When startup initializes `CapacityProfile::unconfigured()`, lease reservations fail closed with `AdmissionError::UnconfiguredResource(Resource::Generation)`. Metadata and task creation remain available while execution stays disabled.
+- **Task command and DTO mapping**: Updated `src-tauri/src/control/tasks.rs` and `src-tauri/src/control.rs` to handle `AdmitRun`, `WaitForInput`, `Input`, `Review`, `Complete`, `Output`, and `OutputContent`. View and list mapping strictly conforms to `shared/task-contract.ts` (states `queued`, `running`, `needs_input`, `completed`, `cancelled`, `failed`, `interrupted`; run history with timestamps, review snapshots, and output receipts).
+- **Desktop fetch IPC routing**: Updated `src/desktop-fetch.ts` to route `/api/tasks/:id/input`, `/api/tasks/:id/review`, `/api/tasks/:id/complete`, `/api/tasks/:id/runs/:runId/output`, and `/api/tasks/:id/runs/:runId/usage` to `control_task`.
+- **Vertical verification**: `reasoner_supervisor::tests::native_driver_consent_stream_cleanup_and_canonical_publication` verified the complete flow: `admit_product_run` -> reasoning supervisor run with human consent -> candidate commit -> canonical supervisor run with surface publication -> worker completion settlement -> `WaitForInput` -> `Review` snapshot -> `Complete` with `original-outcome` pass -> `Completed` status -> `OutputContent` with preserved inputs (`37.5`).
+- **Validation**: All 151 Rust tests (including all 7 real-worker tests with sandbox helper and Node) passed. All 325 app tests passed (1 paid test skipped). `npm run typecheck` passed with 0 errors. Real-provider contract check failures with local Ollama MLX timeouts retained honestly in receipt `.vak/contracts/record-view-2026-10-30T15-50-26.969Z.json`.
+
 ## Latest main reconciled; next-session handoff — 2026-10-30
 
 Work continues in `/Users/nisheethranjan/Projects/vakyartha-agent-runtime`, branch `codex/agent-runtime-implementation`. Product main through `d8a2955` is included, including its latest app-update, Voice Desk and dictation work; the original main checkout is clean and untouched by this work. [Next-session status, exact boundaries and copyable prompt](agent-runtime/NEXT-SESSION.md). [Code audit](agent-runtime/CODE-STATUS-AUDIT.md) shows what already exists; reuse it.

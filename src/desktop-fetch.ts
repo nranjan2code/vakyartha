@@ -17,7 +17,35 @@ export const desktopFetch: typeof fetch = async (input, init) => {
   if (body && new TextEncoder().encode(body).length > 32 * 1024 * 1024) throw new Error("Desktop request is too large");
   if (url.pathname === "/api/tasks" || url.pathname.startsWith("/api/tasks/")) {
     if (url.search) throw new Error("Task controls do not accept query parameters");
-    const match = /^\/api\/tasks(?:\/([A-Za-z0-9_-]{1,120})(?:\/(cancel))?)?$/.exec(url.pathname);
+    const runMatch = /^\/api\/tasks\/([A-Za-z0-9_-]{1,120})\/runs\/([A-Za-z0-9_-]{1,120})\/(output|usage)$/.exec(url.pathname);
+    if (runMatch) {
+      const [, taskId, runId, sub] = runMatch;
+      if (sub === "output" && request.method === "GET") {
+        request.signal.throwIfAborted();
+        try {
+          return Response.json(await invoke("control_task", { command: { kind: "outputContent", id: taskId, runId } }), { status: 200 });
+        } catch (error) { return Response.json({ error: String(error) }, { status: 409 }); }
+      }
+      if (sub === "output" && request.method === "POST") {
+        request.signal.throwIfAborted();
+        const parsed = JSON.parse(body ?? "{}");
+        try {
+          return Response.json(await invoke("control_task", { command: { kind: "output", id: taskId, runId, revision: parsed.revision, command: parsed } }), { status: 200 });
+        } catch (error) { return Response.json({ error: String(error) }, { status: 409 }); }
+      }
+      if (sub === "usage" && request.method === "GET") {
+        request.signal.throwIfAborted();
+        try {
+          const view = (await invoke("control_task", { command: { kind: "read", id: taskId } })) as Record<string, unknown>;
+          const runs = (view.runHistory as Array<{ id: string; usage?: unknown }>) ?? [];
+          const run = runs.find((r) => r.id === runId);
+          if (!run) return Response.json({ error: "Run not found in this task" }, { status: 400 });
+          return Response.json(run.usage ?? { requests: 0, input: 0, output: 0 }, { status: 200 });
+        } catch (error) { return Response.json({ error: String(error) }, { status: 409 }); }
+      }
+      return Response.json({ error: "Unsupported run control" }, { status: 405 });
+    }
+    const match = /^\/api\/tasks(?:\/([A-Za-z0-9_-]{1,120})(?:\/(cancel|input|review|complete))?)?$/.exec(url.pathname);
     if (!match) return Response.json({ error: "This task operation is unavailable until protected execution is connected" }, { status: 503 });
     const [, taskId, operation] = match;
     let command: Record<string, unknown>;
@@ -26,7 +54,23 @@ export const desktopFetch: typeof fetch = async (input, init) => {
     else if (taskId && !operation && request.method === "GET") command = { kind: "read", id: taskId };
     else if (taskId && !operation && request.method === "DELETE") command = { kind: "remove", id: taskId, revision: JSON.parse(body ?? "{}").revision };
     else if (taskId && operation === "cancel" && request.method === "POST") command = { kind: "cancel", id: taskId, revision: JSON.parse(body ?? "{}").revision };
-    else return Response.json({ error: "Unsupported task control" }, { status: 405 });
+    else if (taskId && operation === "input" && request.method === "POST") {
+      const parsed = JSON.parse(body ?? "{}");
+      command = { kind: "input", id: taskId, revision: parsed.revision, input: parsed };
+    } else if (taskId && operation === "review" && request.method === "GET") {
+      command = { kind: "review", id: taskId };
+    } else if (taskId && operation === "complete" && request.method === "POST") {
+      const parsed = JSON.parse(body ?? "{}");
+      command = {
+        kind: "complete",
+        id: taskId,
+        revision: parsed.revision,
+        runId: parsed.runId,
+        fingerprint: parsed.fingerprint,
+        note: parsed.note ?? "",
+        confirmed: parsed.confirmed ?? false,
+      };
+    } else return Response.json({ error: "Unsupported task control" }, { status: 405 });
     request.signal.throwIfAborted();
     try { return Response.json(await invoke("control_task", { command }), { status: command.kind === "create" ? 201 : 200 }); }
     catch (error) { return Response.json({ error: String(error) }, { status: 409 }); }

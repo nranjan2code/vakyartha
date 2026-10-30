@@ -96,7 +96,7 @@ impl Harness {
             })
             .unwrap();
         self.handle()
-            .prepare_product_fixture("root".into(), 1, "start-root".into())
+            .admit_product_run("root".into(), 1, "start-root".into())
             .unwrap()
             .id
     }
@@ -353,7 +353,7 @@ fn native_driver_consent_stream_cleanup_and_canonical_publication() {
             .is_some()
     );
     assert_eq!(
-        handle.settle_worker_completion(run_id).unwrap().status,
+        handle.settle_worker_completion(run_id.clone()).unwrap().status,
         RunStatus::Settled
     );
     let root = handle.read_root("root".into()).unwrap();
@@ -363,6 +363,59 @@ fn native_driver_consent_stream_cleanup_and_canonical_publication() {
         crate::control::state::CheckOutcome::Pending,
         "publication is not outcome verification"
     );
+
+    let view_waiting = handle
+        .product_task(crate::control::tasks::TaskCommand::WaitForInput {
+            id: "root".into(),
+            revision: root.revision(),
+        })
+        .unwrap();
+    assert_eq!(view_waiting["state"], "needs_input");
+
+    let snap = handle
+        .product_task(crate::control::tasks::TaskCommand::Review {
+            id: "root".into(),
+        })
+        .unwrap();
+    assert_eq!(snap["runId"], run_id);
+    let fingerprint = snap["fingerprint"].as_str().unwrap().to_string();
+    assert_eq!(fingerprint.len(), 64);
+    let snap_revision = snap["revision"].as_u64().unwrap();
+
+    let complete_res = handle
+        .product_task(crate::control::tasks::TaskCommand::Complete {
+            id: "root".into(),
+            revision: snap_revision,
+            run_id: run_id.clone(),
+            fingerprint: fingerprint.clone(),
+            note: "Verified independent price views with original numeric facts".into(),
+            confirmed: true,
+        })
+        .unwrap();
+    assert_eq!(complete_res["accepted"], json!([run_id]));
+
+    let root_accepted = handle.read_root("root".into()).unwrap();
+    assert_eq!(root_accepted.status(), RootStatus::Completed);
+    assert_eq!(
+        root_accepted.requirements()["original-outcome"].outcome(),
+        crate::control::state::CheckOutcome::Pass
+    );
+
+    let view_accepted = handle
+        .product_task(crate::control::tasks::TaskCommand::Read {
+            id: "root".into(),
+        })
+        .unwrap();
+    assert_eq!(view_accepted["state"], "completed");
+    assert_eq!(view_accepted["accepted"], json!([run_id]));
+
+    let out_content = handle
+        .product_task(crate::control::tasks::TaskCommand::OutputContent {
+            id: "root".into(),
+            run_id: run_id.clone(),
+        })
+        .unwrap();
+    assert!(out_content["content"].as_str().unwrap().contains("37.5"));
 }
 
 #[test]

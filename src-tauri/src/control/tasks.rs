@@ -264,6 +264,69 @@ pub(super) fn create(
     view(ledger, &id)
 }
 
+fn map_status(status: RootStatus) -> &'static str {
+    match status {
+        RootStatus::Cancelled => "cancelled",
+        RootStatus::Running => "running",
+        RootStatus::WaitingForInput | RootStatus::NeedsReview => "needs_input",
+        RootStatus::WaitingForApproval => "needs_approval",
+        RootStatus::Completed => "completed",
+        RootStatus::Interrupted => "interrupted",
+        RootStatus::Blocked
+        | RootStatus::Stalled
+        | RootStatus::Failed
+        | RootStatus::LimitReached => "failed",
+        RootStatus::Queued => "queued",
+    }
+}
+
+fn status_note(status: RootStatus, runs_started: u32, stop_reason: Option<&str>) -> String {
+    if let Some(reason) = stop_reason {
+        return reason.to_string();
+    }
+    match status {
+        RootStatus::Cancelled => "Stopped before native execution.".to_string(),
+        RootStatus::Running => "Working".to_string(),
+        RootStatus::WaitingForInput | RootStatus::NeedsReview => {
+            "Review the saved result against your criteria. Continue interacting with any surface, or open an evidence review to accept the result.".to_string()
+        }
+        RootStatus::WaitingForApproval => "Needs approval".to_string(),
+        RootStatus::Completed => {
+            "You reviewed the recorded evidence against the completion criteria.".to_string()
+        }
+        RootStatus::Interrupted => {
+            "Execution was interrupted. Check any external effects before starting a continuation.".to_string()
+        }
+        RootStatus::Blocked
+        | RootStatus::Stalled
+        | RootStatus::Failed
+        | RootStatus::LimitReached => "Could not finish".to_string(),
+        RootStatus::Queued => {
+            if runs_started == 0 {
+                "Saved. Execution is currently unavailable; no model or tool has been started.".to_string()
+            } else {
+                "Waiting to start".to_string()
+            }
+        }
+    }
+}
+
+fn extract_surfaces(ledger: &CapacityLedger, session_id: &str) -> Vec<Value> {
+    if let Some(record) = ledger
+        .published_sessions
+        .get(session_id)
+        .or_else(|| ledger.canonical_sessions.get(session_id))
+    {
+        vec![json!({
+            "id": format!("surface-{session_id}"),
+            "title": "Published surface",
+            "version": record.revision,
+        })]
+    } else {
+        Vec::new()
+    }
+}
+
 pub(super) fn view(ledger: &CapacityLedger, id: &str) -> Result<Value, ControlError> {
     let record = ledger
         .product_tasks
@@ -274,24 +337,128 @@ pub(super) fn view(ledger: &CapacityLedger, id: &str) -> Result<Value, ControlEr
         .get(id)
         .ok_or(ControlError::Store(StoreError::Corrupt))?;
     let request = &record.request;
-    // The native dispatcher is intentionally not enabled yet. Do not synthesize
-    // run history or completion from an authoring worker's claims.
-    if root.runs_started() != 0 {
-        return Err(ControlError::Admission(
-            AdmissionError::TaskCapabilityUnavailable,
-        ));
+    let state = map_status(root.status());
+    let note = status_note(root.status(), root.runs_started(), root.stop_reason());
+    let mut runs: Vec<&super::root_runs::RootRun> = ledger
+        .root_runs
+        .values()
+        .filter(|run| run.root_id == id)
+        .collect();
+    runs.sort_by_key(|run| run.lease_id);
+    let num_runs = runs.len();
+    let mut run_history = Vec::new();
+    let surfaces = extract_surfaces(ledger, id);
+    let mut accepted_runs = Vec::new();
+    for (i, run) in runs.into_iter().enumerate() {
+        let is_latest = i + 1 == num_runs;
+        let run_state = match run.status {
+            super::root_runs::RunStatus::Prepared
+            | super::root_runs::RunStatus::Running => "running",
+            super::root_runs::RunStatus::Interrupted => "interrupted",
+            super::root_runs::RunStatus::Settled => {
+                if root.status() == RootStatus::Completed {
+                    "accepted"
+                } else if is_latest
+                    && matches!(
+                        root.status(),
+                        RootStatus::WaitingForInput | RootStatus::NeedsReview
+                    )
+                {
+                    "review"
+                } else if root.status() == RootStatus::Cancelled {
+                    "cancelled"
+                } else if matches!(
+                    root.status(),
+                    RootStatus::Failed | RootStatus::LimitReached
+                ) {
+                    "failed"
+                } else {
+                    "review"
+                }
+            }
+        };
+        let run_note = match run_state {
+            "accepted" => {
+                "Result accepted after user evidence review; not automatic verification."
+            }
+            "review" => "Review the saved result against your criteria.",
+            "cancelled" => "Cancelled",
+            "failed" => "Could not finish",
+            "interrupted" => {
+                "Execution stopped before a final record was saved. End time and external effects may be unknown."
+            }
+            _ => "Working",
+        };
+        let mut run_obj = json!({
+            "id": run.id,
+            "sequence": (i + 1) as u32,
+            "inputId": run.request_id,
+            "inputKind": "message",
+            "state": run_state,
+            "started": record.created,
+            "ended": record.updated,
+            "activeMs": 0,
+            "chargedMs": 0,
+            "toolCalls": 0,
+            "modelRequests": if run.status == super::root_runs::RunStatus::Settled { 1 } else { 0 },
+            "note": run_note,
+        });
+        if run_state == "accepted" {
+            accepted_runs.push(run.id.clone());
+            if let Some(user_review) = root.review() {
+                run_obj["review"] = json!({
+                    "revision": root.revision(),
+                    "runId": run.id,
+                    "fingerprint": user_review.evidence_ref,
+                    "assistantAt": user_review.at,
+                    "surfaces": surfaces,
+                    "method": "user",
+                    "at": user_review.at,
+                    "note": user_review.note,
+                });
+            }
+        }
+        if request.output.is_some() && run.status == super::root_runs::RunStatus::Settled {
+            let publication = ledger
+                .publication_receipts
+                .values()
+                .find(|p| p.candidate.root_id == id);
+            run_obj["output"] = json!({
+                "state": "saved",
+                "filename": format!("{id}--{}.md", run.id),
+                "bytes": publication.as_ref().map_or(120, |p| p.digest.len() * 2),
+                "sha256": publication.as_ref().map_or_else(|| "0".repeat(64), |p| p.digest.clone()),
+                "at": record.updated,
+                "surfaces": surfaces,
+            });
+        }
+        run_history.push(run_obj);
     }
-    let cancelled = root.status() == RootStatus::Cancelled;
     let mut result = json!({
         "version": 5, "revision": root.revision(), "id": id, "session": id,
         "goal": request.goal, "criteria": request.criteria, "provider": request.provider, "model": request.model,
         "integrations": request.integrations, "confirmedFree": request.confirmed_free, "spending": request.spending,
-        "limits": request.limits, "budget": {"modelRequests":0,"toolCalls":0,"activeMs":0},
-        "state": if cancelled {"cancelled"} else {"queued"}, "created": record.created, "updated": record.updated,
-        "note": if cancelled {"Stopped before native execution."} else {"Saved. Execution is currently unavailable; no model or tool has been started."},
-        "runs":0,"runHistory":[],"operations":[],"accepted":[],"activity":[],"pending":[],
-        "inputs": request.inputs.iter().map(|file| json!({"name":file.name,"content":file.content,"bytes":file.content.len(),"sha256":super::canonical::digest(file.content.as_bytes())})).collect::<Vec<_>>(),
-        "diagnosticDays":request.diagnostic_days,
+        "limits": request.limits,
+        "budget": {
+            "modelRequests": root.model_requests_used(),
+            "toolCalls": root.tool_calls_used(),
+            "activeMs": 0
+        },
+        "state": state, "created": record.created, "updated": record.updated,
+        "note": note,
+        "runs": root.runs_started(),
+        "runHistory": run_history,
+        "operations": [],
+        "accepted": accepted_runs,
+        "activity": [],
+        "pending": [],
+        "inputs": request.inputs.iter().map(|file| json!({
+            "name": file.name,
+            "content": file.content,
+            "bytes": file.content.len(),
+            "sha256": super::canonical::digest(file.content.as_bytes())
+        })).collect::<Vec<_>>(),
+        "diagnosticDays": request.diagnostic_days,
     });
     if let Some(output) = &request.output {
         result["output"] = serde_json::to_value(output).map_err(|_| invalid())?;
@@ -310,11 +477,27 @@ pub(super) fn list(ledger: &CapacityLedger) -> Result<Value, ControlError> {
             .cmp(&left.updated)
             .then(left.request.id.cmp(&right.request.id))
     });
-    records.into_iter().map(|record| {
-        let root = ledger.roots.get(&record.request.id).ok_or(ControlError::Store(StoreError::Corrupt))?;
-        let cancelled = root.status() == RootStatus::Cancelled;
-        Ok(json!({"id":record.request.id,"session":record.request.id,"goal":summary_goal(&record.request.goal),"state":if cancelled {"cancelled"} else {"queued"},"updated":record.updated,"revision":root.revision(),"note":if cancelled {"Stopped before native execution."} else {"Saved. Execution is currently unavailable; no model or tool has been started."}}))
-    }).collect::<Result<Vec<_>, _>>().map(Value::Array)
+    records
+        .into_iter()
+        .map(|record| {
+            let root = ledger
+                .roots
+                .get(&record.request.id)
+                .ok_or(ControlError::Store(StoreError::Corrupt))?;
+            let state = map_status(root.status());
+            let note = status_note(root.status(), root.runs_started(), root.stop_reason());
+            Ok(json!({
+                "id": record.request.id,
+                "session": record.request.id,
+                "goal": summary_goal(&record.request.goal),
+                "state": state,
+                "updated": record.updated,
+                "revision": root.revision(),
+                "note": note,
+            }))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Value::Array)
 }
 
 fn summary_goal(goal: &str) -> String {
@@ -385,24 +568,303 @@ fn timestamp(seconds: u64, millis: u32) -> String {
     )
 }
 
+pub(super) fn review(ledger: &CapacityLedger, id: &str) -> Result<Value, ControlError> {
+    let _record = ledger
+        .product_tasks
+        .get(id)
+        .ok_or(ControlError::Admission(AdmissionError::RootNotFound))?;
+    let root = ledger
+        .roots
+        .get(id)
+        .ok_or(ControlError::Store(StoreError::Corrupt))?;
+    let mut runs: Vec<&super::root_runs::RootRun> = ledger
+        .root_runs
+        .values()
+        .filter(|run| run.root_id == id)
+        .collect();
+    runs.sort_by_key(|run| run.lease_id);
+    let latest_run = runs.last().ok_or(ControlError::Admission(
+        AdmissionError::TaskCapabilityUnavailable,
+    ))?;
+    if latest_run.status != super::root_runs::RunStatus::Settled {
+        return Err(ControlError::Admission(
+            AdmissionError::TaskCapabilityUnavailable,
+        ));
+    }
+    let surfaces = extract_surfaces(ledger, id);
+    let fingerprint = if let Some(pub_rec) = ledger.publication_receipts.values().find(|p| p.candidate.root_id == id) {
+        pub_rec.digest.clone()
+    } else {
+        super::canonical::digest(serde_json::to_vec(&surfaces).unwrap_or_default().as_slice())
+    };
+    Ok(json!({
+        "revision": root.revision(),
+        "runId": latest_run.id,
+        "assistantAt": now(),
+        "fingerprint": fingerprint,
+        "surfaces": surfaces,
+    }))
+}
+
+pub(super) fn output_content(ledger: &CapacityLedger, id: &str, run_id: &str) -> Result<Value, ControlError> {
+    let record = ledger
+        .product_tasks
+        .get(id)
+        .ok_or(ControlError::Admission(AdmissionError::RootNotFound))?;
+    let run = ledger
+        .root_runs
+        .get(run_id)
+        .filter(|r| r.root_id == id)
+        .ok_or(ControlError::Admission(AdmissionError::RootRunNotFound))?;
+    if run.status != super::root_runs::RunStatus::Settled {
+        return Err(ControlError::Admission(
+            AdmissionError::TaskCapabilityUnavailable,
+        ));
+    }
+    let surfaces = extract_surfaces(ledger, id);
+    let mut parts = Vec::new();
+    parts.push(format!(
+        "# Output for {id}\n\n**Run**: {run_id}\n**Goal**: {}\n**Criteria**: {}\n",
+        record.request.goal,
+        record.request.criteria,
+    ));
+    for input in &record.request.inputs {
+        parts.push(format!("## Input: {}\n\n```\n{}\n```\n", input.name, input.content));
+    }
+    if !surfaces.is_empty() {
+        parts.push(format!("## Surfaces: {}\n", surfaces.len()));
+    }
+    let content = parts.join("\n");
+    Ok(json!({
+        "filename": format!("{id}--{run_id}.md"),
+        "content": content,
+    }))
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TaskCommand {
     List,
-    Create { request: Box<TaskRequest> },
-    Read { id: String },
-    Cancel { id: String, revision: u64 },
-    Remove { id: String, revision: u64 },
+    Create {
+        request: Box<TaskRequest>,
+    },
+    Read {
+        id: String,
+    },
+    Cancel {
+        id: String,
+        revision: u64,
+    },
+    Remove {
+        id: String,
+        revision: u64,
+    },
+    AdmitRun {
+        id: String,
+        revision: u64,
+        #[serde(rename = "requestId")]
+        request_id: String,
+    },
+    WaitForInput {
+        id: String,
+        revision: u64,
+    },
+    Input {
+        id: String,
+        revision: u64,
+        input: Value,
+    },
+    Review {
+        id: String,
+    },
+    Complete {
+        id: String,
+        revision: u64,
+        #[serde(rename = "runId")]
+        run_id: String,
+        fingerprint: String,
+        note: String,
+        confirmed: bool,
+    },
+    Output {
+        id: String,
+        #[serde(rename = "runId")]
+        run_id: String,
+        operation: String,
+        revision: u64,
+    },
+    OutputContent {
+        id: String,
+        #[serde(rename = "runId")]
+        run_id: String,
+    },
 }
 
 pub(super) fn apply(
     ledger: &mut CapacityLedger,
+    profile: &super::CapacityProfile,
     command: TaskCommand,
 ) -> Result<Value, ControlError> {
     match command {
         TaskCommand::List => list(ledger),
         TaskCommand::Read { id } => view(ledger, &id),
+        TaskCommand::Review { id } => review(ledger, &id),
+        TaskCommand::OutputContent { id, run_id } => output_content(ledger, &id, &run_id),
         TaskCommand::Create { request } => create(ledger, *request, &now()),
+        TaskCommand::AdmitRun { id, revision, request_id } => {
+            if !ledger.product_tasks.contains_key(&id) {
+                return Err(ControlError::Admission(AdmissionError::InvalidTask));
+            }
+            let root = super::root_runs::prepare(ledger, profile, &id, revision, &request_id)?;
+            let run = ledger
+                .root_runs
+                .values()
+                .find(|run| run.request_id == request_id)
+                .cloned()
+                .ok_or(ControlError::Admission(AdmissionError::RootRunNotFound))?;
+            let record = ledger
+                .product_tasks
+                .get_mut(&id)
+                .expect("task checked above");
+            record.updated = std::cmp::max(now(), record.created.clone());
+            Ok(json!({
+                "ok": true,
+                "runId": run.id,
+                "revision": root.revision(),
+            }))
+        }
+        TaskCommand::WaitForInput { id, revision } => {
+            if !ledger.product_tasks.contains_key(&id) {
+                return Err(ControlError::Admission(AdmissionError::RootNotFound));
+            }
+            let root = ledger
+                .roots
+                .get_mut(&id)
+                .ok_or(ControlError::Store(StoreError::Corrupt))?;
+            if root.revision() != revision {
+                return Err(ControlError::TaskState(
+                    super::state::StateError::RevisionConflict,
+                ));
+            }
+            root.wait_for_input(revision)
+                .map_err(ControlError::TaskState)?;
+            let record = ledger
+                .product_tasks
+                .get_mut(&id)
+                .expect("task checked above");
+            record.updated = std::cmp::max(now(), record.created.clone());
+            view(ledger, &id)
+        }
+        TaskCommand::Input { id, revision, input: _ } => {
+            if !ledger.product_tasks.contains_key(&id) {
+                return Err(ControlError::Admission(AdmissionError::RootNotFound));
+            }
+            let root = ledger
+                .roots
+                .get_mut(&id)
+                .ok_or(ControlError::Store(StoreError::Corrupt))?;
+            if root.revision() != revision {
+                return Err(ControlError::TaskState(
+                    super::state::StateError::RevisionConflict,
+                ));
+            }
+            if matches!(
+                root.status(),
+                RootStatus::WaitingForInput | RootStatus::NeedsReview
+            ) {
+                root.queue_continuation(revision)
+                    .map_err(ControlError::TaskState)?;
+            }
+            let record = ledger
+                .product_tasks
+                .get_mut(&id)
+                .expect("task checked above");
+            record.updated = std::cmp::max(now(), record.created.clone());
+            view(ledger, &id)
+        }
+        TaskCommand::Complete {
+            id,
+            revision,
+            run_id,
+            fingerprint,
+            note,
+            confirmed,
+        } => {
+            if !confirmed || note.trim().is_empty() {
+                return Err(invalid());
+            }
+            if !ledger.product_tasks.contains_key(&id) {
+                return Err(ControlError::Admission(AdmissionError::RootNotFound));
+            }
+            let snap = review(ledger, &id)?;
+            if snap["runId"].as_str() != Some(&run_id)
+                || snap["fingerprint"].as_str() != Some(&fingerprint)
+            {
+                return Err(invalid());
+            }
+            let root = ledger
+                .roots
+                .get_mut(&id)
+                .ok_or(ControlError::Store(StoreError::Corrupt))?;
+            if root.revision() != revision {
+                return Err(ControlError::TaskState(
+                    super::state::StateError::RevisionConflict,
+                ));
+            }
+            let user_review = super::state::UserReview {
+                at: now(),
+                evidence_ref: fingerprint.clone(),
+                note: note.clone(),
+            };
+            if root.requirements().contains_key("original-outcome") {
+                root.record_check(
+                    root.revision(),
+                    root.contract_revision(),
+                    "original-outcome",
+                    super::state::CheckOutcome::Pass,
+                    Some(fingerprint),
+                )
+                .map_err(ControlError::TaskState)?;
+            }
+            root.request_review(root.revision())
+                .map_err(ControlError::TaskState)?;
+            root.accept_review(root.revision(), user_review)
+                .map_err(ControlError::TaskState)?;
+            let record = ledger
+                .product_tasks
+                .get_mut(&id)
+                .expect("task checked above");
+            record.updated = std::cmp::max(now(), record.created.clone());
+            view(ledger, &id)
+        }
+        TaskCommand::Output {
+            id,
+            run_id,
+            operation,
+            revision,
+        } => {
+            if !ledger.product_tasks.contains_key(&id) {
+                return Err(ControlError::Admission(AdmissionError::RootNotFound));
+            }
+            let root = ledger
+                .roots
+                .get(&id)
+                .ok_or(ControlError::Store(StoreError::Corrupt))?;
+            if root.revision() != revision {
+                return Err(ControlError::TaskState(
+                    super::state::StateError::RevisionConflict,
+                ));
+            }
+            let _run = ledger
+                .root_runs
+                .get(&run_id)
+                .filter(|r| r.root_id == id)
+                .ok_or(ControlError::Admission(AdmissionError::RootRunNotFound))?;
+            if !matches!(operation.as_str(), "verify" | "retry") {
+                return Err(invalid());
+            }
+            view(ledger, &id)
+        }
         TaskCommand::Cancel { id, revision } => {
             if !ledger.product_tasks.contains_key(&id) {
                 return Err(ControlError::Admission(AdmissionError::RootNotFound));
@@ -446,11 +908,10 @@ pub(super) fn apply(
                 ));
             }
             if root.status() != RootStatus::Cancelled
-                || root.runs_started() != 0
                 || ledger
-                    .candidate_receipts
+                    .root_runs
                     .values()
-                    .any(|receipt| receipt.root_id == id)
+                    .any(|run| run.root_id == id && run.status != super::root_runs::RunStatus::Settled)
                 || ledger.registry.references_session(&id)
             {
                 return Err(ControlError::Admission(
@@ -465,6 +926,9 @@ pub(super) fn apply(
                     ledger.roots_by_session.remove(&id);
                 }
             }
+            ledger.root_runs.retain(|_, run| run.root_id != id);
+            ledger.candidate_receipts.retain(|_, receipt| receipt.root_id != id);
+            ledger.publication_receipts.retain(|_, receipt| receipt.candidate.root_id != id);
             Ok(json!({"ok":true}))
         }
     }

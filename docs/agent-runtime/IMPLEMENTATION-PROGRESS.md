@@ -2,6 +2,36 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Native single-agent Work path, admission, lifecycle, review and output — 2026-10-30
+
+Integrated the next real user-started single-agent Work path using the existing native actor, reasoning supervisor (`reasoner_supervisor.rs`), consent/I/O (`provider_io.rs`), and canonical supervisor (`canonical_supervisor.rs`).
+
+Key achievements and invariants:
+- **Production admission and fail-closed capacity**:
+  - Replaced test-only admission with native production `admit_product_run` (`TaskCommand::AdmitRun` and `ControlHandle::admit_product_run`).
+  - Production startup maintains `CapacityProfile::unconfigured()`. When unconfigured, attempts to admit runs fail closed with `AdmissionError::UnconfiguredResource(Resource::Generation)`, ensuring no execution bypass occurs while task metadata and definitions remain durably managed. Verified in `control::tests::unconfigured_profile_keeps_metadata_available_but_refuses_all_capacity`.
+- **Full task lifecycle and DTO contract compliance**:
+  - `src-tauri/src/control/tasks.rs` and `src-tauri/src/control.rs` now support all required task commands: `List`, `Create`, `Read`, `Cancel`, `Remove`, `AdmitRun`, `WaitForInput`, `Input`, `Review`, `Complete`, `Output`, and `OutputContent`.
+  - DTO mapping strictly adheres to `shared/task-contract.ts`: mapped states (`queued`, `running`, `needs_input`, `completed`, `cancelled`, `failed`, `interrupted`), run history with timestamps, review snapshots with 64-char hex SHA-256 fingerprints, user review verification, output receipts, and usage.
+- **Desktop fetch IPC routing**:
+  - Updated `src/desktop-fetch.ts` to route `/api/tasks/:id/input`, `/api/tasks/:id/review`, `/api/tasks/:id/complete`, `/api/tasks/:id/runs/:runId/output`, and `/api/tasks/:id/runs/:runId/usage` to `control_task`.
+- **Vertical verification with real contained workers**:
+  - `reasoner_supervisor::tests::native_driver_consent_stream_cleanup_and_canonical_publication` now drives the complete single-agent Work path:
+    1. Product run admission via `admit_product_run`.
+    2. Streaming reasoning worker execution with native human consent check and streamed tokens.
+    3. Candidate commit and canonical supervisor run producing published surfaces.
+    4. Worker completion settlement and requirement tracking (`original-outcome` pending).
+    5. Transition to `WaitForInput` (`state: "needs_input"`).
+    6. Review snapshot generation matching `runId` and SHA-256 fingerprint.
+    7. Outcome requirement verification (`original-outcome` -> `Pass`).
+    8. User review acceptance (`state: "completed"`, `accepted: [run_id]`).
+    9. Output content generation preserving original inputs (`prices.csv` with `37.5`), goals, and criteria.
+- **Validation**:
+  - All 151 Rust tests (including all 7 real-worker tests with sandbox helper and Node) passed.
+  - All 325 app tests passed (1 paid test skipped).
+  - `npm run typecheck` passed with 0 errors.
+  - Real-provider contract check failures with local Ollama MLX timeouts retained honestly in receipt `.vak/contracts/record-view-2026-10-30T15-50-26.969Z.json`.
+
 ## Latest main reconciled; next-session handoff — 2026-10-30
 
 Work continues in `/Users/nisheethranjan/Projects/vakyartha-agent-runtime`, branch `codex/agent-runtime-implementation`. Product main through `d8a2955` is included, including its latest app-update, Voice Desk and dictation work; the original main checkout is clean and untouched by this work. [Next-session status, exact boundaries and copyable prompt](NEXT-SESSION.md). [Code audit](CODE-STATUS-AUDIT.md) shows what already exists; reuse it.
