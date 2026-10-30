@@ -691,6 +691,10 @@ enum ActorCommand {
         id: String,
         reply: SyncSender<Result<RootTask, ControlError>>,
     },
+    ReadCandidateReceipt {
+        commit_id: String,
+        reply: SyncSender<Result<Option<CandidateCommitReceipt>, ControlError>>,
+    },
     CheckExecutionFence {
         fence: ExecutionFence,
         reply: SyncSender<Result<(), ControlError>>,
@@ -993,6 +997,20 @@ impl ControlHandle {
         let (reply, response) = sync_channel(1);
         self.commands
             .try_send(ActorCommand::ReadRoot { id, reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    /// Reads a durable receipt for trusted recovery; absence never authorizes replay.
+    pub fn read_candidate_receipt(
+        &self,
+        commit_id: String,
+    ) -> Result<Option<CandidateCommitReceipt>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::ReadCandidateReceipt { commit_id, reply })
             .map_err(queue_error)?;
         response
             .recv_timeout(self.response_timeout)
@@ -2117,6 +2135,14 @@ fn actor_loop(
                     .ok_or(ControlError::Admission(AdmissionError::RootNotFound));
                 let _ = reply.send(result);
             }
+            ActorCommand::ReadCandidateReceipt { commit_id, reply } => {
+                let result = if valid_identity(&commit_id) {
+                    Ok(ledger.candidate_receipts.get(&commit_id).cloned())
+                } else {
+                    Err(ControlError::Admission(AdmissionError::InvalidIdentity))
+                };
+                let _ = reply.send(result);
+            }
             ActorCommand::CheckExecutionFence { fence, reply } => {
                 let result = match ledger.roots.get(fence.root_id()) {
                     None => Err(ControlError::Admission(AdmissionError::RootNotFound)),
@@ -2942,6 +2968,8 @@ mod tests {
         assert_eq!(receipt.root_revision, running.revision());
         assert_eq!(fs::read(data.join("content/sessions/session-candidate/generation-00000000000000000001.json")).unwrap(), first_bytes);
         assert_eq!(handle.commit_candidate(first.clone()).unwrap(), receipt);
+        assert_eq!(handle.read_candidate_receipt("commit-candidate-1".into()).unwrap(), Some(receipt.clone()));
+        assert_eq!(handle.read_candidate_receipt("unknown-commit".into()).unwrap(), None);
 
         let mut conflicting = first.clone();
         conflicting.candidate_bytes = br#"{"session":"different"}"#.to_vec();
@@ -2974,6 +3002,7 @@ mod tests {
         drop(actor);
 
         let recovered = ControlActor::open(&data, "profile-1", profile, 8, timeout).unwrap();
+        assert_eq!(recovered.handle().read_candidate_receipt("commit-candidate-1".into()).unwrap(), Some(receipt.clone()));
         assert_eq!(recovered.handle().commit_candidate(first).unwrap(), receipt);
         drop(recovered);
         fs::remove_dir_all(data).unwrap();

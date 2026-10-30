@@ -40,6 +40,7 @@ use control::{CapacityProfile, ControlActor};
 use control::ControlActor;
 use control::registry::{WorkspaceBinding, WorkspaceGrant, WorkspaceMode, WorkspaceRecord};
 use control::state::{RootCreate, RootTask};
+use control::canonical::CandidateCommitReceipt;
 use engine::{Engine as Sidecar, engine_request, engine_ack, engine_cancel};
 
 /// Closing the window hides it while this is set, so the engine and its
@@ -214,6 +215,23 @@ fn control_read_root(
         .handle()
         .read_root(id)
         .map_err(|_| "Native task was not found or could not be read".to_owned())
+}
+
+/// Reads an exact durable commit receipt through the trusted main/admin window.
+#[tauri::command]
+fn control_read_candidate_receipt(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    commit_id: String,
+) -> Result<Option<CandidateCommitReceipt>, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native task control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .read_candidate_receipt(commit_id)
+        .map_err(|_| "Native commit receipt is unavailable".to_owned())
 }
 
 /// Registers a folder selected by the trusted app window in the native registry.
@@ -572,6 +590,7 @@ pub fn run() {
             backend,
             control_create_root,
             control_read_root,
+            control_read_candidate_receipt,
             control_register_workspace,
             control_bind_workspace,
             control_rebind_workspace,
