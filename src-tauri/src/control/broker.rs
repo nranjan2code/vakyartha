@@ -21,6 +21,7 @@ const MAX_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ModelApi {
+    OllamaLocal,
     OpenAi,
     Anthropic,
     Gemini,
@@ -38,6 +39,7 @@ pub(super) enum ModelApi {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum ModelOperation {
+    OllamaChat,
     Responses,
     ChatCompletions,
     Messages,
@@ -149,11 +151,16 @@ impl NativeHttpClient {
             return Err(BrokerError::RequestTooLarge);
         }
         let body = prepare_generation_body(permit, body)?;
-        let host = url.host_str().ok_or(BrokerError::InvalidEndpoint)?;
-        let addresses = resolve_public_addresses(host)?;
-        let client = build_client(Some((host, &addresses)))?;
+        let client = if permit.provider == ModelApi::OllamaLocal {
+            build_client(None)?
+        } else {
+            let host = url.host_str().ok_or(BrokerError::InvalidEndpoint)?;
+            let addresses = resolve_public_addresses(host)?;
+            build_client(Some((host, &addresses)))?
+        };
         let credential = self.credential(permit.provider)?;
-        let response = apply_provider_auth(client.post(url), permit.provider, &credential)?
+        let request = provider_post(client, url, permit.provider, credential.as_deref())?;
+        let response = request
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(body)
             .send()
@@ -161,29 +168,48 @@ impl NativeHttpClient {
         bounded_stream_response(response)
     }
 
-    fn credential(&self, provider: ModelApi) -> Result<String, BrokerError> {
-        crate::vault::get(&self.service, credential_account(provider), &self.data_dir)
+    fn credential(&self, provider: ModelApi) -> Result<Option<String>, BrokerError> {
+        let Some(account) = credential_account(provider) else {
+            return Ok(None);
+        };
+        crate::vault::get(&self.service, account, &self.data_dir)
             .map_err(|_| BrokerError::CredentialUnavailable)?
             .filter(|value| !value.is_empty())
+            .map(Some)
             .ok_or(BrokerError::CredentialUnavailable)
     }
 }
 
-fn credential_account(provider: ModelApi) -> &'static str {
+fn provider_post(
+    client: Client,
+    url: Url,
+    provider: ModelApi,
+    credential: Option<&str>,
+) -> Result<reqwest::blocking::RequestBuilder, BrokerError> {
+    match (provider, credential) {
+        (ModelApi::OllamaLocal, None) => Ok(client.post(url)),
+        (ModelApi::OllamaLocal, Some(_)) => Err(BrokerError::InvalidPayload),
+        (_, Some(credential)) => apply_provider_auth(client.post(url), provider, credential),
+        (_, None) => Err(BrokerError::CredentialUnavailable),
+    }
+}
+
+fn credential_account(provider: ModelApi) -> Option<&'static str> {
     match provider {
-        ModelApi::OpenAi => "OPENAI_API_KEY",
-        ModelApi::Anthropic => "ANTHROPIC_API_KEY",
-        ModelApi::Gemini => "GEMINI_API_KEY",
-        ModelApi::Mistral => "MISTRAL_API_KEY",
-        ModelApi::Xai => "XAI_API_KEY",
-        ModelApi::DeepSeek => "DEEPSEEK_API_KEY",
-        ModelApi::Groq => "GROQ_API_KEY",
-        ModelApi::Cerebras => "CEREBRAS_API_KEY",
-        ModelApi::OpenRouter => "OPENROUTER_API_KEY",
-        ModelApi::Together => "TOGETHER_API_KEY",
-        ModelApi::Fireworks => "FIREWORKS_API_KEY",
-        ModelApi::Moonshot => "MOONSHOT_API_KEY",
-        ModelApi::DashScope => "DASHSCOPE_API_KEY",
+        ModelApi::OllamaLocal => None,
+        ModelApi::OpenAi => Some("OPENAI_API_KEY"),
+        ModelApi::Anthropic => Some("ANTHROPIC_API_KEY"),
+        ModelApi::Gemini => Some("GEMINI_API_KEY"),
+        ModelApi::Mistral => Some("MISTRAL_API_KEY"),
+        ModelApi::Xai => Some("XAI_API_KEY"),
+        ModelApi::DeepSeek => Some("DEEPSEEK_API_KEY"),
+        ModelApi::Groq => Some("GROQ_API_KEY"),
+        ModelApi::Cerebras => Some("CEREBRAS_API_KEY"),
+        ModelApi::OpenRouter => Some("OPENROUTER_API_KEY"),
+        ModelApi::Together => Some("TOGETHER_API_KEY"),
+        ModelApi::Fireworks => Some("FIREWORKS_API_KEY"),
+        ModelApi::Moonshot => Some("MOONSHOT_API_KEY"),
+        ModelApi::DashScope => Some("DASHSCOPE_API_KEY"),
     }
 }
 
@@ -373,6 +399,9 @@ fn validate_generation_fields(
             "max_tokens",
             "max_completion_tokens",
         ],
+        ModelOperation::OllamaChat => {
+            &["model", "stream", "messages", "tools", "format", "options"]
+        }
         ModelOperation::Messages => &[
             "model",
             "max_tokens",
@@ -415,9 +444,14 @@ fn validate_generation_fields(
     {
         return Err(BrokerError::InvalidPayload);
     }
+    if matches!(permit.operation, ModelOperation::OllamaChat) {
+        validate_ollama_options(permit, object)?;
+    }
     let (content_field, streaming_field) = match permit.operation {
         ModelOperation::Responses => ("input", Some("stream")),
-        ModelOperation::ChatCompletions | ModelOperation::Messages => ("messages", Some("stream")),
+        ModelOperation::ChatCompletions | ModelOperation::OllamaChat | ModelOperation::Messages => {
+            ("messages", Some("stream"))
+        }
         ModelOperation::StreamGenerateContent { .. } => ("contents", None),
     };
     if !object.contains_key(content_field) {
@@ -444,8 +478,16 @@ fn enforce_output_limit(
     permit: &GenerationPermit,
     object: &mut Map<String, Value>,
 ) -> Result<(), BrokerError> {
+    if matches!(permit.operation, ModelOperation::OllamaChat) {
+        let options = object
+            .get_mut("options")
+            .and_then(Value::as_object_mut)
+            .ok_or(BrokerError::InvalidPayload)?;
+        return enforce_token_field(options, "num_predict", permit.max_output_tokens);
+    }
     let disallowed = match permit.operation {
         ModelOperation::Responses => &["max_tokens", "max_completion_tokens"][..],
+        ModelOperation::OllamaChat => &[][..],
         ModelOperation::ChatCompletions if permit.provider == ModelApi::OpenAi => {
             &["max_tokens", "max_output_tokens"][..]
         }
@@ -469,6 +511,7 @@ fn enforce_output_limit(
     }
     let field = match permit.operation {
         ModelOperation::Responses => "max_output_tokens",
+        ModelOperation::OllamaChat => "num_predict",
         ModelOperation::ChatCompletions if permit.provider == ModelApi::OpenAi => {
             "max_completion_tokens"
         }
@@ -535,7 +578,7 @@ fn validate_tool_names(
                 }
                 vec![tool.get("name")]
             }
-            ModelOperation::ChatCompletions => {
+            ModelOperation::ChatCompletions | ModelOperation::OllamaChat => {
                 if tool.get("type").and_then(Value::as_str) != Some("function") {
                     return Err(BrokerError::InvalidPayload);
                 }
@@ -572,7 +615,65 @@ fn validate_tool_names(
     Ok(())
 }
 
+fn validate_ollama_options(
+    permit: &GenerationPermit,
+    object: &Map<String, Value>,
+) -> Result<(), BrokerError> {
+    let options = object
+        .get("options")
+        .and_then(Value::as_object)
+        .ok_or(BrokerError::InvalidPayload)?;
+    const ALLOWED: &[&str] = &[
+        "num_predict",
+        "temperature",
+        "top_p",
+        "top_k",
+        "seed",
+        "stop",
+        "repeat_penalty",
+        "repeat_last_n",
+    ];
+    if options.keys().any(|key| !ALLOWED.contains(&key.as_str())) {
+        return Err(BrokerError::InvalidPayload);
+    }
+    for (name, value) in options {
+        let valid = match name.as_str() {
+            "num_predict" | "top_k" | "seed" | "repeat_last_n" => {
+                value.as_i64().is_some_and(|number| number >= 0)
+            }
+            "temperature" | "top_p" | "repeat_penalty" => value.as_f64().is_some(),
+            "stop" => match value {
+                Value::String(stop) => !stop.is_empty() && stop.len() <= 256,
+                Value::Array(stops) => {
+                    !stops.is_empty()
+                        && stops.len() <= 16
+                        && stops.iter().all(|stop| {
+                            stop.as_str()
+                                .is_some_and(|stop| !stop.is_empty() && stop.len() <= 256)
+                        })
+                }
+                _ => false,
+            },
+            _ => false,
+        };
+        if !valid {
+            return Err(BrokerError::InvalidPayload);
+        }
+    }
+    if options.get("num_predict").is_some_and(|value| {
+        value
+            .as_u64()
+            .is_some_and(|value| value > permit.max_output_tokens as u64)
+    }) {
+        return Err(BrokerError::OutputLimitExceeded);
+    }
+    Ok(())
+}
+
 fn model_endpoint(provider: ModelApi, operation: ModelOperation) -> Result<Url, BrokerError> {
+    if provider == ModelApi::OllamaLocal && operation == ModelOperation::OllamaChat {
+        return validate_endpoint("http://127.0.0.1:11434/api/chat");
+    }
     let (host, path, allowed_query) = match (provider, operation) {
         (ModelApi::OpenAi, ModelOperation::Responses) => {
             ("api.openai.com", "/v1/responses".to_owned(), None)
@@ -688,6 +789,17 @@ fn validate_endpoint_query(
         return Err(BrokerError::InvalidEndpoint);
     }
     let url = Url::parse(endpoint).map_err(|_| BrokerError::InvalidEndpoint)?;
+    if endpoint == "http://127.0.0.1:11434/api/chat"
+        && allowed_query.is_none()
+        && url.scheme() == "http"
+        && url.host_str() == Some("127.0.0.1")
+        && url.port() == Some(11434)
+        && url.path() == "/api/chat"
+        && url.query().is_none()
+        && url.fragment().is_none()
+    {
+        return Ok(url);
+    }
     let host = url.host_str().ok_or(BrokerError::InvalidEndpoint)?;
     let has_user_info = endpoint
         .split_once("://")
@@ -864,8 +976,9 @@ mod tests {
             (ModelApi::Moonshot, "MOONSHOT_API_KEY"),
             (ModelApi::DashScope, "DASHSCOPE_API_KEY"),
         ] {
-            assert_eq!(credential_account(provider), account);
+            assert_eq!(credential_account(provider), Some(account));
         }
+        assert_eq!(credential_account(ModelApi::OllamaLocal), None);
 
         let client = Client::new();
         let request = apply_provider_auth(
@@ -931,8 +1044,9 @@ mod tests {
         let client = NativeHttpClient::new(service, data_dir.clone());
         assert_eq!(
             client.credential(ModelApi::OpenAi).unwrap(),
-            "synthetic-key"
+            Some("synthetic-key".into())
         );
+        assert_eq!(client.credential(ModelApi::OllamaLocal).unwrap(), None);
         assert!(matches!(
             client.credential(ModelApi::Gemini),
             Err(BrokerError::CredentialUnavailable)
@@ -942,6 +1056,43 @@ mod tests {
 
     #[test]
     fn registered_generation_operations_resolve_to_fixed_routes() {
+        assert_eq!(
+            model_endpoint(ModelApi::OllamaLocal, ModelOperation::OllamaChat)
+                .unwrap()
+                .as_str(),
+            "http://127.0.0.1:11434/api/chat"
+        );
+        assert!(matches!(
+            validate_endpoint("http://127.0.0.1:11434/api/show"),
+            Err(BrokerError::InvalidEndpoint)
+        ));
+        assert!(matches!(
+            validate_endpoint("http://127.0.0.1:11415/api/chat"),
+            Err(BrokerError::InvalidEndpoint)
+        ));
+        for endpoint in [
+            "http://localhost:11434/api/chat",
+            "http://[::1]:11434/api/chat",
+            "http://127.0.0.1:11434/api/chat?redirect=https://example.com",
+            "http://127.0.0.1:11434/api/chat/",
+        ] {
+            assert!(validate_endpoint(endpoint).is_err(), "{endpoint}");
+        }
+        let request = provider_post(
+            Client::new(),
+            model_endpoint(ModelApi::OllamaLocal, ModelOperation::OllamaChat).unwrap(),
+            ModelApi::OllamaLocal,
+            None,
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+        assert!(
+            request
+                .headers()
+                .get(reqwest::header::AUTHORIZATION)
+                .is_none()
+        );
         assert_eq!(
             model_endpoint(ModelApi::OpenAi, ModelOperation::Responses)
                 .unwrap()
@@ -978,6 +1129,45 @@ mod tests {
             ),
             Err(BrokerError::UnsupportedOperation)
         ));
+    }
+
+    fn ollama_permit() -> GenerationPermit {
+        GenerationPermit::from_admitted_policy(
+            ModelApi::OllamaLocal,
+            ModelOperation::OllamaChat,
+            "qwen3.5:4b-mlx".into(),
+            2_400,
+            64 * 1024,
+            ["vak_render".into()].into_iter().collect(),
+            BTreeMap::from([
+                ("think".into(), Value::Bool(false)),
+                ("keep_alive".into(), Value::String("30m".into())),
+            ]),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn local_ollama_payload_keeps_fixed_chat_route_and_native_limits() {
+        let permit = ollama_permit();
+        let prepared = prepare_generation_body(
+            &permit,
+            br#"{"model":"qwen3.5:4b-mlx","stream":true,"think":false,"messages":[{"role":"user","content":"synthetic"}],"tools":[{"type":"function","function":{"name":"vak_render","parameters":{"type":"object"}}}],"format":{"type":"object"},"options":{},"keep_alive":"30m"}"#,
+        )
+        .unwrap();
+        let value: Value = serde_json::from_slice(&prepared).unwrap();
+        assert_eq!(value["options"]["num_predict"], 2_400);
+        assert_eq!(value["model"], "qwen3.5:4b-mlx");
+
+        for body in [
+            br#"{"model":"other","stream":true,"think":false,"messages":[],"options":{},"keep_alive":"30m"}"#.as_slice(),
+            br#"{"model":"qwen3.5:4b-mlx","stream":false,"think":false,"messages":[],"options":{},"keep_alive":"30m"}"#.as_slice(),
+            br#"{"model":"qwen3.5:4b-mlx","stream":true,"think":false,"messages":[],"options":{"num_ctx":999999},"keep_alive":"30m"}"#.as_slice(),
+            br#"{"model":"qwen3.5:4b-mlx","stream":true,"think":false,"messages":[],"options":{"num_predict":2401},"keep_alive":"30m"}"#.as_slice(),
+            br#"{"model":"qwen3.5:4b-mlx","stream":true,"think":false,"messages":[],"options":{},"keep_alive":"30m","url":"http://127.0.0.1:11434/api/show"}"#.as_slice(),
+        ] {
+            assert!(prepare_generation_body(&permit, body).is_err());
+        }
     }
 
     #[test]

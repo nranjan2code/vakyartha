@@ -1,5 +1,9 @@
 # Vakyartha handover — 2026-10-30
 
+## Native fixed-loopback local-model transport primitive — 2026-10-30
+
+The inactive native broker now recognizes only `http://127.0.0.1:11434/api/chat` for the local Ollama operation. It disables proxy discovery and redirect following, never retrieves or attaches a credential, pins the model to the permit, requires streaming, caps output tokens, limits worker-supplied generation options and requires native-policy-matched `think`/`keep_alive` fields. macOS Rust tests pass 83/83 with host strict Clippy; Linux Docker passes 85/85 with strict Clippy. This is not dispatch authorization or a live product path: permits, approval, task/budget/cancel/capacity atomicity and private streaming bridge remain absent. The TS provider path is still active; no local model call has used this route and no gate is closed. [Details](agent-runtime/IMPLEMENTATION-PROGRESS.md#fixed-loopback-local-generation-transport-primitive--2026-10-30).
+
 ## Trusted native workspace task-entry IPC — 2026-10-30
 
 The trusted main/admin Tauri windows can register an admitted folder, bind/rebind/revoke a session at expected revisions, read the actor-validated grant, and create a native root task pinned to that grant. The isolated desktop WebKit smoke verifies rebind preserves the old root's grant, rejects stale revisions, and revoke closes grant reads. macOS Rust tests pass 82/82, host strict Clippy and typecheck pass, Linux Docker Rust 1.99.1 tests pass 84/84 with strict Clippy, and `scripts/desktop-check.ts` passes under Node 26.13.0. This remains an unused native seam: product task/workspace reads and writes remain TypeScript-owned, the sidecar bridge is health-only, and no lifecycle, approval, provider, dispatch, or canonical commit path is cut over. No acceptance gate is closed. Details: [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#trusted-native-workspace-rebind-and-revoke--2026-10-30).
