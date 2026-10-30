@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Message, Provider, ProviderEntry } from "@vak/providers";
+import type { HostSessionSnapshot, HostSessionStore } from "@vak/host";
 import type { TaskRunIdentity } from "../shared/task-contract.ts";
 import { emptyShape, type FinopsView, type Rate, type Shape, type Step, type Turn } from "../shared/finops.ts";
 
@@ -29,10 +30,12 @@ export class Finops {
   readonly dir: string;
   readonly file: string;
   readonly warn: (s: string) => void;
-  constructor(dataDir: string, warn: (s: string) => void = () => {}) {
+  readonly nativeSessions?: HostSessionStore;
+  constructor(dataDir: string, warn: (s: string) => void = () => {}, nativeSessions?: HostSessionStore) {
     this.dir = dataDir;
     this.file = path.join(dataDir, "logs", "finops.jsonl");
     this.warn = warn;
+    this.nativeSessions = nativeSessions;
   }
 
   session(id: string): void {
@@ -49,11 +52,15 @@ export class Finops {
           c.turn.ms = performance.now() - c.started;
           try {
             const filename = c.turn.session.replace(/[^\w-]/g, "_").slice(0, 120) || "default";
-            const saved = JSON.parse(readFileSync(path.join(this.dir, "sessions", `${filename}.json`), "utf8")) as { timeline: { kind: string; at: string }[]; messages: Message[] };
-            const reply = saved.timeline.filter((t) => t.kind === "assistant" && Date.parse(t.at) >= Date.parse(c.at) - 50).sort((a, b) => Math.abs(Date.parse(a.at) - Date.parse(c.at)) - Math.abs(Date.parse(b.at) - Date.parse(c.at)))[0];
+            const saved = this.nativeSessions
+              ? (await this.nativeSessions.load(c.turn.session))?.snapshot
+              : JSON.parse(readFileSync(path.join(this.dir, "sessions", `${filename}.json`), "utf8")) as HostSessionSnapshot;
+            if (!saved) throw new Error("Session snapshot is unavailable");
+            const assistantEntries = saved.timeline.filter((t): t is Extract<HostSessionSnapshot["timeline"][number], { kind: "assistant" }> => t.kind === "assistant");
+            const reply = assistantEntries.filter((t) => Date.parse(t.at) >= Date.parse(c.at) - 50).sort((a, b) => Math.abs(Date.parse(a.at) - Date.parse(c.at)) - Math.abs(Date.parse(b.at) - Date.parse(c.at)))[0];
             if (reply) {
               c.turn.at = reply.at;
-              const ordinal = saved.timeline.filter((t) => t.kind === "assistant").indexOf(reply);
+              const ordinal = assistantEntries.indexOf(reply);
               const starts = saved.messages.flatMap((m, i) => m.role === "user" && !m.content.startsWith("[engine]") ? [i] : []);
               c.turn.errors = saved.messages.slice(starts[ordinal], starts[ordinal + 1]).filter((m) => m.role === "tool" && m.isError).length;
             }
@@ -138,7 +145,7 @@ export class Finops {
     return rates;
   }
 
-  view(): FinopsView {
+  async view(): Promise<FinopsView> {
     const turns: Turn[] = [];
     // Ignore only a truncated final record; one corrupt line must not hide other turns.
     for (const f of [`${this.file}.1`, this.file]) if (existsSync(f)) for (const line of readFileSync(f, "utf8").split("\n")) {
@@ -163,10 +170,21 @@ export class Finops {
       while (lo < hi) { const mid = (lo + hi) >>> 1; if (times[mid]! <= at - 1000) lo = mid + 1; else hi = mid; }
       return Number.isFinite(at) && lo < times.length && times[lo]! < at + 1000;
     };
-    const sessionsDir = path.join(this.dir, "sessions");
-    if (existsSync(sessionsDir)) for (const f of readdirSync(sessionsDir).filter((f) => f.endsWith(".json"))) {
+    let sessions: HostSessionSnapshot[];
+    if (this.nativeSessions) {
+      sessions = [];
+      for (const { id } of await this.nativeSessions.list()) {
+        const loaded = await this.nativeSessions.load(id);
+        if (loaded) sessions.push(loaded.snapshot);
+      }
+    } else sessions = (() => {
+        const sessionsDir = path.join(this.dir, "sessions");
+        return existsSync(sessionsDir) ? readdirSync(sessionsDir).filter((f) => f.endsWith(".json")).map((f) => {
+          try { return JSON.parse(readFileSync(path.join(sessionsDir, f), "utf8")) as HostSessionSnapshot; } catch { return undefined; }
+        }).filter((s): s is HostSessionSnapshot => Boolean(s)) : [];
+      })();
+    for (const s of sessions) {
       try {
-        const s = JSON.parse(readFileSync(path.join(sessionsDir, f), "utf8")) as { id: string; messages: Message[]; timeline: { kind: string; at: string; status?: string }[] };
         const starts = s.messages.flatMap((m, i) => m.role === "user" && !m.content.startsWith("[engine]") ? [i] : []);
         const replies = s.timeline.filter((t) => t.kind === "assistant");
         for (let n = 0; n < replies.length; n++) {

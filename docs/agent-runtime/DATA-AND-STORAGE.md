@@ -24,7 +24,8 @@ Inspected `sidecar/workspace-registry.ts`, `sidecar/sandbox-realms.ts`, `sidecar
 | `Project` | UUID, name, canonical folder string, revision and optional shared Realm; current creation requires a folder |
 | `WorkspaceBinding` | Keyed by session ID; folder string, optional project/Realm IDs, mode, sharing flag, revision and access state |
 | `<data>/workspaces.json` | TS-written projects and bindings; no independent stable `workspaceId` entity or durable physical folder identity |
-| `<data>/sessions/` | Host canonical conversations/surfaces via `sessionsDir` |
+| Desktop `<data>/host-sessions/` | Revisioned canonical conversation/surface snapshots written only by the native Rust actor through the framework's `HostSessionStore` adapter |
+| Browser `<data>/sessions/` | Framework host filesystem store used only by browser development; session readers use the active backend |
 | `<data>/tasks/` | Current TS task journals; a task links its canonical session |
 | `<data>/outputs/<task>--<run>.md` | Current private task Markdown outputs with hash/version receipts |
 | `<data>/attachments/<session>/` | Session-owned attachments |
@@ -37,9 +38,11 @@ Direct editing writes admitted originals; copy/review operates in a Realm. Share
 
 The Rust control actor is started with the desktop engine and its current control snapshot is schema 12. It models Project, Workspace, WorkspaceBinding and ProjectMembership as separate records, captures canonical folder identity, and can register workspaces, bind/revoke/rebind a session, change project membership, create/fence roots, and revalidate a grant. Trusted shell commands can use this native state, but the TypeScript `WorkspaceRegistry` still owns the active product workspace routes; do not infer a single-writer cutover from the native registry. Both admission paths reject system/private roots, reserved path components and the app-data root or its ancestors. No sandbox command receives the native grant through an enforced dispatch path yet. See [implementation progress](IMPLEMENTATION-PROGRESS.md) for evidence and limits.
 
-**Current native candidate state (2026-10-30):** the native actor now creates `<private-data>/content/sessions/<session-id>/` and can persist the exact bounded candidate proposal as immutable `generation-<revision>.json` files. The selected revision, digest, execution fence and exact-retry receipt live in the actor's single-writer control snapshot. It retains the current and previous generation and removes unselected generations at recovery. This is an intermediate commit boundary only: current app sessions still use `<private-data>/sessions/` through the framework host; product task runs do not yet call the candidate API, and native candidate bytes are not yet published into that canonical session/surface store. Do not treat the `content/sessions` directory as the current source for chats or surfaced outputs.
+**Current native candidate state (2026-10-30):** the native actor persists exact bounded candidate proposals as immutable `<private-data>/content/sessions/<session-id>/generation-<revision>.json` files. The selected revision, digest, execution fence and exact-retry receipt live in the actor's single-writer control snapshot. This remains an intermediate task commit boundary: product task runs do not yet call the candidate API, and candidate bytes are not published into canonical sessions. Do not treat `content/sessions` as current chat state.
 
-Projection `822622e` now exports a revisioned `HostSessionStore` contract, but no Rust adapter is wired into this app. The active location and writer above remain unchanged; advancing the framework pin alone did not migrate or rewrite local chat data.
+Projection `822622e` exports a revisioned `HostSessionStore`, now wired in desktop mode through the private sidecar pipe to the Rust actor. Compare-and-set revisions, owner-only files, recovery and trusted UI admission protect canonical snapshots; the worker cannot self-admit a chat ID. Browser development continues to use `<data>/sessions/`. FinOps reads canonical snapshots through the active backend rather than assuming a filesystem path.
+
+On first desktop startup, existing `<data>/sessions/*.json` records are inventoried by count, byte size and digest. Import is an explicit copy after user confirmation; source bytes remain in place, and a durable receipt makes retries idempotent. Declining leaves old records untouched and starts a fresh chat. Desktop WebKit smoke verifies the prompt, native list/load/save path, source preservation and private file mode. This storage cutover does not complete task authority, publication, workspace registry or recovery UI.
 
 ## 3. Target entity relationships
 
@@ -85,9 +88,10 @@ Keep the same private root, with explicit bounded namespaces. `control/registry`
     roots/<root-id>/              authoritative task/run/child/evidence state
     recovery/                     prepared commits and exact uncertain ops
   content/
-    sessions/<session-id>/        opaque canonical snapshots; semantic owner is framework
+    sessions/<session-id>/        immutable task candidate generations; not canonical chat state
     inputs/<root-id>/             explicitly captured immutable input snapshots
     outputs/<root-id>/<run-id>/   private task exports and receipts
+  host-sessions/                  native-written canonical chat snapshots
   attachments/<session-id>/       existing session-owned asset namespace
   media/                         existing media owner; no second asset library
   apps/                          existing package owner

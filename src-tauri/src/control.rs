@@ -15,6 +15,7 @@ const STORE_VERSION: u16 = 12;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 const MAX_CANDIDATE_RECEIPTS: usize = 10_000;
+const MAX_ADMITTED_HOST_SESSIONS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub mod bridge;
@@ -23,6 +24,7 @@ mod broker;
 pub mod canonical;
 pub mod delegation;
 pub mod folder;
+pub mod host_sessions;
 pub mod registry;
 pub mod state;
 use delegation::{ChildProposal, DelegationPolicy};
@@ -64,6 +66,7 @@ pub enum AdmissionError {
     CandidateCommitLedgerFull,
     CandidateIdentityConflict,
     CandidateSessionMismatch,
+    HostSessionAdmissionFull,
     CanonicalRevisionConflict,
     CanonicalSessionOwned,
     InvalidCandidate,
@@ -572,6 +575,8 @@ pub enum StoreError {
     Io(String),
     Corrupt,
     ProfileMismatch,
+    SessionRevisionConflict,
+    SessionMigrationConflict,
     WriterAlreadyOpen,
     TooLarge,
     UnsupportedDurability,
@@ -694,6 +699,35 @@ enum ActorCommand {
     ReadCandidateReceipt {
         commit_id: String,
         reply: SyncSender<Result<Option<CandidateCommitReceipt>, ControlError>>,
+    },
+    AdmitHostSession {
+        session_id: String,
+        reply: SyncSender<Result<(), ControlError>>,
+    },
+    LoadHostSession {
+        session_id: String,
+        reply: SyncSender<Result<Option<(u64, serde_json::Value)>, ControlError>>,
+    },
+    SaveHostSession {
+        session_id: String,
+        expected_revision: u64,
+        snapshot: serde_json::Value,
+        reply: SyncSender<Result<u64, ControlError>>,
+    },
+    ListHostSessions {
+        reply: SyncSender<Result<Vec<host_sessions::SessionSummary>, ControlError>>,
+    },
+    RemoveHostSession {
+        session_id: String,
+        expected_revision: Option<u64>,
+        reply: SyncSender<Result<(), ControlError>>,
+    },
+    PlanHostSessionMigration {
+        reply: SyncSender<Result<host_sessions::SessionMigrationPlan, ControlError>>,
+    },
+    MigrateHostSessions {
+        expected_digest: String,
+        reply: SyncSender<Result<host_sessions::SessionMigrationReceipt, ControlError>>,
     },
     CheckExecutionFence {
         fence: ExecutionFence,
@@ -1017,6 +1051,50 @@ impl ControlHandle {
             .map_err(response_error)?
     }
 
+    /// A trusted shell must admit a chat before the sidecar may read or mutate its snapshot.
+    /// Admission is process-ephemeral and therefore cleared on actor restart.
+    pub fn admit_host_session(&self, session_id: String) -> Result<(), ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::AdmitHostSession { session_id, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    pub fn load_host_session(&self, session_id: String) -> Result<Option<(u64, serde_json::Value)>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::LoadHostSession { session_id, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    pub fn save_host_session(&self, session_id: String, expected_revision: u64, snapshot: serde_json::Value) -> Result<u64, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::SaveHostSession { session_id, expected_revision, snapshot, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    pub fn list_host_sessions(&self) -> Result<Vec<host_sessions::SessionSummary>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::ListHostSessions { reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    pub fn remove_host_session(&self, session_id: String, expected_revision: Option<u64>) -> Result<(), ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::RemoveHostSession { session_id, expected_revision, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    pub fn plan_host_session_migration(&self) -> Result<host_sessions::SessionMigrationPlan, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::PlanHostSessionMigration { reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    pub fn migrate_host_sessions(&self, expected_digest: String) -> Result<host_sessions::SessionMigrationReceipt, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::MigrateHostSessions { expected_digest, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
     /// Durably charges one model request before dispatch. A duplicate result
     /// is an idempotency signal, never permission to replay the request.
     pub fn charge_model_request(
@@ -1311,10 +1389,11 @@ impl ControlActor {
         }
         let canonical_content = CanonicalContentStore::open(data_dir, &ledger.canonical_sessions)
             .map_err(canonical_store_error)?;
+        let host_sessions = host_sessions::HostSessionStore::open(data_dir)?;
         let (commands, receiver) = sync_channel(queue_capacity);
         let join = thread::Builder::new()
             .name("vak-control".into())
-            .spawn(move || actor_loop(receiver, &mut store, profile, ledger, workspace_admission, canonical_content))
+            .spawn(move || actor_loop(receiver, &mut store, profile, ledger, workspace_admission, canonical_content, host_sessions))
             .map_err(store_io)?;
         Ok(Self {
             handle: ControlHandle {
@@ -1475,7 +1554,9 @@ fn actor_loop(
     mut ledger: CapacityLedger,
     workspace_admission: WorkspaceAdmissionPolicy,
     mut canonical_content: CanonicalContentStore,
+    mut host_sessions: host_sessions::HostSessionStore,
 ) {
+    let mut admitted_host_sessions = std::collections::BTreeSet::new();
     while let Ok(command) = receiver.recv() {
         match command {
             ActorCommand::Shutdown => break,
@@ -2142,6 +2223,61 @@ fn actor_loop(
                     Err(ControlError::Admission(AdmissionError::InvalidIdentity))
                 };
                 let _ = reply.send(result);
+            }
+            ActorCommand::AdmitHostSession { session_id, reply } => {
+                let result = if !valid_identity(&session_id) {
+                    Err(ControlError::Admission(AdmissionError::InvalidIdentity))
+                } else if !admitted_host_sessions.contains(&session_id)
+                    && admitted_host_sessions.len() >= MAX_ADMITTED_HOST_SESSIONS
+                {
+                    Err(ControlError::Admission(AdmissionError::HostSessionAdmissionFull))
+                } else {
+                    admitted_host_sessions.insert(session_id);
+                    Ok(())
+                };
+                let _ = reply.send(result);
+            }
+            ActorCommand::LoadHostSession { session_id, reply } => {
+                let result = if admitted_host_sessions.contains(&session_id) {
+                    host_sessions.load(&session_id).map_err(ControlError::Store)
+                } else {
+                    Err(ControlError::Admission(AdmissionError::InvalidIdentity))
+                };
+                let _ = reply.send(result);
+            }
+            ActorCommand::SaveHostSession { session_id, expected_revision, snapshot, reply } => {
+                let result = if admitted_host_sessions.contains(&session_id) {
+                    host_sessions.save(&session_id, expected_revision, snapshot).map_err(ControlError::Store)
+                } else {
+                    Err(ControlError::Admission(AdmissionError::InvalidIdentity))
+                };
+                let fatal = matches!(&result, Err(ControlError::Store(error)) if !matches!(error, StoreError::SessionRevisionConflict | StoreError::TooLarge));
+                let _ = reply.send(result);
+                if fatal { break; }
+            }
+            ActorCommand::ListHostSessions { reply } => {
+                let _ = reply.send(Ok(host_sessions.list()));
+            }
+            ActorCommand::RemoveHostSession { session_id, expected_revision, reply } => {
+                let result = if admitted_host_sessions.contains(&session_id) {
+                    host_sessions.remove(&session_id, expected_revision).map_err(ControlError::Store)
+                } else {
+                    Err(ControlError::Admission(AdmissionError::InvalidIdentity))
+                };
+                let fatal = matches!(&result, Err(ControlError::Store(error)) if !matches!(error, StoreError::SessionRevisionConflict));
+                if result.is_ok() { admitted_host_sessions.remove(&session_id); }
+                let _ = reply.send(result);
+                if fatal { break; }
+            }
+            ActorCommand::PlanHostSessionMigration { reply } => {
+                let result = host_sessions.plan_legacy_import().map_err(ControlError::Store);
+                let _ = reply.send(result);
+            }
+            ActorCommand::MigrateHostSessions { expected_digest, reply } => {
+                let result = host_sessions.migrate_legacy(&expected_digest).map_err(ControlError::Store);
+                let fatal = matches!(&result, Err(ControlError::Store(error)) if !matches!(error, StoreError::SessionMigrationConflict | StoreError::TooLarge));
+                let _ = reply.send(result);
+                if fatal { break; }
             }
             ActorCommand::CheckExecutionFence { fence, reply } => {
                 let result = match ledger.roots.get(fence.root_id()) {
@@ -2844,6 +2980,35 @@ mod tests {
         drop(actor);
         let reopened = open().unwrap();
         drop(reopened);
+        fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
+    fn host_sessions_require_trusted_admission_and_use_revisioned_durable_storage() {
+        let data = temp_data_dir();
+        let timeout = Duration::from_secs(2);
+        let open = || ControlActor::open(&data, "unconfigured-v1", CapacityProfile::unconfigured().unwrap(), 16, timeout);
+        let actor = open().unwrap();
+        let handle = actor.handle();
+        assert!(matches!(handle.load_host_session("chat-1".into()), Err(ControlError::Admission(AdmissionError::InvalidIdentity))));
+        handle.admit_host_session("chat-1".into()).unwrap();
+        let snapshot = serde_json::json!({"id":"chat-1","title":"Revenue","created":"2026-10-30T00:00:00.000Z","updated":"2026-10-30T00:00:01.000Z","messages":[],"timeline":[],"surfaces":[],"external":[]});
+        assert_eq!(handle.save_host_session("chat-1".into(), 0, snapshot.clone()), Ok(1));
+        assert_eq!(handle.load_host_session("chat-1".into()), Ok(Some((1, snapshot))));
+        assert_eq!(handle.list_host_sessions().unwrap().len(), 1);
+        let stale = serde_json::json!({"id":"chat-1","title":"stale","created":"2026-10-30T00:00:00.000Z","updated":"2026-10-30T00:00:02.000Z","messages":[],"timeline":[],"surfaces":[],"external":[]});
+        assert_eq!(handle.save_host_session("chat-1".into(), 0, stale), Err(ControlError::Store(StoreError::SessionRevisionConflict)));
+        drop(actor);
+
+        let recovered = open().unwrap();
+        let handle = recovered.handle();
+        assert!(matches!(handle.load_host_session("chat-1".into()), Err(ControlError::Admission(AdmissionError::InvalidIdentity))));
+        handle.admit_host_session("chat-1".into()).unwrap();
+        assert_eq!(handle.load_host_session("chat-1".into()).unwrap().unwrap().0, 1);
+        assert_eq!(handle.remove_host_session("chat-1".into(), Some(0)), Err(ControlError::Store(StoreError::SessionRevisionConflict)));
+        handle.remove_host_session("chat-1".into(), Some(1)).unwrap();
+        assert!(handle.list_host_sessions().unwrap().is_empty());
+        drop(recovered);
         fs::remove_dir_all(data).unwrap();
     }
 

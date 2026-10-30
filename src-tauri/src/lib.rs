@@ -41,6 +41,7 @@ use control::ControlActor;
 use control::registry::{WorkspaceBinding, WorkspaceGrant, WorkspaceMode, WorkspaceRecord};
 use control::state::{RootCreate, RootTask};
 use control::canonical::CandidateCommitReceipt;
+use control::host_sessions::{SessionMigrationPlan, SessionMigrationReceipt, SessionSummary};
 use engine::{Engine as Sidecar, engine_request, engine_ack, engine_cancel};
 
 /// Closing the window hides it while this is set, so the engine and its
@@ -232,6 +233,39 @@ fn control_read_candidate_receipt(
         .handle()
         .read_candidate_receipt(commit_id)
         .map_err(|_| "Native commit receipt is unavailable".to_owned())
+}
+
+/// Admits the selected chat ID from a trusted UI window for native snapshot access.
+#[tauri::command]
+fn control_admit_host_session(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    session_id: String,
+) -> Result<(), String> {
+    engine::main_window(&window)?;
+    let actor = app.try_state::<ControlActor>().ok_or_else(|| "Native session storage is unavailable".to_owned())?;
+    actor.handle().admit_host_session(session_id).map_err(|_| "Native chat admission was refused".to_owned())
+}
+
+#[tauri::command]
+fn control_list_host_sessions(window: tauri::WebviewWindow, app: AppHandle) -> Result<Vec<SessionSummary>, String> {
+    engine::main_window(&window)?;
+    let actor = app.try_state::<ControlActor>().ok_or_else(|| "Native session storage is unavailable".to_owned())?;
+    actor.handle().list_host_sessions().map_err(|_| "Native chat summaries are unavailable".to_owned())
+}
+
+#[tauri::command]
+fn control_plan_host_session_migration(window: tauri::WebviewWindow, app: AppHandle) -> Result<SessionMigrationPlan, String> {
+    engine::main_window(&window)?;
+    let actor = app.try_state::<ControlActor>().ok_or_else(|| "Native session storage is unavailable".to_owned())?;
+    actor.handle().plan_host_session_migration().map_err(|_| "Saved chats could not be safely inspected".to_owned())
+}
+
+#[tauri::command]
+fn control_migrate_host_sessions(window: tauri::WebviewWindow, app: AppHandle, expected_digest: String) -> Result<SessionMigrationReceipt, String> {
+    engine::main_window(&window)?;
+    let actor = app.try_state::<ControlActor>().ok_or_else(|| "Native session storage is unavailable".to_owned())?;
+    actor.handle().migrate_host_sessions(expected_digest).map_err(|_| "Saved chats changed during migration or could not be copied safely".to_owned())
 }
 
 /// Registers a folder selected by the trusted app window in the native registry.
@@ -591,6 +625,10 @@ pub fn run() {
             control_create_root,
             control_read_root,
             control_read_candidate_receipt,
+            control_admit_host_session,
+            control_list_host_sessions,
+            control_plan_host_session_migration,
+            control_migrate_host_sessions,
             control_register_workspace,
             control_bind_workspace,
             control_rebind_workspace,

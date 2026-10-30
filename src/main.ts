@@ -13,7 +13,7 @@ import { defineVakElements, renderMarkdown, type VakActionDetail, VakClient, typ
 import { ArtifactsPage } from "./artifacts-page.ts";
 import { AppsPage } from "./apps-page.ts";
 import { Canvas } from "./canvas.ts";
-import { connect, openExternal, setKeepRunning } from "./backend.ts";
+import { admitNativeChat, connect, migrateNativeSessions, openExternal, planNativeSessionMigration, setKeepRunning } from "./backend.ts";
 import { $, api, ask, engine, prefs, setBackend } from "./core.ts";
 import { choose, current, fillPicker, labelOf, loadProviders, modelErrors, parseChoice, providers } from "./models.ts";
 import { icon, tile } from "./icons.ts";
@@ -47,6 +47,15 @@ const chatsNav = $<HTMLElement>("chats");
 let client: VakClient;
 // ?session=… opens that chat: the link the MCP server and the bench hand out.
 let session = new URLSearchParams(location.search).get("session") ?? prefs.get("session") ?? crypto.randomUUID();
+const admittedSessions = new Map<string, Promise<void>>();
+function admitSession(id: string): Promise<void> {
+  let pending = admittedSessions.get(id);
+  if (!pending) {
+    pending = admitNativeChat(id).catch((error: unknown) => { admittedSessions.delete(id); throw error; });
+    admittedSessions.set(id, pending);
+  }
+  return pending;
+}
 const mounted = new Map<string, VakSurfaceElement>();
 const remoteVersions = new Map<string, number>();
 const canvas = new Canvas(() => session, () => client.store);
@@ -276,7 +285,9 @@ async function loadChats(): Promise<void> {
     open.addEventListener("click", () => void openChat(c.id));
     row.querySelector<HTMLButtonElement>(".del")!.addEventListener("click", async () => {
       if (!(await ask(`Delete “${c.title}”?`, "Delete"))) return;
+      await admitSession(c.id);
       await api(`/api/sessions/${encodeURIComponent(c.id)}`, { method: "DELETE" });
+      admittedSessions.delete(c.id);
       await api(`/api/workspaces/bindings/${encodeURIComponent(c.id)}`, { method: "DELETE" }).catch(() => {});
       drafts.clear(c.id);
       if (c.id === session) newChat();
@@ -312,6 +323,7 @@ function newChat(): void {
   $("workspace").hidden = false;
   clearThread();
   session = crypto.randomUUID();
+  void admitSession(session).catch((error: unknown) => report(`chat admission: ${String(error)}`));
   attached = [];
   showAttached();
   drafts.begin(session);
@@ -335,6 +347,7 @@ async function newProjectChat(projectId: string, folder: string): Promise<void> 
   clearThread();
   const newId = crypto.randomUUID();
   session = newId;
+  await admitSession(newId);
   attached = [];
   showAttached();
   drafts.begin(session);
@@ -366,6 +379,11 @@ async function openChat(id: string, keepLibrary = false, redraw = false): Promis
   if (id === session && mounted.size && !redraw) { canvas.restore(); tasksPanel.selectionChanged(); return; }
   clearThread();
   session = id;
+  try { await admitSession(id); }
+  catch (err) {
+    if (session === id) showNotice("This chat could not be opened.", String((err as Error).message ?? err));
+    return;
+  }
   drafts.begin(session);
   prefs.set("session", id);
   void workspacesPanel.updateForSession(id);
@@ -812,9 +830,13 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
   }
 }
 
-function submit(text: string): void {
+async function submit(text: string): Promise<void> {
   let t = text.trim();
   if (!t && !attached.length) return;
+  const targetSession = session;
+  try { await admitSession(targetSession); }
+  catch (err) { showNotice("This chat is not available for editing.", String((err as Error).message ?? err)); return; }
+  if (session !== targetSession) return;
   if (tasksPanel.owns(session)) {
     void tasksPanel.input(t).then(() => { input.value = ""; autosize(); }).catch((err) => tasksPanel.error((err as Error).message));
     return;
@@ -873,7 +895,7 @@ input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     if (dictationState().state !== "idle") return void stopDictation();
-    submit(input.value);
+    void submit(input.value);
   }
 });
 $<HTMLFormElement>("composer").addEventListener("submit", (e) => {
@@ -881,7 +903,7 @@ $<HTMLFormElement>("composer").addEventListener("submit", (e) => {
   // Enter while dictating finishes the dictation; the next Enter sends.
   if (dictationState().state !== "idle") return void stopDictation();
   if (isRunning(session)) stopRun(session);
-  else submit(input.value);
+  else void submit(input.value);
 });
 $<HTMLButtonElement>("new-chat").addEventListener("click", newChat);
 $<HTMLButtonElement>("open-settings").addEventListener("click", () => void switchNavTab("settings"));
@@ -1835,7 +1857,25 @@ async function start(): Promise<void> {
   fillPicker();
   updateSend();
   try {
+    const migration = await planNativeSessionMigration();
+    if (migration && migration.session_count > 0 && !migration.already_migrated) {
+      const bytes = `${(migration.bytes / 1024).toFixed(1)} KiB`;
+      if (await ask(`Copy ${migration.session_count} saved chat${migration.session_count === 1 ? "" : "s"} (${bytes}) into native app storage? The originals stay in place.`, "Copy saved chats")) {
+        const receipt = await migrateNativeSessions(migration.source_digest);
+        showNotice("Saved chats copied", `${receipt.imported} chat${receipt.imported === 1 ? "" : "s"} copied. Original files remain untouched.`);
+      } else {
+        session = crypto.randomUUID();
+        prefs.set("session", session);
+        showNotice("Saved chats not copied", "Your previous chat files remain in the old folder. This window will start a new chat.");
+      }
+    }
+  } catch (err) {
+    showNotice("Saved chats need attention", String((err as Error).message ?? err));
+    return;
+  }
+  try {
     setBackend(await connect());
+    await admitSession(session);
   } catch (err) {
     showNotice("The engine is not running.", String((err as Error).message ?? err));
     return;

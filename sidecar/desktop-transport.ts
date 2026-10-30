@@ -3,7 +3,7 @@
 import type { Readable, Writable } from "node:stream";
 import { randomUUID } from "node:crypto";
 import type { ProviderTransport, ProviderTransportContext } from "@vak/providers";
-import type { HostCandidateCommitRequest, HostCandidateCommitReceipt } from "@vak/host";
+import type { HostCandidateCommitRequest, HostCandidateCommitReceipt, HostSessionSnapshot, HostSessionStore, SessionSummary } from "@vak/host";
 import { DESKTOP_PROTOCOL } from "../shared/desktop-protocol.ts";
 export { DESKTOP_PROTOCOL };
 
@@ -28,9 +28,9 @@ const PROVIDER_OPERATIONS: Record<string, Map<string, string>> = {
 };
 type Pending = { controller: AbortController; ack?: () => void };
 type ControlHealth = { status: "ready" | "unavailable" | "overloaded" };
-type ControlResult = ControlHealth | { status: "committed"; receipt: HostCandidateCommitReceipt };
+type ControlResult = ControlHealth | { status: "committed"; receipt: HostCandidateCommitReceipt } | { status: "loaded"; revision: number; snapshot: HostSessionSnapshot } | { status: "saved"; revision: number } | { status: "listed"; sessions: SessionSummary[] } | { status: "removed" };
 type CandidateIdentity = { commitId: string; session: string; rootId: string; rootRevision: number; contractRevision: number; cancellationEpoch: number; expectedCanonicalRevision: number };
-type ControlPending = { kind: "health" | "candidate"; candidate?: CandidateIdentity; resolve(value: ControlResult): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
+type ControlPending = { kind: "health" | "candidate" | "session"; candidate?: CandidateIdentity; accept?: (frame: Record<string, unknown>) => ControlResult; resolve(value: ControlResult): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 type ProviderPending = {
   resolve(response: Response): void;
   reject(error: Error): void;
@@ -45,7 +45,7 @@ type ProviderPending = {
   abort?: () => void;
 };
 
-export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth>; commitCandidate(candidate: HostCandidateCommitRequest): Promise<HostCandidateCommitReceipt>; providerFetch: ProviderTransport } {
+export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth>; commitCandidate(candidate: HostCandidateCommitRequest): Promise<HostCandidateCommitReceipt>; hostSessionStore: HostSessionStore; providerFetch: ProviderTransport } {
   const active = new Map<string, Pending>();
   const controlPending = new Map<string, ControlPending>();
   const providerPending = new Map<string, ProviderPending>();
@@ -148,6 +148,71 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
       return result.receipt;
     });
   }
+  function sessionCall(operation: Record<string, unknown>, accept: (frame: Record<string, unknown>) => ControlResult): Promise<ControlResult> {
+    if (closed) return Promise.reject(new Error("Native control connection closed"));
+    if (controlPending.size >= 16) return Promise.reject(new Error("Native control queue is full"));
+    const id = `ctl-${randomUUID()}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        controlPending.delete(id);
+        reject(new Error("Native session operation timed out"));
+      }, 30_000);
+      timer.unref();
+      controlPending.set(id, { kind: "session", accept, resolve, reject, timer });
+      void send({ id, type: "control_request", operation }).catch((error: unknown) => {
+        const pending = controlPending.get(id);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        controlPending.delete(id);
+        pending.reject(error instanceof Error ? error : new Error("Native session request failed"));
+      });
+    });
+  }
+  const hostSessionStore: HostSessionStore = {
+    async load(id) {
+      try {
+        const result = await sessionCall({ session_load: { session_id: id } }, (frame) => {
+          if (frame.status !== "loaded" || !Number.isSafeInteger(frame.revision) || Number(frame.revision) < 1 || !frame.snapshot || typeof frame.snapshot !== "object" || Array.isArray(frame.snapshot)) throw new Error("Invalid native session snapshot");
+          return { status: "loaded", revision: Number(frame.revision), snapshot: frame.snapshot as HostSessionSnapshot };
+        });
+        if (result.status !== "loaded") throw new Error("Invalid native session load response");
+        return { revision: result.revision, snapshot: result.snapshot };
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("session_not_found")) return undefined;
+        throw error;
+      }
+    },
+    async save(snapshot, expectedRevision) {
+      if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || Buffer.byteLength(JSON.stringify(snapshot)) > 8 * 1024 * 1024) throw new Error("Native session snapshot is invalid or exceeds 8 MiB");
+      const result = await sessionCall({ session_save: { session_id: snapshot.id, expected_revision: expectedRevision, snapshot } }, (frame) => {
+        if (frame.status !== "saved" || !Number.isSafeInteger(frame.revision) || Number(frame.revision) !== expectedRevision + 1) throw new Error(typeof frame.error === "string" ? `Native session save refused: ${frame.error}` : "Invalid native session save response");
+        return { status: "saved", revision: Number(frame.revision) };
+      });
+      if (result.status !== "saved") throw new Error("Invalid native session save response");
+      return result.revision;
+    },
+    async list() {
+      const result = await sessionCall({ session_list: {} }, (frame) => {
+        if (frame.status !== "listed" || !Array.isArray(frame.sessions) || frame.sessions.length > 10_000) throw new Error("Invalid native session index");
+        const sessions = frame.sessions.map((entry): SessionSummary => {
+          if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Invalid native session summary");
+          const item = entry as Record<string, unknown>;
+          if (Object.keys(item).length !== 3 || typeof item.id !== "string" || typeof item.title !== "string" || typeof item.updated !== "string") throw new Error("Invalid native session summary");
+          return { id: item.id, title: item.title, updated: item.updated };
+        });
+        return { status: "listed", sessions };
+      });
+      if (result.status !== "listed") throw new Error("Invalid native session list response");
+      return result.sessions;
+    },
+    async remove(id, expectedRevision) {
+      const result = await sessionCall({ session_remove: { session_id: id, expected_revision: expectedRevision ?? null } }, (frame) => {
+        if (frame.status !== "removed") throw new Error(typeof frame.error === "string" ? `Native session removal refused: ${frame.error}` : "Invalid native session removal response");
+        return { status: "removed" };
+      });
+      if (result.status !== "removed") throw new Error("Invalid native session removal response");
+    },
+  };
   const providerFetch: ProviderTransport = (provider, input, init = {}, context?: ProviderTransportContext) => {
     if (closed) return Promise.reject(new Error("Native provider transport is unavailable"));
     if (providerPending.size >= MAX_PROVIDER_CALLS) return Promise.reject(new Error("Native provider queue is full"));
@@ -286,10 +351,16 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
     const f = frame as Record<string, unknown>, id = f.id;
     if (f.v !== DESKTOP_PROTOCOL || typeof id !== "string" || !ID.test(id)) throw new Error("Incompatible desktop frame");
     if (f.type === "control_response") {
-      if (!id.startsWith("ctl-") || !["ready", "unavailable", "overloaded", "committed", "refused"].includes(String(f.status))) throw new Error("Invalid native control response");
+      if (!id.startsWith("ctl-") || !["ready", "unavailable", "overloaded", "committed", "refused", "loaded", "saved", "listed", "removed"].includes(String(f.status))) throw new Error("Invalid native control response");
       const pending = controlPending.get(id);
       if (pending) {
-        const expectedKeys = pending.kind === "health" ? ["v", "id", "type", "status"] : f.status === "committed" ? ["v", "id", "type", "status", "receipt"] : ["v", "id", "type", "status", "error"];
+        const expectedKeys = pending.kind === "health" ? ["v", "id", "type", "status"]
+          : pending.kind === "candidate" ? f.status === "committed" ? ["v", "id", "type", "status", "receipt"] : ["v", "id", "type", "status", "error"]
+            : f.status === "loaded" ? ["v", "id", "type", "status", "revision", "snapshot"]
+              : f.status === "saved" ? ["v", "id", "type", "status", "revision"]
+                : f.status === "listed" ? ["v", "id", "type", "status", "sessions"]
+                  : f.status === "removed" ? ["v", "id", "type", "status"]
+                    : ["v", "id", "type", "status", "error"];
         if (Object.keys(f).length !== expectedKeys.length || Object.keys(f).some((key) => !expectedKeys.includes(key))) throw new Error("Invalid native control response fields");
         if (pending.kind === "health" && !["ready", "unavailable", "overloaded"].includes(String(f.status))) throw new Error("Unexpected native health response");
         if (pending.kind === "candidate" && f.status === "committed") {
@@ -304,15 +375,18 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
             || receipt.canonical_revision !== identity.expectedCanonicalRevision + 1
             || typeof receipt.digest !== "string" || !/^[a-f0-9]{64}$/.test(receipt.digest)
             || typeof receipt.request_fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(receipt.request_fingerprint)) throw new Error("Invalid native candidate receipt");
-        } else if (pending.kind === "candidate" && (typeof f.error !== "string" || f.error.length > 128)) throw new Error("Invalid native candidate refusal");
+        } else if ((pending.kind === "candidate" || pending.kind === "session") && !["committed", "loaded", "saved", "listed", "removed"].includes(String(f.status)) && (typeof f.error !== "string" || f.error.length > 128)) throw new Error("Invalid native control refusal");
         clearTimeout(pending.timer);
         controlPending.delete(id);
-        if (f.status === "committed") {
+        if (pending.kind === "session") {
+          if (["refused", "unavailable", "overloaded"].includes(String(f.status))) pending.reject(new Error(`Native session operation ${String(f.status)}: ${String(f.error)}`));
+          else pending.resolve(pending.accept!(f));
+        } else if (f.status === "committed") {
           const receipt = f.receipt as { canonical_revision: number; root_revision: number };
           pending.resolve({ status: "committed", receipt: { canonicalRevision: receipt.canonical_revision, rootRevision: receipt.root_revision } });
         } else if (pending.kind === "candidate" && f.status === "refused") pending.reject(new Error(`Native candidate commit refused: ${String(f.error)}`));
         else pending.resolve({ status: f.status as ControlHealth["status"] });
-      } else if (Object.keys(f).some((key) => !["v", "id", "type", "status", "receipt", "error"].includes(key))) {
+      } else if (Object.keys(f).some((key) => !["v", "id", "type", "status", "receipt", "error", "revision", "snapshot", "sessions"].includes(key))) {
         throw new Error("Invalid late native control response");
       }
       return;
@@ -423,5 +497,5 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
   input.on("end", close);
   input.on("error", (error) => { close(); failed(error); });
   output.on("error", (error) => { close(); failed(error); });
-  return { close, pingControl, commitCandidate, providerFetch };
+  return { close, pingControl, commitCandidate, hostSessionStore, providerFetch };
 }

@@ -34,7 +34,7 @@ test("app observer persists each model step, preserves events, and never saves c
       assert.equal(events.at(-1)?.type, "done");
     }
   });
-  const turns = ledger.view().turns;
+  const turns = (await ledger.view()).turns;
   assert.equal(turns.length, 1);
   const turn = turns[0]!;
   assert.equal(turn.session, "chat-a");
@@ -47,7 +47,7 @@ test("app observer persists each model step, preserves events, and never saves c
   assert.ok(Math.abs(estimateCost(turn, ledger.rates())! - .000584) < 1e-12);
   const raw = readFileSync(path.join(dir, "logs/finops.jsonl"), "utf8");
   assert.doesNotMatch(raw, /private|answer|surface|fetched/);
-  assert.equal(new Finops(dir).view().turns[0]?.steps.length, 2);
+  assert.equal((await new Finops(dir).view()).turns[0]?.steps.length, 2);
 });
 
 test("overlapping chats have independent ledgers and incomplete paid streams stay unknown", async (t) => {
@@ -61,7 +61,7 @@ test("overlapping chats have independent ledgers and incomplete paid streams sta
     ledger.session(model);
     try { for await (const _ of observed.stream({ model, messages: [] })) { /* consume */ } } catch { /* engine can recover */ }
   })));
-  const turns = ledger.view().turns;
+  const turns = (await ledger.view()).turns;
   assert.equal(turns.length, 2);
   assert.equal(turns.find((x) => x.session === "broken")?.complete, false);
   assert.equal(turns.find((x) => x.session === "working")?.complete, true);
@@ -76,14 +76,14 @@ test("legacy sessions show context growth and repairs without inventing tokens; 
     { role: "user", content: "hi" }, { role: "assistant", content: "", toolCalls: [{ id: "x", name: "vak_render", arguments: "{}" }] },
     { role: "tool", toolName: "vak_render", content: "invalid", isError: true }, { role: "assistant", content: "fixed" },
   ] }));
-  const old = ledger.view().turns[0]!;
+  const old = (await ledger.view()).turns[0]!;
   assert.equal(old.source, "reconstructed"); assert.equal(old.steps.length, 2); assert.equal(old.context.user, 2); assert.equal(old.errors, 1);
   assert.equal(old.steps[0]?.input, undefined);
   assert.equal(estimateCost(old, []), undefined);
   await ledger.chat(async () => { ledger.session("chat"); for await (const _ of ledger.observe(provider, false).stream({ model: "model", messages: [] })) { /* consume */ } });
-  assert.equal(ledger.view().turns.length, 1);
-  assert.equal(ledger.view().turns[0]?.source, "recorded");
-  assert.equal(ledger.view().turns[0]?.errors, 1);
+  assert.equal((await ledger.view()).turns.length, 1);
+  assert.equal((await ledger.view()).turns[0]?.source, "recorded");
+  assert.equal((await ledger.view()).turns[0]?.errors, 1);
 });
 
 test("rates reject invalid numbers and zero is distinct from unavailable cost", (t) => {
@@ -186,7 +186,7 @@ test("run accounting isolates overlapping runs and keeps absent, partial and unp
     await new Promise((resolve) => setTimeout(resolve, runId === "run-one" ? 10 : 1));
     for await (const _ of observed.stream({ model: "model", messages: [] })) { /* consume */ }
   }, { taskId: "one-task", runId })));
-  const view = ledger.view();
+  const view = await ledger.view();
   assert.equal(view.turns.length, 2);
   for (const runId of ["run-one", "run-two"]) {
     assert.equal(view.turns.filter((turn) => turn.task?.runId === runId).length, 1);
@@ -195,7 +195,7 @@ test("run accounting isolates overlapping runs and keeps absent, partial and unp
   assert.equal(runUsage(view, "another-task", "run-one").requests, 0);
   assert.equal(runUsage(view, "one-task", "missing").estimatedModelUsd, undefined);
   ledger.setRate({ provider: "fake", model: "model", input: 2, cached: .2, output: 8 });
-  assert.ok(runUsage(ledger.view(), "one-task", "run-one").estimatedModelUsd! > 0);
+  assert.ok(runUsage(await ledger.view(), "one-task", "run-one").estimatedModelUsd! > 0);
   view.turns[0]!.complete = false;
   const partial = runUsage(view, "one-task", view.turns[0]!.task!.runId);
   assert.equal(partial.input, undefined); assert.equal(partial.estimatedModelUsd, undefined);
@@ -203,7 +203,7 @@ test("run accounting isolates overlapping runs and keeps absent, partial and unp
   assert.throws(() => parseRunUsage({ requests: 1, estimatedModelUsd: Infinity }));
 });
 
-test("history deduplication keeps session, provider and strict timestamp-skew boundaries", (t) => {
+test("history deduplication keeps session, provider and strict timestamp-skew boundaries", async (t) => {
   const { dir, ledger } = manager(t);
   mkdirSync(path.join(dir, "sessions")); mkdirSync(path.join(dir, "logs"));
   const at = Date.UTC(2026, 0, 1);
@@ -211,7 +211,7 @@ test("history deduplication keeps session, provider and strict timestamp-skew bo
   // Out-of-order ledger timestamps must not affect matching.
   writeFileSync(ledger.file, turns.reverse().map((turn) => JSON.stringify(turn)).join("\n"));
   for (let n = 0; n < 5; n++) writeFileSync(path.join(dir, "sessions", `chat-${n}.json`), JSON.stringify({ id: `chat-${n}`, timeline: [{ kind: "assistant", at: new Date(at).toISOString(), status: `${n === 4 ? "other" : "fake"} · model · 1.0s` }], messages: [{ role: "user", content: "test" }, { role: "assistant", content: "reply" }] }));
-  const view = ledger.view();
+  const view = await ledger.view();
   assert.deepEqual(view.turns.filter((turn) => turn.source === "reconstructed").map((turn) => turn.session).sort(), ["chat-2", "chat-3", "chat-4"]);
   assert.equal(view.turns.filter((turn) => turn.source === "recorded").length, 4);
 });

@@ -15,6 +15,34 @@ export const inTauri = isTauri();
 /** Desktop traffic uses private IPC; browser development retains same-origin fetch. */
 export const engineFetch: typeof fetch = (input, init) => inTauri ? desktopFetch(input, init) : fetch(input, init);
 
+/** Opens a narrow native snapshot capability for a chat selected by the trusted UI. */
+export async function admitNativeChat(sessionId: string): Promise<void> {
+  if (inTauri) await invoke("control_admit_host_session", { sessionId });
+}
+
+export interface NativeSessionMigrationPlan {
+  session_count: number;
+  bytes: number;
+  source_digest: string;
+  already_migrated: boolean;
+}
+
+export interface NativeSessionMigrationReceipt {
+  imported: number;
+  already_present: number;
+  bytes: number;
+  source_digest: string;
+}
+
+export async function planNativeSessionMigration(): Promise<NativeSessionMigrationPlan | undefined> {
+  return inTauri ? await invoke<NativeSessionMigrationPlan>("control_plan_host_session_migration") : undefined;
+}
+
+export async function migrateNativeSessions(expectedDigest: string): Promise<NativeSessionMigrationReceipt> {
+  if (!inTauri) throw new Error("Native session migration is available only in the desktop app");
+  return await invoke<NativeSessionMigrationReceipt>("control_migrate_host_sessions", { expectedDigest });
+}
+
 export async function connect(): Promise<Backend> {
   if (inTauri) return await invoke<Backend>("backend");
   const url = new URLSearchParams(location.search).get("backend");

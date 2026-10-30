@@ -15,6 +15,10 @@ if (!existsSync(path.join(root, `src-tauri/binaries/vaksb-${host}`))) await run(
 await run("cargo", ["build", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "tauri/custom-protocol"], { env: { ...process.env, TAURI_CONFIG: JSON.stringify({ identifier: `com.nranjan2code.vakyartha.runtime-check-${path.basename(out).slice(-6).toLowerCase()}`, app: { windows: [{ label: "main", visible: false }] } }) } });
 mkdirSync(workspace);
 mkdirSync(nextWorkspace);
+mkdirSync(path.join(out, "sessions"));
+const legacyChat = path.join(out, "sessions", "legacy-chat.json");
+const legacyBytes = Buffer.from(JSON.stringify({ id: "legacy-chat", title: "Preserved legacy chat", created: "2026-10-30T00:00:00.000Z", updated: "2026-10-30T00:00:01.000Z", messages: [], timeline: [], surfaces: [], external: [] }));
+writeFileSync(legacyChat, legacyBytes, { mode: 0o600 });
 const log = path.join(out, "logs/engine.log"), stderr = createWriteStream(path.join(out, "native.stderr"), { mode: 0o600 });
 const probe = path.join(out, "desktop-probe.js");
 writeFileSync(probe, readFileSync(path.join(root, "scripts/desktop-probe.js"), "utf8").replaceAll("__WORKSPACE__", JSON.stringify(workspace)).replaceAll("__NEXT_WORKSPACE__", JSON.stringify(nextWorkspace)), { mode: 0o600 });
@@ -28,6 +32,8 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.ok(existsSync(log) && readFileSync(log, "utf8").includes("NATIVE_PRIVATE_PASS"), `Native probe failed; see ${out}`);
+  assert.deepEqual(readFileSync(legacyChat), legacyBytes, "Legacy chat source was changed during migration");
+  assert.equal(statSync(path.join(out, "host-sessions", "session-legacy-chat.json")).mode & 0o077, 0, "Native chat storage permissions are too broad");
   const folder = path.join(out, "attachments/ipc-check"), uploads = readdirSync(folder).filter((file) => file.endsWith(".wav"));
   assert.equal(uploads.length, 1);
   const expected = Buffer.alloc(1024 * 1024 + 44);
@@ -41,7 +47,7 @@ try {
     try { const found = await run("lsof", ["-a", "-p", id, "-iTCP", "-sTCP:LISTEN", "-Fn"]); throw new Error(`Engine has a TCP listener: ${found.stdout}`); }
     catch (error) { if ((error as { code?: number; stdout?: string }).code !== 1 || (error as { stdout?: string }).stdout) throw error; }
   }
-  writeFileSync(path.join(out, "receipt.json"), JSON.stringify({ privateIpc: true, canonicalProjection: true, webkitRendering: true, finops: true, binaryReceipt: true, nodeTcpListeners: 0 }, null, 2), { mode: 0o600 });
+  writeFileSync(path.join(out, "receipt.json"), JSON.stringify({ privateIpc: true, canonicalProjection: true, nativeSessionStore: true, nonDestructiveSessionMigration: true, webkitRendering: true, finops: true, binaryReceipt: true, nodeTcpListeners: 0 }, null, 2), { mode: 0o600 });
 } finally {
   child.kill("SIGTERM");
   if (child.exitCode === null) await new Promise((resolve) => child.once("exit", resolve));

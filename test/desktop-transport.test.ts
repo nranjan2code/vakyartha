@@ -115,6 +115,35 @@ test("native candidate commit sends only the fenced proposal and validates its d
   assert.deepEqual(await pending, { canonicalRevision: 1, rootRevision: 2 });
 });
 
+test("native host session adapter uses typed revisioned operations and summaries", async (t) => {
+  const input = new PassThrough(), output = new PassThrough();
+  let raw = "";
+  const requests: Record<string, unknown>[] = [];
+  const bridge = desktopTransport(async () => new Response(null), "token", input, output, (error) => { throw error; });
+  t.after(() => bridge.close());
+  output.on("data", (chunk) => {
+    raw += String(chunk);
+    while (raw.includes("\n")) {
+      const index = raw.indexOf("\n"), request = JSON.parse(raw.slice(0, index)) as Record<string, unknown>;
+      raw = raw.slice(index + 1);
+      requests.push(request);
+      const operation = request.operation as Record<string, unknown>;
+      const status = "session_save" in operation ? "saved" : "session_load" in operation ? "loaded" : "session_list" in operation ? "listed" : "removed";
+      const response = status === "saved" ? { revision: 1 }
+        : status === "loaded" ? { revision: 1, snapshot: { id: "chat-1", title: "Chat", created: "2026-10-30T00:00:00.000Z", updated: "2026-10-30T00:00:01.000Z", messages: [], timeline: [], surfaces: [], external: [] } }
+          : status === "listed" ? { sessions: [{ id: "chat-1", title: "Chat", updated: "2026-10-30T00:00:01.000Z" }] } : {};
+      input.write(JSON.stringify({ v: DESKTOP_PROTOCOL, id: request.id, type: "control_response", status, ...response }) + "\n");
+    }
+  });
+  const snapshot = { id: "chat-1", title: "Chat", created: "2026-10-30T00:00:00.000Z", updated: "2026-10-30T00:00:01.000Z", messages: [], timeline: [], surfaces: [], external: [] };
+  assert.equal(await bridge.hostSessionStore.save(snapshot, 0), 1);
+  assert.deepEqual(await bridge.hostSessionStore.load("chat-1"), { revision: 1, snapshot });
+  assert.deepEqual(await bridge.hostSessionStore.list(), [{ id: "chat-1", title: "Chat", updated: "2026-10-30T00:00:01.000Z" }]);
+  await bridge.hostSessionStore.remove("chat-1", 1);
+  assert.deepEqual(requests.map((request) => Object.keys(request.operation as object)[0]), ["session_save", "session_load", "session_list", "session_remove"]);
+  assert.equal("token" in requests[0]!, false);
+});
+
 test("native provider transport strips credentials and streams bounded response chunks", async (t) => {
   const input = new PassThrough(), output = new PassThrough();
   const frames: Record<string, unknown>[] = [];

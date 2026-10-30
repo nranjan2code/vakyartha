@@ -7,7 +7,7 @@ import { AppToolResults } from "./app-tool-results.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { createFetchHandler, type HostCandidateCommitRequest, type HostCandidateCommitReceipt, type HostRequest, type HostResponse } from "@vak/host";
+import { createFetchHandler, type HostCandidateCommitRequest, type HostCandidateCommitReceipt, type HostRequest, type HostResponse, type HostSessionStore } from "@vak/host";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createHost, json, readJson } from "@vak/host";
@@ -69,6 +69,8 @@ export interface AppServerOptions {
   providerTransport?: ProviderTransport;
   /** Native sole-writer boundary for a completed candidate. */
   candidateCommit?: (request: HostCandidateCommitRequest) => Promise<HostCandidateCommitReceipt>;
+  /** Native sole-writer boundary for desktop chat snapshots. */
+  nativeSessionStore?: HostSessionStore;
   /** Built UI to serve at / (the playground); none: API only. */
   uiDir?: string;
   appName?: string;
@@ -232,7 +234,7 @@ ${skills.index()}`;
   };
 
   const profiles = new ProfileCache(opts.profilesPath ?? path.join(dataDir, "models.json"));
-  const finops = new Finops(dataDir, log);
+  const finops = new Finops(dataDir, log, opts.nativeSessionStore);
   const channels = new Channels({
     env: process.env,
     providers: () => withProviderTransport(providersFromEnv(), opts.providerTransport).map(entry => ({ ...entry, make: options => skills.provider(entry.make(options)) })),
@@ -298,7 +300,7 @@ ${skills.index()}`;
     profiles,
     instructions: INSTRUCTIONS,
     transcripts: opts.transcriptsDir ?? path.join(dataDir, "transcripts"),
-    sessionsDir: path.join(dataDir, "sessions"),
+    ...(opts.nativeSessionStore ? { sessionStore: opts.nativeSessionStore } : { sessionsDir: path.join(dataDir, "sessions") }),
     token,
     allowSessionMutation: (session) => !tasks?.owns(session),
     commitCandidate: opts.candidateCommit,
@@ -387,7 +389,7 @@ ${skills.index()}`;
       try {
         const task = tasks!.get(usage[1]!);
         if (!task.runHistory.some((run) => run.id === usage[2])) throw new Error("Run not found in this task");
-        json(res, 200, runUsage(finops.view(), task.id, usage[2]!));
+        json(res, 200, runUsage(await finops.view(), task.id, usage[2]!));
       } catch (err) { json(res, 400, { error: (err as Error).message }); }
       return true;
     }
@@ -519,9 +521,9 @@ ${skills.index()}`;
 
   async function finopsRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
     if (url.pathname !== "/api/finops") return false;
-    if (req.method === "GET") json(res, 200, finops.view());
+    if (req.method === "GET") json(res, 200, await finops.view());
     else if (req.method === "PUT") {
-      try { finops.setRate(await readJson(req)); json(res, 200, finops.view()); }
+      try { finops.setRate(await readJson(req)); json(res, 200, await finops.view()); }
       catch (err) { json(res, 400, { error: (err as Error).message }); }
     } else json(res, 405, { error: "method not allowed" });
     return true;

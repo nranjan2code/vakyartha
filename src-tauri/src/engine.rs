@@ -104,8 +104,10 @@ fn control_error_status(error: &ControlError) -> ControlStatus {
             | AdmissionError::CandidateSessionMismatch
             | AdmissionError::CanonicalRevisionConflict
             | AdmissionError::CanonicalSessionOwned
-            | AdmissionError::InvalidCandidate,
+            | AdmissionError::InvalidCandidate
+            | AdmissionError::InvalidIdentity,
         )
+        | ControlError::Store(StoreError::SessionRevisionConflict | StoreError::TooLarge)
         | ControlError::TaskState(
             StateError::ExecutionFenceStale | StateError::WorkspaceGrantStale,
         ) => ControlStatus::Refused,
@@ -135,6 +137,8 @@ fn control_error_code(error: &ControlError) -> &'static str {
         ControlError::TaskState(StateError::InvalidTransition(_)) => "root_not_running",
         ControlError::Admission(AdmissionError::InvalidCandidate) => "invalid_candidate",
         ControlError::Store(StoreError::TooLarge) => "candidate_too_large",
+        ControlError::Store(StoreError::SessionRevisionConflict) => "session_revision_conflict",
+        ControlError::Admission(AdmissionError::InvalidIdentity) => "invalid_session_identity",
         ControlError::Store(StoreError::UnsupportedDurability) => "durability_unavailable",
         _ => "native_control_unavailable",
     }
@@ -250,6 +254,36 @@ pub fn start(mut cmd: Command, control: Option<ControlHandle>) -> Engine {
                         ),
                     }
                 }
+                ControlOperation::SessionLoad { session_id } => match control.as_ref() {
+                    Some(actor) => match actor.load_host_session(session_id) {
+                        Ok(Some((revision, snapshot))) => bridge::Response::session_snapshot(
+                            &request.id, ControlStatus::Loaded, Some(revision), Some(snapshot), None),
+                        Ok(None) => bridge::Response::session_snapshot(&request.id, ControlStatus::Refused, None, None, Some("session_not_found")),
+                        Err(error) => bridge::Response::session_snapshot(&request.id, control_error_status(&error), None, None, Some(control_error_code(&error))),
+                    },
+                    None => bridge::Response::session_snapshot(&request.id, ControlStatus::Unavailable, None, None, Some("native_control_unavailable")),
+                },
+                ControlOperation::SessionSave { session_id, expected_revision, snapshot } => match control.as_ref() {
+                    Some(actor) => match actor.save_host_session(session_id, expected_revision, snapshot) {
+                        Ok(revision) => bridge::Response::session_snapshot(&request.id, ControlStatus::Saved, Some(revision), None, None),
+                        Err(error) => bridge::Response::session_snapshot(&request.id, control_error_status(&error), None, None, Some(control_error_code(&error))),
+                    },
+                    None => bridge::Response::session_snapshot(&request.id, ControlStatus::Unavailable, None, None, Some("native_control_unavailable")),
+                },
+                ControlOperation::SessionList {} => match control.as_ref() {
+                    Some(actor) => match actor.list_host_sessions() {
+                        Ok(sessions) => bridge::Response::sessions(&request.id, sessions),
+                        Err(error) => bridge::Response::session_snapshot(&request.id, control_error_status(&error), None, None, Some(control_error_code(&error))),
+                    },
+                    None => bridge::Response::session_snapshot(&request.id, ControlStatus::Unavailable, None, None, Some("native_control_unavailable")),
+                },
+                ControlOperation::SessionRemove { session_id, expected_revision } => match control.as_ref() {
+                    Some(actor) => match actor.remove_host_session(session_id, expected_revision) {
+                        Ok(()) => bridge::Response::session_snapshot(&request.id, ControlStatus::Removed, None, None, None),
+                        Err(error) => bridge::Response::session_snapshot(&request.id, control_error_status(&error), None, None, Some(control_error_code(&error))),
+                    },
+                    None => bridge::Response::session_snapshot(&request.id, ControlStatus::Unavailable, None, None, Some("native_control_unavailable")),
+                },
             };
             let response = serde_json::to_value(response).unwrap();
             let writer = control_writer.lock().unwrap().clone();
@@ -276,6 +310,12 @@ pub fn start(mut cmd: Command, control: Option<ControlHandle>) -> Engine {
                         let response = match request.operation {
                             ControlOperation::Health => bridge::Response::new(&request.id, ControlStatus::Overloaded),
                             ControlOperation::CandidateCommit(_) => bridge::Response::candidate(
+                                &request.id,
+                                ControlStatus::Overloaded,
+                                None,
+                                Some("native_control_queue_full"),
+                            ),
+                            _ => bridge::Response::candidate(
                                 &request.id,
                                 ControlStatus::Overloaded,
                                 None,

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use super::canonical::{CandidateCommitReceipt, CandidateCommitRequest};
 use super::state::ExecutionFence;
 use super::canonical;
+use super::host_sessions::SessionSummary;
 
 pub const PROTOCOL_VERSION: u8 = 2;
 pub const MAX_HEALTH_FRAME_BYTES: usize = 4096;
@@ -56,6 +57,10 @@ pub struct Request {
 pub enum Operation {
     Health,
     CandidateCommit(CandidateCommit),
+    SessionLoad { session_id: String },
+    SessionSave { session_id: String, expected_revision: u64, snapshot: serde_json::Value },
+    SessionList {},
+    SessionRemove { session_id: String, expected_revision: Option<u64> },
 }
 
 impl Request {
@@ -101,6 +106,16 @@ impl Request {
             Operation::CandidateCommit(candidate) => {
                 candidate.clone().into_request().map(|_| ())
             }
+            Operation::SessionLoad { session_id } | Operation::SessionRemove { session_id, .. }
+                if canonical::validate_identity(session_id) => Ok(()),
+            Operation::SessionLoad { .. } | Operation::SessionRemove { .. } => Err("invalid_session_identity"),
+            Operation::SessionSave { session_id, snapshot, .. }
+                if canonical::validate_identity(session_id)
+                    && snapshot.is_object()
+                    && serde_json::to_vec(snapshot).is_ok_and(|bytes| bytes.len() <= MAX_CANDIDATE_BYTES) => Ok(()),
+            Operation::SessionSave { .. } => Err("invalid_or_oversized_session"),
+            Operation::SessionList {} if frame_len <= MAX_HEALTH_FRAME_BYTES => Ok(()),
+            Operation::SessionList {} => Err("control_frame_too_large"),
         }
     }
 }
@@ -113,6 +128,10 @@ pub enum Status {
     Overloaded,
     Committed,
     Refused,
+    Loaded,
+    Saved,
+    Listed,
+    Removed,
 }
 
 #[derive(Serialize)]
@@ -127,6 +146,12 @@ pub struct Response<'a> {
     pub receipt: Option<CandidateCommitReceipt>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sessions: Option<Vec<SessionSummary>>,
 }
 
 impl<'a> Response<'a> {
@@ -138,6 +163,9 @@ impl<'a> Response<'a> {
             status,
             receipt: None,
             error: None,
+            revision: None,
+            snapshot: None,
+            sessions: None,
         }
     }
 
@@ -149,7 +177,18 @@ impl<'a> Response<'a> {
             status,
             receipt,
             error,
+            revision: None,
+            snapshot: None,
+            sessions: None,
         }
+    }
+
+    pub fn session_snapshot(id: &'a str, status: Status, revision: Option<u64>, snapshot: Option<serde_json::Value>, error: Option<&'a str>) -> Self {
+        Self { revision, snapshot, ..Self::candidate(id, status, None, error) }
+    }
+
+    pub fn sessions(id: &'a str, sessions: Vec<SessionSummary>) -> Self {
+        Self { sessions: Some(sessions), ..Self::candidate(id, Status::Listed, None, None) }
     }
 }
 
@@ -236,5 +275,22 @@ mod tests {
             Request::decode(&oversized),
             Err("candidate_too_large_or_invalid")
         );
+    }
+
+    #[test]
+    fn session_frames_are_typed_bounded_and_revision_fenced() {
+        let request: Request = serde_json::from_value(serde_json::json!({
+            "v": PROTOCOL_VERSION, "id":"ctl-session", "type":"control_request",
+            "operation":{"session_save":{"session_id":"chat-1","expected_revision":4,"snapshot":{"id":"chat-1"}}}
+        })).unwrap();
+        assert!(request.validate(1024).is_ok());
+        let bad: Request = serde_json::from_value(serde_json::json!({
+            "v": PROTOCOL_VERSION, "id":"ctl-session", "type":"control_request",
+            "operation":{"session_save":{"session_id":"../bad","expected_revision":0,"snapshot":{}}}
+        })).unwrap();
+        assert!(bad.validate(1024).is_err());
+        let response = serde_json::to_value(Response::session_snapshot("ctl-session", Status::Loaded, Some(4), Some(serde_json::json!({"id":"chat-1"})), None)).unwrap();
+        assert_eq!(response["revision"], 4);
+        assert_eq!(response["snapshot"]["id"], "chat-1");
     }
 }

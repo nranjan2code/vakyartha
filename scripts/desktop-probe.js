@@ -15,7 +15,16 @@
  const check=(v,m)=>{if(!v)throw Error(m)};
  const wait=async(fn)=>{for(let i=0;i<100;i++){if(fn())return;await new Promise(r=>setTimeout(r,50));}throw Error('native UI did not settle')};
  try{
+ await wait(()=>document.querySelector('#ask[open]'));
+ check(document.querySelector('#ask-text').textContent.includes('Copy 1 saved chat'),'legacy chat migration was not disclosed');
+ document.getElementById('ask-ok').click();
+ await wait(()=>!document.querySelector('#ask[open]'));
   const backend=await ipc.invoke('backend');check(backend.url==='vak://localhost','unexpected backend');
+ const nativeSessions=await ipc.invoke('control_list_host_sessions');
+ check(nativeSessions.some(s=>s.id==='legacy-chat'&&s.title==='Preserved legacy chat'),'confirmed legacy migration was not visible in native session index');
+  await ipc.invoke('control_admit_host_session',{sessionId:'legacy-chat'});
+ const legacyView=await request('/api/sessions/legacy-chat');
+ check(legacyView.status===200&&legacyView.data.id==='legacy-chat','migrated native session could not be reopened');
   const nativeRequest={id:'native-ipc-task',goal:'Verify native task control',criteria:'Create and read one bounded task',run_limit:1,budget_limits:{model_requests:1,tool_calls:1},requirements:[{id:'native-readback',mandatory:true,contract_revision:1,outcome:'pending',receipt:null}],delegation:{mode:'disabled',max_children:0}};
   const nativeTask=await ipc.invoke('control_create_root',{request:nativeRequest});
   check(nativeTask.id==='native-ipc-task'&&nativeTask.status==='queued','native task creation failed');
@@ -57,8 +66,10 @@
   try{await ipc.invoke('control_create_root',{request:{...nativeRequest,id:'native-ipc-unknown',unexpected:true}});unknownFieldAccepted=true;}catch{}
   check(!unknownFieldAccepted,'native task decoder accepted an unknown field');
   const info=await request('/api/info');check(info.status===200,'private info failed');
+ await ipc.invoke('control_admit_host_session',{sessionId:'ipc-check'});
   const projected=await request('/api/project','POST',{session:'ipc-check',args:{surface:'ipc-card',title:'Private transport check',nodes:[{id:'root',type:'card',props:{title:'Private transport check',body:'Ready'}}]}});
   check(projected.status===200&&projected.data.diagnostics.length===0,'canonical projection failed');
+ const hostSessions=await ipc.invoke('control_list_host_sessions');check(hostSessions.some(s=>s.id==='ipc-check'),'session snapshot was not persisted by native actor');
   window.dispatchEvent(new CustomEvent('vak:media-chat',{detail:'ipc-check'}));
   // Hidden WebKit pauses animation frames; use the public synchronous render
   // hook, as the existing off-screen canvas checks do. Keep the content check.
