@@ -2,6 +2,10 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## App provider transport injection seam — 2026-10-30
+
+Added optional `AppServerOptions.providerTransport` and route it through both the model/voice/skill-evaluation provider factory and the channel provider factory via one helper. Host injection overrides factory-supplied transport while preserving per-turn options such as Ollama `think`; without a callback the existing provider construction is unchanged. Focused tests pass 2/2. Under the pinned Node 26.13.0 Linux ARM64 Docker environment, the full app suite passes 256/256 runnable tests (21 platform/feature-gated skips) and typecheck passes. The desktop sidecar has not yet supplied the Rust private-pipe bridge, so this seam remains dormant and providers still use default fetch in product execution. It does not close mediation, authority, budget, cancellation or outcome gates.
+
 ## One-use approval ticket design refinement — 2026-10-30
 
 Exact-request binding will use native ownership of the normalized bounded bytes, not a digest dependency. Rust stages one opaque in-memory ticket, presents a bounded operation preview in the trusted UI, and dispatches only those unchanged bytes after an allow-once decision plus current task/workspace fence and durable budget/dispatch intent. Pending tickets do not survive actor restart; existing root recovery marks active work interrupted, so a new request and approval are required. This is a design decision only: no ticket or UI path is implemented and no dependency was added. See the approval and dispatch sections in [implementation design](IMPLEMENTATION-DESIGN.md).

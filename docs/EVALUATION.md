@@ -12,6 +12,8 @@ The pinned Projection source does export provider-aware transport injection (`Pr
 
 Projection commit `c51987b` extends that callback with a stable logical operation ID and attempt number across retries. A focused regression passes; pinned framework suite/replay passes 414/414, and Node 26.13.0 Docker app typecheck passes. The callback is not yet injected by Vakyartha; no request was mediated and this provides no evidence of billing deduplication, approval, security, or original user-outcome success.
 
+Vakyartha now exposes an optional app-server provider transport and passes it through the chat, voice, skill-evaluation and channel provider factories. Two focused tests pass. The full app suite passes 256/256 runnable tests with 21 platform/feature-gated skips, and typecheck passes in Node 26.13.0 Linux ARM64 Docker. The callback is not supplied by the desktop sidecar, and direct fetch remains active. This verifies dependency injection only, not native mediation or any original user outcome.
+
 ## Agent runtime design documentation — 2026-10-29
 
 [Design package](agent-runtime/README.md) records proposed single-agent/delegated architecture, Rust-first implementation/removal/delivery design, folder/storage/IA, drift/stopping, QoS, aggregate resource admission/observability and independent acceptance gates, with twenty-two Mermaid diagrams and dated primary-source references. It includes a standalone [implementation prompt](agent-runtime/IMPLEMENTATION-PROMPT.md). This is a documentation artifact, not implemented runtime evidence. AR-01–AR-09, IA-01–IA-06, L6 and ISO1–ISO8 remain open; original failed outcomes are retained.

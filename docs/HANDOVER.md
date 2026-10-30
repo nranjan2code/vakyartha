@@ -1,5 +1,9 @@
 # Vakyartha handover — 2026-10-30
 
+## App-owned provider transport injection — 2026-10-30
+
+`AppServerOptions.providerTransport` now flows through the chat/voice/skill-evaluation provider factory and the channel provider factory, so a supplied host callback receives every model API call and Projection's stable operation ID/attempt metadata. Two focused app tests verify options are preserved and normal factory behavior is unchanged when no callback is supplied. With the pinned Node 26.13.0 Linux ARM64 Docker environment, the full app suite passes 256/256 runnable tests; 21 platform/feature-gated tests skip, and typecheck passes. This is a dormant injection seam: `sidecar/main.ts` does not yet provide the native bridge, so active provider traffic still uses default fetch. No provider mediation gate is closed.
+
 ## Approval binding without a hash dependency — 2026-10-30
 
 The approval design now binds consent by keeping the exact bounded normalized request bytes in a native one-use in-memory ticket; after consent, the actor dispatches those unchanged bytes. No custom digest or additional crate is needed. Pending tickets are intentionally discarded on restart, while the running task is recovered interrupted and must submit a fresh request for approval. This is a design decision, not implemented behavior; no approval or dispatch gate is closed. Details are in [implementation design](agent-runtime/IMPLEMENTATION-DESIGN.md).

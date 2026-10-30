@@ -13,7 +13,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createHost, json, readJson } from "@vak/host";
 import { attachmentsRoute } from "./attachments.ts";
 import { toolName, type Integrations } from "@vak/mcp/client";
-import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, type Provider, type AgentTool, providersFromEnv, pinnedFetch } from "@vak/providers";
+import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, type Provider, type AgentTool, type ProviderTransport, providersFromEnv, pinnedFetch } from "@vak/providers";
 import { Channels, CHANNELS } from "./channels.ts";
 import { Marketplaces } from "./marketplaces.ts";
 import { Skills } from "./skills.ts";
@@ -39,6 +39,7 @@ import { AppRegistry } from "./sandbox-pool/app-registry.ts";
 import { WorkspaceRegistry, validateWorkspaceFolder } from "./workspace-registry.ts";
 import { SandboxRealms } from "./sandbox-realms.ts";
 import { createGuardedFetch } from "./egress.ts";
+import { withProviderTransport } from "./provider-transport.ts";
 
 export interface AppServerOptions {
   /** Conversations, settings, channels, logs (and profiles/transcripts unless given). */
@@ -64,6 +65,8 @@ export interface AppServerOptions {
   /** Discovery transport override for deterministic catalog/lifecycle checks. */
   marketplaceFetch?: typeof fetch;
   marketplaceImageFetch?: typeof pinnedFetch;
+  /** Desktop may supply the supervised native broker transport for all model providers. */
+  providerTransport?: ProviderTransport;
   /** Built UI to serve at / (the playground); none: API only. */
   uiDir?: string;
   appName?: string;
@@ -230,7 +233,7 @@ ${skills.index()}`;
   const finops = new Finops(dataDir, log);
   const channels = new Channels({
     env: process.env,
-    providers: () => providersFromEnv().map(entry => ({ ...entry, make: options => skills.provider(entry.make(options)) })),
+    providers: () => withProviderTransport(providersFromEnv(), opts.providerTransport).map(entry => ({ ...entry, make: options => skills.provider(entry.make(options)) })),
     profiles,
     dataDir,
     log,
@@ -264,7 +267,7 @@ ${skills.index()}`;
   function modelProviders(wrapSkills = true): ProviderEntry[] {
     // Bind admission checks and provider construction to the same configuration.
     const env = { ...process.env };
-    const entries = providersFromEnv(env).map((entry) => ({ ...entry, make: (options: Parameters<typeof entry.make>[0]) => {
+    const entries = withProviderTransport(providersFromEnv(env), opts.providerTransport).map((entry) => ({ ...entry, make: (options: Parameters<typeof entry.make>[0]) => {
       const spending = tasks?.providerSpending(entry.id);
       if (spending) checkTaskSpending(entry, spending, env);
       return entry.make(options);
