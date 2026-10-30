@@ -1277,8 +1277,10 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "Escape" && dictationState().state === "listening") {
     e.preventDefault();
-    input.value = dictationBase;
-    autosize();
+    const target = getDictationTarget();
+    target.value = dictationBase;
+    target.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    if (target === input) autosize();
     return cancelDictation();
   }
   if (e.key === "Escape" && isRunning(session) && !settingsOpen() && !document.body.classList.contains("in-artifacts") && !tasksPanel.page.visible()) return stopRun(session);
@@ -1351,15 +1353,57 @@ function composerHint(text: string): void {
   if (text) noteTimer = setTimeout(() => { composerNote.hidden = true; }, 7000);
 }
 
+function getFocusedTextInput(): HTMLTextAreaElement | HTMLInputElement | null {
+  let el = document.activeElement;
+  while (el && el.shadowRoot && el.shadowRoot.activeElement) {
+    el = el.shadowRoot.activeElement;
+  }
+  if (el && (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement)) {
+    if (el instanceof HTMLInputElement && !/^(text|search|url|tel|email)$/.test(el.type)) return null;
+    return el;
+  }
+  return null;
+}
+
+function getDictationTarget(): HTMLTextAreaElement | HTMLInputElement {
+  const focused = getFocusedTextInput();
+  if (focused) return focused;
+
+  // If inside apps page, target the app's primary textarea or text input
+  if (appsPage.visible()) {
+    const appsSurface = document.querySelector("#apps-page vak-surface") as any;
+    if (appsSurface?.shadowRoot) {
+      const appArea = appsSurface.shadowRoot.querySelector("textarea")
+                   ?? appsSurface.shadowRoot.querySelector("input[type=text]")
+                   ?? appsSurface.shadowRoot.querySelector("input:not([type])");
+      if (appArea) return appArea;
+    }
+  }
+
+  // If inside canvas, check canvas surface
+  const canvasContent = document.getElementById("canvas-content");
+  if (canvasContent && !canvasContent.hidden) {
+    const canvasSurface = canvasContent.querySelector("vak-surface") as any;
+    if (canvasSurface?.shadowRoot) {
+      const canvasArea = canvasSurface.shadowRoot.querySelector("textarea")
+                      ?? canvasSurface.shadowRoot.querySelector("input[type=text]");
+      if (canvasArea) return canvasArea;
+    }
+  }
+
+  return input;
+}
+
 function toggleDictation(): void {
   const { state } = dictationState();
   if (state === "listening") return stopDictation();
   if (state === "transcribing" || !dictationPrefs.enabled) return;
   stopConversation();
   stopReading();
-  dictationBase = input.value;
+  const target = getDictationTarget();
+  dictationBase = target.value;
   composerHint("");
-  input.focus();
+  target.focus();
   void startDictation({
     async onText(text, final) {
       if (final && dictationPrefs.clean && current.provider && current.model && text.trim()) {
@@ -1375,10 +1419,17 @@ function toggleDictation(): void {
         }
         composerHint("");
       }
-      input.value = dictationBase.trim() ? `${dictationBase.replace(/\s*$/, " ")}${text}` : text;
-      autosize();
-      input.setSelectionRange(input.value.length, input.value.length);
-      if (final && dictationPrefs.send && input.value.trim() && !isRunning(session)) submit(input.value);
+      target.value = dictationBase.trim() ? `${dictationBase.replace(/\s*$/, " ")}${text}` : text;
+      target.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+      if (target === input) {
+        autosize();
+        input.setSelectionRange(input.value.length, input.value.length);
+        if (final && dictationPrefs.send && input.value.trim() && !isRunning(session)) submit(input.value);
+      } else {
+        if (final) {
+          target.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+        }
+      }
     },
     onError(message) {
       composerHint(message);
@@ -1386,6 +1437,9 @@ function toggleDictation(): void {
     },
   });
 }
+window.addEventListener("vak:start-dictation", () => {
+  toggleDictation();
+});
 mic.addEventListener("click", toggleDictation);
 
 function paintMic(): void {

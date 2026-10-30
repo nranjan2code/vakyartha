@@ -1,6 +1,6 @@
 # Implementation status and acceptance gates
 
-Latest integrated source checkpoint (2026-10-30): committed product `main` through `625787d` is reconciled into the isolated runtime branch, retaining schema 20 native authority and the newer decision, skills, cache, diagram and voice features. Existing task/review/output/schedule code is available for reuse. Product Work execution remains disabled; its admission/lifecycle, context/decision/tool adapters, acknowledgement and original-outcome gates remain open. [Code audit and integration result](agent-runtime/CODE-STATUS-AUDIT.md).
+Latest integrated source checkpoint (2026-10-30): committed product `main` through `d8a2955` is reconciled into the isolated runtime branch, retaining schema 20 native authority and the newer decision, skills, cache, diagram and voice features. Existing task/review/output/schedule code is available for reuse. Product Work execution remains disabled; its admission/lifecycle, context/decision/tool adapters, acknowledgement and original-outcome gates remain open. [Code audit and integration result](agent-runtime/CODE-STATUS-AUDIT.md).
 
 Source-audited remaining scope: existing TypeScript task/review/output/scheduling behavior and the newer product decision/skills/voice/diagram/cache code must be reused in the native cutover. The committed product baseline is now reconciled in this worktree; pending edits in the original checkout remain untouched. [Eight-area code audit and revised order](agent-runtime/CODE-STATUS-AUDIT.md). No acceptance checkbox is closed by the audit.
 

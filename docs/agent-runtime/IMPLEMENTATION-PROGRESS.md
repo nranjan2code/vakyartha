@@ -2,6 +2,12 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Latest main reconciled; next-session handoff — 2026-10-30
+
+Work continues in `/Users/nisheethranjan/Projects/vakyartha-agent-runtime`, branch `codex/agent-runtime-implementation`. Product main through `d8a2955` is included, including its latest app-update, Voice Desk and dictation work; the original main checkout is clean and untouched by this work. [Next-session status, exact boundaries and copyable prompt](NEXT-SESSION.md). [Code audit](CODE-STATUS-AUDIT.md) shows what already exists; reuse it.
+
+Latest app updates now require an inspectable review bound to current package/revision and exact candidate. Startup does not replace user packages; local drafts take precedence; uncertain/running work blocks update; saved data survives and scheduling pauses. These correct regressions in the newly merged update path, preserving its UI. New negative fixtures and WebKit cancel/accept/state checks pass. Validation: 325 app tests, one paid opt-in skipped, typecheck/build/bundle, affected Apps/collections/Canvas WebKit and fresh native desktop smoke. Framework/native sources are unchanged from the preceding successful 423 framework, 151 macOS/153 Linux and strict Clippy proof. Latest desktop receipt: `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-desktop-private-pjJazi`. No paid run, installed replacement or release. Product Work execution remains disabled; native admission/lifecycle and existing context/skills/decision/tool adapters are next.
+
 ## Current product features reconciled with native runtime — 2026-10-30
 
 A source audit found that the eight remaining areas already contain substantial implementation. Product `main` through `625787d` adds decision/shaping/chaining, skill selection/cache/defaults, cache visibility, diagrams and voice/Voice Desk. Runtime `ab25c07` adds native control/storage/consent/I/O and isolated reasoning/canonical roles. [Pinned inventory and actual missing boundaries](CODE-STATUS-AUDIT.md) distinguishes existing code, browser/product paths, native fixtures and unfinished integration. The product had 19 commits beyond the shared app base; runtime had 111. Reconciliation is confined to `codex/agent-runtime-implementation`; the original `main` checkout and its subsequent pending work are untouched.

@@ -1,5 +1,8 @@
 # Executable reference applications
 
+Current update contract (2026-10-30): existing app packages are never silently replaced at startup. Update controls show an inspectable manifest/source preview and require current package/revision plus the exact candidate fingerprint. Saved drafts take precedence over bundled replacements; stale or incomplete drafts require Studio review. Running/uncertain work blocks publication; pending UI edits must be saved/discarded first. Accepted updates retain saved app data, rebuild views and pause scheduling. No installed-app update or live voice outcome is implied by these source checks.
+
+
 Five independent source packages exercise Vakyartha's supported app runtime and ordinary Projection surfaces. They are examples of actual executable behavior with explicit bounds. They do not certify arbitrary model-generated apps or capabilities the runtime does not expose.
 
 | Package | Purpose and views | Canonical owner and source | Native projections |

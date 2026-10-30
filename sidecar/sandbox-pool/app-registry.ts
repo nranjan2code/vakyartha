@@ -24,6 +24,19 @@ export interface AppSummary {
   lastExecutedAt: string | null;
   scheduling?: boolean;
   isDraft?: boolean;
+  isBuiltin?: boolean;
+  updateAvailable?: boolean;
+  latestVersion?: string;
+  hasDraft?: boolean;
+}
+
+export interface AppUpdatePreview {
+  baseFingerprint: string;
+  baseRevision: number;
+  candidateFingerprint: string;
+  source: "builtin" | "draft";
+  manifest: AppManifest;
+  files: Record<string, string>;
 }
 
 export interface AppDetails {
@@ -143,6 +156,21 @@ export class AppRegistry {
     }
     return out;
   }
+  getBuiltinDir(): string | null {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    return [
+      path.join(here, "..", "builtin-apps"),
+      path.join(here, "builtin-apps"),
+      path.join(here, "resources", "builtin-apps"),
+    ].find(existsSync) ?? null;
+  }
+  getBuiltinSource(id: string): string | null {
+    appId(id);
+    const dir = this.getBuiltinDir();
+    if (!dir) return null;
+    const folder = path.join(dir, id);
+    return existsSync(path.join(folder, "app.json")) ? folder : null;
+  }
   async init(): Promise<void> {
     mkdirSync(this.recordsDir, { recursive: true, mode: 0o700 }); mkdirSync(this.draftsDir, { recursive: true, mode: 0o700 });
     this.reloadApps();
@@ -150,8 +178,7 @@ export class AppRegistry {
     if (this.seedBuiltins) {
       const marker = path.join(this.recordsDir, ".seeded-builtins.json");
       const seeded: string[] = existsSync(marker) ? JSON.parse(readBounded(marker)) : [];
-      const here = path.dirname(fileURLToPath(import.meta.url));
-      const source = [path.join(here, "..", "builtin-apps"), path.join(here, "builtin-apps")].find(existsSync);
+      const source = this.getBuiltinDir();
       if (source) for (const dir of readdirSync(source, { withFileTypes: true })) {
         if (!dir.isDirectory()) continue;
         try {
@@ -165,8 +192,7 @@ export class AppRegistry {
     this.schedulerTimer = setInterval(() => { void this.checkSchedules().catch(() => {}); }, 30_000); this.schedulerTimer.unref();
   }
   listBuiltins(): AppManifest[] {
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    const source = [path.join(here, "..", "builtin-apps"), path.join(here, "builtin-apps")].find(existsSync);
+    const source = this.getBuiltinDir();
     if (!source) return [];
     return readdirSync(source, { withFileTypes: true }).filter(e => e.isDirectory()).flatMap(entry => {
       try { const manifest = parseAppManifest(JSON.parse(readBounded(path.join(source, entry.name, "app.json")))); return manifest.id === entry.name ? [manifest] : []; }
@@ -175,10 +201,11 @@ export class AppRegistry {
   }
   async installBuiltin(id: string): Promise<AppDetails> {
     appId(id);
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    const source = [path.join(here, "..", "builtin-apps", id), path.join(here, "builtin-apps", id)].find(existsSync);
+    const source = this.getBuiltinSource(id);
     if (!source) throw new Error("Unknown bundled app");
-    return this.installApp(JSON.parse(readBounded(path.join(source, "app.json"))), legacyFiles(source));
+    const raw = JSON.parse(readBounded(path.join(source, "app.json")));
+    const files = legacyFiles(source);
+    return this.installApp(raw, files);
   }
   private importLegacyDrafts(): void {
     const markerFile = path.join(this.recordsDir, ".legacy-imports.json");
@@ -215,7 +242,50 @@ export class AppRegistry {
     // code copied by an older version which had no publication boundary.
   }
   listApps(): AppSummary[] {
-    return [...this.records.values()].map(r => ({ id: r.published.manifest.id, name: r.published.manifest.name, version: r.published.manifest.version, description: r.published.manifest.description, category: r.published.manifest.category, icon: r.published.manifest.icon, isRunning: r.run?.status === "running", storageBytes: Buffer.byteLength(JSON.stringify(r)), triggerCount: r.published.manifest.triggers.length, lastExecutedAt: r.lastExecutedAt, scheduling: r.scheduling }));
+    return [...this.records.values()].map(r => {
+      const id = r.published.manifest.id;
+      const isBuiltin = Boolean(this.getBuiltinSource(id));
+      let update: AppUpdatePreview | undefined;
+      try { update = this.previewAppUpdate(id); } catch { /* Incomplete/stale drafts require Studio review. */ }
+      return { id, name: r.published.manifest.name, version: r.published.manifest.version,
+        description: r.published.manifest.description, category: r.published.manifest.category, icon: r.published.manifest.icon,
+        isRunning: r.run?.status === "running", storageBytes: Buffer.byteLength(JSON.stringify(r)),
+        triggerCount: r.published.manifest.triggers.length, lastExecutedAt: r.lastExecutedAt, scheduling: r.scheduling,
+        isBuiltin, updateAvailable: Boolean(update), latestVersion: update?.manifest.version, hasDraft: update?.source === "draft" };
+    });
+  }
+  previewAppUpdate(id: string): AppUpdatePreview {
+    const current = this.require(id);
+    const draftFile = path.join(this.draftsDir, `${appId(id)}.json`);
+    let pkg: Package, source: AppUpdatePreview["source"], sourceFingerprint: string | null = null;
+    if (existsSync(draftFile)) {
+      const draft = this.getDraft(id);
+      if (!draft.fingerprint || draft.base !== current.fingerprint) throw new Error("Draft base changed; review it in Studio");
+      pkg = this.validate(JSON.parse(draft.manifestText ?? JSON.stringify(draft.manifest)), draft.files);
+      source = "draft"; sourceFingerprint = draft.fingerprint;
+    } else {
+      const folder = this.getBuiltinSource(id);
+      if (!folder) throw new Error("No update available for this app");
+      pkg = this.validate(JSON.parse(readBounded(path.join(folder, "app.json"))), legacyFiles(folder));
+      source = "builtin";
+    }
+    if (pkg.manifest.id !== id || fingerprint(pkg) === current.fingerprint) throw new Error("No changed package to update");
+    return { ...pkg, source, baseFingerprint: current.fingerprint, baseRevision: current.revision,
+      candidateFingerprint: fingerprint({ source, pkg, sourceFingerprint }) };
+  }
+  async updateAppToLatest(id: string, reviewed: unknown): Promise<AppDetails> {
+    if (!reviewed || typeof reviewed !== "object" || Array.isArray(reviewed)) throw new Error("Review the exact app update first");
+    const request = reviewed as Record<string, unknown>;
+    if (Object.keys(request).length !== 3 || Object.keys(request).some(k => !["baseFingerprint", "baseRevision", "candidateFingerprint"].includes(k))) throw new Error("Invalid reviewed app update");
+    return this.exclusive(id, async () => {
+      const current = this.require(id), preview = this.previewAppUpdate(id);
+      if (request.baseFingerprint !== preview.baseFingerprint || request.baseRevision !== preview.baseRevision || request.candidateFingerprint !== preview.candidateFingerprint) throw new Error("App or update changed; review the current package again");
+      if (current.run?.status === "running" || current.run?.status === "uncertain") throw new Error("Stop or reconcile app execution before updating");
+      const { manifest, files } = preview, pkg = { manifest, files };
+      this.save(id, { ...current, published: pkg, fingerprint: fingerprint(pkg), revision: current.revision + 1, surfaces: this.initialSurfaces(pkg), scheduling: false });
+      if (preview.source === "draft") this.discardDraft(id);
+      return this.getApp(id)!;
+    });
   }
   getApp(id: string): AppDetails | null {
     appId(id); const r = this.records.get(id); if (!r) return null;
@@ -232,7 +302,8 @@ export class AppRegistry {
   async updateApp(id: string, manifestRaw: unknown, files: Record<string, string> = {}, expected?: string, replaceFiles = false): Promise<AppDetails> {
     return this.exclusive(id, async () => {
       const r = this.require(id);
-      if (expected !== r.fingerprint) throw new Error("App changed; review the current package before publishing");
+      if (!expected || expected !== r.fingerprint) throw new Error("App changed; review the current package before publishing");
+      if (r.run?.status === "running" || r.run?.status === "uncertain") throw new Error("Stop or reconcile app execution before updating");
       const pkg = this.validate({ ...r.published.manifest, ...(manifestRaw as object), id }, replaceFiles ? files : { ...r.published.files, ...files });
       this.save(id, { ...r, published: pkg, fingerprint: fingerprint(pkg), revision: r.revision + 1, surfaces: this.initialSurfaces(pkg), scheduling: false });
       return this.getApp(id)!;

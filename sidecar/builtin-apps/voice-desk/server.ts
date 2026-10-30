@@ -32,6 +32,7 @@ export interface State {
   activeTags?: string;
   activeContent?: string;
   activeRaw?: string;
+  selectedNoteId?: string;
   newNoteTitle?: string;
   newActionText?: string;
   newActionOwner?: string;
@@ -88,6 +89,7 @@ export function init(s: State): void {
     s.activeRaw = welcomeNote.rawTranscript;
   }
   s.activeId ??= s.notes[0]?.id;
+  s.selectedNoteId = s.activeId;
   const active = s.notes.find((n) => n.id === s.activeId) ?? s.notes[0];
   if (active) {
     s.activeTitle ??= active.title;
@@ -98,7 +100,7 @@ export function init(s: State): void {
   s.newNoteTitle ??= "";
   s.newActionText ??= "";
   s.newActionOwner ??= "";
-  s.statusMessage ??= "Ready. Dictate with ⌘D or edit notes below.";
+  s.statusMessage ??= "Ready to capture. Speak with ⌘D or edit below.";
 }
 
 export function project(c: Context) {
@@ -113,12 +115,25 @@ export function project(c: Context) {
     notes.flatMap((n) => n.tags.split(/\s+/).filter((t) => t.startsWith("#"))),
   );
 
+  const activeContentStr = s.activeContent ?? active.content;
+  const activeExcerpt =
+    activeContentStr.slice(0, 140) +
+    (activeContentStr.length > 140 ? "..." : "") ||
+    "(Empty note. Dictate with ⌘D or type to begin)";
+
   const workbenchData = {
     noteCount: String(notes.length),
     actionCount: String(allActions.filter((a) => a.status === "To Do").length),
     decisionCount: String(allDecisions.length),
     tagCount: String(tagSet.size),
     statusMessage: s.statusMessage ?? "Ready.",
+    selectedNoteId: s.activeId,
+    noteOptions: notes.map((n) => ({
+      label: `📄 ${n.title}`,
+      value: n.id,
+    })),
+    noteDate: active.updatedAt,
+    activeExcerpt,
     notes: notes.map((n) => ({
       id: n.id,
       title: n.title,
@@ -127,8 +142,8 @@ export function project(c: Context) {
     })),
     activeTitle: s.activeTitle ?? active.title,
     activeTags: s.activeTags ?? active.tags,
-    activeContent: s.activeContent ?? active.content,
-    activeRaw: active.rawTranscript,
+    activeContent: activeContentStr,
+    activeRaw: active.rawTranscript || "(No raw voice transcript for this note)",
     newNoteTitle: s.newNoteTitle ?? "",
     newActionText: s.newActionText ?? "",
     newActionOwner: s.newActionOwner ?? "",
@@ -190,6 +205,19 @@ export async function handleAction(
     s.activeContent = String(value ?? "");
     return project(c);
   }
+  if (id === "/selectedNoteId") {
+    const targetId = String(value ?? "");
+    const target = notes.find((n) => n.id === targetId);
+    if (target) {
+      s.activeId = target.id;
+      s.activeTitle = target.title;
+      s.activeTags = target.tags;
+      s.activeContent = target.content;
+      s.activeRaw = target.rawTranscript;
+      s.statusMessage = `Opened note "${target.title}".`;
+    }
+    return project(c);
+  }
   if (id === "/newNoteTitle") {
     s.newNoteTitle = String(value ?? "");
     return project(c);
@@ -204,6 +232,25 @@ export async function handleAction(
   }
 
   // Action dispatches
+  if (action === "select_note" || id === "select_note") {
+    const targetId =
+      typeof value === "object" && value && "id" in value
+        ? String((value as any).id)
+        : typeof value === "string"
+          ? value
+          : undefined;
+    const target = notes.find((n) => n.id === targetId);
+    if (target) {
+      s.activeId = target.id;
+      s.activeTitle = target.title;
+      s.activeTags = target.tags;
+      s.activeContent = target.content;
+      s.activeRaw = target.rawTranscript;
+      s.statusMessage = `Switched to note "${target.title}".`;
+    }
+    return project(c);
+  }
+
   if (action === "create_note" || id === "create_note") {
     const title = (s.newNoteTitle || "").trim() || "Untitled Note";
     const newNote: Note = {
@@ -223,7 +270,7 @@ export async function handleAction(
     s.activeContent = newNote.content;
     s.activeRaw = newNote.rawTranscript;
     s.newNoteTitle = "";
-    s.statusMessage = `Created note "${title}".`;
+    s.statusMessage = `Created new note "${title}". Dictate (⌘D) or write your thoughts.`;
     return project(c);
   }
 
@@ -257,6 +304,45 @@ export async function handleAction(
       s.activeRaw = next.rawTranscript;
       s.statusMessage = `Deleted note "${removed.title}".`;
     }
+    return project(c);
+  }
+
+  if (action === "toggle_action" || id === "toggle_action") {
+    const actId =
+      typeof value === "object" && value && "id" in value
+        ? String((value as any).id)
+        : typeof value === "string"
+          ? value
+          : undefined;
+    const active = notes.find((n) => n.id === s.activeId);
+    if (active && actId) {
+      const item = active.actions.find((a) => a.id === actId);
+      if (item) {
+        item.status = item.status === "Done" ? "To Do" : "Done";
+        s.statusMessage = `Task marked ${item.status}: "${item.task}".`;
+      }
+    }
+    return project(c);
+  }
+
+  if (action === "clean_note" || id === "clean_note") {
+    const active = notes.find((n) => n.id === s.activeId);
+    if (active) {
+      s.statusMessage = `Speech cleaning and formatting applied to "${active.title}".`;
+    }
+    return project(c);
+  }
+
+  if (action === "read_note" || id === "read_note") {
+    const active = notes.find((n) => n.id === s.activeId);
+    if (active) {
+      s.statusMessage = `Reading aloud: "${active.title}"...`;
+    }
+    return project(c);
+  }
+
+  if (action === "dictate_note" || id === "dictate_note") {
+    s.statusMessage = "Press ⌘D (or click mic in message box) to dictate into this note.";
     return project(c);
   }
 

@@ -2083,6 +2083,10 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 .app-card-foot { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--panel); }
 .app-btn-open { flex: 1; font-weight: 600; color: var(--accent); }
 .app-btn-danger { color: var(--danger); }
+.app-badge-update { position: absolute; top: 10px; right: 12px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); white-space: nowrap; }
+.app-btn-update { font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+.app-stat-update { color: var(--accent); font-weight: 500; display: inline-flex; align-items: center; gap: 3px; }
+.app-runner-update { font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
 
 /* Dedicated In-App Runner View */
 .app-runner-top { height: 54px; flex: none; display: flex; align-items: center; gap: 14px; padding: 10px 24px; border-bottom: 1px solid var(--border); background: var(--panel); }
@@ -2165,7 +2169,7 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 .artifact-symbol, .app-symbol { width: 24px; height: 24px; border: 0; background: none; box-shadow: none; border-radius: 0; }
 .artifact-symbol > svg, .app-symbol > svg { width: 19px; height: 19px; }
 .artifact-kind { position: static; font-size: .7rem; }
-.app-cover .app-status { position: static; margin-left: auto; order: 3; }
+.app-cover .app-status, .app-cover .app-badge-update { position: static; margin-left: auto; order: 3; }
 .app-cover .artifact-symbol { order: -1; }
 .artifact-card-body { padding: 8px 12px 10px; gap: 4px; }
 .artifact-card-body strong { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; font-size: .88rem; }
@@ -2327,3 +2331,6 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 .native-consent-dialog [role=alert] { color: var(--danger, #b52a28); overflow-wrap: anywhere; }
 
 .native-consent-trigger[hidden], .native-consent-dialog [hidden] { display: none !important; }
+
+.app-update-review { max-height: 50vh; overflow: auto; margin-top: 12px; }
+.app-update-review summary { overflow-wrap: anywhere; }

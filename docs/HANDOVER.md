@@ -1,5 +1,11 @@
 # Vakyartha handover — 2026-10-30
 
+## Latest main reconciled; next-session handoff — 2026-10-30
+
+Work continues in `/Users/nisheethranjan/Projects/vakyartha-agent-runtime`, branch `codex/agent-runtime-implementation`. Product main through `d8a2955` is included, including its latest app-update, Voice Desk and dictation work; the original main checkout is clean and untouched by this work. [Next-session status, exact boundaries and copyable prompt](agent-runtime/NEXT-SESSION.md). [Code audit](agent-runtime/CODE-STATUS-AUDIT.md) shows what already exists; reuse it.
+
+Latest app updates now require an inspectable review bound to current package/revision and exact candidate. Startup does not replace user packages; local drafts take precedence; uncertain/running work blocks update; saved data survives and scheduling pauses. These correct regressions in the newly merged update path, preserving its UI. New negative fixtures and WebKit cancel/accept/state checks pass. Validation: 325 app tests, one paid opt-in skipped, typecheck/build/bundle, affected Apps/collections/Canvas WebKit and fresh native desktop smoke. Framework/native sources are unchanged from the preceding successful 423 framework, 151 macOS/153 Linux and strict Clippy proof. Latest desktop receipt: `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-desktop-private-pjJazi`. No paid run, installed replacement or release. Product Work execution remains disabled; native admission/lifecycle and existing context/skills/decision/tool adapters are next.
+
 ## Current product integrated into native runtime branch — 2026-10-30
 
 Committed product `main` through `625787d` is reconciled into the isolated runtime branch, preserving newer decision/skills/cache/diagram/voice features and native authority. Framework `196b796` retains the runtime APIs. The [code audit](agent-runtime/CODE-STATUS-AUDIT.md) corrects absence claims and identifies actual integration gaps. The original checkout's pending edits are untouched.

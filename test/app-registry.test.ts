@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, existsSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -73,4 +73,46 @@ test("direct async actions, named refresh, reopen and restart retain calculated 
     s.registry.reloadApps(); await s.registry.checkSchedules(minute);
     assert.equal(s.registry.getApp(manifest.id)!.state.total, 48);
   } finally { await s.close(); }
+});
+
+test("app update review binds both snapshots without silent startup replacement", async t => {
+  const s = setup(); await s.registry.init();
+  const bundled = path.join(s.tmp, "bundled"), folder = path.join(bundled, manifest.id);
+  mkdirSync(folder, { recursive: true });
+  const shipped = { ...manifest, version: "2.0.0" };
+  writeFileSync(path.join(folder, "app.json"), JSON.stringify(shipped));
+  for (const [name, text] of Object.entries(files)) writeFileSync(path.join(folder, name), text);
+  t.mock.method(s.registry, "getBuiltinDir", () => bundled);
+  let restarted: AppRegistry | undefined;
+  try {
+    const installed = await s.registry.installApp({ ...manifest, name: "My edited app" }, files);
+    await assert.rejects(s.registry.updateApp(manifest.id, shipped, {}, undefined), /changed/);
+    await assert.rejects(s.registry.installBuiltin(manifest.id), /already exists/);
+    const preview = s.registry.previewAppUpdate(manifest.id);
+    assert.equal(preview.source, "builtin");
+    assert.equal(preview.manifest.version, "2.0.0");
+    await assert.rejects(s.registry.updateAppToLatest(manifest.id, undefined), /Review/);
+    writeFileSync(path.join(folder, "main.ts"), files["main.ts"] + "\n// new source after review");
+    const review = ({ baseFingerprint, baseRevision, candidateFingerprint }: typeof preview) => ({ baseFingerprint, baseRevision, candidateFingerprint });
+    await assert.rejects(s.registry.updateAppToLatest(manifest.id, review(preview)), /changed/);
+    assert.equal(s.registry.getApp(manifest.id)!.manifest.name, "My edited app");
+    const draft = s.registry.saveDraft(manifest.id, { manifest: { ...manifest, name: "My saved draft", version: "3.0.0" }, files, base: installed.fingerprint }) as any;
+    const draftPreview = s.registry.previewAppUpdate(manifest.id);
+    assert.equal(draftPreview.source, "draft", "saved edits take precedence over the shipped package");
+    assert.equal(s.registry.listApps()[0]!.hasDraft, true);
+    const updated = await s.registry.updateAppToLatest(manifest.id, review(draftPreview));
+    assert.equal(updated.manifest.name, "My saved draft");
+    assert.equal(updated.manifest.version, "3.0.0");
+    assert.equal(updated.scheduling, false);
+    assert.equal(s.registry.getDraft(manifest.id).fingerprint, null, "only the applied draft was retired");
+    assert.ok(draft.fingerprint);
+    const published = updated.fingerprint;
+    await s.registry.shutdown();
+    restarted = new AppRegistry({ dataDir: s.tmp, pool: s.pool, seedBuiltins: true });
+    t.mock.method(restarted, "getBuiltinDir", () => bundled);
+    await restarted.init();
+    assert.equal(restarted.getApp(manifest.id)!.fingerprint, published, "startup must not replace user code with bundled source");
+    assert.equal(restarted.getApp(manifest.id)!.manifest.name, "My saved draft");
+    assert.equal(restarted.listApps()[0]!.updateAvailable, true);
+  } finally { await restarted?.shutdown(); await s.close(); }
 });
