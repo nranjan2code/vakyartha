@@ -71,7 +71,7 @@ console.log(`sidecar → ${path.relative(app, path.join(tauri, "resources/sideca
 
 // Bundle vaksb (vak-sandbox CLI) as an external binary alongside node.
 const sandboxRepo = path.resolve(app, "..", "sandbox");
-const sandboxRevision = "0c0a3473b2ddba595fef370d7266223723403a15";
+const sandboxRevision = "79433e29dcc0104344a6150b84eee7df00630ff2";
 const sandboxGit = (...args: string[]) => execFileSync("git", ["-C", sandboxRepo, ...args], { encoding: "utf8" }).trim();
 if (sandboxGit("rev-parse", "HEAD") !== sandboxRevision || sandboxGit("status", "--porcelain")) {
   throw new Error(`Sandbox must be the clean reviewed revision ${sandboxRevision}`);

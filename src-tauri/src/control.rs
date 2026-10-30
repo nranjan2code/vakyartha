@@ -35,6 +35,7 @@ pub mod host_sessions;
 pub mod registry;
 pub mod root_runs;
 pub mod tasks;
+pub mod worker_completion;
 pub mod state;
 use canonical::{
     CandidateCommitReceipt, CandidateCommitRequest, CanonicalContentStore, CanonicalSessionRecord,
@@ -90,6 +91,7 @@ pub enum AdmissionError {
     RootRunUnsettled,
     InvalidTask,
     TaskCapabilityUnavailable,
+    WorkerCompletionUnavailable,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -672,11 +674,13 @@ pub enum RootMutation {
 
 enum RootRunAction {
     Read,
+    SettleWorker,
     Confirm(String),
     Settle(String),
 }
 
 enum ActorCommand {
+    PrepareWorkerCompletion { run_id: String, reply: SyncSender<Result<worker_completion::WorkerInvocation, ControlError>> },
     ProductTask { command: tasks::TaskCommand, reply: SyncSender<Result<serde_json::Value, ControlError>> },
 
     Ping {
@@ -1113,6 +1117,17 @@ impl ControlHandle {
         receipt: String,
     ) -> Result<root_runs::RootRun, ControlError> {
         self.root_run_command(run_id, RootRunAction::Settle(receipt))
+    }
+
+    /// Trusted launcher only: no worker or webview operation accepts a path.
+    pub fn prepare_worker_completion(&self, run_id: String) -> Result<worker_completion::WorkerInvocation, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::PrepareWorkerCompletion { run_id, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    pub fn settle_worker_completion(&self, run_id: String) -> Result<root_runs::RootRun, ControlError> {
+        self.root_run_command(run_id, RootRunAction::SettleWorker)
     }
 
     pub fn read_root_run_for_start(
@@ -1714,6 +1729,11 @@ fn actor_loop(
     let mut admitted_host_sessions = std::collections::BTreeSet::new();
     while let Ok(command) = receiver.recv() {
         match command {
+            ActorCommand::PrepareWorkerCompletion { run_id, reply } => {
+                let result = store.dir.parent().ok_or(ControlError::Store(StoreError::Corrupt))
+                    .and_then(|native| worker_completion::prepare(&ledger, native, &run_id));
+                let _ = reply.send(result);
+            }
             ActorCommand::ProductTask { command, reply } => {
                 if let tasks::TaskCommand::Create { request } = &command
                     && !ledger.product_tasks.contains_key(&request.id) {
@@ -2263,6 +2283,9 @@ fn actor_loop(
                 let result = match action {
                     RootRunAction::Confirm(receipt) => root_runs::confirm(&mut candidate, &run_id, &receipt),
                     RootRunAction::Settle(receipt) => root_runs::settle(&mut candidate, &run_id, &receipt),
+                    RootRunAction::SettleWorker => store.dir.parent().ok_or(ControlError::Store(StoreError::Corrupt))
+                        .and_then(|native| worker_completion::exit_receipt(native, &run_id))
+                        .and_then(|receipt| root_runs::settle(&mut candidate, &run_id, &receipt)),
                     RootRunAction::Read => unreachable!("read handled above"),
                 };
                 match result {
@@ -3348,6 +3371,120 @@ mod tests {
         assert_eq!(handle.read_root("product-task".into()), Err(ControlError::Admission(AdmissionError::RootNotFound)));
         assert!(!data.join("tasks").exists());
         drop(handle); drop(reopened); remove_test_data(&data);
+    }
+
+    #[test]
+    fn native_worker_completion_is_exact_private_and_retains_charges_across_restart() {
+        let data = temp_data_dir();
+        let profile = CapacityProfile::new(BTreeMap::from([(Resource::Generation, 1)]), BTreeMap::from([(Resource::Generation, 1)]), 32).unwrap();
+        let actor = ControlActor::open(&data, "one-slot", profile.clone(), 16, Duration::from_secs(2)).unwrap();
+        let handle = actor.handle();
+        for id in ["first", "second"] {
+            handle.create_root(id.into(), "Bound work".into(), "Original outcome".into(), 2, vec![Requirement::new("check".into(), true).unwrap()]).unwrap();
+        }
+        let root = handle.mutate_root("first".into(), 1, RootMutation::StartAttempt { request_id: "start-1".into() }).unwrap();
+        let run = handle.read_root_run_for_start("start-1".into()).unwrap();
+        let invocation = handle.prepare_worker_completion(run.id.clone()).unwrap();
+        let unavailable = Err(ControlError::Admission(AdmissionError::WorkerCompletionUnavailable));
+        assert_eq!(handle.settle_worker_completion(run.id.clone()), unavailable);
+        let write = |value: serde_json::Value| {
+            let mut options = fs::OpenOptions::new(); options.write(true).create(true).truncate(true);
+            #[cfg(unix)] { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+            let mut file = options.open(&invocation.completion_record).unwrap();
+            file.write_all(&serde_json::to_vec(&value).unwrap()).unwrap(); file.sync_all().unwrap();
+        };
+        let valid = serde_json::json!({"version":1,"invocation_id":run.id,"cleanup_verified":true,"exit_code":126});
+        for bad in [
+            serde_json::json!({"version":1,"invocation_id":run.id,"cleanup_verified":false,"exit_code":null}),
+            serde_json::json!({"version":1,"invocation_id":"wrong-run","cleanup_verified":true,"exit_code":0}),
+            serde_json::json!({"version":2,"invocation_id":run.id,"cleanup_verified":true,"exit_code":0}),
+            serde_json::json!({"version":1,"invocation_id":run.id,"cleanup_verified":true,"exit_code":256}),
+            serde_json::json!({"version":1,"invocation_id":run.id,"cleanup_verified":true,"exit_code":0,"extra":true}),
+        ] {
+            write(bad); assert_eq!(handle.settle_worker_completion(run.id.clone()), unavailable);
+        }
+        assert!(handle.prepare_worker_completion(run.id.clone()).is_err(), "existing evidence cannot be reset");
+        write(valid.clone());
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&invocation.completion_record, fs::Permissions::from_mode(0o644)).unwrap();
+            assert_eq!(handle.settle_worker_completion(run.id.clone()), unavailable);
+            fs::set_permissions(&invocation.completion_record, fs::Permissions::from_mode(0o600)).unwrap();
+            let saved = invocation.completion_record.with_extension("saved");
+            fs::rename(&invocation.completion_record, &saved).unwrap();
+            std::os::unix::fs::symlink(&saved, &invocation.completion_record).unwrap();
+            assert_eq!(handle.settle_worker_completion(run.id.clone()), unavailable);
+            fs::remove_file(&invocation.completion_record).unwrap(); fs::rename(saved, &invocation.completion_record).unwrap();
+        }
+        write(serde_json::json!({"version":1,"invocation_id":run.id,"cleanup_verified":false,"exit_code":null}));
+        handle.confirm_root_started(run.id.clone(), "native-supervisor".into()).unwrap();
+        handle.mutate_root(root.id().into(), root.revision(), RootMutation::Stop { status: RootStatus::Cancelled, cause: StopCause::UserCancelled, reason: "User cancelled".into() }).unwrap();
+        drop(handle); drop(actor);
+        let actor = ControlActor::open(&data, "one-slot", profile, 16, Duration::from_secs(2)).unwrap();
+        let handle = actor.handle();
+        assert_eq!(handle.read_root_run(run.id.clone()).unwrap().status, root_runs::RunStatus::Interrupted);
+        assert_eq!(handle.settle_worker_completion(run.id.clone()), unavailable);
+        assert!(handle.mutate_root("second".into(), 1, RootMutation::StartAttempt { request_id: "start-second".into() }).is_err());
+        write(valid);
+        let settled = handle.settle_worker_completion(run.id.clone()).unwrap();
+        assert_eq!(settled.status, root_runs::RunStatus::Settled);
+        assert!(settled.exit_receipt.as_ref().unwrap().starts_with(&format!("worker-exit-{}-", run.id)));
+        assert_eq!(handle.settle_worker_completion(run.id.clone()).unwrap(), settled);
+        write(serde_json::json!({"version":1,"invocation_id":run.id,"cleanup_verified":true,"exit_code":127}));
+        assert_eq!(handle.settle_worker_completion(run.id.clone()), Err(ControlError::Admission(AdmissionError::ConflictingRequestIdentity)));
+        assert_eq!(handle.read_root("first".into()).unwrap().status(), RootStatus::Cancelled);
+        assert_eq!(handle.mutate_root("second".into(), 1, RootMutation::StartAttempt { request_id: "start-second".into() }).unwrap().status(), RootStatus::Running);
+        drop(handle); drop(actor); remove_test_data(&data);
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    #[ignore = "requires reviewed helper and Node paths in VAK_TEST_WORKER_HELPER and VAK_TEST_WORKER_NODE"]
+    fn contained_worker_cleanup_settles_native_run_after_cancel_and_restart() {
+        use std::io::BufRead;
+        use std::process::Stdio;
+        let helper = PathBuf::from(std::env::var_os("VAK_TEST_WORKER_HELPER").expect("reviewed helper required"));
+        let node = PathBuf::from(std::env::var_os("VAK_TEST_WORKER_NODE").expect("Node required"));
+        let data = temp_data_dir();
+        let resources = data.with_extension("runtime"); fs::create_dir_all(&resources).unwrap();
+        fs::write(resources.join("sidecar.mjs"), "import {Socket} from 'node:net'; const io=new Socket({fd:3,readable:true,writable:true}); io.write('ready\\n'); io.on('end',()=>{}); setInterval(()=>{},1000);").unwrap();
+        let profile = CapacityProfile::new(BTreeMap::from([(Resource::Generation, 1)]), BTreeMap::from([(Resource::Generation, 1)]), 32).unwrap();
+        let actor = ControlActor::open(&data, "one-slot", profile.clone(), 16, Duration::from_secs(2)).unwrap();
+        let handle = actor.handle();
+        let root = handle.create_root("root".into(), "Bound work".into(), "Original outcome".into(), 2, vec![Requirement::new("check".into(), true).unwrap()]).unwrap();
+        let root = handle.mutate_root(root.id().into(), root.revision(), RootMutation::StartAttempt { request_id: "start-1".into() }).unwrap();
+        let run = handle.read_root_run_for_start("start-1".into()).unwrap();
+        let invocation = handle.prepare_worker_completion(run.id.clone()).unwrap();
+        let mut child = crate::worker::command_for_invocation(&helper, &node, &resources, &data, &invocation).unwrap()
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        let owner = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let (ready_tx, ready_rx) = sync_channel(1);
+        thread::spawn(move || { let mut line = String::new(); let _ = std::io::BufReader::new(stdout).read_line(&mut line); let _ = ready_tx.send(line); });
+        if ready_rx.recv_timeout(Duration::from_secs(15)).as_deref() != Ok("ready\n") {
+            drop(owner); let _ = child.kill(); let _ = child.wait();
+            let mut diagnostics = String::new();
+            if let Some(stderr) = child.stderr.take() { let _ = stderr.take(4096).read_to_string(&mut diagnostics); }
+            panic!("contained worker did not start: {diagnostics}");
+        }
+        handle.confirm_root_started(run.id.clone(), format!("supervisor-{}", run.id)).unwrap();
+        handle.mutate_root(root.id().into(), root.revision(), RootMutation::Stop { status: RootStatus::Cancelled, cause: StopCause::UserCancelled, reason: "User cancelled".into() }).unwrap();
+        assert_eq!(handle.settle_worker_completion(run.id.clone()), Err(ControlError::Admission(AdmissionError::WorkerCompletionUnavailable)));
+        drop(handle); drop(actor);
+        let actor = ControlActor::open(&data, "one-slot", profile, 16, Duration::from_secs(2)).unwrap();
+        let handle = actor.handle();
+        assert_eq!(handle.read_root_run(run.id.clone()).unwrap().status, root_runs::RunStatus::Interrupted);
+        drop(owner);
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while child.try_wait().unwrap().is_none() {
+            if std::time::Instant::now() >= deadline { let _ = child.kill(); let _ = child.wait(); panic!("contained worker did not stop on owner EOF"); }
+            thread::sleep(Duration::from_millis(10));
+        }
+        let settled = handle.settle_worker_completion(run.id.clone()).unwrap();
+        assert_eq!(settled.status, root_runs::RunStatus::Settled);
+        assert_eq!(handle.settle_worker_completion(run.id).unwrap(), settled);
+        assert_eq!(handle.read_root(root.id().into()).unwrap().status(), RootStatus::Cancelled);
+        drop(handle); drop(actor); remove_test_data(&data); fs::remove_dir_all(resources).unwrap();
     }
 
     #[test]

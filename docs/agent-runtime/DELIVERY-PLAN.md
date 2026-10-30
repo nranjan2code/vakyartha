@@ -4,6 +4,8 @@ Status: active implementation plan, 2026-10-30. Implements the [Rust-first desig
 
 The [source-audited storage](DATA-AND-STORAGE.md) and [information architecture](INFORMATION-ARCHITECTURE.md) contracts are in scope. Implement native project/workspace/binding identities with I1/I2, then the single navigation owner, Work/Scheduled distinction and safe storage actions with I3. UI claims cannot precede their underlying authority/storage mechanism.
 
+I2 lifetime checkpoint: helper contract 4 and the native actor now prove protected cleanup evidence and capacity settlement for real contained Node invocations across cancellation/restart. The Linux private stream wrapper is verified, including narrowly scoped socket-type inspection with egress still denied. This does not enable product dispatch; per-task roles, atomic admission/approval/dispatch and publication remain prerequisites. [Evidence](IMPLEMENTATION-PROGRESS.md#protected-worker-cleanup-and-native-settlement--2026-10-30).
+
 I3 partial checkpoint: native task create/list/read/cancel/delete is wired to Work controls and survives restart without replay. This removes the desktop task journal/pump before enabling execution. Native scheduling, task-specific supervision, exact provider approval/dispatch, canonical publication and existing review/outcome behavior still must be delivered together before task execution is enabled. This does not satisfy I3's exit condition. See [current evidence](IMPLEMENTATION-PROGRESS.md#desktop-work-controls-moved-to-rust--2026-10-30).
 
 ## 1. Dependency order

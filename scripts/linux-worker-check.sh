@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-test "$(git -C "$repo_root/../sandbox" rev-parse HEAD)" = 0c0a3473b2ddba595fef370d7266223723403a15
+test "$(git -C "$repo_root/../sandbox" rev-parse HEAD)" = 79433e29dcc0104344a6150b84eee7df00630ff2
 test -z "$(git -C "$repo_root/../sandbox" status --porcelain)"
 image_name=vakyartha-linux-rust-check:1.99.1
 docker build --file "$repo_root/scripts/linux-rust-check.Dockerfile" --tag "$image_name" "$repo_root/scripts"

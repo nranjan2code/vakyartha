@@ -10,7 +10,7 @@ interface SandboxCapabilities {
 }
 
 export function compatibleSandboxHelper(capabilities: SandboxCapabilities, runHelp: string): boolean {
-  return capabilities.contract === 3 && capabilities.supervised_processes === true && capabilities.detachment_denied === true
+  return capabilities.contract === 4 && capabilities.supervised_processes === true && capabilities.detachment_denied === true
     && ["--workspace", "--cwd", "--timeout-seconds", "--max-output-bytes"].every(flag => runHelp.includes(flag));
 }
 

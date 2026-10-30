@@ -2,6 +2,41 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Protected worker cleanup and native settlement — 2026-10-30
+
+The native root-run ledger now has a trusted-only launcher preparation and file-backed settlement path. The actor derives `<native-data>/executions/<run-id>.json` from an existing prepared invocation, checks the current root/epoch/workspace, creates an owner-only evidence directory and refuses an existing record. The launcher binds that exact path/identity to the containment helper. Neither the webview nor the worker protocol accepts a completion path, receipt body or settlement command. Preparation is a freshness check, not an atomic dispatch permit.
+
+The sandbox helper is pinned to pushed revision `79433e29dcc0104344a6150b84eee7df00630ff2`, containment contract 4. With paired completion options, it refuses target-granted or existing receipt paths before launch, synchronizes unverified evidence first, and writes verified cleanup with the actual target exit code only after backend completion proof and teardown. Target exit 126 remains an ordinary outcome when cleanup is verified. Host input EOF now cancels a target that ignores its private stream. A bounded std-thread input bridge removes the async-stdin runtime shutdown hang. The helper build is pinned to Rust 1.99.1; no dependency was added.
+
+```mermaid
+sequenceDiagram
+    participant A as Native actor
+    participant L as Trusted launcher
+    participant H as Containment helper
+    participant W as Untrusted worker
+    participant F as Protected execution record
+    A->>A: Persist prepared run and capacity hold
+    L->>A: Prepare exact run completion binding
+    A-->>L: Native-derived path and invocation ID
+    L->>H: Start with exact binding
+    H->>F: Exclusive unverified record; synchronize
+    H->>W: Contained private descriptor 3
+    L->>H: Close owner input on cancellation
+    H->>H: Stop tree and validate backend cleanup
+    H->>F: Verified cleanup and actual exit code; synchronize
+    L->>A: Settle named run
+    A->>F: Validate bounded private record and exact identity
+    A->>A: Persist receipt digest and release capacity together
+```
+
+Settlement accepts at most 2 KiB and rejects links, permissive modes, malformed/unknown fields, unsupported versions, false/missing cleanup, mismatched invocation IDs and invalid exit codes. It binds the durable exit receipt to the exact evidence bytes using the existing approved digest. Exact retries recover the same settled run; changed proof conflicts. Cancellation/restart alone still cannot refund capacity, and cleanup never marks the task successful. Missing/invalid evidence retains the charge; it is not reset or replayed. Snapshot schema remains 14.
+
+The first actual Linux Node stream-wrapper test failed with `ERR_INVALID_FD_TYPE: UNKNOWN`: the existing byte-write canary had not exercised `Socket({fd:3})` recognition. The owning Linux filter now allows only interactive `getsockopt(3, SOL_SOCKET, SO_TYPE)`. Other descriptors/options, option mutation, socket creation/pairs, connect and sendmsg/recvmsg remain denied; ordinary commands receive no exception. A dedicated C probe and the real Node cancellation/restart/settlement test pass. The original outside-file/network-denial canaries remain unchanged in their assertions; they now keep the owner pipe open until normal target exit because EOF explicitly means cancellation. The macOS test also caught `/var` versus `/private/var` spelling in the completion binding; native preparation now returns its canonical parent path.
+
+Verification: Rust 1.99.1 full app library suites with both real worker canaries explicitly included pass 114 on macOS and 116 in pinned ARM64 Linux Docker; strict Clippy passes on both. Helper workspace tests pass 65 on macOS and 67 in Linux Docker, with strict Clippy/formatting. Node 26.13.0 typecheck and all 284 app tests pass. Final native WebKit smoke with the new clean helper pin passes Work controls, canonical rendering/storage, native vault, exact binary upload, zero TCP listeners and parent-exit cleanup. Receipt: `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-desktop-private-S3Ax4u`. The source smoke does not install or replace the app.
+
+Limits: real process launch and settlement are exercised through the Rust harness, not the product task dispatcher. There is no per-task reasoning entry/role isolation, atomic dispatch/approval handoff, product supervisor loop, native scheduler or canonical publication path yet. Native task execution remains unavailable, capacity stays unconfigured in the app and provider dispatch remains refused. CPU/memory/process-count/disk quotas, production multi-job QoS, workspace/IA cutover, original outcomes and final Astra implementation review remain open. This is a proved execution-lifetime primitive, not a completed I2/I3 or a user-task outcome.
+
 ## Desktop Work controls moved to Rust — 2026-10-30
 
 Desktop Work task definitions, captured input bytes and lifecycle metadata now have one native writer. The trusted window maps list/create/read/cancel/delete to a bounded `control_task` command; the actor validates and persists the original request with its root before acknowledgement. Exact create retries return the same task; conflicting definitions and collisions with chats, roots or workspace references are refused. Generic root creation cannot shadow a product task's session. Cancellation and deletion require the current native revision. Deletion is currently limited to cancelled, never-started tasks without canonical content, candidate receipts or native registry references.

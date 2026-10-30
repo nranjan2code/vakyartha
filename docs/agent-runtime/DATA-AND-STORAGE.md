@@ -28,6 +28,7 @@ Inspected `sidecar/workspace-registry.ts`, `sidecar/sandbox-realms.ts`, `sidecar
 | `<data>/workspaces.json` | TS-written projects and bindings; no independent stable `workspaceId` entity or durable physical folder identity |
 | Desktop `<native-data>/host-sessions/` | Revisioned canonical conversation/surface snapshots written only by the native Rust actor through the framework's `HostSessionStore` adapter |
 | Browser `<data>/sessions/` | Framework host filesystem store used only by browser development; session readers use the active backend |
+| Desktop `<native-data>/executions/<run-id>.json` | Helper-owned, owner-only invocation cleanup evidence; Rust validates its exact identity/bytes before durable run settlement; not workspace/project content |
 | Desktop `<native-data>/control` | Native task definitions, captured inputs and root lifecycle metadata in schema 14; one Rust writer, no task dispatch yet |
 | Browser `<data>/tasks/` | Development-only TS task journals; desktop does not open this namespace |
 | Browser `<data>/outputs/<task>--<run>.md` | Development task Markdown outputs with hash/version receipts; native task output is not connected |
@@ -104,6 +105,7 @@ Keep the same private root, with explicit bounded namespaces. `control/registry`
     sessions/<session-id>/        immutable task candidate generations; not canonical chat state
     inputs/<root-id>/             explicitly captured immutable input snapshots
     outputs/<root-id>/<run-id>/   private task exports and receipts
+  executions/<run-id>.json        host-private worker cleanup evidence; no target grant
   host-sessions/                  native-written canonical chat snapshots
 ```
 

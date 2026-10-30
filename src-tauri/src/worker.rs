@@ -9,6 +9,33 @@ pub(crate) fn command(
     resources: &Path,
     data: &Path,
 ) -> Result<Command, String> {
+    command_inner(helper, node, resources, data, None)
+}
+
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "native task dispatch remains gated until the protected end-to-end path is ready"
+    )
+)]
+pub(crate) fn command_for_invocation(
+    helper: &Path,
+    node: &Path,
+    resources: &Path,
+    data: &Path,
+    invocation: &crate::control::worker_completion::WorkerInvocation,
+) -> Result<Command, String> {
+    command_inner(helper, node, resources, data, Some(invocation))
+}
+
+fn command_inner(
+    helper: &Path,
+    node: &Path,
+    resources: &Path,
+    data: &Path,
+    invocation: Option<&crate::control::worker_completion::WorkerInvocation>,
+) -> Result<Command, String> {
     if !cfg!(any(target_os = "macos", target_os = "linux")) {
         return Err("Contained desktop execution is unavailable on this platform".into());
     }
@@ -64,8 +91,25 @@ pub(crate) fn command(
     // Clear the helper's environment as well as explicitly selecting the target
     // environment: secrets and runtime preload hooks must reach neither process.
     cmd.env_clear().env("PATH", "/usr/bin:/bin");
-    cmd.arg("worker")
-        .arg("--cwd")
+    cmd.arg("worker");
+    if let Some(invocation) = invocation {
+        if !invocation
+            .run_id
+            .strip_prefix("run-")
+            .is_some_and(|id| id.parse::<u64>().is_ok_and(|number| number > 0))
+            || invocation.completion_record
+                != native
+                    .join("executions")
+                    .join(format!("{}.json", invocation.run_id))
+        {
+            return Err("Worker completion must belong to the native run store".into());
+        }
+        cmd.arg("--completion-record")
+            .arg(&invocation.completion_record)
+            .arg("--invocation-id")
+            .arg(&invocation.run_id);
+    }
+    cmd.arg("--cwd")
         .arg(&worker)
         .arg("--read")
         .arg(&resources)
@@ -247,11 +291,12 @@ fs.writeFileSync(3, 'CONTAINMENT_PASS\n');
         cmd.env("VAK_CANARY_SECRET", "synthetic-helper-only")
             .env("NODE_OPTIONS", "--require=/must-not-load");
         let mut child = cmd
-            .stdin(Stdio::null())
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
+        let owner = child.stdin.take().unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while child.try_wait().unwrap().is_none() {
             if std::time::Instant::now() > deadline {
@@ -262,6 +307,7 @@ fs.writeFileSync(3, 'CONTAINMENT_PASS\n');
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         let output = child.wait_with_output().unwrap();
+        drop(owner);
         assert!(
             output.status.success(),
             "{}",

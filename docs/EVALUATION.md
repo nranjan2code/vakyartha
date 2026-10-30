@@ -1,5 +1,11 @@
 # Agent outcome evaluation
 
+## Protected worker cleanup settlement — 2026-10-30
+
+Rust can now derive an invocation’s protected completion record and settle its native capacity hold from exact verified helper evidence. The helper pin is `79433e2` (contract 4): owner EOF cancels contained work, target failure stays separate from cleanup proof, and missing/forged/stale evidence never refunds capacity. The Linux Node private-stream startup defect was repaired in the sandbox’s narrowly scoped socket-type filter; socket creation and dispatch remain denied. Real Node cancellation/restart/settlement plus containment checks pass on macOS/Linux, 114/116 native tests with both opt-in canaries included, and strict Clippy. Helper suites pass 65/67; app typecheck/284 tests and final native WebKit smoke pass. [Evidence, diagram and limits](agent-runtime/IMPLEMENTATION-PROGRESS.md#protected-worker-cleanup-and-native-settlement--2026-10-30).
+
+Product task dispatch remains unavailable. This proves supervision/settlement through the Rust harness; it does not supply the per-task role-separated worker, provider approvals/dispatch, scheduler, canonical publication, drift/recovery UI, multi-job QoS or workspace/IA cutover. The installed app and final Astra implementation review remain untouched.
+
 ## Desktop native task controls — 2026-10-30
 
 Desktop task creation/list/detail/cancel/delete now use the Rust actor and native control snapshot (schema 14). The contained sidecar no longer opens the TypeScript task journal or scheduler; worker task routes are refused. Original definitions and input bytes survive restart without execution, exact retries are idempotent, and mutation revisions and namespace/deletion guards are enforced. Browser development retains its separate task backend. Native WebKit verifies Work list/detail/cancel and no worker task directory; Node 26.13.0 typecheck/284 app tests, Rust 1.99.1 macOS 111/Linux Docker 113 tests and strict Clippy pass (one opt-in native canary ignored per target). See [scope and evidence](agent-runtime/IMPLEMENTATION-PROGRESS.md#desktop-work-controls-moved-to-rust--2026-10-30).

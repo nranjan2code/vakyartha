@@ -2,6 +2,8 @@
 
 Design baseline: 2026-10-29. Status: architecture and active implementation. Tauri starts the native actor on macOS/Linux; private protocol v2 now carries health and exact candidate-commit operations; and native control can persist a root/session-fenced immutable candidate generation with a durable receipt. Desktop Work definitions and revisioned list/read/cancel/delete controls now use the native actor; the desktop TypeScript task journal/pump is removed. TypeScript still owns product workspace routes. Task execution/scheduling is explicitly unavailable, the actor profile refuses execution, candidate commits are not published to canonical sessions, and no full delivery or outcome gate has passed. Browser development retains its separate task backend. Diagrams show the target unless explicitly labelled current behavior. Track live changes and verification in [implementation progress](IMPLEMENTATION-PROGRESS.md).
 
+Native supervision proof now includes protected helper cleanup records and durable run settlement with real contained Node on macOS/Linux. Product task dispatch remains disabled. See [current implementation evidence](IMPLEMENTATION-PROGRESS.md#protected-worker-cleanup-and-native-settlement--2026-10-30).
+
 The design applies to one agent first. Delegation is an optional extension of the same task contract, authority, budgets, evidence and recovery. The default is zero children; neither task length nor a role name justifies creating one.
 
 ## Reading map
