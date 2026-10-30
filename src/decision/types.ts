@@ -111,6 +111,7 @@ export interface DecisionState {
 export type SupportedProviderId =
   | "heuristic"
   | "ollama"
+  | "typesafe"
   | "openrouter"
   | "groq"
   | "cerebras"

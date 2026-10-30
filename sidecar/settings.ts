@@ -23,6 +23,8 @@ export const SETTINGS: Setting[] = [
   { name: "VAK_SANDBOX_ENABLED", label: "OS-level process isolation", secret: false, group: "app", owner: "sandbox", placeholder: "true or false" },
   { name: "VAK_SANDBOX_WORKSPACE", label: "Sandbox execution project folder", secret: false, group: "app", owner: "sandbox", placeholder: "/Users/you/Projects/example" },
   { name: "VAK_EXTRA_EGRESS_HOSTS", label: "Custom allowed network egress hosts", secret: false, group: "app", owner: "sandbox", placeholder: "my-azure.openai.azure.com, 192.168.1.50:8000" },
+  { name: "TYPESAFE_API_KEY", label: "TypeSafe AI API key", secret: true, group: "main", owner: "typesafe" },
+  { name: "TYPESAFE_BASE_URL", label: "TypeSafe AI endpoint", secret: false, group: "more", owner: "typesafe", placeholder: "https://api.typesafe.ai/v1" },
   ...PROVIDER_SETTINGS.map(({ provider, ...s }) => ({ ...s, owner: provider })),
   ...CHANNELS.flatMap((c) => c.secrets.map((s) => ({ ...s, secret: true, group: "channel" as const, owner: c.id }))),
   ...VOICE_KEYS.map((k) => ({ ...k, secret: true, group: "voice" as const })),

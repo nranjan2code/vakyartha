@@ -4,6 +4,7 @@ import { HeuristicDecisionProvider } from "../src/decision/heuristic.ts";
 import { OllamaDecisionProvider, DEFAULT_OLLAMA_HOST } from "../src/decision/providers/ollama.ts";
 import { OpenRouterDecisionProvider } from "../src/decision/providers/openrouter.ts";
 import { OpenAIDecisionProvider } from "../src/decision/providers/openai.ts";
+import { TypeSafeDecisionProvider } from "../src/decision/providers/typesafe.ts";
 import { DecisionChainRunner, type DecisionChainDefinition } from "../src/decision/chain.ts";
 import { getDecisionConfig, saveDecisionConfig, shapeTurn, type ChatTurnPayload } from "../src/decision/shaper.ts";
 
@@ -488,6 +489,104 @@ test("shapeTurn: dynamically consumes runtime surfaces, skills, and tools withou
   assert.ok(toolTurn.payload.tools?.some((t) => t.name === "slack__post_message"));
   assert.ok(!toolTurn.payload.tools?.some((t) => t.name === "weather__forecast"));
   assert.ok(toolTurn.prunedToolCount > 0);
+});
+
+test("TypeSafeDecisionProvider: falls back to heuristics gracefully when API key is missing", async () => {
+  const provider = new TypeSafeDecisionProvider(undefined);
+
+  const shape = await provider.classifyTurn({
+    message: "Hi there!",
+    availableTools: ["filesystem", "web_search"],
+  });
+
+  assert.equal(shape.intent, "salutation");
+  assert.equal(shape.historyPolicy, "strip_all");
+  assert.ok(shape.reason?.includes("API key not configured"));
+});
+
+test("TypeSafeDecisionProvider: falls back to heuristics on network error or invalid endpoint", async () => {
+  const provider = new TypeSafeDecisionProvider("ts-dummy-key", "jev-latest", "http://127.0.0.1:59999/v1");
+
+  const shape = await provider.classifyTurn(
+    {
+      message: "Please read package.json",
+      availableTools: ["filesystem"],
+    },
+    50,
+  );
+
+  assert.equal(shape.intent, "scoped_tool_task");
+  assert.ok(shape.reason?.includes("fell back to heuristics"));
+});
+
+test("TypeSafeDecisionProvider: dynamically queries models via listModels()", async () => {
+  const unauthed = new TypeSafeDecisionProvider(undefined);
+  const models1 = await unauthed.listModels();
+  assert.deepEqual(models1, []);
+
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/models")) {
+        return Response.json({
+          data: [{ id: "jev-latest" }, { id: "jev-router" }, { id: "jev-1.14" }],
+        });
+      }
+      return originalFetch(input);
+    }) as typeof fetch;
+
+    const provider = new TypeSafeDecisionProvider("test-key", "jev-latest");
+    const detected = await provider.listModels();
+    assert.deepEqual(detected, ["jev-1.14", "jev-latest", "jev-router"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("TypeSafeDecisionProvider: processes mock SystemOne response accurately", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/systemone")) {
+        return Response.json({
+          model: "jev-latest",
+          answers: {
+            intent: {
+              type: "choice",
+              choice: "scoped_tool_task",
+              confidence: 0.94,
+              probabilities: { scoped_tool_task: 0.94, complex_reasoning: 0.06 },
+            },
+            tool_namespace: {
+              type: "choice",
+              choice: "filesystem",
+              confidence: 0.91,
+              probabilities: { filesystem: 0.91, web: 0.09 },
+            },
+          },
+          usage: { input_tokens: 45, output_tokens: 0 },
+        });
+      }
+      return originalFetch(input);
+    }) as typeof fetch;
+
+    const provider = new TypeSafeDecisionProvider("test-key", "jev-latest");
+    const shape = await provider.classifyTurn({
+      message: "read the package.json file",
+      availableTools: ["filesystem_read", "web_search"],
+    });
+
+    assert.equal(shape.intent, "scoped_tool_task");
+    assert.equal(shape.confidence, 0.94);
+    assert.ok(shape.allowedToolNamespaces.includes("filesystem_read"));
+    assert.ok(!shape.allowedToolNamespaces.includes("web_search"));
+    assert.equal(shape.decisionUsage?.inputTokens, 45);
+    assert.equal(shape.decisionUsage?.outputTokens, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 

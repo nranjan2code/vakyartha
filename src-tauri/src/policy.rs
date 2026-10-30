@@ -13,6 +13,7 @@ pub const ALLOWED_PROVIDER_HOSTS: &[&str] = &[
     "registry.npmjs.org",
     "mcp.kite.trade",
     "mcp.nseindia.in",
+    "api.typesafe.ai",
 ];
 
 /// Permitted vendor workspace cloud suffixes.
@@ -209,6 +210,10 @@ mod tests {
         );
         assert_eq!(
             evaluate_egress("https", "generativelanguage.googleapis.com", None),
+            EgressDecision::Allowed
+        );
+        assert_eq!(
+            evaluate_egress("https", "api.typesafe.ai", None),
             EgressDecision::Allowed
         );
     }

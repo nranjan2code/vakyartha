@@ -578,9 +578,11 @@ Accepted at the user's direction: separate System 1 decision scoring from System
    - On the primary target (local 4B `qwen3.5:4b-mlx` via Ollama), prompt prefill latency took seconds, unified memory was saturated, and small models were prone to tool hallucination on casual chatter.
 
 2. **System 1 Decision Architecture:**
-   - Adopts Ollama's native `/v1/systemone` structured decision-scoring endpoint using local zero-token-output decision models (`d1-omni:latest` 380M, `laya:latest` 421M).
+   - Adopts native `/v1/systemone` structured decision-scoring endpoints: local Ollama zero-token-output models (`d1-omni:latest` 380M, `laya:latest` 421M), cloud TypeSafe AI (`https://api.typesafe.ai/v1/systemone` using flagship Jev models), OpenAI Structured Outputs (`gpt-4o-mini`), and OpenRouter (`microsoft/decision-1`).
    - In single forward passes (<50ms, 0 output tokens), the decision model evaluates text against explicit typed criteria, returning calibrated probability distributions.
    - An infallible in-memory heuristic provider (<1ms) guarantees zero failure modes or turn stalls on timeout or offline daemon.
+   - **TypeSafe AI Native Provider & Dynamic Model Detection:** Integrates TypeSafe AI as a first-class decision provider and general provider. Models are never hardcoded: detected dynamically via `GET https://api.typesafe.ai/v1/models` with the user's `TYPESAFE_API_KEY` (saved in macOS Keychain / secret vault). Egress is governed by the Rust root of trust (`src-tauri/src/policy.rs`) admitting `api.typesafe.ai` over HTTPS. The unique `provider + model` combination is strictly maintained across the app.
+   - **Official Skill Pack Catalog:** TypeSafe AI's official skill repository (`typesafe-ai/skills`) is supported as an external publisher catalog source in Explore Skills with the official brand logo (`public/brand/integrations/typesafe-ai.png`), keeping it cleanly separated from Vakyartha's built-in skills.
 
 3. **Dynamic Turn Shaper & Semantic Context Assembly:**
    - Evaluates incoming turns at turn initialization before prompt assembly, replacing naive static sliding windows (e.g. indiscriminate "last 10 turns") with semantic context shaping.

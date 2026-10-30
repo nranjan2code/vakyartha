@@ -1,4 +1,15 @@
-# Vakyartha handover — 2026-10-29
+# Vakyartha handover — 2026-10-30
+
+## TypeSafe AI provider, dynamic model discovery & official skill pack — 2026-10-30
+
+Integrated TypeSafe AI (`typesafe.ai`) and its flagship System One decision model family (Jev) as a first-class provider and decision provider adapter.
+
+1. **Dynamic Model Discovery (No Hardcoding):** Models are discovered dynamically using the user's configured `TYPESAFE_API_KEY` via `GET https://api.typesafe.ai/v1/models` in both the sidecar server provider registry (`sidecar/server.ts`) and `TypeSafeDecisionProvider.listModels()`. The Settings UI populates available models live from the API without static lists.
+2. **Provider + Model Combination:** Preserved the unique `[provider, model]` combination contract across all preference stores, active provider state, and turn execution. `OpenRouter (Microsoft-Decision-1)` and `microsoft/decision-1` are retained unchanged.
+3. **Rust Root of Trust & Network Egress:** Admitted `api.typesafe.ai` over HTTPS in the indestructible Rust engine (`src-tauri/src/policy.rs`) and sidecar egress guard (`sidecar/egress.ts`).
+4. **Secret Management:** Registered `TYPESAFE_API_KEY` in `sidecar/settings.ts`, storing credentials securely in the macOS Keychain / cross-platform vault.
+5. **Official Skill Pack Catalog:** Added `typesafe-ai/skills` as an official external publisher catalog source in Explore Skills (`shared/skills.ts`) with dedicated 200×200 brand mark (`public/brand/integrations/typesafe-ai.png`) and `skillPublisherIcon` mapping, completely separated from built-in skills.
+6. **Verification:** All 287 Node tests (`test/**/*.test.ts`), all 11 Rust crate tests (`cargo test --manifest-path src-tauri/Cargo.toml --lib`), and TypeScript type checking pass with 0 errors.
 
 ## Agent runtime architecture documentation — 2026-10-29
 

@@ -4,5 +4,7 @@ export * from "./types.ts";
 export * from "./heuristic.ts";
 export * from "./providers/ollama.ts";
 export * from "./providers/openrouter.ts";
+export * from "./providers/openai.ts";
+export * from "./providers/typesafe.ts";
 export * from "./chain.ts";
 export * from "./shaper.ts";

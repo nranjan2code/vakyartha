@@ -5,7 +5,7 @@ import { engineFetch } from "./backend.ts";
 import { readSse } from "@vak/core";
 import { autostart, inTauri, openAdminConsole, revealPath, setKeepRunning } from "./backend.ts";
 import { $, api, ask, el, engine, prefs } from "./core.ts";
-import { choose, current, labelOf, listModels, loadProviders, modelOptions, parseChoice, type ProviderInfo, providers } from "./models.ts";
+import { choose, current, labelOf, listModels, loadProviders, modelOptions, modelsOf, parseChoice, type ProviderInfo, providers } from "./models.ts";
 import { applyAppearance, appearance, MODES, SIZES, THEMES } from "./theme.ts";
 import { icon } from "./icons.ts";
 import { pagedNodes } from "./pagination.ts";
@@ -277,27 +277,48 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     const cfg = getDecisionConfig();
     const providerOptions: [string, string][] = [
       ["ollama", "Local Ollama (d1-omni / laya)"],
+      ["typesafe", "TypeSafe AI (Jev SystemOne)"],
       ["openai", "OpenAI (GPT-4o-mini Structured Outputs)"],
       ["openrouter", "OpenRouter (Microsoft-Decision-1)"],
       ["heuristic", "Built-in Fast Heuristics (0ms)"],
     ];
 
-    const modelOptionsList: [string, string][] = cfg.providerId === "openrouter"
-      ? [
+    const detected = modelsOf.get(cfg.providerId) ?? [];
+    let modelOptionsList: [string, string][] = detected.map((m) => [m, m]);
+
+    if (modelOptionsList.length === 0) {
+      if (cfg.providerId === "openrouter") {
+        modelOptionsList = [
           ["microsoft/decision-1", "microsoft/decision-1 (9B calibrated decider)"],
           ["meta-llama/llama-3.2-3b-instruct", "meta-llama/llama-3.2-3b-instruct"],
-        ]
-      : cfg.providerId === "openai"
-        ? [
-            ["gpt-4o-mini", "gpt-4o-mini (fast strict JSON schema)"],
-            ["gpt-4o", "gpt-4o (standard)"],
-          ]
-        : [
-            ["d1-omni:latest", "d1-omni:latest (380M decision+vision)"],
-            ["laya:latest", "laya:latest (420M decision)"],
-            ["qwen2.5:3b", "qwen2.5:3b"],
-            ["qwen3.5:4b-mlx", "qwen3.5:4b-mlx"],
-          ];
+        ];
+      } else if (cfg.providerId === "openai") {
+        modelOptionsList = [
+          ["gpt-4o-mini", "gpt-4o-mini (fast strict JSON schema)"],
+          ["gpt-4o", "gpt-4o (standard)"],
+        ];
+      } else if (cfg.providerId === "ollama") {
+        modelOptionsList = [
+          ["d1-omni:latest", "d1-omni:latest (380M decision+vision)"],
+          ["laya:latest", "laya:latest (420M decision)"],
+          ["qwen2.5:3b", "qwen2.5:3b"],
+          ["qwen3.5:4b-mlx", "qwen3.5:4b-mlx"],
+        ];
+      }
+    }
+
+    if (cfg.modelId && !modelOptionsList.some(([v]) => v === cfg.modelId)) {
+      modelOptionsList.unshift([cfg.modelId, cfg.modelId]);
+    }
+
+    const activeProvider = providers.find((p) => p.id === cfg.providerId);
+    if (activeProvider && activeProvider.available && detected.length === 0) {
+      void listModels(activeProvider).then((res) => {
+        if (res.models.length > 0 && cfg.providerId === getDecisionConfig().providerId) {
+          updateDecisionUi();
+        }
+      });
+    }
 
     const providerSelect = select(providerOptions, cfg.providerId, (v) => {
       saveDecisionConfig({ providerId: v as DecisionConfig["providerId"] });

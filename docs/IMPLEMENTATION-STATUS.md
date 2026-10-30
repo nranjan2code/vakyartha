@@ -401,3 +401,14 @@ Historical workspace checkpoint, read with the bounded FOLDER1–FOLDER7 criteri
 - [x] Multi-Turn Benchmark: [`docs/decision/BENCHMARK-STOCK-DASHBOARD.md`](decision/BENCHMARK-STOCK-DASHBOARD.md) demonstrates 72.8% token savings, ~60ms local System 1 latency, and 100% canvas refinement accuracy.
 - [x] Senior QA Negative & Red/Blue Teaming: [`docs/decision/EVALUATION-NEGATIVE-REDBLUE-MULTIDOMAIN.md`](decision/EVALUATION-NEGATIVE-REDBLUE-MULTIDOMAIN.md) validates 22/22 adversarial scenarios, Ghost Canvas safeguards, generic CRUD verb collision resolution, and 9/9 multi-domain compound tests across 8 distinct enterprise domains.
 - [x] Verification: TypeScript typecheck passes with 0 errors; full suite of 16 tests in `test/decision.test.ts` passes; 0 TODOs, 0 mocks, 0 stubs.
+
+## TypeSafe AI Provider, Dynamic Model Discovery & Official Skill Pack checkpoint — 2026-10-30
+
+- [x] TypeSafe AI native System 1 decision provider adapter (`src/decision/providers/typesafe.ts`) calling `https://api.typesafe.ai/v1/systemone` with Bearer auth and dynamic tool pruning.
+- [x] Dynamic model discovery: no hardcoded models; detects models directly from API key via `GET /v1/models` in both sidecar server (`sidecar/server.ts`) and decision provider (`TypeSafeDecisionProvider.listModels()`).
+- [x] Preserved unique `provider + model` combination throughout the app, Settings UI, and preference store (`choose("typesafe", model)`).
+- [x] Retained `OpenRouter (Microsoft-Decision-1)` and `microsoft/decision-1` intact in settings.
+- [x] Rust Root of Trust and sidecar network egress gating: allowlisted `api.typesafe.ai` over HTTPS in `src-tauri/src/policy.rs` and `sidecar/egress.ts`.
+- [x] Stored secrets: `TYPESAFE_API_KEY` registered in `sidecar/settings.ts` with macOS Keychain / cross-platform vault storage.
+- [x] Official Skill Pack support: `typesafe-ai/skills` added to `SKILL_SOURCES` in `shared/skills.ts` with official 200×200 brand mark in `public/brand/integrations/typesafe-ai.png` and `src/catalog-icons.ts` (`skillPublisherIcon`), cleanly separated from built-in skills.
+- [x] Verification: TypeScript typecheck passes with 0 errors; all 287 Node tests pass; all 11 Rust cargo tests pass.

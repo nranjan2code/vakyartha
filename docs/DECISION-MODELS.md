@@ -28,7 +28,7 @@ Vakyartha separates **System 1 (Decision Models)** from **System 2 (Generative M
 
 | Dimension | Generative Models (System 2) | Decision Models (System 1) |
 | :--- | :--- | :--- |
-| **Primary Target** | `qwen3.5:4b-mlx`, Claude, OpenAI, Gemini | `d1-omni:latest` (380M), `laya:latest` (421M), Heuristics |
+| **Primary Target** | `qwen3.5:4b-mlx`, Claude, OpenAI, Gemini | Local Ollama (`d1-omni:latest` 380M, `laya:latest` 421M), TypeSafe AI (Jev family: `jev-latest`, `jev-1.14`, `jev-router`), OpenAI Structured Outputs (`gpt-4o-mini`), Heuristics |
 | **Output Type** | Autoregressive streamed text / tokens | Single-pass discrete choice + calibrated probabilities |
 | **Output Tokens** | Variable (tens to thousands) | **`0 output tokens`** (Logit / score evaluation) |
 | **Typical Latency** | 1.5s – 10.0s | **15ms – 50ms** |
@@ -52,10 +52,10 @@ flowchart TD
         ShaperHook -- "No (Disabled)" --> UnshapedPayload["Unshaped Default Payload<br>(Full history, all tools)"]
         ShaperHook -- "Yes (Enabled)" --> DecisionCall["Decision Classification (<50ms)"]
         
-        DecisionCall --> OllamaSystemOne["Ollama /v1/systemone<br>(d1-omni / laya)"]
+        DecisionCall --> S1Providers["System 1 Decision Providers:<br>• Ollama /v1/systemone (d1-omni / laya)<br>• TypeSafe AI /v1/systemone (Jev)<br>• OpenAI Structured Outputs (gpt-4o-mini)<br>• OpenRouter (Microsoft-Decision-1)"]
         DecisionCall -. "Timeout / Error" .-> HeuristicFallback["In-Memory Heuristics (<1ms)"]
         
-        OllamaSystemOne & HeuristicFallback --> TurnShape["Typed TurnShape Contract"]
+        S1Providers & HeuristicFallback --> TurnShape["Typed TurnShape Contract"]
         
         TurnShape --> Assembler["Dynamic Turn Assembler"]
         
@@ -151,8 +151,8 @@ All settings live in Vakyartha's reactive preferences store:
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `vak:decision:enabled` | `boolean` | `"true"` | Master switch for dynamic turn shaping |
-| `vak:decision:provider` | `string` | `"ollama"` | Active decision provider (`ollama`, `openai`, `openrouter`, or `heuristic`) |
-| `vak:decision:model` | `string` | `"d1-omni:latest"` | Local decision model name |
+| `vak:decision:provider` | `string` | `"ollama"` | Active decision provider (`ollama`, `typesafe`, `openai`, `openrouter`, or `heuristic`) |
+| `vak:decision:model` | `string` | `"d1-omni:latest"` | Decision model name (detected dynamically from API key via `/models`) |
 | `vak:decision:timeout` | `number` | `1500` | Hard timeout ceiling (ms) before heuristic fallback |
 | `vak:decision:pruneTools` | `boolean` | `"true"` | Prunes irrelevant MCP tools on non-tool turns |
 | `vak:decision:stripSalutations`| `boolean` | `"true"` | Strips past history and surface grammar on greetings |

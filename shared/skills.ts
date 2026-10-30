@@ -14,6 +14,7 @@ export type SkillFileStatus = "added" | "script" | "unsupported" | "too-large" |
 export interface SkillFile { path: string; bytes: number; status: SkillFileStatus; sha256?: string }
 /** Publisher-owned repositories of SKILL.md folders, checked October 2026. Any other owner/name can be searched too. */
 export const SKILL_SOURCES = [
+  { repo: "typesafe-ai/skills", name: "TypeSafe AI", description: "Official System One decision models, Jev classifications and question primitives." },
   { repo: "anthropics/skills", name: "Anthropic", description: "Documents, design and development." },
   { repo: "openai/skills", name: "OpenAI", description: "Curated skills catalog." },
   { repo: "google/skills", name: "Google", description: "Cloud and Workspace products." },

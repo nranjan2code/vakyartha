@@ -9,6 +9,8 @@ test("evaluateEgressUrl admits approved provider endpoints over HTTPS", () => {
   assert.equal(evaluateEgressUrl("https://api.telegram.org/bot123/getUpdates", false).allowed, true);
   assert.equal(evaluateEgressUrl("https://mcp.kite.trade/mcp", false).allowed, true);
   assert.equal(evaluateEgressUrl("https://mcp.nseindia.in/cmmkt/mcp", false).allowed, true);
+  assert.equal(evaluateEgressUrl("https://api.typesafe.ai/v1/systemone", false).allowed, true);
+  assert.equal(evaluateEgressUrl("https://api.typesafe.ai/v1/models", false).allowed, true);
   assert.equal(evaluateEgressUrl("https://my-company.cloud.databricks.com/ai-gateway/mcp-services/demo", false).allowed, true);
 });
 

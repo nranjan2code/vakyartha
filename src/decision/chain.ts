@@ -50,11 +50,13 @@ const fallback = new HeuristicDecisionProvider();
 
 export class DecisionChainRunner {
   readonly host: string;
+  readonly apiKey?: string;
   model: string;
 
-  constructor(host: string = DEFAULT_OLLAMA_HOST, model: string = DEFAULT_OLLAMA_DECISION_MODEL) {
-    this.host = host;
+  constructor(host: string = DEFAULT_OLLAMA_HOST, model: string = DEFAULT_OLLAMA_DECISION_MODEL, apiKey?: string) {
+    this.host = host.replace(/\/+$/, "");
     this.model = model;
+    this.apiKey = apiKey;
   }
 
   /**
@@ -109,9 +111,14 @@ export class DecisionChainRunner {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (this.apiKey) {
+        headers["Authorization"] = `Bearer ${this.apiKey}`;
+      }
+
       const res = await fetch(`${this.host}/v1/systemone`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         signal: controller.signal,
         body: JSON.stringify({
           model: this.model,
