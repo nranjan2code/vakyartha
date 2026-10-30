@@ -32,10 +32,10 @@ pub enum BindingState {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectRecord {
-    id: String,
-    name: String,
-    preferred_workspace: Option<String>,
-    revision: u64,
+    pub id: String,
+    pub name: String,
+    pub preferred_workspace: Option<String>,
+    pub revision: u64,
 }
 
 impl ProjectRecord {
@@ -79,10 +79,10 @@ impl ProjectRecord {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceRecord {
-    id: String,
-    canonical_path: PathBuf,
-    identity: FolderIdentity,
-    revision: u64,
+    pub id: String,
+    pub canonical_path: PathBuf,
+    pub identity: FolderIdentity,
+    pub revision: u64,
 }
 
 impl WorkspaceRecord {
@@ -100,21 +100,21 @@ impl WorkspaceRecord {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceBinding {
-    id: String,
-    session_id: String,
-    workspace_id: String,
-    realm_id: Option<String>,
-    mode: WorkspaceMode,
-    revision: u64,
-    state: BindingState,
+    pub id: String,
+    pub session_id: String,
+    pub workspace_id: String,
+    pub realm_id: Option<String>,
+    pub mode: WorkspaceMode,
+    pub revision: u64,
+    pub state: BindingState,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectMembership {
-    session_id: String,
-    project_id: Option<String>,
-    revision: u64,
+    pub session_id: String,
+    pub project_id: Option<String>,
+    pub revision: u64,
 }
 
 impl ProjectMembership {
@@ -246,6 +246,128 @@ impl RegistryState {
         }
         self.projects.insert(id, project);
         Ok(())
+    }
+
+    pub fn list_projects(&self) -> Vec<ProjectRecord> {
+        self.projects.values().cloned().collect()
+    }
+
+    pub fn get_project(&self, id: &str) -> Option<ProjectRecord> {
+        self.projects.get(id).cloned()
+    }
+
+    pub fn remove_project(&mut self, id: &str) -> Result<(), RegistryError> {
+        valid_id(id)?;
+        self.projects.remove(id).ok_or(RegistryError::ProjectNotFound)?;
+        for membership in self.memberships.values_mut() {
+            if membership.project_id.as_deref() == Some(id) {
+                membership.project_id = None;
+                membership.revision = next_revision(membership.revision)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn list_workspaces(&self) -> Vec<WorkspaceRecord> {
+        self.workspaces.values().cloned().collect()
+    }
+
+    pub fn get_workspace(&self, id: &str) -> Option<WorkspaceRecord> {
+        self.workspaces.get(id).cloned()
+    }
+
+    pub fn find_workspace_by_path(&self, path: &Path) -> Option<WorkspaceRecord> {
+        let canonical = path.canonicalize().ok();
+        self.workspaces
+            .values()
+            .find(|w| {
+                w.canonical_path == path
+                    || canonical.as_ref().is_some_and(|c| c == &w.canonical_path)
+            })
+            .cloned()
+    }
+
+    pub fn list_bindings(&self) -> Vec<WorkspaceBinding> {
+        self.bindings.values().cloned().collect()
+    }
+
+    pub fn get_binding(&self, session_id: &str) -> Option<WorkspaceBinding> {
+        self.bindings.get(session_id).cloned()
+    }
+
+    pub fn unbind(&mut self, session_id: &str) -> Result<(), RegistryError> {
+        valid_id(session_id)?;
+        self.bindings
+            .remove(session_id)
+            .ok_or(RegistryError::BindingNotFound)?;
+        Ok(())
+    }
+
+    pub fn to_legacy_json(&self) -> serde_json::Value {
+        let projects: Vec<serde_json::Value> = self
+            .projects
+            .values()
+            .map(|p| {
+                let folder = p
+                    .preferred_workspace
+                    .as_ref()
+                    .and_then(|wid| self.workspaces.get(wid))
+                    .map(|w| w.canonical_path.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                serde_json::json!({
+                    "id": p.id,
+                    "name": p.name,
+                    "folder": folder,
+                    "revision": p.revision,
+                })
+            })
+            .collect();
+
+        let mut bindings = serde_json::Map::new();
+        for (session, b) in &self.bindings {
+            let workspace = self.workspaces.get(&b.workspace_id);
+            let folder = workspace
+                .map(|w| w.canonical_path.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let folder_identity = workspace.map(|w| w.identity.to_identity_string());
+            let mode = match b.mode {
+                WorkspaceMode::CopyReview => "copy_review",
+                WorkspaceMode::Direct => "direct",
+            };
+            let access_state = match b.state {
+                BindingState::Admitted => "admitted",
+                BindingState::Revoked => "revoked",
+            };
+            let project_id = self
+                .memberships
+                .get(session)
+                .and_then(|m| m.project_id.clone());
+            let mut obj = serde_json::json!({
+                "session": session,
+                "folder": folder,
+                "mode": mode,
+                "revision": b.revision,
+                "accessState": access_state,
+                "boundAt": "1970-01-01T00:00:00.000Z",
+                "updatedAt": "1970-01-01T00:00:00.000Z",
+            });
+            if let Some(fid) = folder_identity {
+                obj["folderIdentity"] = serde_json::json!(fid);
+            }
+            if let Some(pid) = project_id {
+                obj["projectId"] = serde_json::json!(pid);
+            }
+            if let Some(rid) = &b.realm_id {
+                obj["realmId"] = serde_json::json!(rid);
+            }
+            bindings.insert(session.clone(), obj);
+        }
+
+        serde_json::json!({
+            "version": 1,
+            "projects": projects,
+            "bindings": bindings,
+        })
     }
 
     pub fn register_workspace(
@@ -652,6 +774,59 @@ mod tests {
         );
         fs::remove_dir_all(first).unwrap();
         fs::remove_dir_all(second).unwrap();
+        fs::remove_dir_all(protected).unwrap();
+    }
+
+    #[test]
+    fn project_and_workspace_lifecycle_and_legacy_projection() {
+        let mut state = RegistryState::default();
+        let path = temp_dir();
+        let protected = temp_dir();
+        let admission = WorkspaceAdmissionPolicy::new(&protected).unwrap();
+
+        state
+            .create_project(ProjectRecord::new("project-0001".into(), "Main Project".into()).unwrap())
+            .unwrap();
+        assert_eq!(state.list_projects().len(), 1);
+        assert_eq!(state.get_project("project-0001").unwrap().name, "Main Project");
+
+        let ws = state
+            .register_workspace("workspace-01".into(), &path, &admission)
+            .unwrap();
+        assert_eq!(state.list_workspaces().len(), 1);
+        assert_eq!(state.get_workspace("workspace-01").unwrap().id, "workspace-01");
+        assert_eq!(state.find_workspace_by_path(&path).unwrap().id, "workspace-01");
+
+        state
+            .set_project_preferred_workspace("project-0001", 1, Some("workspace-01".into()))
+            .unwrap();
+
+        let binding = state
+            .bind(
+                "binding-001".into(),
+                "session-001".into(),
+                "workspace-01".into(),
+                None,
+                WorkspaceMode::CopyReview,
+            )
+            .unwrap();
+        assert_eq!(state.list_bindings().len(), 1);
+        assert_eq!(state.get_binding("session-001").unwrap().id, "binding-001");
+        assert_eq!(ws.id, "workspace-01");
+        assert_eq!(binding.id, "binding-001");
+
+        let legacy = state.to_legacy_json();
+        assert_eq!(legacy["version"], 1);
+        assert_eq!(legacy["projects"][0]["name"], "Main Project");
+        assert_eq!(legacy["bindings"]["session-001"]["session"], "session-001");
+
+        state.unbind("session-001").unwrap();
+        assert!(state.get_binding("session-001").is_none());
+
+        state.remove_project("project-0001").unwrap();
+        assert!(state.get_project("project-0001").is_none());
+
+        fs::remove_dir_all(path).unwrap();
         fs::remove_dir_all(protected).unwrap();
     }
 }

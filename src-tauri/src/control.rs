@@ -915,6 +915,35 @@ enum ActorCommand {
         expected_revision: u64,
         reply: SyncSender<Result<WorkspaceGrant, ControlError>>,
     },
+    ListProjects {
+        reply: SyncSender<Vec<ProjectRecord>>,
+    },
+    GetProject {
+        id: String,
+        reply: SyncSender<Option<ProjectRecord>>,
+    },
+    RemoveProject {
+        id: String,
+        reply: SyncSender<Result<(), ControlError>>,
+    },
+    ListWorkspaces {
+        reply: SyncSender<Vec<WorkspaceRecord>>,
+    },
+    GetWorkspace {
+        id: String,
+        reply: SyncSender<Option<WorkspaceRecord>>,
+    },
+    ListWorkspaceBindings {
+        reply: SyncSender<Vec<WorkspaceBinding>>,
+    },
+    GetWorkspaceBinding {
+        session_id: String,
+        reply: SyncSender<Option<WorkspaceBinding>>,
+    },
+    UnbindWorkspace {
+        session_id: String,
+        reply: SyncSender<Result<(), ControlError>>,
+    },
     Shutdown,
 }
 
@@ -1692,6 +1721,86 @@ impl ControlHandle {
                 workspace_id,
                 reply,
             })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    pub fn list_projects(&self) -> Result<Vec<ProjectRecord>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::ListProjects { reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)
+    }
+
+    pub fn get_project(&self, id: String) -> Result<Option<ProjectRecord>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::GetProject { id, reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)
+    }
+
+    pub fn remove_project(&self, id: String) -> Result<(), ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::RemoveProject { id, reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    pub fn list_workspaces(&self) -> Result<Vec<WorkspaceRecord>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::ListWorkspaces { reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)
+    }
+
+    pub fn get_workspace(&self, id: String) -> Result<Option<WorkspaceRecord>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::GetWorkspace { id, reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)
+    }
+
+    pub fn list_workspace_bindings(&self) -> Result<Vec<WorkspaceBinding>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::ListWorkspaceBindings { reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)
+    }
+
+    pub fn get_workspace_binding(&self, session_id: String) -> Result<Option<WorkspaceBinding>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::GetWorkspaceBinding { session_id, reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)
+    }
+
+    pub fn unbind_workspace(&self, session_id: String) -> Result<(), ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::UnbindWorkspace { session_id, reply })
             .map_err(queue_error)?;
         response
             .recv_timeout(self.response_timeout)
@@ -3413,6 +3522,60 @@ fn actor_loop(
                     .map_err(ControlError::Registry);
                 let _ = reply.send(grant);
             }
+            ActorCommand::ListProjects { reply } => {
+                let _ = reply.send(ledger.registry.list_projects());
+            }
+            ActorCommand::GetProject { id, reply } => {
+                let _ = reply.send(ledger.registry.get_project(&id));
+            }
+            ActorCommand::RemoveProject { id, reply } => {
+                let mut candidate = ledger.clone();
+                match candidate.registry.remove_project(&id) {
+                    Ok(_) => match store.persist(&candidate, &profile) {
+                        Ok(_) => {
+                            ledger = candidate;
+                            let _ = reply.send(Ok(()));
+                        }
+                        Err(error) => {
+                            let _ = reply.send(Err(ControlError::Store(error)));
+                            break;
+                        }
+                    },
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Registry(error)));
+                    }
+                }
+            }
+            ActorCommand::ListWorkspaces { reply } => {
+                let _ = reply.send(ledger.registry.list_workspaces());
+            }
+            ActorCommand::GetWorkspace { id, reply } => {
+                let _ = reply.send(ledger.registry.get_workspace(&id));
+            }
+            ActorCommand::ListWorkspaceBindings { reply } => {
+                let _ = reply.send(ledger.registry.list_bindings());
+            }
+            ActorCommand::GetWorkspaceBinding { session_id, reply } => {
+                let _ = reply.send(ledger.registry.get_binding(&session_id));
+            }
+            ActorCommand::UnbindWorkspace { session_id, reply } => {
+                let mut candidate = ledger.clone();
+                match candidate.registry.unbind(&session_id) {
+                    Ok(_) => match store.persist(&candidate, &profile) {
+                        Ok(_) => {
+                            ledger = candidate;
+                            let _ = reply.send(Ok(()));
+                        }
+                        Err(error) => {
+                            let _ = reply.send(Err(ControlError::Store(error)));
+                            break;
+                        }
+                    },
+                    Err(error) => {
+                        let _ = reply.send(Err(ControlError::Registry(error)));
+                    }
+                }
+            }
         }
     }
 }
@@ -3566,6 +3729,15 @@ impl ControlStore {
         self.sequence = sequence;
         remove_unselected_generations(&self.dir, sequence)?;
         sync_directory(&self.dir)?;
+        if let Some(data_dir) = self.dir.parent() {
+            let legacy = snapshot.ledger.registry.to_legacy_json();
+            if let Ok(bytes) = serde_json::to_vec_pretty(&legacy)
+                && let Ok(tmp) = write_temp_synced(data_dir, "workspaces", &bytes)
+            {
+                let _ = replace_file(&tmp, &data_dir.join("workspaces.json"));
+                let _ = sync_directory(data_dir);
+            }
+        }
         Ok(sequence)
     }
 }

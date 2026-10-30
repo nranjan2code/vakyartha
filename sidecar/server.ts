@@ -251,7 +251,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   }
 
   const skills = new Skills(dataDir, opts.marketplaceFetch);
-  const workspaces = new WorkspaceRegistry(dataDir);
+  const workspaces = new WorkspaceRegistry(dataDir, { readOnly: Boolean(opts.nativeSessionStore) });
   let activeTurnSession: string | undefined;
 
   const formatWorkspaceInfo = (sess?: string): string => {
@@ -866,6 +866,21 @@ ${skills.index()}`;
   async function workspacesRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
     const p = url.pathname;
     if (!p.startsWith("/api/projects") && !p.startsWith("/api/workspaces")) return false;
+
+    if (opts.nativeSessionStore) {
+      if (p === "/api/projects" && req.method === "POST") {
+        json(res, 403, { error: "Desktop projects are controlled by the native application window" });
+        return true;
+      }
+      if (/^\/api\/projects\/[^/]+$/.test(p) && (req.method === "PATCH" || req.method === "DELETE")) {
+        json(res, 403, { error: "Desktop projects are controlled by the native application window" });
+        return true;
+      }
+      if (/^\/api\/workspaces\/bindings\/[^/]+$/.test(p) && (req.method === "POST" || req.method === "DELETE")) {
+        json(res, 403, { error: "Desktop workspace bindings are controlled by the native application window" });
+        return true;
+      }
+    }
 
     try {
       if (p === "/api/projects" && req.method === "GET") {

@@ -1,5 +1,18 @@
 # Vakyartha handover — 2026-10-30
 
+## Native workspace and IA single-writer cutover, project management and atomic projection — 2026-10-30
+
+In `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` (branch `codex/agent-runtime-implementation`), completed Area 4 cutover establishing the native control actor as the single authoritative writer for projects, workspaces, and session bindings in desktop mode, retiring the TypeScript `WorkspaceRegistry` writer while preserving direct, copy, and shared project Realm flows.
+
+Key implementations and invariants:
+- **Authoritative native registry & queries**: Added query and mutation primitives to `RegistryState` (`src-tauri/src/control/registry.rs`): `list_projects`, `get_project`, `remove_project`, `list_workspaces`, `get_workspace`, `find_workspace_by_path`, `list_bindings`, `get_binding`, and `unbind`. `find_workspace_by_path` canonicalizes paths to robustly resolve platform symlinks (such as macOS `/var` -> `/private/var`).
+- **Atomic legacy projection (`workspaces.json`)**: Added `RegistryState::to_legacy_json()` producing standard schema-version-1 project and binding records. In `ControlStore::persist_checked` (`src-tauri/src/control.rs`), every native store commit atomically syncs `data_dir/workspaces.json` via a temp file and rename.
+- **Tauri IPC interface**: Exposed native commands in `src-tauri/src/lib.rs` and registered them in `generate_handler!`: `control_create_project`, `control_list_projects`, `control_get_project`, `control_remove_project`, `control_register_workspace`, `control_list_workspaces`, `control_get_workspace`, `control_bind_workspace`, `control_list_workspace_bindings`, `control_get_workspace_binding`, `control_unbind_workspace`, and `control_validate_workspace_folder`.
+- **Desktop fetch IPC cutover**: Updated `src/desktop-fetch.ts` to intercept `/api/workspaces/validate-folder`, `/api/projects` (CRUD), and `/api/workspaces/bindings` (CRUD), translating UI requests to typed native Tauri IPC invocations and mapping results into the UI contract.
+- **Retired TypeScript writer in desktop mode**: `sidecar/server.ts` initializes `new WorkspaceRegistry(dataDir, { readOnly: Boolean(opts.nativeSessionStore) })`. `sidecar/workspace-registry.ts` suppresses disk persistence when `readOnly` is active and reloads on mtime changes, ensuring the sidecar remains an uncorrupted reader of native state. Direct mutations to `/api/projects` and `/api/workspaces/bindings` on the sidecar fail closed with 403 on desktop.
+- **Preserved sandbox Realm & asset workflows**: Subroutes `/realm/*`, `/export-asset`, and `/import-file` continue flowing through to sidecar sandbox execution, reading the authoritative `workspaces.json` synced by Rust.
+- **Validation**: All 155 Rust tests (including real-worker tests with sandbox helper and Node 26) passed (0 failed). All 325 app tests passed (1 paid test skipped). Canvas WebKit test passed at 1100px and 620px viewports (receipt `vak-canvas-check-nJAzHX`). `npm run typecheck`, `npm run build`, `npm run bundle-sidecar`, and strict `cargo clippy --all-targets -- -D warnings` passed cleanly.
+
 ## Hosted spending policy, provider mediation, uncertainty recovery and native workspace/project commands — 2026-10-30
 
 In `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` (branch `codex/agent-runtime-implementation`), implemented common admission and hosted spending policy validation, task operation uncertainty tracking with bounded reconciliation, and native project/workspace actor IPC commands.

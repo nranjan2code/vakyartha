@@ -537,6 +537,154 @@ fn control_set_project_preferred_workspace(
 }
 
 #[tauri::command]
+fn control_list_projects(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+) -> Result<Vec<ProjectRecord>, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native project control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .list_projects()
+        .map_err(|_| "Failed to list projects".to_owned())
+}
+
+#[tauri::command]
+fn control_get_project(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    id: String,
+) -> Result<Option<ProjectRecord>, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native project control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .get_project(id)
+        .map_err(|_| "Failed to get project".to_owned())
+}
+
+#[tauri::command]
+fn control_remove_project(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    id: String,
+) -> Result<(), String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native project control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .remove_project(id)
+        .map_err(|_| "Project deletion was refused".to_owned())
+}
+
+#[tauri::command]
+fn control_list_workspaces(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+) -> Result<Vec<WorkspaceRecord>, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native workspace control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .list_workspaces()
+        .map_err(|_| "Failed to list workspaces".to_owned())
+}
+
+#[tauri::command]
+fn control_get_workspace(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    id: String,
+) -> Result<Option<WorkspaceRecord>, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native workspace control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .get_workspace(id)
+        .map_err(|_| "Failed to get workspace".to_owned())
+}
+
+#[tauri::command]
+fn control_list_workspace_bindings(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+) -> Result<Vec<WorkspaceBinding>, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native workspace control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .list_workspace_bindings()
+        .map_err(|_| "Failed to list workspace bindings".to_owned())
+}
+
+#[tauri::command]
+fn control_get_workspace_binding(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    session_id: String,
+) -> Result<Option<WorkspaceBinding>, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native workspace control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .get_workspace_binding(session_id)
+        .map_err(|_| "Failed to get workspace binding".to_owned())
+}
+
+#[tauri::command]
+fn control_unbind_workspace(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    session_id: String,
+) -> Result<(), String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native workspace control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .unbind_workspace(session_id)
+        .map_err(|_| "Workspace unbinding was refused".to_owned())
+}
+
+#[tauri::command]
+fn control_validate_workspace_folder(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    folder: String,
+) -> Result<serde_json::Value, String> {
+    engine::main_window(&window)?;
+    let data_dir = app_data_dir(&app);
+    let admission = control::folder::WorkspaceAdmissionPolicy::new(&data_dir)
+        .map_err(|e| format!("Folder policy error: {e}"))?;
+    let path = std::path::Path::new(&folder);
+    let (canonical, _) = admission
+        .admit(path)
+        .map_err(|e| format!("Folder admission refused: {e}"))?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "canonical": canonical.to_string_lossy(),
+        "isDirectory": true,
+        "isReadable": true,
+        "isWritable": true,
+    }))
+}
+
+#[tauri::command]
 fn set_keep_running(keep: bool) {
     KEEP_RUNNING.store(keep, Ordering::Relaxed);
 }
@@ -734,9 +882,18 @@ pub fn run() {
             control_create_root_in_workspace,
             control_read_workspace_grant,
             control_create_project,
+            control_list_projects,
+            control_get_project,
+            control_remove_project,
             control_set_project_membership,
             control_read_project_membership,
             control_set_project_preferred_workspace,
+            control_list_workspaces,
+            control_get_workspace,
+            control_list_workspace_bindings,
+            control_get_workspace_binding,
+            control_unbind_workspace,
+            control_validate_workspace_folder,
             engine_request,
             engine_ack,
             engine_cancel,

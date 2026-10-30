@@ -67,6 +67,15 @@ impl FolderIdentity {
         let (_, current) = Self::capture(path)?;
         Ok(self == &current)
     }
+
+    pub fn to_identity_string(&self) -> String {
+        format!(
+            "{:x}:{:x}:{:x}",
+            self.device,
+            self.object,
+            self.created_seconds * 1_000_000_000 + self.created_nanos as u64
+        )
+    }
 }
 
 /// Trusted folder selection policy initialized from the native app-data root.

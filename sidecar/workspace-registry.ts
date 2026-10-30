@@ -163,15 +163,18 @@ function physicalIdentityOf(dev: bigint, ino: bigint, birthtimeNs: bigint): stri
 export class WorkspaceRegistry {
   private readonly dataDir: string;
   private readonly file: string;
+  private readonly readOnly: boolean;
+  private mtimeMs = 0;
   private projects = new Map<string, Project>();
   private bindings = new Map<string, WorkspaceBinding>();
   private committedProjects = new Map<string, Project>();
   private committedBindings = new Map<string, WorkspaceBinding>();
   private sessionContext = new AsyncLocalStorage<{ session: string; revision?: number | null }>();
 
-  constructor(dataDir: string) {
+  constructor(dataDir: string, opts?: { readOnly?: boolean }) {
     this.dataDir = dataDir;
     this.file = path.join(dataDir, "workspaces.json");
+    this.readOnly = Boolean(opts?.readOnly);
     this.load();
     this.snapshotCommitted();
   }
@@ -189,17 +192,20 @@ export class WorkspaceRegistry {
   private load(): void {
     if (!existsSync(this.file)) return;
     try {
+      this.mtimeMs = statSync(this.file).mtimeMs;
       const raw = readFileSync(this.file, "utf8");
       const parsed = JSON.parse(raw) as WorkspaceRegistryData;
       if (parsed.version !== 1 || !Array.isArray(parsed.projects) || !parsed.bindings || typeof parsed.bindings !== "object") {
         throw new Error("unsupported registry shape");
       }
+      this.projects.clear();
       for (const p of parsed.projects) {
         if (!p || typeof p.id !== "string" || typeof p.folder !== "string" || typeof p.name !== "string" || !Number.isSafeInteger(p.revision) || p.revision < 1) {
           throw new Error("invalid project entry");
         }
         this.projects.set(p.id, p);
       }
+      this.bindings.clear();
       for (const [s, value] of Object.entries(parsed.bindings)) {
         if (!value || typeof value !== "object") throw new Error("invalid binding entry");
         const b = value as WorkspaceBinding;
@@ -223,12 +229,25 @@ export class WorkspaceRegistry {
     }
   }
 
+  private reloadIfChanged(): void {
+    try {
+      if (existsSync(this.file)) {
+        const mtime = statSync(this.file).mtimeMs;
+        if (mtime > this.mtimeMs) {
+          this.load();
+          this.snapshotCommitted();
+        }
+      }
+    } catch {}
+  }
+
   private snapshotCommitted(): void {
     this.committedProjects = new Map(Array.from(this.projects, ([id, value]) => [id, structuredClone(value)]));
     this.committedBindings = new Map(Array.from(this.bindings, ([id, value]) => [id, structuredClone(value)]));
   }
 
   private persist(): void {
+    if (this.readOnly) return;
     const data: WorkspaceRegistryData = {
       version: 1,
       projects: Array.from(this.projects.values()),
@@ -272,11 +291,13 @@ export class WorkspaceRegistry {
   }
 
   getProject(id: string): Project | undefined {
+    this.reloadIfChanged();
     const p = this.projects.get(id);
     return p ? structuredClone(p) : undefined;
   }
 
   listProjects(): Project[] {
+    this.reloadIfChanged();
     return Array.from(this.projects.values()).map(p => structuredClone(p));
   }
 
@@ -410,16 +431,19 @@ export class WorkspaceRegistry {
   }
 
   getBinding(session: string): WorkspaceBinding | undefined {
+    this.reloadIfChanged();
     const b = this.bindings.get(session);
     return b ? structuredClone(b) : undefined;
   }
 
   /** Capture the exact folder-binding state when an operation is admitted. */
   captureBindingRevision(session: string): number | null {
+    this.reloadIfChanged();
     return this.bindings.get(session)?.revision ?? null;
   }
 
   listBindings(): WorkspaceBinding[] {
+    this.reloadIfChanged();
     return Array.from(this.bindings.values()).map(b => structuredClone(b));
   }
 

@@ -2,6 +2,33 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Native workspace and IA single-writer cutover, project management and atomic projection — 2026-10-30
+
+Completed the Area 4 cutover establishing the native control actor as the single authoritative writer for projects, workspaces, and session bindings in desktop mode, retiring the TypeScript `WorkspaceRegistry` writer while preserving direct, copy, and shared project Realm flows.
+
+Key achievements and invariants:
+- **Authoritative Native Registry & Queries**:
+  - `src-tauri/src/control/registry.rs`: Added query and mutation primitives to `RegistryState`: `list_projects`, `get_project`, `remove_project`, `list_workspaces`, `get_workspace`, `find_workspace_by_path`, `list_bindings`, `get_binding`, and `unbind`. `find_workspace_by_path` canonicalizes paths to robustly resolve platform symlinks (e.g. macOS `/var` -> `/private/var`). Made record fields publicly visible within the crate.
+  - Added unit test `project_and_workspace_lifecycle_and_legacy_projection` verifying project/workspace registration, session binding, unbinding, project deletion, and legacy projection.
+- **Atomic Legacy Projection (`workspaces.json`)**:
+  - Added `RegistryState::to_legacy_json()` producing standard schema-version-1 project and binding records.
+  - `ControlStore::persist_checked` (`src-tauri/src/control.rs`): Every native store commit atomically syncs `data_dir/workspaces.json` via a temp file and rename.
+- **Tauri IPC Interface**:
+  - Added and registered native commands in `src-tauri/src/lib.rs`: `control_create_project`, `control_list_projects`, `control_get_project`, `control_remove_project`, `control_register_workspace`, `control_list_workspaces`, `control_get_workspace`, `control_bind_workspace`, `control_list_workspace_bindings`, `control_get_workspace_binding`, `control_unbind_workspace`, and `control_validate_workspace_folder`.
+- **Desktop Fetch IPC Cutover**:
+  - Updated `src/desktop-fetch.ts` to intercept `/api/workspaces/validate-folder`, `/api/projects` (CRUD), and `/api/workspaces/bindings` (CRUD), translating UI requests to typed native Tauri IPC invocations and mapping results into the UI contract.
+- **Retired TypeScript Writer in Desktop Mode**:
+  - `sidecar/server.ts`: Initializes `new WorkspaceRegistry(dataDir, { readOnly: Boolean(opts.nativeSessionStore) })`.
+  - `sidecar/workspace-registry.ts`: Suppresses disk persistence when `readOnly` is active and reloads on mtime changes, ensuring the sidecar remains an uncorrupted reader of native state. Direct mutations to `/api/projects` and `/api/workspaces/bindings` on the sidecar fail closed with 403 on desktop.
+- **Preserved Sandbox Realm & Asset Workflows**:
+  - Subroutes `/realm/*`, `/export-asset`, and `/import-file` continue flowing through to sidecar sandbox execution, reading the authoritative `workspaces.json` synced by Rust.
+- **Verification**:
+  - 155 Rust tests passed (0 failed, 0 ignored with real-worker parameters).
+  - 325 app tests passed (1 paid test skipped).
+  - Canvas WebKit test passed at 1100px and 620px viewports (receipt `vak-canvas-check-nJAzHX`).
+  - Strict `cargo clippy --all-targets -- -D warnings` passed cleanly.
+  - `npm run typecheck`, `npm run bundle-sidecar`, and `npm run build` passed with 0 errors.
+
 ## Hosted spending policy, provider mediation, uncertainty recovery and native workspace/project commands — 2026-10-30
 
 Integrated common admission and hosted spending policy validation, task operation uncertainty tracking with bounded reconciliation, and native project/workspace actor IPC commands.
