@@ -344,7 +344,7 @@ ${skills.index()}`;
     await integrations.refresh(entry.entry.id);
   }
   const freeCapabilities = new Set(["time", "web", "files", "memory"]);
-  tasks = await Tasks.open({
+  if (!opts.nativeSessionStore) tasks = await Tasks.open({
     files: new TaskFiles(path.join(dataDir, "outputs"), opts.transcriptsDir ?? path.join(dataDir, "transcripts")),
     dir: path.join(dataDir, "tasks"), run: host.run, view: host.view, remove: host.remove,
     tools: async (session) => {
@@ -368,6 +368,9 @@ ${skills.index()}`;
 
   async function tasksRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
     const p = url.pathname;
+    if (opts.nativeSessionStore && (p === "/api/tasks" || p.startsWith("/api/tasks/"))) {
+      json(res, 403, { error: "Desktop tasks are controlled by the native application window" }); return true;
+    }
     const outputRun = /^\/api\/tasks\/([\w-]+)\/runs\/([\w-]+)\/output$/.exec(p);
     if (outputRun && (req.method === "POST" || req.method === "GET")) {
       try { json(res, 200, req.method === "GET" ? await tasks!.outputContent(outputRun[1]!, outputRun[2]!) : await tasks!.output(outputRun[1]!, outputRun[2]!, await readJson(req))); }

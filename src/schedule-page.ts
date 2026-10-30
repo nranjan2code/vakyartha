@@ -314,7 +314,7 @@ export class SchedulePage {
   private section(title: string, ...children: HTMLElement[]): HTMLElement { return el("section", { className: "schedule-section" }, el("h2", { textContent: title }), ...children); }
   private async mutate(task: TaskView, operation: "schedule" | "cancel" | "complete" | "approve", body: object): Promise<void> {
     if (this.busy) return; this.busy = true;
-    try { await api(`/api/tasks/${encodeURIComponent(task.id)}/${operation}`, { method: "POST", body: JSON.stringify(body) }); }
+    try { await api(`/api/tasks/${encodeURIComponent(task.id)}/${operation}`, { method: "POST", body: JSON.stringify({ revision: task.revision, ...body }) }); }
     catch (err) { this.error((err as Error).message); return; }
     finally { this.busy = false; }
     await this.refresh(); await this.showDetail(task.id, false);

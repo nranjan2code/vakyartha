@@ -205,6 +205,10 @@ pub struct RegistryState {
 }
 
 impl RegistryState {
+    pub(super) fn references_session(&self, id: &str) -> bool {
+        self.bindings.contains_key(id) || self.memberships.contains_key(id)
+    }
+
     pub fn membership(&self, session_id: &str) -> Option<ProjectMembership> {
         self.memberships.get(session_id).cloned()
     }

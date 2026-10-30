@@ -1,5 +1,11 @@
 # Vakyartha handover — 2026-10-30
 
+## Desktop native task controls — 2026-10-30
+
+Desktop task creation/list/detail/cancel/delete now use the Rust actor and native control snapshot (schema 14). The contained sidecar no longer opens the TypeScript task journal or scheduler; worker task routes are refused. Original definitions and input bytes survive restart without execution, exact retries are idempotent, and mutation revisions and namespace/deletion guards are enforced. Browser development retains its separate task backend. Native WebKit verifies Work list/detail/cancel and no worker task directory; Node 26.13.0 typecheck/284 app tests, Rust 1.99.1 macOS 111/Linux Docker 113 tests and strict Clippy pass (one opt-in native canary ignored per target). See [scope and evidence](agent-runtime/IMPLEMENTATION-PROGRESS.md#desktop-work-controls-moved-to-rust--2026-10-30).
+
+**Execution remains unavailable:** tasks show zero runs and an explicit notice. Scheduling, continuation, task approvals/review, outputs and usage are not connected. Provider dispatch is refused; the native capacity profile is empty. Native product supervision, canonical publication, workspace/IA cutover, drift/recovery, multi-job QoS, original outcomes and final Astra review remain open. This change is not installed and does not close the full task outcome gate. Older entries below describe their historical checkpoint.
+
 ## Native root-run admission — 2026-10-30
 
 Native attempt start now atomically reserves a generation slot and persists a run/root/session/epoch identity. Cancellation and restart retain the charge until trusted supervisor exit settlement. Review waits for unsettled runs, and new candidate commits require a confirmed live invocation; historical receipts remain recoverable. Schema 13 rejects older native snapshots without deleting data. Rust 1.99.1 macOS/Linux suites pass 107/109 tests respectively (one opt-in containment test ignored in each), strict Clippy passes, and native WebKit desktop smoke passes. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#durable-root-run-admission-and-settlement--2026-10-30) for evidence and limits. This is native admission/persistence work: no product task supervisor supplies these receipts yet, the app profile is empty, TypeScript still schedules tasks, and provider dispatch remains refused.

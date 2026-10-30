@@ -2,6 +2,27 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Desktop Work controls moved to Rust — 2026-10-30
+
+Desktop Work task definitions, captured input bytes and lifecycle metadata now have one native writer. The trusted window maps list/create/read/cancel/delete to a bounded `control_task` command; the actor validates and persists the original request with its root before acknowledgement. Exact create retries return the same task; conflicting definitions and collisions with chats, roots or workspace references are refused. Generic root creation cannot shadow a product task's session. Cancellation and deletion require the current native revision. Deletion is currently limited to cancelled, never-started tasks without canonical content, candidate receipts or native registry references.
+
+```mermaid
+flowchart LR
+    UI[Trusted Work controls] --> IPC[Typed main-window command]
+    IPC --> A[Rust control actor]
+    A --> S[Native control snapshot: task and root]
+    A --> V[Task view and bounded list]
+    V --> UI
+    W[Contained sidecar] --> R[Task HTTP route refused]
+    A -. execution unavailable .-> E[Future native supervisor and broker]
+```
+
+The desktop sidecar no longer opens `Tasks`, its journal, its scheduler/pump or task output writer. Raw worker `/api/tasks` requests return 403. Browser development retains its separate TypeScript implementation; it is not a fallback desktop executor. Native task views use the shared UI contract, with zero runs/usage/history and an explicit execution-unavailable note. Scheduling, continuations, task approval/review, output and usage endpoints remain unavailable until their full native execution path is connected. The native capacity profile remains empty and provider dispatch remains refused. Saving a provider, spending acknowledgement, integration selection or result policy grants no dispatch or completion authority. The result policy is stored as bounded inert contract data, not accepted evidence.
+
+The control snapshot is schema 14, with no older-schema reader or automatic reset. Existing task files are neither imported nor deleted. Recovery validates the original definition/root relationship and permitted queued/cancelled state; reopening never starts work. Worker canonical-session writes/deletes for native task IDs are refused, and legacy chat import is held while native tasks exist to prevent namespace collisions. Ordinary chat canonical persistence keeps its existing native adapter. Project/workspace product writes remain TypeScript-owned; native task execution and the registry/IA cutover are still open.
+
+Verification: Node 26.13.0 typecheck and all 284 app tests pass. Rust 1.99.1 macOS library tests pass 111, Linux Docker tests pass 113, with one opt-in containment test ignored in each; strict Clippy passes on both. Native tests cover forged state/oversized inputs, unavailable schedules, exact/conflicting retries, task/chat/root namespace collisions, stale revisions, worker session-write refusal, restart without replay, content-free list projection and guarded deletion. Native WebKit smoke exercises the Work list/detail and actual Cancel control, verifies native zero-run state, refuses the worker route and confirms no `worker/tasks` directory exists. Receipt: `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-desktop-private-AcpIfK` (source smoke, not an installed build). This is a partial I3 ownership cutover; no complete delivery, original model outcome, scale or final Astra review gate is closed.
+
 ## Durable root-run admission and settlement — 2026-10-30
 
 Native `StartAttempt` now requires a stable start-request identity and atomically persists the root transition, a native run identity, its root/session/epoch binding and a `Generation` lease. Empty profiles refuse execution without changing the root. Exact start retries recover the existing state rather than consuming another run or slot; conflicting identity reuse and attempts to adopt a generic reservation are refused. Only one unsettled invocation per root is admitted. Trusted Rust supervisor methods confirm launch and settle an exact exit identity; neither method is exposed to the worker protocol or UI.

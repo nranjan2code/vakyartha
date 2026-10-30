@@ -221,6 +221,25 @@ fn control_create_root(
         .map_err(|_| "Native task request was refused".to_owned())
 }
 
+/// Product task mutations originate in trusted application controls, never in
+/// the reasoning worker's general HTTP/proposal channel.
+#[tauri::command]
+async fn control_task(window: tauri::WebviewWindow, app: AppHandle, command: control::tasks::TaskCommand) -> Result<serde_json::Value, String> {
+    engine::main_window(&window)?;
+    if serde_json::to_vec(&command).map_or(true, |bytes| bytes.len() > 256_000) {
+        return Err("Task request exceeds the supported size".into());
+    }
+    let handle = app.try_state::<ControlActor>().ok_or("Native task control is unavailable")?.handle();
+    tauri::async_runtime::spawn_blocking(move || handle.product_task(command).map_err(|error| match error {
+        control::ControlError::Admission(control::AdmissionError::InvalidTask) => "Task definition is invalid; review the goal, model, inputs and limits".to_owned(),
+        control::ControlError::Admission(control::AdmissionError::TaskCapabilityUnavailable) => "This task operation is unavailable until protected execution is connected".to_owned(),
+        control::ControlError::Admission(control::AdmissionError::RootNotFound) => "Task was not found".to_owned(),
+        control::ControlError::Admission(control::AdmissionError::DuplicateRoot) => "Task identity already belongs to a different request".to_owned(),
+        control::ControlError::TaskState(control::state::StateError::RevisionConflict) => "Task changed; refresh before applying this action".to_owned(),
+        _ => "Native task control could not complete this request".to_owned(),
+    })).await.map_err(|_| "Native task control is unavailable".to_owned())?
+}
+
 /// Reads one task by its opaque identity through the trusted app window.
 #[tauri::command]
 fn control_read_root(
@@ -600,6 +619,7 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             backend,
+            control_task,
             control_create_root,
             control_read_root,
             control_read_candidate_receipt,

@@ -34,6 +34,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.ok(existsSync(log) && readFileSync(log, "utf8").includes("NATIVE_PRIVATE_PASS"), `Native probe failed; see ${out}`);
+  assert.equal(existsSync(path.join(out, "worker/tasks")), false, "Desktop opened the TypeScript task journal");
   assert.deepEqual(readFileSync(legacyChat), legacyBytes, "Legacy chat source was changed during migration");
   assert.deepEqual(readFileSync(legacyVaultPath), legacyVaultBytes, "Native vault commands modified the legacy in-data vault");
   assert.equal(statSync(path.join(nativeOut, "host-sessions", "session-legacy-chat.json")).mode & 0o077, 0, "Native chat storage permissions are too broad");

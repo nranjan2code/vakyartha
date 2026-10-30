@@ -72,6 +72,17 @@
   let unknownFieldAccepted=false;
   try{await ipc.invoke('control_create_root',{request:{...nativeRequest,id:'native-ipc-unknown',unexpected:true}});unknownFieldAccepted=true;}catch{}
   check(!unknownFieldAccepted,'native task decoder accepted an unknown field');
+
+ const productRequest={id:'native-product-task',goal:'Verify native product task admission',criteria:'Keep the task definition in native storage',provider:'ollama',model:'qwen3.5:4b-mlx',integrations:[],confirmedFree:[],spending:{kind:'local_only'},limits:{runs:2,modelRequests:12,toolCalls:0,activeMs:300000},inputs:[{name:'notes.txt',content:'Native task input'}],diagnosticDays:0};
+ const productTask=await ipc.invoke('control_task',{command:{kind:'create',request:productRequest}});
+ check(productTask.version===5&&productTask.state==='queued'&&productTask.runs===0,'native product task was not saved without execution');
+ check(productTask.inputs[0].bytes===17&&productTask.inputs[0].sha256.length===64,'native input snapshot fingerprint is absent');
+ check((await ipc.invoke('control_task',{command:{kind:'create',request:productRequest}})).revision===productTask.revision,'native task retry changed the definition');
+ const workerTaskWrite=await request('/api/tasks','POST',productRequest);
+ check(workerTaskWrite.status===403,'worker task writer remains enabled');
+ let staleTaskCancel=false;
+ try{await ipc.invoke('control_task',{command:{kind:'cancel',id:productTask.id,revision:productTask.revision+1}});staleTaskCancel=true;}catch{}
+ check(!staleTaskCancel,'native task cancellation accepted a stale revision');
   const info=await request('/api/info');check(info.status===200,'private info failed');
  await ipc.invoke('control_admit_host_session',{sessionId:'unused-admission'});
  await ipc.invoke('control_release_host_session_admission',{sessionId:'unused-admission'});
@@ -91,6 +102,19 @@
   [...document.querySelectorAll('#settings-nav-list button')].find(b=>b.textContent==='FinOps').click();
   await wait(()=>document.querySelector('.finops'));
   check(document.querySelector('.finops').textContent.includes('model rates configured'),'finops IPC failed');
+
+ document.getElementById('settings-back').click();
+ document.getElementById('open-schedule').click();
+ await wait(()=>document.getElementById('schedule-page').textContent.includes(productRequest.goal));
+ const taskLink=[...document.querySelectorAll('#schedule-page button')].find(button=>button.textContent.includes(productRequest.goal));
+ check(taskLink,'Work did not list the native product task');taskLink.click();
+ await wait(()=>document.querySelector('.schedule-status-note')?.textContent.includes('Execution is currently unavailable'));
+ [...document.querySelectorAll('#schedule-page button')].find(button=>button.textContent==='Cancel run').click();
+ await wait(()=>document.querySelector('.schedule-status-note')?.textContent.includes('Stopped before native execution'));
+ const cancelledTask=await ipc.invoke('control_task',{command:{kind:'read',id:productTask.id}});
+ check(cancelledTask.state==='cancelled'&&cancelledTask.runs===0,'Work cancellation did not use native task control');
+ await ipc.invoke('control_task',{command:{kind:'remove',id:productTask.id,revision:cancelledTask.revision}});
+ check((await ipc.invoke('control_task',{command:{kind:'list'}})).length===0,'native task deletion left its product record');
   const timings=[];
   for(let i=0;i<20;i++){const start=performance.now();check((await request('/api/info')).status===200,'repeated IPC failed');timings.push(performance.now()-start);}
   const wav=new Uint8Array(1024*1024+44),view=new DataView(wav.buffer);

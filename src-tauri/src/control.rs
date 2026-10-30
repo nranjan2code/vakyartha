@@ -11,7 +11,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 13;
+const STORE_VERSION: u16 = 14;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 const MAX_CANDIDATE_RECEIPTS: usize = 10_000;
@@ -34,6 +34,7 @@ pub mod folder;
 pub mod host_sessions;
 pub mod registry;
 pub mod root_runs;
+pub mod tasks;
 pub mod state;
 use canonical::{
     CandidateCommitReceipt, CandidateCommitRequest, CanonicalContentStore, CanonicalSessionRecord,
@@ -87,6 +88,8 @@ pub enum AdmissionError {
     RootNotFound,
     RootRunNotFound,
     RootRunUnsettled,
+    InvalidTask,
+    TaskCapabilityUnavailable,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -164,6 +167,7 @@ pub struct CapacityLedger {
     canonical_sessions: BTreeMap<String, CanonicalSessionRecord>,
     candidate_receipts: BTreeMap<String, CandidateCommitReceipt>,
     root_runs: BTreeMap<String, root_runs::RootRun>,
+    product_tasks: BTreeMap<String, tasks::TaskRecord>,
 }
 
 impl CapacityLedger {
@@ -347,6 +351,7 @@ impl CapacityLedger {
             canonical_sessions: self.canonical_sessions.clone(),
             candidate_receipts: self.candidate_receipts.clone(),
             root_runs: self.root_runs.clone(),
+            product_tasks: self.product_tasks.clone(),
         }
     }
 
@@ -365,6 +370,7 @@ impl CapacityLedger {
             canonical_sessions: snapshot.canonical_sessions,
             candidate_receipts: snapshot.candidate_receipts,
             root_runs: snapshot.root_runs,
+            product_tasks: snapshot.product_tasks,
             ..Self::default()
         };
         if ledger.canonical_sessions.len() > MAX_ROOTS
@@ -573,6 +579,7 @@ impl CapacityLedger {
             return Err(StoreError::Corrupt);
         }
         root_runs::validate(&ledger)?;
+        tasks::validate(&ledger)?;
         Ok(ledger)
     }
 }
@@ -588,6 +595,7 @@ struct LedgerSnapshot {
     canonical_sessions: BTreeMap<String, CanonicalSessionRecord>,
     candidate_receipts: BTreeMap<String, CandidateCommitReceipt>,
     root_runs: BTreeMap<String, root_runs::RootRun>,
+    product_tasks: BTreeMap<String, tasks::TaskRecord>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -669,6 +677,8 @@ enum RootRunAction {
 }
 
 enum ActorCommand {
+    ProductTask { command: tasks::TaskCommand, reply: SyncSender<Result<serde_json::Value, ControlError>> },
+
     Ping {
         reply: SyncSender<()>,
     },
@@ -1079,6 +1089,13 @@ impl ControlHandle {
         response
             .recv_timeout(self.response_timeout)
             .map_err(response_error)?
+    }
+
+    /// Product task authority is callable only from the trusted native UI path.
+    pub fn product_task(&self, command: tasks::TaskCommand) -> Result<serde_json::Value, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::ProductTask { command, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
     }
 
     /// Trusted-supervisor entry points. These are not worker protocol operations.
@@ -1697,6 +1714,59 @@ fn actor_loop(
     let mut admitted_host_sessions = std::collections::BTreeSet::new();
     while let Ok(command) = receiver.recv() {
         match command {
+            ActorCommand::ProductTask { command, reply } => {
+                if let tasks::TaskCommand::Create { request } = &command
+                    && !ledger.product_tasks.contains_key(&request.id) {
+                        match host_sessions.load(&request.id) {
+                            Ok(None) => {}
+                            Ok(Some(_)) => { let _ = reply.send(Err(ControlError::Admission(AdmissionError::DuplicateRoot))); continue; }
+                            Err(error) => { let _ = reply.send(Err(ControlError::Store(error))); continue; }
+                        }
+                }
+                let selected = match &command {
+                    tasks::TaskCommand::Create { request } => Some(request.id.clone()),
+                    tasks::TaskCommand::Read { id } | tasks::TaskCommand::Cancel { id, .. } => Some(id.clone()),
+                    _ => None,
+                };
+                let removing = match &command { tasks::TaskCommand::Remove { id, .. } => Some(id.clone()), _ => None };
+                if let Some(id) = removing.as_ref() {
+                    match host_sessions.load(id) {
+                        Ok(None) => {}
+                        Ok(Some(_)) => { let _ = reply.send(Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable))); continue; }
+                        Err(error) => { let _ = reply.send(Err(ControlError::Store(error))); continue; }
+                    }
+                }
+                if selected.as_ref().is_some_and(|id| !admitted_host_sessions.contains(id) && admitted_host_sessions.len() >= MAX_ADMITTED_HOST_SESSIONS) {
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::HostSessionAdmissionFull))); continue;
+                }
+                let read_result = match &command {
+                    tasks::TaskCommand::List => Some(tasks::list(&ledger)),
+                    tasks::TaskCommand::Read { id } => Some(tasks::view(&ledger, id)),
+                    tasks::TaskCommand::Create { request } if ledger.product_tasks.contains_key(&request.id) => {
+                        Some(if ledger.product_tasks[&request.id].request == **request { tasks::view(&ledger, &request.id) } else { Err(ControlError::Admission(AdmissionError::DuplicateRoot)) })
+                    }
+                    _ => None,
+                };
+                if let Some(result) = read_result {
+                    if result.is_ok() && let Some(id) = selected { admitted_host_sessions.insert(id); }
+                    let _ = reply.send(result); continue;
+                }
+                let mut candidate = ledger.clone();
+                match tasks::apply(&mut candidate, command) {
+                    Err(error) => { let _ = reply.send(Err(error)); }
+                    Ok(value) => {
+                        if let Err(error) = store.persist(&candidate, &profile) {
+                            let recoverable = error == StoreError::TooLarge;
+                            let _ = reply.send(Err(ControlError::Store(error)));
+                            if recoverable { continue; } else { break; }
+                        }
+                        ledger = candidate;
+                        if let Some(id) = selected { admitted_host_sessions.insert(id); }
+                        if let Some(id) = removing { admitted_host_sessions.remove(&id); }
+                        let _ = reply.send(Ok(value));
+                    }
+                }
+            }
             ActorCommand::Shutdown => break,
             ActorCommand::Ping { reply } => {
                 let _ = reply.send(());
@@ -1778,6 +1848,10 @@ fn actor_loop(
                     request.session_id = Some(session_id.clone());
                 }
                 let id = request.id.clone();
+                if ledger.product_tasks.contains_key(&id)
+                    || request.session_id.as_ref().is_some_and(|session| ledger.product_tasks.contains_key(session)) {
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable))); continue;
+                }
                 if let Some(existing) = ledger.roots.get(&id) {
                     let scope_matches =
                         match (workspace_binding.as_ref(), existing.workspace_grant()) {
@@ -2214,6 +2288,9 @@ fn actor_loop(
                 reply,
             } => {
                 let mut candidate = ledger.clone();
+                if candidate.product_tasks.contains_key(&id) {
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable))); continue;
+                }
                 if let RootMutation::StartAttempt { request_id } = &mutation {
                     let Some(root) = candidate.roots.get(&id) else {
                         let _ =
@@ -2514,6 +2591,9 @@ fn actor_loop(
                 let _ = reply.send(result);
             }
             ActorCommand::SaveHostSession { session_id, expected_revision, snapshot, reply } => {
+                if ledger.product_tasks.contains_key(&session_id) {
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable))); continue;
+                }
                 let result = if admitted_host_sessions.contains(&session_id) {
                     host_sessions.save(&session_id, expected_revision, snapshot).map_err(ControlError::Store)
                 } else {
@@ -2527,6 +2607,9 @@ fn actor_loop(
                 let _ = reply.send(Ok(host_sessions.list()));
             }
             ActorCommand::RemoveHostSession { session_id, expected_revision, reply } => {
+                if ledger.product_tasks.contains_key(&session_id) {
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable))); continue;
+                }
                 let result = if admitted_host_sessions.contains(&session_id) {
                     host_sessions.remove(&session_id, expected_revision).map_err(ControlError::Store)
                 } else {
@@ -2542,6 +2625,9 @@ fn actor_loop(
                 let _ = reply.send(result);
             }
             ActorCommand::MigrateHostSessions { expected_digest, reply } => {
+                if !ledger.product_tasks.is_empty() {
+                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable))); continue;
+                }
                 let result = host_sessions.migrate_legacy(&expected_digest).map_err(ControlError::Store);
                 let fatal = matches!(&result, Err(ControlError::Store(error)) if !matches!(error, StoreError::SessionMigrationConflict | StoreError::TooLarge));
                 let _ = reply.send(result);
@@ -3211,6 +3297,57 @@ mod tests {
                 TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
             ),
         }
+    }
+
+    #[test]
+    fn product_tasks_have_one_native_writer_and_recover_without_worker_replay() {
+        use tasks::{TaskCommand, TaskRequest};
+        let data = temp_data_dir();
+        let timeout = Duration::from_secs(2);
+        let profile = CapacityProfile::unconfigured().unwrap();
+        let request: TaskRequest = serde_json::from_value(serde_json::json!({
+            "id":"product-task", "goal":"Prepare a checked report", "criteria":"Check original inputs and saved output", "provider":"ollama", "model":"qwen3.5:4b-mlx",
+            "integrations":[],"confirmedFree":[],"spending":{"kind":"local_only"},"limits":{"runs":2,"modelRequests":12,"toolCalls":0,"activeMs":300000},
+            "inputs":[{"name":"source.txt","content":"Original input"}],"output":{"kind":"markdown"},"diagnosticDays":0
+        })).unwrap();
+        let actor = ControlActor::open(&data, "unconfigured-v1", profile.clone(), 16, timeout).unwrap();
+        let handle = actor.handle();
+        handle.admit_host_session("existing-chat".into()).unwrap();
+        handle.save_host_session("existing-chat".into(), 0, serde_json::json!({"id":"existing-chat","title":"Existing chat","created":"2026-10-30T00:00:00.000Z","updated":"2026-10-30T00:00:00.000Z","messages":[],"timeline":[],"surfaces":[],"external":[]})).unwrap();
+        let mut collision = request.clone(); collision.id = "existing-chat".into();
+        assert_eq!(handle.product_task(TaskCommand::Create { request: Box::new(collision) }), Err(ControlError::Admission(AdmissionError::DuplicateRoot)));
+        let created = handle.product_task(TaskCommand::Create { request: Box::new(request.clone()) }).unwrap();
+        assert_eq!(created["state"], "queued");
+        assert_eq!(created["runs"], 0);
+        assert_eq!(created["inputs"][0]["sha256"], canonical::digest(b"Original input"));
+        let shadow = RootCreate {
+            id: "shadow-root".into(), session_id: Some(request.id.clone()),
+            goal: request.goal.clone(), criteria: request.criteria.clone(), run_limit: 2,
+            budget_limits: BudgetLimits::new(12, 0).unwrap(),
+            requirements: vec![Requirement::new("check".into(), true).unwrap()],
+            delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0).unwrap(),
+        };
+        assert_eq!(handle.create_root_with_budget(shadow), Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable)));
+        assert_eq!(handle.mutate_root("product-task".into(), 1, root_start()), Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable)));
+        assert_eq!(handle.product_task(TaskCommand::Create { request: Box::new(request.clone()) }).unwrap(), created);
+        let mut changed = request.clone(); changed.goal = "Changed request".into();
+        assert!(handle.product_task(TaskCommand::Create { request: Box::new(changed) }).is_err());
+        assert_eq!(handle.save_host_session("product-task".into(), 0, serde_json::json!({})), Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable)));
+        assert_eq!(handle.product_task(TaskCommand::Cancel { id: "product-task".into(), revision: 2 }), Err(ControlError::TaskState(StateError::RevisionConflict)));
+        assert_eq!(handle.product_task(TaskCommand::Remove { id: "product-task".into(), revision: 1 }), Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable)));
+        drop(handle); drop(actor);
+        let reopened = ControlActor::open(&data, "unconfigured-v1", profile, 16, timeout).unwrap();
+        let handle = reopened.handle();
+        assert_eq!(handle.product_task(TaskCommand::Read { id: "product-task".into() }).unwrap(), created);
+        assert_eq!(handle.product_task(TaskCommand::List).unwrap().as_array().unwrap().len(), 1);
+        let cancelled = handle.product_task(TaskCommand::Cancel { id: "product-task".into(), revision: 1 }).unwrap();
+        assert_eq!(cancelled["state"], "cancelled");
+        assert_eq!(handle.product_task(TaskCommand::Remove { id: "product-task".into(), revision: 1 }), Err(ControlError::TaskState(StateError::RevisionConflict)));
+        handle.product_task(TaskCommand::Remove { id: "product-task".into(), revision: 2 }).unwrap();
+        assert!(handle.product_task(TaskCommand::List).unwrap().as_array().unwrap().is_empty());
+        assert_eq!(handle.read_root("product-task".into()), Err(ControlError::Admission(AdmissionError::RootNotFound)));
+        assert!(!data.join("tasks").exists());
+        drop(handle); drop(reopened); remove_test_data(&data);
     }
 
     #[test]
