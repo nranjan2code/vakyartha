@@ -3,7 +3,7 @@
 // with fast-tier models (`gpt-4o-mini`).
 // Strictly validated with timeout and automatic fallback to heuristics on error.
 
-import { HeuristicDecisionProvider } from "../heuristic.ts";
+import { HeuristicDecisionProvider, matchDynamicTools } from "../heuristic.ts";
 import type { DecisionProvider, DecisionState, TurnIntent, TurnShape } from "../types.ts";
 
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -174,12 +174,28 @@ export class OpenAIDecisionProvider implements DecisionProvider {
 
       const elapsed = Math.round((performance.now() - start) * 100) / 100;
 
+      let intent = parsed.intent;
+      // Guard against Ghost Canvas Refinement: UI refinement requires an active surface snapshot on screen
+      const hasActiveSurface = Boolean(state.activeSurfaceKind || (state.activeSurfaces && state.activeSurfaces.length > 0));
+      if (intent === "canvas_refinement" && !hasActiveSurface) {
+        intent = state.availableTools.length > 0 ? "scoped_tool_task" : "complex_reasoning";
+      }
+
+      // Guard against Disguised Salutations & Compound Intents:
+      // A pure salutation cannot contain matched tool stems or substantive instructions
+      if (intent === "salutation") {
+        const matched = matchDynamicTools(state.message, state.availableTools);
+        if (matched.length > 0 || state.message.trim().length > 60) {
+          intent = matched.length > 0 ? "scoped_tool_task" : "complex_reasoning";
+        }
+      }
+
       return {
-        intent: parsed.intent,
+        intent,
         confidence: Math.max(0, Math.min(1, parsed.confidence)),
-        historyPolicy: parsed.intent === "salutation"
+        historyPolicy: intent === "salutation"
           ? "strip_all"
-          : parsed.intent === "canvas_refinement"
+          : intent === "canvas_refinement"
             ? "last_turn_only"
             : (parsed.historyPolicy ?? "full"),
         allowedToolNamespaces: Array.isArray(parsed.allowedTools) ? parsed.allowedTools : [],

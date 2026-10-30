@@ -392,8 +392,12 @@ Historical workspace checkpoint, read with the bounded FOLDER1–FOLDER7 criteri
 - [x] Strongly-typed contracts (`src/decision/types.ts`) for `TurnShape`, `TurnIntent`, `HistoryPolicy`, `DecisionState`, and `DecisionConfig`.
 - [x] In-memory zero-latency heuristic decision provider (`src/decision/heuristic.ts`) for deterministic <1ms classification and infallible safety fallback.
 - [x] Local Ollama decision provider adapter (`src/decision/providers/ollama.ts`) utilizing the native `/v1/systemone` endpoint with local zero-token-output models (`d1-omni:latest` 380M, `laya:latest` 421M), calibrated probability scoring and capability-based tool pruning.
+- [x] Cloud OpenAI decision provider (`src/decision/providers/openai.ts`) utilizing 2026 Strict Structured Outputs (`strict: true` JSON schema) with Keychain credential retrieval.
 - [x] Multi-stage decision chaining engine (`src/decision/chain.ts`) with sequential/conditional branching and composite confidence scoring.
 - [x] Turn Shaper orchestration (`src/decision/shaper.ts`) and initiation hook in `src/main.ts`: trims history (0 prior turns on salutations, 1 turn on canvas refinements), prunes MCP tool schemas, and bounds step limits.
+- [x] Dynamic runtime discovery: dynamically discovers active tools from `/api/integrations`, active skills from `/api/skills`, and active UI projections from `client.store.list()` without hardcoding domain lists or static tool registries.
 - [x] Reactive settings UI in `src/settings.ts` under Models: toggle, provider selection, model selection, tool pruning toggle, and greeting history stripping toggle.
-- [x] Agent skill `decision-eval` published in `sidecar/builtin-skills/decision-eval/SKILL.md` for LLM criteria evaluation and security risk triage during execution.
-- [x] Verification: TypeScript typecheck passes with 0 errors; full suite of 10 tests in `test/decision.test.ts` passes with live `d1-omni` Ollama inference; Vite production build passes in 171ms.
+- [x] Agent skills published: `decision-eval` in `sidecar/builtin-skills/decision-eval/SKILL.md` and `decision-chain` in `sidecar/builtin-skills/decision-chain/SKILL.md` for LLM criteria evaluation, security gating, and multi-step pipeline orchestration.
+- [x] Multi-Turn Benchmark: [`docs/decision/BENCHMARK-STOCK-DASHBOARD.md`](decision/BENCHMARK-STOCK-DASHBOARD.md) demonstrates 72.8% token savings, ~60ms local System 1 latency, and 100% canvas refinement accuracy.
+- [x] Senior QA Negative & Red/Blue Teaming: [`docs/decision/EVALUATION-NEGATIVE-REDBLUE-MULTIDOMAIN.md`](decision/EVALUATION-NEGATIVE-REDBLUE-MULTIDOMAIN.md) validates 22/22 adversarial scenarios, Ghost Canvas safeguards, generic CRUD verb collision resolution, and 9/9 multi-domain compound tests across 8 distinct enterprise domains.
+- [x] Verification: TypeScript typecheck passes with 0 errors; full suite of 16 tests in `test/decision.test.ts` passes; 0 TODOs, 0 mocks, 0 stubs.

@@ -40,12 +40,17 @@ const COMMON_TOOL_STEMS: Record<string, string[]> = {
   drug: ["interaction", "medicine", "pharmacy", "prescription"],
 };
 
+const GENERIC_CRUD_TOKENS = new Set([
+  "get", "set", "list", "read", "write", "check", "find", "status", "fetch",
+  "create", "update", "delete", "run", "query", "post", "send", "inspect", "call", "trigger",
+]);
+
 /**
  * Dynamically matches tools from availableTools against user prompt tokens.
  * Completely domain-agnostic: derives semantic tokens from tool names, namespaces,
  * and standard semantic stems without hardcoding rigid domain routing.
  */
-function matchDynamicTools(prompt: string, availableTools: readonly string[]): string[] {
+export function matchDynamicTools(prompt: string, availableTools: readonly string[]): string[] {
   if (availableTools.length === 0) return [];
 
   const lowerPrompt = prompt.toLowerCase();
@@ -71,17 +76,27 @@ function matchDynamicTools(prompt: string, availableTools: readonly string[]): s
       continue;
     }
 
-    // 2. Token overlap with prompt words (including singular/plural variations)
-    let hasOverlap = toolTokens.some((tok) => {
+    // Require matching non-generic substantive tokens to avoid false positives on common verbs (e.g. "status", "check")
+    const substantiveTokens = toolTokens.filter((t) => !GENERIC_CRUD_TOKENS.has(t));
+    const tokensToMatch = substantiveTokens.length > 0 ? substantiveTokens : toolTokens;
+
+    // 2. Token overlap with prompt words (including singular/plural and morphological variations: -s, -ed, -ing, -ment, -tion)
+    let hasOverlap = tokensToMatch.some((tok) => {
       if (promptWords.has(tok)) return true;
       if (tok.endsWith("s") && promptWords.has(tok.slice(0, -1))) return true;
       if (!tok.endsWith("s") && promptWords.has(`${tok}s`)) return true;
+      // Morphological stem prefix matching for tokens with length >= 4 (e.g. deploy / deployment, search / searching)
+      if (tok.length >= 4) {
+        for (const word of promptWords) {
+          if (word.length >= 4 && (word.startsWith(tok) || tok.startsWith(word))) return true;
+        }
+      }
       return false;
     });
 
     // 3. Match via standard semantic stems
     if (!hasOverlap) {
-      for (const tok of toolTokens) {
+      for (const tok of tokensToMatch) {
         const stems = COMMON_TOOL_STEMS[tok];
         if (stems && stems.some((stem) => promptWords.has(stem) || lowerPrompt.includes(stem))) {
           hasOverlap = true;
@@ -124,6 +139,24 @@ export class HeuristicDecisionProvider implements DecisionProvider {
 
     // 2. Active canvas visual refinement (domain-agnostic UI adjustment)
     if (state.activeSurfaceKind && CANVAS_REFINEMENT_PATTERNS.some((pat) => pat.test(text))) {
+      // Check for Hybrid Turn: Canvas UI tweak + External Tool Data Fetch / Action
+      const hasFetchIntent = /\b(?:fetch|pull|query|search|load|sync|download|api|refresh\s+from|get\s+from|check\s+with)\b/i.test(text);
+      const matchedTools = matchDynamicTools(text, state.availableTools);
+      if (hasFetchIntent && matchedTools.length > 0) {
+        return {
+          intent: "scoped_tool_task",
+          confidence: 0.90,
+          historyPolicy: "recent_window",
+          allowedToolNamespaces: matchedTools,
+          includeSurfaceGrammar: true,
+          stepLimit: 6,
+          toolBudget: Math.min(4, matchedTools.length + 1),
+          suggestedTier: "primary",
+          reason: `Detected hybrid turn: canvas visual refinement combined with external tool data fetch (${matchedTools.join(", ")}).`,
+          latencyMs: Math.round((performance.now() - start) * 100) / 100,
+        };
+      }
+
       return {
         intent: "canvas_refinement",
         confidence: 0.92,

@@ -136,7 +136,22 @@ export async function shapeTurn(
     currentModel: payload.model,
   };
 
-  const shape = await provider.classifyTurn(state, config.timeoutMs);
+  let shape = await provider.classifyTurn(state, config.timeoutMs);
+
+  // Defense-in-depth: Guard against Ghost Canvas Refinement if no surface is active
+  const hasActiveSurface = Boolean(state.activeSurfaceKind || (state.activeSurfaces && state.activeSurfaces.length > 0));
+  if (shape.intent === "canvas_refinement" && !hasActiveSurface) {
+    shape = {
+      ...shape,
+      intent: originalTools.length > 0 ? "scoped_tool_task" : "complex_reasoning",
+      historyPolicy: "recent_window",
+      allowedToolNamespaces: originalTools.map((t) => t.name),
+      stepLimit: Math.max(shape.stepLimit, 6),
+      toolBudget: Math.max(shape.toolBudget, 4),
+      reason: `${shape.reason} (Guarded against ghost canvas refinement: no surface active on screen).`,
+    };
+  }
+
   const shapedPayload = { ...payload };
 
   // 1. History Pruning & Context Optimization

@@ -4,7 +4,7 @@
 // Completely domain-agnostic: dynamically adapts to registered runtime tools without domain hardcoding.
 // Strictly validated with timeout and automatic fallback to heuristics on error.
 
-import { HeuristicDecisionProvider } from "../heuristic.ts";
+import { HeuristicDecisionProvider, matchDynamicTools } from "../heuristic.ts";
 import type { DecisionProvider, DecisionState, TurnIntent, TurnShape } from "../types.ts";
 
 export const DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434";
@@ -60,8 +60,8 @@ export class OllamaDecisionProvider implements DecisionProvider {
         instructions: "Classify the primary intent of the user message",
         criteria: {
           salutation: "Simple casual greeting, gratitude, or chit-chat (e.g. hi, thanks, ok, bye)",
-          canvas_refinement: "Visual styling, changing chart kind, sorting table, or UI layout tweak",
-          scoped_tool_task: "A concrete, bounded request requiring external tool execution, data retrieval, or API action",
+          canvas_refinement: "Visual styling, changing chart kind, sorting table, or UI layout tweak on an existing active canvas surface",
+          scoped_tool_task: "A concrete, bounded request requiring external tool execution, reading files, data retrieval, or API action",
           complex_reasoning: "Open-ended analysis, synthesis, deep planning, drafting, multi-step problem solving, or creative reasoning",
         },
       },
@@ -108,8 +108,23 @@ export class OllamaDecisionProvider implements DecisionProvider {
       const intentAnswer = data.answers?.intent;
       if (!intentAnswer?.choice) throw new Error("No intent answer from Ollama");
 
-      const intent = intentAnswer.choice as TurnIntent;
+      let intent = intentAnswer.choice as TurnIntent;
       const confidence = typeof intentAnswer.confidence === "number" ? intentAnswer.confidence : 0.85;
+
+      // Guard against Ghost Canvas Refinement: UI refinement requires an active surface snapshot on screen
+      const hasActiveSurface = Boolean(state.activeSurfaceKind || (state.activeSurfaces && state.activeSurfaces.length > 0));
+      if (intent === "canvas_refinement" && !hasActiveSurface) {
+        intent = state.availableTools.length > 0 ? "scoped_tool_task" : "complex_reasoning";
+      }
+
+      // Guard against Disguised Salutations & Compound Intents:
+      // A pure salutation cannot contain matched tool stems or substantive instructions
+      if (intent === "salutation") {
+        const matched = matchDynamicTools(state.message, state.availableTools);
+        if (matched.length > 0 || state.message.trim().length > 60) {
+          intent = matched.length > 0 ? "scoped_tool_task" : "complex_reasoning";
+        }
+      }
 
       const chosenNamespace = data.answers?.tool_namespace?.choice;
       const namespaceConfidence = data.answers?.tool_namespace?.confidence ?? 0;

@@ -185,7 +185,10 @@ On scoped tool tasks, the engine intersects the user prompt against the names, n
 
 ---
 
-## 11. Real Multi-Turn Benchmark & Empirical Evaluation
+## 11. Empirical Benchmarks & Red/Blue Teaming Evaluations
 
-For empirical multi-turn benchmarks, token savings measurements, and latency profiles across local Ollama (`laya:latest`, `d1-omni:latest`) and cloud OpenAI decision models, see the complete report in [`docs/decision/BENCHMARK-STOCK-DASHBOARD.md`](decision/BENCHMARK-STOCK-DASHBOARD.md).
+For complete empirical benchmarks, multi-domain multi-intent evaluations, and adversarial stress tests, see:
+- [`docs/decision/BENCHMARK-STOCK-DASHBOARD.md`](decision/BENCHMARK-STOCK-DASHBOARD.md): Multi-turn token savings (72.8% reduction), prefill latency acceleration, and canvas accuracy across local Ollama and OpenAI models.
+- [`docs/decision/EVALUATION-NEGATIVE-REDBLUE-MULTIDOMAIN.md`](decision/EVALUATION-NEGATIVE-REDBLUE-MULTIDOMAIN.md): Comprehensive 22-scenario Red/Blue adversarial evaluation, Ghost Canvas safeguards, generic CRUD collision resolution, and 8-domain multi-intent compound routing.
+
 
