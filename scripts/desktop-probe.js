@@ -19,8 +19,13 @@
   const nativeRequest={id:'native-ipc-task',goal:'Verify native task control',criteria:'Create and read one bounded task',run_limit:1,budget_limits:{model_requests:1,tool_calls:1},requirements:[{id:'native-readback',mandatory:true,contract_revision:1,outcome:'pending',receipt:null}],delegation:{mode:'disabled',max_children:0}};
   const nativeTask=await ipc.invoke('control_create_root',{request:nativeRequest});
   check(nativeTask.id==='native-ipc-task'&&nativeTask.status==='queued','native task creation failed');
+  const nativeRetry=await ipc.invoke('control_create_root',{request:nativeRequest});
+  check(nativeRetry.id===nativeTask.id&&nativeRetry.revision===nativeTask.revision,'native task creation retry was not idempotent');
   const nativeRead=await ipc.invoke('control_read_root',{id:'native-ipc-task'});
   check(nativeRead.id===nativeTask.id&&nativeRead.revision===nativeTask.revision,'native task readback failed');
+  let conflictingRequestAccepted=false;
+  try{await ipc.invoke('control_create_root',{request:{...nativeRequest,criteria:'Conflicting request under a reused task identity'}});conflictingRequestAccepted=true;}catch{}
+  check(!conflictingRequestAccepted,'native task creation accepted conflicting identity reuse');
   let unknownFieldAccepted=false;
   try{await ipc.invoke('control_create_root',{request:{...nativeRequest,id:'native-ipc-unknown',unexpected:true}});unknownFieldAccepted=true;}catch{}
   check(!unknownFieldAccepted,'native task decoder accepted an unknown field');

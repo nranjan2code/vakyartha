@@ -135,7 +135,7 @@ impl BudgetLimits {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RootCreate {
     pub id: String,
@@ -173,6 +173,7 @@ impl ExecutionFence {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RootTask {
+    creation_request: RootCreate,
     id: String,
     revision: u64,
     contract_revision: u64,
@@ -490,46 +491,21 @@ impl RootTask {
         request: RootCreate,
         workspace_grant: Option<WorkspaceGrant>,
     ) -> Result<Self, StateError> {
-        let RootCreate {
-            id,
-            goal,
-            criteria,
-            run_limit,
-            budget_limits,
-            requirements,
-            delegation,
-        } = request;
-        if !valid_identity(&id) {
-            return Err(StateError::InvalidIdentity);
-        }
-        validate_text(&goal, MAX_TEXT)?;
-        validate_text(&criteria, 4_000)?;
-        if run_limit == 0
-            || run_limit > 32
-            || BudgetLimits::new(budget_limits.model_requests, budget_limits.tool_calls).is_err()
-        {
-            return Err(StateError::InvalidLimit);
-        }
-        if requirements.is_empty()
-            || requirements.len() > MAX_REQUIREMENTS
-            || !requirements.iter().any(Requirement::mandatory)
-        {
-            return Err(StateError::RequirementSetInvalid);
-        }
-        let mut indexed = BTreeMap::new();
-        for requirement in requirements {
-            if !valid_identity(&requirement.id)
-                || requirement.contract_revision != 1
-                || requirement.outcome != CheckOutcome::Pending
-                || requirement.receipt.is_some()
-                || indexed
-                    .insert(requirement.id.clone(), requirement)
-                    .is_some()
-            {
-                return Err(StateError::RequirementSetInvalid);
-            }
-        }
+        validate_create_request(&request)?;
+        let id = request.id.clone();
+        let goal = request.goal.clone();
+        let criteria = request.criteria.clone();
+        let run_limit = request.run_limit;
+        let budget_limits = request.budget_limits;
+        let delegation = request.delegation;
+        let indexed = request
+            .requirements
+            .iter()
+            .cloned()
+            .map(|requirement| (requirement.id.clone(), requirement))
+            .collect();
         Ok(Self {
+            creation_request: request,
             id,
             revision: 1,
             contract_revision: 1,
@@ -554,6 +530,9 @@ impl RootTask {
 
     pub fn id(&self) -> &str {
         &self.id
+    }
+    pub fn creation_request_matches(&self, request: &RootCreate) -> bool {
+        self.creation_request == *request
     }
     pub fn revision(&self) -> u64 {
         self.revision
@@ -1203,7 +1182,10 @@ impl RootTask {
     pub fn validate(&self) -> Result<(), StateError> {
         let delegation_valid =
             DelegationPolicy::new(self.delegation.mode(), self.delegation.max_children()).is_ok();
+        let creation_valid = self.creation_request.id == self.id
+            && validate_create_request(&self.creation_request).is_ok();
         if !valid_identity(&self.id)
+            || !creation_valid
             || self.revision == 0
             || self.contract_revision == 0
             || self.cancellation_epoch == 0
@@ -1465,6 +1447,44 @@ fn unique_references(values: &[String]) -> bool {
             .collect::<std::collections::BTreeSet<_>>()
             .len()
             == values.len()
+}
+
+fn validate_create_request(request: &RootCreate) -> Result<(), StateError> {
+    if !valid_identity(&request.id) {
+        return Err(StateError::InvalidIdentity);
+    }
+    validate_text(&request.goal, MAX_TEXT)?;
+    validate_text(&request.criteria, 4_000)?;
+    if request.run_limit == 0
+        || request.run_limit > 32
+        || BudgetLimits::new(
+            request.budget_limits.model_requests,
+            request.budget_limits.tool_calls,
+        )
+        .is_err()
+        || DelegationPolicy::new(request.delegation.mode(), request.delegation.max_children())
+            .is_err()
+    {
+        return Err(StateError::InvalidLimit);
+    }
+    if request.requirements.is_empty()
+        || request.requirements.len() > MAX_REQUIREMENTS
+        || !request.requirements.iter().any(Requirement::mandatory)
+    {
+        return Err(StateError::RequirementSetInvalid);
+    }
+    let mut requirement_ids = BTreeSet::new();
+    for requirement in &request.requirements {
+        if !valid_identity(&requirement.id)
+            || requirement.contract_revision != 1
+            || requirement.outcome != CheckOutcome::Pending
+            || requirement.receipt.is_some()
+            || !requirement_ids.insert(requirement.id.as_str())
+        {
+            return Err(StateError::RequirementSetInvalid);
+        }
+    }
+    Ok(())
 }
 
 fn validate_text(value: &str, max: usize) -> Result<(), StateError> {

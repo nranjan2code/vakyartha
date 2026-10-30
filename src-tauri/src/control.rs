@@ -10,7 +10,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 9;
+const STORE_VERSION: u16 = 10;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -1300,8 +1300,22 @@ fn actor_loop(
                 reply,
             } => {
                 let id = request.id.clone();
-                if ledger.roots.contains_key(&id) {
-                    let _ = reply.send(Err(ControlError::Admission(AdmissionError::DuplicateRoot)));
+                if let Some(existing) = ledger.roots.get(&id) {
+                    let scope_matches =
+                        match (workspace_binding.as_ref(), existing.workspace_grant()) {
+                            (None, None) => true,
+                            (Some((session_id, revision)), Some(grant)) => {
+                                grant.session_id == *session_id
+                                    && grant.binding_revision == *revision
+                            }
+                            _ => false,
+                        };
+                    if existing.creation_request_matches(&request) && scope_matches {
+                        let _ = reply.send(Ok(existing.clone()));
+                    } else {
+                        let _ =
+                            reply.send(Err(ControlError::Admission(AdmissionError::DuplicateRoot)));
+                    }
                     continue;
                 }
                 if ledger.roots.len() >= MAX_ROOTS {
@@ -2628,6 +2642,83 @@ mod tests {
         assert_eq!(recovered.model_requests_used(), 1);
         assert_eq!(recovered.tool_calls_used(), 1);
         drop(reopened);
+        fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
+    fn native_root_creation_retries_across_recovery_without_accepting_conflicts() {
+        let data = temp_data_dir();
+        let timeout = Duration::from_secs(2);
+        let profile = CapacityProfile::unconfigured().unwrap();
+        let actor =
+            ControlActor::open(&data, "unconfigured-v1", profile.clone(), 16, timeout).unwrap();
+        let handle = actor.handle();
+        let request = RootCreate {
+            id: "task-create-retry".into(),
+            goal: "Recover task creation safely".into(),
+            criteria: "Return the original durable task".into(),
+            run_limit: 2,
+            budget_limits: BudgetLimits::new(2, 2).unwrap(),
+            requirements: vec![Requirement::new("creation-receipt".into(), true).unwrap()],
+            delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0).unwrap(),
+        };
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let handle = handle.clone();
+                let request = request.clone();
+                thread::spawn(move || handle.create_root_with_budget(request))
+            })
+            .collect();
+        let created: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap().unwrap())
+            .collect();
+        assert!(created.iter().all(|root| root.revision() == 1));
+        assert!(
+            created
+                .iter()
+                .all(|root| root.status() == RootStatus::Queued)
+        );
+        let created = created[0].clone();
+        let running = handle
+            .mutate_root(
+                created.id().into(),
+                created.revision(),
+                RootMutation::StartAttempt,
+            )
+            .unwrap();
+        drop(handle);
+        drop(actor);
+
+        let recovered_actor =
+            ControlActor::open(&data, "unconfigured-v1", profile, 16, timeout).unwrap();
+        let recovered_handle = recovered_actor.handle();
+        let recovered_state = recovered_handle
+            .read_root("task-create-retry".into())
+            .unwrap();
+        let retried = recovered_handle
+            .create_root_with_budget(request.clone())
+            .unwrap();
+        assert_eq!(retried.revision(), recovered_state.revision());
+        assert_eq!(retried.status(), RootStatus::Interrupted);
+        assert_eq!(retried.status(), recovered_state.status());
+        assert!(retried.revision() > running.revision());
+
+        let mut conflicting = request;
+        conflicting.criteria = "Different contract under a reused identity".into();
+        assert_eq!(
+            recovered_handle.create_root_with_budget(conflicting),
+            Err(ControlError::Admission(AdmissionError::DuplicateRoot))
+        );
+        assert_eq!(
+            recovered_handle
+                .read_root("task-create-retry".into())
+                .unwrap()
+                .revision(),
+            recovered_state.revision()
+        );
+        drop(recovered_handle);
+        drop(recovered_actor);
         fs::remove_dir_all(data).unwrap();
     }
 

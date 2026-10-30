@@ -12,9 +12,13 @@ The existing Node 26 app suite was rerun serially under the official Node 26.13.
 
 ## Trusted native root entry IPC — 2026-10-30
 
-Added strict `RootCreate` decoding and two Tauri commands for the admitted main/admin app windows: create a root in the native control store and read one by opaque task ID. The commands obtain the actor from Tauri-managed state, return bounded generic errors, and are not available on the sidecar health pipe. No task mutation, list, delete, workspace assignment, start, approval or dispatch command is exposed. `scripts/desktop-probe.js` exercises create, persisted readback and unknown-field rejection in the existing isolated macOS native smoke; `scripts/desktop-check.ts` passes under Node 26.13.0. The current Rust 1.99.1 Linux Docker gate passes 83/83 with strict Clippy; host strict Clippy and macOS Tauri build pass.
+Added strict `RootCreate` decoding and two Tauri commands for the admitted main/admin app windows: create a root in the native control store and read one by opaque task ID. A repeated create with the same ID and exact original contract/workspace revision returns the persisted root; conflicting reuse is rejected. The original create request is retained in store schema v10 for restart-safe idempotency. The commands obtain the actor from Tauri-managed state, return bounded generic errors, and are not available on the sidecar health pipe. No task mutation, list, delete, workspace assignment, start, approval or dispatch command is exposed. The actor regression proves eight simultaneous identical creates converge on one root, an uncertain retry after restart returns the recovered `Interrupted` state, and a changed contract under the same identity is refused. `scripts/desktop-probe.js` exercises create, idempotent retry, persisted readback, conflict refusal and unknown-field rejection in the isolated macOS native smoke; `scripts/desktop-check.ts` passes under Node 26.13.0.
+
+Before the schema bump, the development and installed-app control-store paths were both absent; the change requires no compatibility reader or conversion for these inspected stores.
 
 This is a trusted-shell API foundation, not product cutover: current UI task creation and reads still use the TypeScript service, and the new commands are not wired into a user workflow. Do not call both paths for one task. The next vertical change must move task UI reads/creation and every subsequent state transition together, while preserving workspace grants and trusted approval; the current sidecar must not gain broad task-control authority.
+
+After the idempotency/schema update, macOS Rust library tests pass 82/82, host strict Clippy passes, and the pinned Rust 1.99.1 Linux Docker gate passes 84/84 with strict Clippy. The isolated macOS desktop smoke also passes with create/retry/read/conflict/unknown-field checks.
 
 ## Active provider and credential path audit — 2026-10-30
 
