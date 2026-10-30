@@ -135,7 +135,8 @@ impl BudgetLimits {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RootCreate {
     pub id: String,
     pub goal: String,

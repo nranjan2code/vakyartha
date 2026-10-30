@@ -10,6 +10,12 @@ This is accounting substrate only: it does not authorize an external effect, dis
 
 The existing Node 26 app suite was rerun serially under the official Node 26.13.0 macOS ARM64 archive (SHA-256 verified against Node's published `SHASUMS256.txt`): 275/275 pass; TypeScript typecheck passes; pinned Projection suite passes 412/412. These are regression checks and do not close the task/outcome gates.
 
+## Trusted native root entry IPC — 2026-10-30
+
+Added strict `RootCreate` decoding and two Tauri commands for the admitted main/admin app windows: create a root in the native control store and read one by opaque task ID. The commands obtain the actor from Tauri-managed state, return bounded generic errors, and are not available on the sidecar health pipe. No task mutation, list, delete, workspace assignment, start, approval or dispatch command is exposed. `scripts/desktop-probe.js` exercises create, persisted readback and unknown-field rejection in the existing isolated macOS native smoke; `scripts/desktop-check.ts` passes under Node 26.13.0. The current Rust 1.99.1 Linux Docker gate passes 83/83 with strict Clippy; host strict Clippy and macOS Tauri build pass.
+
+This is a trusted-shell API foundation, not product cutover: current UI task creation and reads still use the TypeScript service, and the new commands are not wired into a user workflow. Do not call both paths for one task. The next vertical change must move task UI reads/creation and every subsequent state transition together, while preserving workspace grants and trusted approval; the current sidecar must not gain broad task-control authority.
+
 ## Active provider and credential path audit — 2026-10-30
 
 Rechecked the live source after confining the Rust broker. `Settings.load()` still reads provider secrets into the sidecar's `process.env`; on desktop, `src/ui.ts` calls native `vault_set`/`vault_delete` and then PUTs the same secret to `/api/settings`, whose TypeScript `Settings` store writes Keychain or the settings file. `modelProviders()` still calls `providersFromEnv()` and wraps its provider instances, but supplies no `ProviderTransport`; the pinned Projection host calls `entry.make()` or `entry.make({ think })`, so the provider default remains global `fetch`, while `tasks.beforeModelRequest()` and FinOps wrap it. Task approvals and task persistence also remain in `sidecar/tasks.ts`.

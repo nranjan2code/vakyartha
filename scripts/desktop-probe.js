@@ -16,6 +16,14 @@
  const wait=async(fn)=>{for(let i=0;i<100;i++){if(fn())return;await new Promise(r=>setTimeout(r,50));}throw Error('native UI did not settle')};
  try{
   const backend=await ipc.invoke('backend');check(backend.url==='vak://localhost','unexpected backend');
+  const nativeRequest={id:'native-ipc-task',goal:'Verify native task control',criteria:'Create and read one bounded task',run_limit:1,budget_limits:{model_requests:1,tool_calls:1},requirements:[{id:'native-readback',mandatory:true,contract_revision:1,outcome:'pending',receipt:null}],delegation:{mode:'disabled',max_children:0}};
+  const nativeTask=await ipc.invoke('control_create_root',{request:nativeRequest});
+  check(nativeTask.id==='native-ipc-task'&&nativeTask.status==='queued','native task creation failed');
+  const nativeRead=await ipc.invoke('control_read_root',{id:'native-ipc-task'});
+  check(nativeRead.id===nativeTask.id&&nativeRead.revision===nativeTask.revision,'native task readback failed');
+  let unknownFieldAccepted=false;
+  try{await ipc.invoke('control_create_root',{request:{...nativeRequest,id:'native-ipc-unknown',unexpected:true}});unknownFieldAccepted=true;}catch{}
+  check(!unknownFieldAccepted,'native task decoder accepted an unknown field');
   const info=await request('/api/info');check(info.status===200,'private info failed');
   const projected=await request('/api/project','POST',{session:'ipc-check',args:{surface:'ipc-card',title:'Private transport check',nodes:[{id:'root',type:'card',props:{title:'Private transport check',body:'Ready'}}]}});
   check(projected.status===200&&projected.data.diagnostics.length===0,'canonical projection failed');

@@ -36,6 +36,9 @@ mod vault;
 mod control;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use control::{CapacityProfile, ControlActor};
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+use control::ControlActor;
+use control::state::{RootCreate, RootTask};
 use engine::{Engine as Sidecar, engine_request, engine_ack, engine_cancel};
 
 /// Closing the window hides it while this is set, so the engine and its
@@ -175,6 +178,41 @@ fn pick_folder(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
 #[tauri::command]
 fn backend(state: tauri::State<Sidecar>) -> Result<Backend, String> {
     state.backend.clone()
+}
+
+/// Creates a native task from a trusted app-window request. The reasoning
+/// sidecar has no command that can create or mutate authoritative task state.
+#[tauri::command]
+fn control_create_root(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    request: RootCreate,
+) -> Result<RootTask, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native task control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .create_root_with_budget(request)
+        .map_err(|_| "Native task request was refused".to_owned())
+}
+
+/// Reads one task by its opaque identity through the trusted app window.
+#[tauri::command]
+fn control_read_root(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    id: String,
+) -> Result<RootTask, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native task control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .read_root(id)
+        .map_err(|_| "Native task was not found or could not be read".to_owned())
 }
 
 #[tauri::command]
@@ -410,6 +448,8 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             backend,
+            control_create_root,
+            control_read_root,
             engine_request,
             engine_ack,
             engine_cancel,

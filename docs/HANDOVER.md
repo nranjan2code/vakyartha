@@ -1,5 +1,9 @@
 # Vakyartha handover — 2026-10-30
 
+## Trusted native root entry IPC — 2026-10-30
+
+The trusted main/admin Tauri windows can now create a root in the native control store and read it by opaque ID. The strict `RootCreate` DTO rejects unknown fields; the Rust actor persists before replying. `scripts/desktop-probe.js` verifies create/readback and unknown-field rejection inside the isolated native app smoke, and `scripts/desktop-check.ts` passes on Node 26.13.0. The current Rust 1.99.1 Linux Docker gate passes 83/83 with strict Clippy; host strict Clippy and macOS Tauri build pass. The sidecar protocol remains health-only. This is not product cutover: the visible task UI and TypeScript task service remain authoritative, and no task mutation, workspace assignment, start, approval or dispatch API is enabled. Do not dual-write. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#trusted-native-root-entry-ipc--2026-10-30).
+
 ## Native cumulative operation accounting — 2026-10-30
 
 The native root aggregate now persists bounded cumulative model-request/tool-call limits and idempotent charge identities. The actor persists each unique charge before acknowledgement and persists a terminal `LimitReached` stop on exhaustion; the native store schema is version 9. An eight-caller regression proves unique charges cannot overshoot one revision's limit. Focused macOS budget tests and strict Clippy pass; `scripts/linux-rust-check.sh` passes 83/83 with strict Clippy. Under official Node 26.13.0, app tests pass 275/275, TypeScript typecheck passes and Projection passes 412/412. This does not authorize dispatch or replace TypeScript task/budget ownership; per-run limits, active-time accounting, approvals, provider/tool routing and durable product receipts remain open. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-cumulative-modeltool-operation-accounting--2026-10-30).
