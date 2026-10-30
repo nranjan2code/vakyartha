@@ -6,6 +6,7 @@ import path from "node:path";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import { basicCatalog, SurfaceStore } from "@vak/core";
+import { canonicalWorkerRuntime } from "../sidecar/canonical-worker-runtime.ts";
 import { parseTaskWorkerJob, taskWorkerRuntime, type TaskWorkerJob } from "../sidecar/task-worker-runtime.ts";
 
 function job(): TaskWorkerJob {
@@ -60,6 +61,20 @@ test("private reasoner uses the actual provider/Projection candidate path and le
   assert.ok(result.surfaces.some(surface => surface.nodes.some(node => node.props?.value === 37.5)));
   assert.deepEqual(result.baseVersions, [{ id: original.id, version: original.version }]);
   assert.deepEqual(store.snapshot("unrelated"), original);
+  // The actual serialized reasoner candidate crosses a second role before
+  // native selection. This catches differences hidden by hand-built fixtures.
+  const canonicalInput = new PassThrough(), canonicalOutput = new PassThrough();
+  let canonicalBytes = "", canonicalCode: number | undefined;
+  canonicalOutput.on("data", chunk => { canonicalBytes += chunk; });
+  const canonical = canonicalWorkerRuntime(canonicalInput, canonicalOutput, value => { canonicalCode = value; });
+  t.after(() => { canonical.close(); canonicalInput.destroy(); canonicalOutput.destroy(); });
+  const at = "2026-10-30T00:00:00.000Z";
+  const base = { id: context.session, title: "Original", created: at, updated: at, messages: [], timeline: [], surfaces: context.initialSurfaces, external: [] };
+  canonicalInput.write(JSON.stringify({ v: 2, type: "canonical_prepare", context: { id: `publication-${"a".repeat(64)}`, candidate: result, base, message: context.goal, at } }) + "\n");
+  await wait(() => canonicalCode !== undefined);
+  assert.equal(canonicalCode, 0, canonicalBytes);
+  const prepared = JSON.parse(canonicalBytes.trim().split("\n").at(-1)!);
+  assert.deepEqual(prepared.snapshot.surfaces, result.surfaces);
   assert.equal(h.frames.filter(frame => frame.type === "provider_request").length, 1);
   assert.ok(!h.frames.some(frame => frame.type === "control_request"));
   for (const namespace of ["sessions", "tasks", "outputs"]) assert.equal(existsSync(path.join(h.scratch, namespace)), false);

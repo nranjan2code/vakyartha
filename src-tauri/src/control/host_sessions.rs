@@ -212,7 +212,7 @@ impl HostSessionStore {
     }
 }
 
-fn validate_snapshot(id: &str, snapshot: &Value) -> Result<SessionSummary, super::StoreError> {
+pub(super) fn validate_snapshot(id: &str, snapshot: &Value) -> Result<SessionSummary, super::StoreError> {
     let Some(object) = snapshot.as_object() else { return Err(super::StoreError::Corrupt); };
     let string = |key: &str, limit: usize| -> Result<String, super::StoreError> {
         object.get(key).and_then(Value::as_str).filter(|value| !value.is_empty() && value.len() <= limit)

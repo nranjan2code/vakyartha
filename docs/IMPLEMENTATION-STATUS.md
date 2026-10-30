@@ -1,5 +1,7 @@
 # Implementation status and acceptance gates
 
+Latest canonical checkpoint (2026-10-30): schema 16 now selects task publication snapshots and receipts atomically, separately from opaque candidate commits. Projection `cb8762b` and a separately packaged pure canonical worker provide semantic preparation. Native restart/stale/cancel/storage-failure tests pass, but the protected canonical-role launcher/capacity/cleanup driver, actual provider consent/I/O and product orchestration remain pending. Product execution is disabled; no original outcome or final Astra gate is closed. Continue in `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` on `codex/agent-runtime-implementation`; do not switch or modify the decision-feature checkout. [Evidence](agent-runtime/IMPLEMENTATION-PROGRESS.md#canonical-preparation-and-native-publication-selection--2026-10-30).
+
 Maintained tracker, reviewed 2026-10-30. Replaces the former MVP checklist without resetting item IDs, checked states, failed outcomes or historical evidence. Sections distinguish current foundations, active work, proposed architecture and future candidates. A historical checked item proves only its stated scope, not a newer expanded contract.
 
 Original planning baseline: 2026-10-25. Scope and acceptance contract: [AGENT-TASKS.md](AGENT-TASKS.md). Current app: [SPECS.md](SPECS.md). Proposed execution/delegation architecture: [agent-runtime/](agent-runtime/README.md). This tracker keeps documentation, existing foundations, implementation and later scope separate.

@@ -2,6 +2,36 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Canonical preparation and native publication selection — 2026-10-30
+
+Projection `cb8762b` adds public `prepareCandidatePublication`: a pure check of JSON candidates, complete graph/binding/wire semantics and exact canonical base versions. It preserves supplied values and interactive surfaces, rejects failed/partial stops, and returns a detached session snapshot without model work, repair, writes or broadcasts. All 422 framework tests/replay, typecheck and package generation pass.
+
+A separately packaged `canonical-worker.mjs` accepts one bounded native-selected context and returns one prepared snapshot. It has no provider channel, app routes or persistence adapter. Its actual IPC/Projection tests reject authority command families and stale/failed candidates; the real serialized reasoner result passes through this second role with multiple surfaces, exact 37.5 and the original interactive context intact. This is a synthetic provider response, not a real model outcome. The release manifest includes the canonical bundle digest.
+
+The native actor issues a move-only preparation context from the selected durable candidate, original task goal, timestamp and selected publication base. Only native canonical-pipe code can convert its exact response into a publication proposal; this method is absent from the worker and webview bridges. The actor rechecks the root/session/workspace fence, confirmed run, selected candidate digest/revision and publication base before synchronizing immutable snapshot bytes and selecting their pointer and receipt in one control generation (schema 16). Candidate and published snapshots use separate namespaces. A candidate can publish once; exact retries return the receipt. Restart reads the selected snapshot without replaying model work or publishing unselected bytes. Publication never marks an outcome check passed or completes a task.
+
+```mermaid
+sequenceDiagram
+    participant N as Native control actor
+    participant C as Canonical worker entry
+    participant B as Immutable content files
+    participant S as Control snapshot
+    N->>C: Selected candidate, original goal, canonical base, context identity
+    Note over N,C: Protected role launcher and product orchestration remain pending
+    C->>C: Projection semantic and version validation
+    C-->>N: Prepared snapshot for the same context
+    N->>N: Recheck current fence, candidate and base
+    N->>B: Write and synchronize publication bytes
+    N->>S: Select snapshot pointer and receipt together
+    N-->>N: Expose selected revision through session load/list
+```
+
+Task session reads/listing now use the selected publication; the ordinary host-session writer remains refused for task IDs. Admission release cannot hide an existing publication. Storage validation accepts valid native execution history and delegates execution-record validation to the native run ledger; it no longer conflates disabled product admission with a corrupt on-disk task. Product start admission remains disabled.
+
+Verification: 290 app tests and typecheck; 127 macOS native tests and 129 Linux Docker native tests with all three real-worker gates included; strict Clippy on both; native WebKit smoke passes. Native publication tests emulate the canonical response and prove response substitution refusal, stale/cancelled rejection, receipt identity/corruption checks, restart load/list, one persistence writer, and failed control-pointer selection preserving the prior snapshot while recovery removes orphan bytes. Final strengthened validation is covered by focused native reruns. WebKit receipt: `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-desktop-private-rS0WE8`.
+
+Remaining: the protected canonical-role launcher/capacity/cleanup driver, trusted provider consent UI and actual broker I/O, product task orchestration and publication acknowledgement remain unconnected. The capacity profile stays empty and product execution stays unavailable. Scheduler, skill/tool/continuation parity, workspace/IA cutover, drift/QoS, original local-provider outcomes, installed proof and final Astra review remain open. No dependency or compatibility reader was added. Work is isolated in `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` on `codex/agent-runtime-implementation`; the decision-feature checkout is untouched.
+
 ## Native provider approval and durable budget handoff — 2026-10-30
 
 The control actor now owns bounded ephemeral provider tickets and their durable operation handoff. An immutable `LocalModelPolicy` in native root admission fixes the local model, per-request output ceiling (at most 4096) and request byte bound (at most 8 MiB). Desktop local task admission derives that policy from the saved original task request; roots without one cannot issue provider tickets. The first path supports only the registered loopback local generation route, fixed supported options and no external tool declarations. It does not authorize hosted providers or create endpoint exceptions.

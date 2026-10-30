@@ -11,7 +11,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 15;
+const STORE_VERSION: u16 = 16;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 const MAX_CANDIDATE_RECEIPTS: usize = 10_000;
@@ -30,6 +30,7 @@ mod approval;
 mod broker;
 pub mod generation;
 pub mod canonical;
+pub mod publication;
 pub mod delegation;
 pub mod folder;
 pub mod host_sessions;
@@ -175,6 +176,8 @@ pub struct CapacityLedger {
     root_runs: BTreeMap<String, root_runs::RootRun>,
     product_tasks: BTreeMap<String, tasks::TaskRecord>,
     provider_operations: BTreeMap<String, generation::OperationRecord>,
+    published_sessions: BTreeMap<String, CanonicalSessionRecord>,
+    publication_receipts: BTreeMap<String, publication::PublicationReceipt>,
 }
 
 impl CapacityLedger {
@@ -360,6 +363,8 @@ impl CapacityLedger {
             root_runs: self.root_runs.clone(),
             product_tasks: self.product_tasks.clone(),
             provider_operations: self.provider_operations.clone(),
+            published_sessions: self.published_sessions.clone(),
+            publication_receipts: self.publication_receipts.clone(),
         }
     }
 
@@ -380,6 +385,8 @@ impl CapacityLedger {
             root_runs: snapshot.root_runs,
             product_tasks: snapshot.product_tasks,
             provider_operations: snapshot.provider_operations,
+            published_sessions: snapshot.published_sessions,
+            publication_receipts: snapshot.publication_receipts,
             ..Self::default()
         };
         if ledger.canonical_sessions.len() > MAX_ROOTS
@@ -590,6 +597,7 @@ impl CapacityLedger {
         root_runs::validate(&ledger)?;
         tasks::validate(&ledger)?;
         generation::validate(&ledger)?;
+        publication::validate(&ledger)?;
         Ok(ledger)
     }
 }
@@ -607,6 +615,8 @@ struct LedgerSnapshot {
     root_runs: BTreeMap<String, root_runs::RootRun>,
     product_tasks: BTreeMap<String, tasks::TaskRecord>,
     provider_operations: BTreeMap<String, generation::OperationRecord>,
+    published_sessions: BTreeMap<String, CanonicalSessionRecord>,
+    publication_receipts: BTreeMap<String, publication::PublicationReceipt>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -813,6 +823,19 @@ enum ActorCommand {
     CheckExecutionFence {
         fence: ExecutionFence,
         reply: SyncSender<Result<(), ControlError>>,
+    },
+    PreparePublication {
+        commit_id: String,
+        reply: SyncSender<Result<publication::PublicationPreparation, ControlError>>,
+    },
+    CommitPublication {
+        proposal: publication::PublicationProposal,
+        in_flight: Arc<std::sync::atomic::AtomicBool>,
+        reply: SyncSender<Result<publication::PublicationReceipt, ControlError>>,
+    },
+    ReadPublicationReceipt {
+        commit_id: String,
+        reply: SyncSender<Result<Option<publication::PublicationReceipt>, ControlError>>,
     },
     CommitCandidate {
         request: CandidateCommitRequest,
@@ -1360,6 +1383,28 @@ impl ControlHandle {
             .map_err(response_error)?
     }
 
+    /// Native-only: never exposed through the reasoner or general app bridge.
+    pub fn prepare_publication(&self, commit_id: String) -> Result<publication::PublicationPreparation, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::PreparePublication { commit_id, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    pub fn read_publication_receipt(&self, commit_id: String) -> Result<Option<publication::PublicationReceipt>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::ReadPublicationReceipt { commit_id, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    pub fn commit_publication(&self, proposal: publication::PublicationProposal) -> Result<publication::PublicationReceipt, ControlError> {
+        if self.candidate_in_flight.compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed).is_err() { return Err(ControlError::QueueFull); }
+        let (reply, response) = sync_channel(1);
+        if let Err(error) = self.commands.try_send(ActorCommand::CommitPublication { proposal, in_flight: self.candidate_in_flight.clone(), reply }) {
+            self.candidate_in_flight.store(false, Ordering::Release); return Err(queue_error(error));
+        }
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
     /// Persists an opaque canonical candidate only when the task and canonical
     /// revisions still match. Replays return the durable receipt, never replay bytes.
     pub fn commit_candidate(
@@ -1605,11 +1650,16 @@ impl ControlActor {
         }
         let canonical_content = CanonicalContentStore::open(&native_dir, &ledger.canonical_sessions)
             .map_err(canonical_store_error)?;
+        let published_content = CanonicalContentStore::open_publications(&native_dir, &ledger.published_sessions).map_err(canonical_store_error)?;
         let host_sessions = host_sessions::HostSessionStore::open(data_dir)?;
+        if host_sessions.list().iter().any(|summary| ledger.product_tasks.contains_key(&summary.id)) { return Err(StoreError::Corrupt); }
+        for id in ledger.published_sessions.keys() {
+            publication::load(&ledger, &published_content, id).map_err(|_| StoreError::Corrupt)?;
+        }
         let (commands, receiver) = sync_channel(queue_capacity);
         let join = thread::Builder::new()
             .name("vak-control".into())
-            .spawn(move || actor_loop(receiver, &mut store, profile, ledger, workspace_admission, canonical_content, host_sessions))
+            .spawn(move || actor_loop(receiver, &mut store, profile, ledger, workspace_admission, CanonicalStores { candidates: canonical_content, publications: published_content }, host_sessions))
             .map_err(store_io)?;
         Ok(Self {
             handle: ControlHandle {
@@ -1765,15 +1815,18 @@ fn canonical_store_error(error: canonical::CanonicalStoreError) -> StoreError {
     }
 }
 
+struct CanonicalStores { candidates: CanonicalContentStore, publications: CanonicalContentStore }
+
 fn actor_loop(
     receiver: Receiver<ActorCommand>,
     store: &mut ControlStore,
     profile: CapacityProfile,
     mut ledger: CapacityLedger,
     workspace_admission: WorkspaceAdmissionPolicy,
-    mut canonical_content: CanonicalContentStore,
+    content: CanonicalStores,
     mut host_sessions: host_sessions::HostSessionStore,
 ) {
+    let CanonicalStores { candidates: mut canonical_content, publications: published_content } = content;
     let mut admitted_host_sessions = std::collections::BTreeSet::new();
     let mut provider_approvals = generation::Approvals::default();
     while let Ok(command) = receiver.recv() {
@@ -2680,17 +2733,22 @@ fn actor_loop(
                 let result = if !admitted_host_sessions.contains(&session_id) {
                     Err(ControlError::Admission(AdmissionError::InvalidIdentity))
                 } else {
-                    match host_sessions.load(&session_id) {
+                    let loaded = if ledger.product_tasks.contains_key(&session_id) {
+                        publication::load(&ledger, &published_content, &session_id)
+                    } else { host_sessions.load(&session_id).map_err(ControlError::Store) };
+                    match loaded {
                         Ok(None) => { admitted_host_sessions.remove(&session_id); Ok(()) }
                         Ok(Some(_)) => Err(ControlError::Admission(AdmissionError::HostSessionAdmissionHasData)),
-                        Err(error) => Err(ControlError::Store(error)),
+                        Err(error) => Err(error),
                     }
                 };
                 let _ = reply.send(result);
             }
             ActorCommand::LoadHostSession { session_id, reply } => {
                 let result = if admitted_host_sessions.contains(&session_id) {
-                    host_sessions.load(&session_id).map_err(ControlError::Store)
+                    if ledger.product_tasks.contains_key(&session_id) {
+                        publication::load(&ledger, &published_content, &session_id)
+                    } else { host_sessions.load(&session_id).map_err(ControlError::Store) }
                 } else {
                     Err(ControlError::Admission(AdmissionError::InvalidIdentity))
                 };
@@ -2710,7 +2768,15 @@ fn actor_loop(
                 if fatal { break; }
             }
             ActorCommand::ListHostSessions { reply } => {
-                let _ = reply.send(Ok(host_sessions.list()));
+                let result = (|| {
+                    let mut summaries = host_sessions.list();
+                    for id in ledger.published_sessions.keys() {
+                        let (_, snapshot) = publication::load(&ledger, &published_content, id)?.ok_or(ControlError::Store(StoreError::Corrupt))?;
+                        summaries.push(host_sessions::validate_snapshot(id, &snapshot).map_err(ControlError::Store)?);
+                    }
+                    Ok(summaries)
+                })();
+                let _ = reply.send(result);
             }
             ActorCommand::RemoveHostSession { session_id, expected_revision, reply } => {
                 if ledger.product_tasks.contains_key(&session_id) {
@@ -2762,6 +2828,21 @@ fn actor_loop(
                     Some(_) => Ok(()),
                 };
                 let _ = reply.send(result);
+            }
+            ActorCommand::PreparePublication { commit_id, reply } => {
+                let result = publication::prepare(&ledger, &canonical_content, &published_content, &commit_id, tasks::now());
+                let _ = reply.send(result);
+            }
+            ActorCommand::ReadPublicationReceipt { commit_id, reply } => {
+                let receipt = ledger.publication_receipts.values().find(|value| value.candidate.commit_id == commit_id).cloned();
+                let _ = reply.send(Ok(receipt));
+            }
+            ActorCommand::CommitPublication { proposal, in_flight, reply } => {
+                let result = publication::commit(store, &profile, &mut ledger, &published_content, proposal);
+                in_flight.store(false, Ordering::Release);
+                let fatal = matches!(result, Err(ControlError::Store(_)));
+                let _ = reply.send(result);
+                if fatal { break; }
             }
             ActorCommand::CommitCandidate {
                 request,

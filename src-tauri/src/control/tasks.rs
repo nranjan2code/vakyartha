@@ -334,6 +334,9 @@ pub(super) fn validate(ledger: &CapacityLedger) -> Result<(), StoreError> {
     if ledger.product_tasks.len() > MAX_TASKS {
         return Err(StoreError::Corrupt);
     }
+    // Durable native runs are validated independently; execution availability
+    // belongs at admission, not in the storage format validator.
+    super::root_runs::validate(ledger)?;
     for (id, record) in &ledger.product_tasks {
         let root = ledger.roots.get(id).ok_or(StoreError::Corrupt)?;
         if id != &record.request.id
@@ -342,8 +345,6 @@ pub(super) fn validate(ledger: &CapacityLedger) -> Result<(), StoreError> {
             || !root.creation_request_matches(
                 &root_create(&record.request).map_err(|_| StoreError::Corrupt)?,
             )
-            || root.runs_started() != 0
-            || !matches!(root.status(), RootStatus::Queued | RootStatus::Cancelled)
             || !valid_timestamp(&record.created)
             || !valid_timestamp(&record.updated)
             || record.created > record.updated

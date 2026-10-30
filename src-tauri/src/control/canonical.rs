@@ -104,6 +104,21 @@ impl CanonicalContentStore {
         data_dir: &Path,
         sessions: &BTreeMap<String, CanonicalSessionRecord>,
     ) -> Result<Self, CanonicalStoreError> {
+        Self::open_namespace(data_dir, sessions, "sessions")
+    }
+
+    pub(super) fn open_publications(
+        data_dir: &Path,
+        sessions: &BTreeMap<String, CanonicalSessionRecord>,
+    ) -> Result<Self, CanonicalStoreError> {
+        Self::open_namespace(data_dir, sessions, "publications")
+    }
+
+    fn open_namespace(
+        data_dir: &Path,
+        sessions: &BTreeMap<String, CanonicalSessionRecord>,
+        namespace: &str,
+    ) -> Result<Self, CanonicalStoreError> {
         if sessions.len() > MAX_SESSIONS
             || sessions.iter().any(|(id, record)| {
                 !valid_identity(id)
@@ -120,7 +135,7 @@ impl CanonicalContentStore {
         }
         let content = data_dir.join("content");
         ensure_private_dir(&content)?;
-        let root = content.join("sessions");
+        let root = content.join(namespace);
         ensure_private_dir(&root)?;
         let store = Self { root };
         store.recover(sessions)?;

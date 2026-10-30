@@ -1,5 +1,11 @@
 # Agent outcome evaluation
 
+## Canonical preparation and native publication selection — 2026-10-30
+
+The public Projection canonical validator and separate pure canonical worker now feed a native publication selection/receipt boundary (schema 16). Candidate and published content are separate; task session load/list reads only the selected publication, and ordinary host writes remain refused. Restart, stale/cancelled responses and failed pointer selection are covered. Validation passes 290 app tests/typecheck, 127 macOS/129 Linux native tests including all real-worker gates, strict Clippy and WebKit. [Evidence and diagram](agent-runtime/IMPLEMENTATION-PROGRESS.md#canonical-preparation-and-native-publication-selection--2026-10-30).
+
+The protected canonical-role launcher/capacity/cleanup driver, trusted provider consent and network I/O, and product orchestration are still unconnected. Execution remains unavailable; original model outcomes and final Astra review remain open. Development uses the separate runtime worktree and leaves the decision-feature branch untouched.
+
 ## Native provider approval/budget handoff — 2026-10-30
 
 The Rust actor now validates provider proposals against an immutable admitted local-model policy, retains exact normalized bytes in four bounded ephemeral tickets, and persists provider capacity, cumulative request charge and redacted operation identity before returning a move-only native dispatch object. Concurrent approvals cannot duplicate it; restart discards pending consent and retains uncertain dispatch charges without replay. Native provider I/O settlement is separate from worker cleanup and cannot mark the task successful. Six approval tests plus the real packaged reasoner handoff pass; full real-worker suites pass 124 macOS/126 Linux, strict Clippy and native WebKit. [Evidence and ordering diagram](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-provider-approval-and-durable-budget-handoff--2026-10-30).
