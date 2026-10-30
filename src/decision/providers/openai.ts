@@ -205,6 +205,12 @@ export class OpenAIDecisionProvider implements DecisionProvider {
         suggestedTier: parsed.suggestedTier ?? "primary",
         reason: parsed.reason ?? `Evaluated by OpenAI model (${this.model}).`,
         latencyMs: elapsed,
+        decisionUsage: data.usage
+          ? {
+              inputTokens: data.usage.prompt_tokens,
+              outputTokens: data.usage.completion_tokens,
+            }
+          : undefined,
       };
     } catch {
       const fallbackRes = await fallback.classifyTurn(state);

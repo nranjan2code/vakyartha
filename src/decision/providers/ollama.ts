@@ -168,6 +168,12 @@ export class OllamaDecisionProvider implements DecisionProvider {
         suggestedTier: intent === "salutation" || intent === "canvas_refinement" ? "local_fast" : "primary",
         reason: `Evaluated by local decision model ${data.model ?? this.model} (Single-pass probability: ${Math.round(confidence * 100)}%).`,
         latencyMs: elapsed,
+        decisionUsage: data.usage
+          ? {
+              inputTokens: data.usage.input_tokens,
+              outputTokens: data.usage.output_tokens,
+            }
+          : undefined,
       };
     } catch {
       // Infallible fallback: timeout or error instantly falls back to heuristics

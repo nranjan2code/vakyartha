@@ -47,6 +47,12 @@ export interface TurnShape {
 
   /** Execution latency of the decision step in milliseconds */
   readonly latencyMs?: number;
+
+  /** Token usage of the decision evaluation step itself, if applicable */
+  readonly decisionUsage?: {
+    readonly inputTokens?: number;
+    readonly outputTokens?: number;
+  };
 }
 
 export interface RuntimeSurfaceSnapshot {
