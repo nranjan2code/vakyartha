@@ -2,6 +2,35 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Hosted spending policy, provider mediation, uncertainty recovery and native workspace/project commands — 2026-10-30
+
+Integrated common admission and hosted spending policy validation, task operation uncertainty tracking with bounded reconciliation, and native project/workspace actor IPC commands.
+
+Key achievements and invariants:
+- **Hosted Spending Policy & Provider Mediation**:
+  - `src-tauri/src/control/tasks.rs`: Added `SUPPORTED_PROVIDERS` containing all registered providers (`ollama`, `openai`, `anthropic`, `gemini`, `mistral`, `xai`, `deepseek`, `groq`, `cerebras`, `openrouter`, `together`, `fireworks`, `moonshot`, `dashscope`).
+  - `TaskRequest::validate`: Strictly enforces spending rules: `Spending::LocalOnly` mandates `ollama`, while `Spending::ApiAllowed { acknowledged: true }` permits any supported provider. Unacknowledged API charges (`acknowledged: false`), unsupported providers, and unenforceable `Spending::Ceiling` are rejected with `AdmissionError::InvalidTask`.
+  - `src-tauri/src/control/generation.rs`: Implemented `resolve_task_provider` and `permit_for_task`. Maps task definitions from `ledger.product_tasks` to exact `ModelApi` and `ModelOperation`. Re-checks spending policy before issuing generation permits. Fixed `OperationDisclosure` to reflect the task's actual provider, model, operation, and validated endpoint destination.
+  - `src-tauri/src/control/task_protocol.rs`: `TaskChannel` stores `provider`. Validates `valid_operation_for_provider` on `ProviderRequest` frames and enforces exact provider and model match on `TaskCandidate` frames.
+  - `src-tauri/src/reasoner_supervisor.rs`: Transmits resolved `provider` in `TaskWorkerJob` and initializes `TaskChannel` with the task's configured provider.
+  - `sidecar/task-worker-runtime.ts`: Added multi-provider candidate generation (`ollama`, `openai`, `anthropic`, `gemini`) bound to private provider transport without ambient network or credentials. Re-bundled `src-tauri/resources/task-worker.mjs` with Node 26.
+- **Task Operations, Uncertainty Tracking, Recovery, and Bounded Reconciliation**:
+  - `src-tauri/src/control/tasks.rs`: Added `operations: Vec<Value>` to `TaskRecord` with `#[serde(default)]`.
+  - Uncertainty Tracking & Task Interruption: When any operation is in `"started"` or `"uncertain"` state, `tasks::view` treats it as `"uncertain"` and sets task state to `"interrupted"`.
+  - `TaskCommand::AdmitRun`: Fails closed with `StateError::EvidenceIncomplete` if any operation is uncertain or started, preventing work until external effects are reviewed.
+  - `TaskCommand::Input`: If uncertain operations exist, requires `input.reconciliation` matching current revision, exact operation IDs, and a dated explanatory note >= 12 chars. Valid reconciliation transitions operations to `"reviewed"` and appends `"External effects reviewed: <note>"` to `activity`.
+  - `TaskCommand::Remove`: Refuses deletion if uncertain operations exist unless `confirmUncertain: true` is passed. Updated `src/desktop-fetch.ts` to forward `confirmUncertain`.
+  - Run Usage: Populated `"usage": { "requests": ..., "input": 0, "output": 0 }` on each run record in `tasks::view`.
+- **Native Workspace & Project Management Commands**:
+  - `src-tauri/src/lib.rs`: Exposed native actor project management commands via Tauri IPC: `control_create_project`, `control_set_project_membership`, `control_read_project_membership`, and `control_set_project_preferred_workspace`.
+- **Verification**:
+  - 147 Rust tests passed (0 failed, 7 ignored).
+  - Real worker end-to-end driver test `native_driver_consent_stream_cleanup_and_canonical_publication` passed with `vaksb` sandbox helper and Node 26.
+  - 325 app tests passed (1 paid test skipped).
+  - Canvas WebKit test passed at 1100px and 620px viewports (receipt `vak-canvas-check-jUxsF8`).
+  - Strict `cargo clippy --all-targets -- -D warnings` passed cleanly.
+  - `npm run typecheck` and `npm run build` passed with 0 errors.
+
 ## Execution snapshot adapter, task journal tracking, decision turn shaping and FinOps attribution — 2026-10-30
 
 Completed the explicit execution snapshot adapter connecting existing context, skills, continuation history, and decision engine telemetry into the single-agent Work path and turn execution loops while preserving strict process isolation and the indestructible Rust engine root of trust.

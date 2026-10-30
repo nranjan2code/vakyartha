@@ -39,6 +39,23 @@ pub enum Output {
     Markdown,
 }
 
+pub const SUPPORTED_PROVIDERS: &[&str] = &[
+    "ollama",
+    "openai",
+    "anthropic",
+    "gemini",
+    "mistral",
+    "xai",
+    "deepseek",
+    "groq",
+    "cerebras",
+    "openrouter",
+    "together",
+    "fireworks",
+    "moonshot",
+    "dashscope",
+];
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TaskRequest {
@@ -68,6 +85,8 @@ pub struct TaskRecord {
     pub pending: Vec<Value>,
     #[serde(default)]
     pub activity: Vec<Value>,
+    #[serde(default)]
+    pub operations: Vec<Value>,
 }
 
 fn invalid() -> ControlError {
@@ -147,6 +166,7 @@ impl TaskRequest {
             || !(1000..=9_600_000).contains(&self.limits.active_ms)
             || BudgetLimits::new(self.limits.model_requests, self.limits.tool_calls).is_err()
             || !matches!(self.diagnostic_days, 0 | 1 | 7 | 30)
+            || !SUPPORTED_PROVIDERS.contains(&self.provider.as_str())
             || !matches!(
                 self.spending,
                 Spending::LocalOnly | Spending::ApiAllowed { acknowledged: true }
@@ -203,15 +223,11 @@ impl TaskRequest {
 
 fn root_create(request: &TaskRequest) -> Result<RootCreate, ControlError> {
     Ok(RootCreate {
-        local_model: if request.provider == "ollama" {
-            Some(super::state::LocalModelPolicy {
-                model: request.model.clone(),
-                max_output_tokens: 4096,
-                max_request_bytes: 8_388_608,
-            })
-        } else {
-            None
-        },
+        local_model: Some(super::state::LocalModelPolicy {
+            model: request.model.clone(),
+            max_output_tokens: 4096,
+            max_request_bytes: 8_388_608,
+        }),
         id: request.id.clone(),
         session_id: Some(request.id.clone()),
         goal: request.goal.clone(),
@@ -271,6 +287,7 @@ pub(super) fn create(
             request,
             created: now.into(),
             updated: now.into(),
+            operations: Vec::new(),
         },
     );
     validate(ledger).map_err(ControlError::Store)?;
@@ -350,8 +367,22 @@ pub(super) fn view(ledger: &CapacityLedger, id: &str) -> Result<Value, ControlEr
         .get(id)
         .ok_or(ControlError::Store(StoreError::Corrupt))?;
     let request = &record.request;
-    let state = map_status(root.status());
-    let note = status_note(root.status(), root.runs_started(), root.stop_reason());
+    let has_uncertain = record.operations.iter().any(|op| {
+        matches!(
+            op.get("state").and_then(Value::as_str),
+            Some("uncertain" | "started")
+        )
+    });
+    let state = if has_uncertain {
+        "interrupted"
+    } else {
+        map_status(root.status())
+    };
+    let note = if has_uncertain {
+        "Execution stopped before a final record was saved. End time and external effects may be unknown.".to_string()
+    } else {
+        status_note(root.status(), root.runs_started(), root.stop_reason())
+    };
     let mut runs: Vec<&super::root_runs::RootRun> = ledger
         .root_runs
         .values()
@@ -402,6 +433,7 @@ pub(super) fn view(ledger: &CapacityLedger, id: &str) -> Result<Value, ControlEr
             }
             _ => "Working",
         };
+        let model_requests = if run.status == super::root_runs::RunStatus::Settled { 1 } else { 0 };
         let mut run_obj = json!({
             "id": run.id,
             "sequence": (i + 1) as u32,
@@ -413,7 +445,12 @@ pub(super) fn view(ledger: &CapacityLedger, id: &str) -> Result<Value, ControlEr
             "activeMs": run.active_ms,
             "chargedMs": run.charged_ms,
             "toolCalls": 0,
-            "modelRequests": if run.status == super::root_runs::RunStatus::Settled { 1 } else { 0 },
+            "modelRequests": model_requests,
+            "usage": {
+                "requests": model_requests,
+                "input": 0,
+                "output": 0,
+            },
             "note": run_note,
         });
         if run_state == "accepted" {
@@ -461,7 +498,13 @@ pub(super) fn view(ledger: &CapacityLedger, id: &str) -> Result<Value, ControlEr
         "note": note,
         "runs": root.runs_started(),
         "runHistory": run_history,
-        "operations": [],
+        "operations": record.operations.iter().map(|op| {
+            let mut obj = op.clone();
+            if obj.get("state").and_then(Value::as_str) == Some("started") {
+                obj["state"] = json!("uncertain");
+            }
+            obj
+        }).collect::<Vec<_>>(),
         "accepted": accepted_runs,
         "activity": record.activity.clone(),
         "pending": record.pending.clone(),
@@ -671,6 +714,8 @@ pub enum TaskCommand {
     Remove {
         id: String,
         revision: u64,
+        #[serde(default, rename = "confirmUncertain")]
+        confirm_uncertain: bool,
     },
     AdmitRun {
         id: String,
@@ -727,6 +772,15 @@ pub(super) fn apply(
         TaskCommand::AdmitRun { id, revision, request_id } => {
             if !ledger.product_tasks.contains_key(&id) {
                 return Err(ControlError::Admission(AdmissionError::InvalidTask));
+            }
+            let record = ledger.product_tasks.get(&id).unwrap();
+            if record.operations.iter().any(|op| {
+                matches!(
+                    op.get("state").and_then(Value::as_str),
+                    Some("uncertain" | "started")
+                )
+            }) {
+                return Err(ControlError::TaskState(super::state::StateError::EvidenceIncomplete));
             }
             let root = super::root_runs::prepare(ledger, profile, &id, revision, &request_id)?;
             let run = ledger
@@ -790,6 +844,67 @@ pub(super) fn apply(
                     super::state::StateError::RevisionConflict,
                 ));
             }
+            let record = ledger
+                .product_tasks
+                .get_mut(&id)
+                .expect("task checked above");
+
+            let uncertain_ids: Vec<String> = record
+                .operations
+                .iter()
+                .filter(|op| {
+                    matches!(
+                        op.get("state").and_then(Value::as_str),
+                        Some("uncertain" | "started")
+                    )
+                })
+                .filter_map(|op| op.get("id").and_then(Value::as_str).map(str::to_owned))
+                .collect();
+
+            if !uncertain_ids.is_empty() {
+                let Some(reconciliation) = input.get("reconciliation") else {
+                    return Err(ControlError::TaskState(
+                        super::state::StateError::EvidenceIncomplete,
+                    ));
+                };
+                let rec_rev = reconciliation.get("revision").and_then(Value::as_u64);
+                let rec_note = reconciliation.get("note").and_then(Value::as_str).unwrap_or("");
+                let rec_ids: Vec<String> = reconciliation
+                    .get("operationIds")
+                    .and_then(Value::as_array)
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+                    .unwrap_or_default();
+
+                if rec_rev != Some(root.revision())
+                    || rec_note.trim().len() < 12
+                    || rec_ids.len() != uncertain_ids.len()
+                    || rec_ids.iter().collect::<BTreeSet<_>>().len() != rec_ids.len()
+                    || !uncertain_ids.iter().all(|uid| rec_ids.contains(uid))
+                {
+                    return Err(ControlError::TaskState(
+                        super::state::StateError::InvalidReview,
+                    ));
+                }
+
+                let now_ts = now();
+                for op in &mut record.operations {
+                    if matches!(
+                        op.get("state").and_then(Value::as_str),
+                        Some("uncertain" | "started")
+                    ) {
+                        op["state"] = json!("reviewed");
+                        op["reconciliation"] = json!({
+                            "at": now_ts.clone(),
+                            "note": rec_note,
+                        });
+                    }
+                }
+                record.activity.push(json!({
+                    "at": now_ts,
+                    "text": format!("External effects reviewed: {rec_note}"),
+                }));
+            }
+
             if matches!(
                 root.status(),
                 RootStatus::WaitingForInput | RootStatus::NeedsReview
@@ -797,10 +912,6 @@ pub(super) fn apply(
                 root.queue_continuation(revision)
                     .map_err(ControlError::TaskState)?;
             }
-            let record = ledger
-                .product_tasks
-                .get_mut(&id)
-                .expect("task checked above");
             record.updated = std::cmp::max(now(), record.created.clone());
             let next_seq = record.pending.len() + ledger.root_runs.len() + 1;
             let mut normalized = input.clone();
@@ -937,9 +1048,20 @@ pub(super) fn apply(
             }
             view(ledger, &id)
         }
-        TaskCommand::Remove { id, revision } => {
+        TaskCommand::Remove { id, revision, confirm_uncertain } => {
             if !ledger.product_tasks.contains_key(&id) {
                 return Err(ControlError::Admission(AdmissionError::RootNotFound));
+            }
+            let record = ledger.product_tasks.get(&id).unwrap();
+            if record.operations.iter().any(|op| {
+                matches!(
+                    op.get("state").and_then(Value::as_str),
+                    Some("uncertain" | "started")
+                )
+            }) && !confirm_uncertain {
+                return Err(ControlError::TaskState(
+                    super::state::StateError::EvidenceIncomplete,
+                ));
             }
             let root = ledger
                 .roots
@@ -980,6 +1102,7 @@ pub(super) fn apply(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::control::{CapacityProfile, StateError};
 
     fn request() -> TaskRequest {
         serde_json::from_value(json!({"id":"task","goal":"Bounded task","criteria":"Original criteria","provider":"ollama","model":"local-model","integrations":[],"confirmedFree":[],"spending":{"kind":"local_only"},"limits":{"runs":2,"modelRequests":12,"toolCalls":0,"activeMs":300000},"inputs":[],"diagnosticDays":7})).unwrap()
@@ -1107,6 +1230,132 @@ mod tests {
         assert_eq!(history[1]["chargedMs"], 18_000);
         let total_charged: u64 = history.iter().map(|r| r["chargedMs"].as_u64().unwrap()).sum();
         assert_eq!(total_charged, task_view["budget"]["activeMs"].as_u64().unwrap());
+    }
+
+    #[test]
+    fn task_admission_supports_hosted_providers_with_api_acknowledgement() {
+        let valid = request();
+        for provider in ["openai", "anthropic", "gemini", "mistral", "groq", "deepseek"] {
+            let mut hosted = valid.clone();
+            hosted.provider = provider.into();
+            hosted.spending = Spending::ApiAllowed { acknowledged: true };
+            assert_eq!(hosted.validate(), Ok(()));
+
+            hosted.spending = Spending::LocalOnly;
+            assert!(hosted.validate().is_err());
+
+            hosted.spending = Spending::ApiAllowed { acknowledged: false };
+            assert!(hosted.validate().is_err());
+        }
+
+        let mut unknown = valid.clone();
+        unknown.provider = "unsupported-provider".into();
+        unknown.spending = Spending::ApiAllowed { acknowledged: true };
+        assert!(unknown.validate().is_err());
+    }
+
+    #[test]
+    fn uncertain_operations_require_reconciliation_before_continuation() {
+        let mut ledger = CapacityLedger::default();
+        let profile = CapacityProfile::unconfigured().unwrap();
+        let req = request();
+        create(&mut ledger, req, "2026-10-30T10:00:00.000Z").unwrap();
+
+        // Add an operation in "started" state
+        ledger.product_tasks.get_mut("task").unwrap().operations.push(json!({
+            "id": "op-1",
+            "tool": "sandbox-execution__exec",
+            "state": "started",
+        }));
+
+        // View renders it as uncertain and task as interrupted
+        let v = view(&ledger, "task").unwrap();
+        assert_eq!(v["state"], "interrupted");
+        assert_eq!(v["operations"][0]["state"], "uncertain");
+
+        // AdmitRun is refused while operations are uncertain
+        assert!(apply(
+            &mut ledger,
+            &profile,
+            TaskCommand::AdmitRun {
+                id: "task".into(),
+                revision: 1,
+                request_id: "req-1".into(),
+            }
+        ).is_err());
+
+        // Input without reconciliation is refused
+        let err = apply(
+            &mut ledger,
+            &profile,
+            TaskCommand::Input {
+                id: "task".into(),
+                revision: 1,
+                input: json!({ "message": "continue" }),
+            }
+        );
+        assert_eq!(err, Err(ControlError::TaskState(StateError::EvidenceIncomplete)));
+
+        // Input with invalid note (<12 chars) or mismatched ID is refused
+        let err = apply(
+            &mut ledger,
+            &profile,
+            TaskCommand::Input {
+                id: "task".into(),
+                revision: 1,
+                input: json!({
+                    "message": "continue",
+                    "reconciliation": {
+                        "revision": 1,
+                        "note": "too short",
+                        "operationIds": ["op-1"]
+                    }
+                }),
+            }
+        );
+        assert_eq!(err, Err(ControlError::TaskState(StateError::InvalidReview)));
+
+        let err = apply(
+            &mut ledger,
+            &profile,
+            TaskCommand::Input {
+                id: "task".into(),
+                revision: 1,
+                input: json!({
+                    "message": "continue",
+                    "reconciliation": {
+                        "revision": 1,
+                        "note": "Checked the connected service and verified effects",
+                        "operationIds": ["wrong-id"]
+                    }
+                }),
+            }
+        );
+        assert_eq!(err, Err(ControlError::TaskState(StateError::InvalidReview)));
+
+        // Input with valid reconciliation updates the operation to reviewed
+        let res = apply(
+            &mut ledger,
+            &profile,
+            TaskCommand::Input {
+                id: "task".into(),
+                revision: 1,
+                input: json!({
+                    "message": "continue with checked effect",
+                    "reconciliation": {
+                        "revision": 1,
+                        "note": "Checked the connected service and verified effects",
+                        "operationIds": ["op-1"]
+                    }
+                }),
+            }
+        ).unwrap();
+
+        assert_eq!(res["operations"][0]["state"], "reviewed");
+        assert_eq!(
+            res["operations"][0]["reconciliation"]["note"],
+            "Checked the connected service and verified effects"
+        );
     }
 
     #[test]

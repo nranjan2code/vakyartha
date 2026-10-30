@@ -79,6 +79,7 @@ enum Phase {
 pub struct TaskChannel {
     run_id: String,
     session_id: String,
+    provider: String,
     model: String,
     phase: Phase,
     active: Option<String>,
@@ -87,11 +88,14 @@ pub struct TaskChannel {
 }
 
 impl TaskChannel {
-    pub fn new(run: &RootRun, model: String) -> Result<Self, ProtocolError> {
+    pub fn new(run: &RootRun, provider: String, model: String) -> Result<Self, ProtocolError> {
         let session_id = run.session_id.as_ref().ok_or(ProtocolError)?;
         if !matches!(run.status, RunStatus::Prepared | RunStatus::Running)
             || !super::valid_identity(&run.id)
             || !super::valid_identity(session_id)
+            || provider.trim().is_empty()
+            || provider.len() > 64
+            || !provider.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
             || model.trim().is_empty()
             || model.len() > 240
             || model.chars().any(char::is_control)
@@ -101,6 +105,7 @@ impl TaskChannel {
         Ok(Self {
             run_id: run.id.clone(),
             session_id: session_id.clone(),
+            provider,
             model,
             phase: Phase::Starting,
             active: None,
@@ -165,8 +170,8 @@ impl TaskChannel {
                     || attempt > 16
                     || session_id != self.session_id
                     || run_id != self.run_id
-                    || provider != "ollama"
-                    || operation != "ollama_chat"
+                    || provider != self.provider
+                    || !valid_operation_for_provider(&provider, &operation)
                     || body.len() > 8 * 1024 * 1024
                     || self.seen.contains(&id)
                     || self.operations.contains(&(operation_id.clone(), attempt))
@@ -219,7 +224,7 @@ impl TaskChannel {
                 if run_id != self.run_id
                     || !valid
                     || candidate["session"].as_str() != Some(self.session_id.as_str())
-                    || candidate["provider"] != "ollama"
+                    || candidate["provider"].as_str() != Some(self.provider.as_str())
                     || candidate["model"].as_str() != Some(self.model.as_str())
                     || !candidate["candidateId"]
                         .as_str()
@@ -259,6 +264,18 @@ impl TaskChannel {
     }
 }
 
+fn valid_operation_for_provider(provider: &str, operation: &str) -> bool {
+    match provider {
+        "ollama" => operation == "ollama_chat" || operation == "chat",
+        "openai" => operation == "chat_completions" || operation == "responses",
+        "anthropic" => operation == "messages",
+        "gemini" => operation == "stream_generate_content",
+        "mistral" | "xai" | "deepseek" | "groq" | "cerebras" | "openrouter" | "together"
+        | "fireworks" | "moonshot" | "dashscope" => operation == "chat_completions",
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,6 +300,7 @@ mod tests {
                 active_ms: 0,
                 charged_ms: 0,
             },
+            "ollama".into(),
             "local-model".into(),
         )
         .unwrap()

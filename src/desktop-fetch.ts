@@ -52,7 +52,10 @@ export const desktopFetch: typeof fetch = async (input, init) => {
     if (!taskId && request.method === "GET") command = { kind: "list" };
     else if (!taskId && request.method === "POST") command = { kind: "create", request: JSON.parse(body ?? "{}") };
     else if (taskId && !operation && request.method === "GET") command = { kind: "read", id: taskId };
-    else if (taskId && !operation && request.method === "DELETE") command = { kind: "remove", id: taskId, revision: JSON.parse(body ?? "{}").revision };
+    else if (taskId && !operation && request.method === "DELETE") {
+      const parsed = JSON.parse(body ?? "{}");
+      command = { kind: "remove", id: taskId, revision: parsed.revision, confirmUncertain: Boolean(parsed.confirmUncertain) };
+    }
     else if (taskId && operation === "cancel" && request.method === "POST") command = { kind: "cancel", id: taskId, revision: JSON.parse(body ?? "{}").revision };
     else if (taskId && operation === "input" && request.method === "POST") {
       const parsed = JSON.parse(body ?? "{}");

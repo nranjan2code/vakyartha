@@ -43,7 +43,7 @@ mod control;
 use control::{CapacityProfile, ControlActor};
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 use control::ControlActor;
-use control::registry::{WorkspaceBinding, WorkspaceGrant, WorkspaceMode, WorkspaceRecord};
+use control::registry::{ProjectMembership, ProjectRecord, WorkspaceBinding, WorkspaceGrant, WorkspaceMode, WorkspaceRecord};
 use control::state::{RootCreate, RootTask};
 use control::canonical::CandidateCommitReceipt;
 use control::host_sessions::{SessionMigrationPlan, SessionMigrationReceipt, SessionSummary};
@@ -468,6 +468,75 @@ fn control_read_workspace_grant(
 }
 
 #[tauri::command]
+fn control_create_project(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    id: String,
+    name: String,
+) -> Result<ProjectRecord, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native project control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .create_project(id, name)
+        .map_err(|_| "Project creation was refused".to_owned())
+}
+
+#[tauri::command]
+fn control_set_project_membership(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    session_id: String,
+    project_id: Option<String>,
+    expected_revision: Option<u64>,
+) -> Result<ProjectMembership, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native project control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .set_project_membership(session_id, project_id, expected_revision)
+        .map_err(|_| "Project membership change was refused".to_owned())
+}
+
+#[tauri::command]
+fn control_read_project_membership(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    session_id: String,
+) -> Result<Option<ProjectMembership>, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native project control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .read_project_membership(session_id)
+        .map_err(|_| "Project membership is unavailable".to_owned())
+}
+
+#[tauri::command]
+fn control_set_project_preferred_workspace(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    project_id: String,
+    expected_revision: u64,
+    workspace_id: Option<String>,
+) -> Result<ProjectRecord, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native project control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .set_project_preferred_workspace(project_id, expected_revision, workspace_id)
+        .map_err(|_| "Project preferred workspace change was refused".to_owned())
+}
+
+#[tauri::command]
 fn set_keep_running(keep: bool) {
     KEEP_RUNNING.store(keep, Ordering::Relaxed);
 }
@@ -664,6 +733,10 @@ pub fn run() {
             control_revoke_workspace,
             control_create_root_in_workspace,
             control_read_workspace_grant,
+            control_create_project,
+            control_set_project_membership,
+            control_read_project_membership,
+            control_set_project_preferred_workspace,
             engine_request,
             engine_ack,
             engine_cancel,

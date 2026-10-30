@@ -712,7 +712,7 @@ fn validate_ollama_options(
     Ok(())
 }
 
-fn model_endpoint(provider: ModelApi, operation: ModelOperation) -> Result<Url, BrokerError> {
+pub(super) fn model_endpoint(provider: ModelApi, operation: ModelOperation) -> Result<Url, BrokerError> {
     if provider == ModelApi::OllamaLocal && operation == ModelOperation::OllamaChat {
         return validate_endpoint("http://127.0.0.1:11434/api/chat");
     }

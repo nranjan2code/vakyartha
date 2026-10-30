@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
 import { createHost, type HostCandidateResult } from "@vak/host";
 import type { SurfaceSnapshot } from "@vak/core";
-import { ollama, ProfileCache, type ProviderTransport } from "@vak/providers";
+import { ollama, openai, anthropic, gemini, ProfileCache, type ProviderTransport } from "@vak/providers";
 import path from "node:path";
 import { DESKTOP_PROTOCOL } from "../shared/desktop-protocol.ts";
 import { inputInstructions, parseTaskFiles, type TaskFileInput } from "../shared/task-files.ts";
@@ -13,7 +13,7 @@ import { providerChannel } from "./provider-channel.ts";
 export const MAX_TASK_FRAME = 20 * 1024 * 1024;
 const MAX_CONTEXT = 8 * 1024 * 1024;
 export interface TaskWorkerJob {
-  runId: string; session: string; provider: "ollama"; model: string;
+  runId: string; session: string; provider: "ollama" | "openai" | "anthropic" | "gemini"; model: string;
   goal: string; criteria: string; instructions: string;
   inputs: TaskFileInput[]; initialSurfaces: SurfaceSnapshot[];
   maxSteps: number; maxTokens: number; activeMs: number;
@@ -35,7 +35,7 @@ export function parseTaskWorkerJob(value: unknown): TaskWorkerJob {
   }
   if (typeof value.runId !== "string" || !/^run-[1-9][0-9]{0,19}$/.test(value.runId)
     || typeof value.session !== "string" || !/^[A-Za-z0-9_-]{1,120}$/.test(value.session)
-    || value.provider !== "ollama" || !text(value.model, 240) || !text(value.goal, 8000) || !text(value.criteria, 4000)
+    || !["ollama", "openai", "anthropic", "gemini"].includes(value.provider as string) || !text(value.model, 240) || !text(value.goal, 8000) || !text(value.criteria, 4000)
     || typeof value.instructions !== "string" || Buffer.byteLength(value.instructions) > 64_000 || value.instructions.includes("\0")
     || !integer(value.maxSteps, 1, 12) || !integer(value.maxTokens, 1, 4096) || !integer(value.activeMs, 1000, 300_000)
     || !Array.isArray(value.initialSurfaces) || value.initialSurfaces.length > 16 || Buffer.byteLength(JSON.stringify(value.initialSurfaces)) > MAX_CONTEXT) throw new Error("Invalid task worker context");
@@ -57,8 +57,22 @@ export async function generateTaskCandidate(job: TaskWorkerJob, scratch: string,
     if (provider !== job.provider) return Promise.reject(new Error("Task provider changed"));
     return transport(provider, input, init, { ...context!, sessionId: job.session, runId: job.runId });
   };
+  const makeProvider = (prov: string, options?: { think?: boolean }) => {
+    switch (prov) {
+      case "ollama":
+        return ollama({ think: options?.think, transport: boundTransport });
+      case "openai":
+        return openai({ transport: boundTransport });
+      case "anthropic":
+        return anthropic({ apiKey: "", transport: boundTransport });
+      case "gemini":
+        return gemini({ apiKey: "", transport: boundTransport });
+      default:
+        throw new Error(`Unsupported task provider: ${prov}`);
+    }
+  };
   const host = createHost({
-    providers: () => [{ id: "ollama", label: "Local model", available: true, make: options => ollama({ think: options?.think, transport: boundTransport }) }],
+    providers: () => [{ id: job.provider, label: job.provider, available: true, make: options => makeProvider(job.provider, options) }],
     profiles: new ProfileCache(path.join(scratch, "profiles.json")),
     instructions: job.instructions, log: () => {},
   });

@@ -165,17 +165,19 @@ fn run_inner(
     {
         return Err(refused());
     }
+    let mut provider_id = "ollama".to_string();
     if let Some((task, cumulative_active_ms)) = control.reasoner_task_definition(run.id.clone())? {
         let remaining_ms = task.limits.active_ms.saturating_sub(cumulative_active_ms);
         if context.inputs != task.inputs || context.active_ms > remaining_ms {
             return Err(refused());
         }
+        provider_id = task.provider;
     }
     control.check_execution_fence(root.execution_fence())?;
     let mut job = json!({
         "runId": run.id,
         "session": run.session_id,
-        "provider": "ollama",
+        "provider": provider_id,
         "model": policy.model,
         "goal": root.goal(),
         "criteria": root.criteria(),
@@ -197,7 +199,7 @@ fn run_inner(
     if !context.continuation.is_empty() {
         job["continuation"] = serde_json::to_value(&context.continuation).map_err(|_| refused())?;
     }
-    let channel = TaskChannel::new(&run, policy.model.clone()).map_err(|_| refused())?;
+    let channel = TaskChannel::new(&run, provider_id, policy.model.clone()).map_err(|_| refused())?;
     let invocation = control.prepare_worker_completion(run.id.clone())?;
     execute(
         control,

@@ -3858,7 +3858,7 @@ mod tests {
         assert!(handle.product_task(TaskCommand::Create { request: Box::new(changed) }).is_err());
         assert_eq!(handle.save_host_session("product-task".into(), 0, serde_json::json!({})), Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable)));
         assert_eq!(handle.product_task(TaskCommand::Cancel { id: "product-task".into(), revision: 2 }), Err(ControlError::TaskState(StateError::RevisionConflict)));
-        assert_eq!(handle.product_task(TaskCommand::Remove { id: "product-task".into(), revision: 1 }), Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable)));
+        assert_eq!(handle.product_task(TaskCommand::Remove { id: "product-task".into(), revision: 1, confirm_uncertain: false }), Err(ControlError::Admission(AdmissionError::TaskCapabilityUnavailable)));
         drop(handle); drop(actor);
         let reopened = ControlActor::open(&data, "unconfigured-v1", profile, 16, timeout).unwrap();
         let handle = reopened.handle();
@@ -3866,8 +3866,8 @@ mod tests {
         assert_eq!(handle.product_task(TaskCommand::List).unwrap().as_array().unwrap().len(), 1);
         let cancelled = handle.product_task(TaskCommand::Cancel { id: "product-task".into(), revision: 1 }).unwrap();
         assert_eq!(cancelled["state"], "cancelled");
-        assert_eq!(handle.product_task(TaskCommand::Remove { id: "product-task".into(), revision: 1 }), Err(ControlError::TaskState(StateError::RevisionConflict)));
-        handle.product_task(TaskCommand::Remove { id: "product-task".into(), revision: 2 }).unwrap();
+        assert_eq!(handle.product_task(TaskCommand::Remove { id: "product-task".into(), revision: 1, confirm_uncertain: false }), Err(ControlError::TaskState(StateError::RevisionConflict)));
+        handle.product_task(TaskCommand::Remove { id: "product-task".into(), revision: 2, confirm_uncertain: false }).unwrap();
         assert!(handle.product_task(TaskCommand::List).unwrap().as_array().unwrap().is_empty());
         assert_eq!(handle.read_root("product-task".into()), Err(ControlError::Admission(AdmissionError::RootNotFound)));
         assert!(!data.join("tasks").exists());
@@ -4021,7 +4021,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         let root = handle.mutate_root(root.id().into(), root.revision(), RootMutation::StartAttempt { request_id: "start-1".into() }).unwrap();
         let run = handle.read_root_run_for_start("start-1".into()).unwrap();
         let invocation = handle.prepare_worker_completion(run.id.clone()).unwrap();
-        let mut protocol = TaskChannel::new(&run, "qwen3.5:4b-mlx".into()).unwrap();
+        let mut protocol = TaskChannel::new(&run, "ollama".into(), "qwen3.5:4b-mlx".into()).unwrap();
         let mut child = crate::worker::command_for_invocation(&helper, &node, &resources, &data, &invocation).unwrap()
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
         let mut owner = child.stdin.take().unwrap();

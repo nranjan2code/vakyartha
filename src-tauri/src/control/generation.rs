@@ -211,6 +211,73 @@ fn running<'a>(
     Ok(root)
 }
 
+fn resolve_task_provider(
+    ledger: &CapacityLedger,
+    root: &super::state::RootTask,
+) -> Result<(&'static str, &'static str, ModelApi, ModelOperation), ControlError> {
+    if let Some(record) = ledger.product_tasks.get(root.id()) {
+        let prov = record.request.provider.as_str();
+        if prov != "ollama"
+            && !matches!(
+                record.request.spending,
+                super::tasks::Spending::ApiAllowed { acknowledged: true }
+            )
+        {
+            return Err(refused());
+        }
+        let policy = root.local_model().ok_or_else(refused)?;
+        let (prov_name, op_name, api, op) = match prov {
+            "ollama" => ("ollama", "ollama_chat", ModelApi::OllamaLocal, ModelOperation::OllamaChat),
+            "openai" => ("openai", "chat_completions", ModelApi::OpenAi, ModelOperation::ChatCompletions),
+            "anthropic" => ("anthropic", "messages", ModelApi::Anthropic, ModelOperation::Messages),
+            "gemini" => (
+                "gemini",
+                "stream_generate_content",
+                ModelApi::Gemini,
+                ModelOperation::StreamGenerateContent {
+                    model: policy.model.clone(),
+                },
+            ),
+            "mistral" => ("mistral", "chat_completions", ModelApi::Mistral, ModelOperation::ChatCompletions),
+            "xai" => ("xai", "chat_completions", ModelApi::Xai, ModelOperation::ChatCompletions),
+            "deepseek" => ("deepseek", "chat_completions", ModelApi::DeepSeek, ModelOperation::ChatCompletions),
+            "groq" => ("groq", "chat_completions", ModelApi::Groq, ModelOperation::ChatCompletions),
+            "cerebras" => ("cerebras", "chat_completions", ModelApi::Cerebras, ModelOperation::ChatCompletions),
+            "openrouter" => ("openrouter", "chat_completions", ModelApi::OpenRouter, ModelOperation::ChatCompletions),
+            "together" => ("together", "chat_completions", ModelApi::Together, ModelOperation::ChatCompletions),
+            "fireworks" => ("fireworks", "chat_completions", ModelApi::Fireworks, ModelOperation::ChatCompletions),
+            "moonshot" => ("moonshot", "chat_completions", ModelApi::Moonshot, ModelOperation::ChatCompletions),
+            "dashscope" => ("dashscope", "chat_completions", ModelApi::DashScope, ModelOperation::ChatCompletions),
+            _ => return Err(refused()),
+        };
+        Ok((prov_name, op_name, api, op))
+    } else {
+        Ok(("ollama", "ollama_chat", ModelApi::OllamaLocal, ModelOperation::OllamaChat))
+    }
+}
+
+fn permit_for_task(
+    ledger: &CapacityLedger,
+    root: &super::state::RootTask,
+) -> Result<GenerationPermit, ControlError> {
+    let policy = root.local_model().ok_or_else(refused)?;
+    policy.validate().map_err(ControlError::TaskState)?;
+    let (_, _, provider, operation) = resolve_task_provider(ledger, root)?;
+    GenerationPermit::from_admitted_policy(
+        provider,
+        operation,
+        policy.model.clone(),
+        policy.max_output_tokens,
+        policy.max_request_bytes as usize,
+        BTreeSet::new(),
+        BTreeMap::from([
+            ("think".into(), json!(false)),
+            ("keep_alive".into(), json!("30m")),
+        ]),
+    )
+    .map_err(|_| refused())
+}
+
 fn permit(root: &super::state::RootTask) -> Result<GenerationPermit, ControlError> {
     let policy = root.local_model().ok_or_else(refused)?;
     policy.validate().map_err(ControlError::TaskState)?;
@@ -287,7 +354,11 @@ impl Approvals {
         {
             return Err(refused());
         }
-        let bytes = prepare_generation_body(&permit(root)?, &body).map_err(|_| refused())?;
+        let (prov_name, op_name, api, op) = resolve_task_provider(ledger, root)?;
+        let destination = super::broker::model_endpoint(api, op)
+            .map(|url| url.to_string())
+            .unwrap_or_else(|_| "http://127.0.0.1:11434/api/chat".to_owned());
+        let bytes = prepare_generation_body(&permit_for_task(ledger, root)?, &body).map_err(|_| refused())?;
         let fence = root.execution_fence();
         let ticket = self
             .tickets
@@ -296,10 +367,10 @@ impl Approvals {
                 id.clone(),
                 attempt,
                 OperationDisclosure {
-                    provider: "ollama".into(),
+                    provider: prov_name.into(),
                     model: policy.model.clone(),
-                    operation: "ollama_chat".into(),
-                    destination: "http://127.0.0.1:11434/api/chat".into(),
+                    operation: op_name.into(),
+                    destination,
                     max_output_tokens: policy.max_output_tokens,
                     preview: String::new(),
                 },
@@ -343,7 +414,7 @@ impl Approvals {
         if fence != pending.fence || ledger.provider_operations.contains_key(ticket_id) {
             return Err(refused());
         }
-        let permit = permit(root)?;
+        let permit = permit_for_task(ledger, root)?;
         let root_id = root.id().to_owned();
         let queued: Vec<_> = root
             .children()
