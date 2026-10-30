@@ -159,3 +159,9 @@ All settings live in Vakyartha's reactive preferences store:
 | `vak:decision:optimizeContext` | `boolean` | `"true"` | Shapes multi-turn context dynamically based on turn intent |
 
 Controls are exposed under **Settings > Models > Decision & Turn Optimization** in the desktop app.
+
+---
+
+## 9. Real Multi-Turn Benchmark & Empirical Evaluation
+
+For empirical multi-turn benchmarks, token savings measurements, and latency profiles across local Ollama (`laya:latest`, `d1-omni:latest`) and cloud OpenAI decision models, see the complete report in [`docs/decision/BENCHMARK-STOCK-DASHBOARD.md`](decision/BENCHMARK-STOCK-DASHBOARD.md).
