@@ -13,9 +13,9 @@ Source files stay in the user-selected folder. Private app state stays in the ap
 | Browser development | `<repository>/.vak/web/`; its explicit transcript override may use that root directly |
 | Other native platforms | Native platform app-data resolver; effective path must be shown, not guessed from a folder selection |
 
-On desktop, Rust-owned authority and canonical snapshots now use `<native-data>`, a hidden `.<data-directory-name>-native` sibling beside `<data>`. This path is created owner-only and is not passed to the sidecar. Existing local files under `<data>/control`, `<data>/content` and `<data>/host-sessions` are left untouched; the app does not read or migrate them after this root change. The sidecar remains same-UID and uncontained, so path separation becomes an enforcement boundary only after the worker launch cutover.
+On desktop, Rust-owned authority, canonical snapshots and the file-vault fallback now use `<native-data>`, a hidden `.<data-directory-name>-native` sibling beside `<data>`. On Unix this path is created and verified with owner-only directory permissions; on Windows it relies on the user-SID-protected AppData ACL. It is not passed to the sidecar. Existing local files under `<data>/control`, `<data>/content`, `<data>/host-sessions` and `<data>/.vault.secrets` are left untouched; the app does not read or migrate them after this root change. The sidecar remains same-UID and uncontained, so path separation becomes an enforcement boundary only after the worker launch cutover.
 
-Environment/dev data is not committed. Stored secrets remain in the canonical platform vault; never copy them into workspace/project metadata, transcripts, export packages or backup manifests. A provider-sent snapshot is already disclosed data; later folder revocation cannot unsend it.
+Environment/dev data is not committed. Stored secrets use the canonical platform vault; the file fallback is `<native-data>/.vault.secrets`, created as 0600 on Unix and within user-SID-protected AppData on Windows. It must never be included in a worker grant. Never copy secrets into workspace/project metadata, transcripts, export packages or backup manifests. A provider-sent snapshot is already disclosed data; later folder revocation cannot unsend it.
 
 ## 2. What current source actually represents
 

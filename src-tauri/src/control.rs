@@ -22,32 +22,7 @@ static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 /// A contained worker can receive explicit grants for its own data without
 /// inheriting a path to this sibling store.
 fn native_store_root(data_dir: &Path) -> PathBuf {
-    let name = data_dir.file_name().unwrap_or_default().to_string_lossy();
-    data_dir.with_file_name(format!(".{name}-native"))
-}
-
-fn ensure_private_root(path: &Path) -> Result<(), StoreError> {
-    match fs::symlink_metadata(path) {
-        Ok(_) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            match fs::create_dir(path) {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(error) => return Err(store_io(error)),
-            }
-        }
-        Err(error) => return Err(store_io(error)),
-    }
-    let metadata = fs::symlink_metadata(path).map_err(store_io)?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        return Err(StoreError::Corrupt);
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(store_io)?;
-    }
-    Ok(())
+    crate::private_store::root(data_dir)
 }
 
 pub mod bridge;
@@ -1409,7 +1384,7 @@ impl ControlActor {
             return Err(StoreError::InvalidProfile);
         }
         let native_dir = native_store_root(data_dir);
-        ensure_private_root(&native_dir)?;
+        crate::private_store::ensure_root(&native_dir).map_err(store_io)?;
         let (mut store, mut ledger) = ControlStore::open(&native_dir, profile_revision, &profile)?;
         let workspace_admission = WorkspaceAdmissionPolicy::new(data_dir).map_err(store_io)?;
         let mut recovered = false;

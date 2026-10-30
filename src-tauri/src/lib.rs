@@ -25,6 +25,7 @@ struct Backend {
 
 mod engine;
 mod policy;
+mod private_store;
 mod vault;
 // The native control actor and store start with an empty execution profile.
 // No workload class is routed through them until its measured profile and

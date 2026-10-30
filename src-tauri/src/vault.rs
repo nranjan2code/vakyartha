@@ -50,7 +50,7 @@ pub fn is_valid_value(value: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 fn vault_file_path(data_dir: &Path) -> PathBuf {
-    data_dir.join(".vault.secrets")
+    crate::private_store::root(data_dir).join(".vault.secrets")
 }
 
 fn read_vault_file(path: &Path) -> Result<BTreeMap<String, String>, String> {
@@ -141,11 +141,19 @@ fn write_vault_file(path: &Path, map: &BTreeMap<String, String>) -> Result<(), S
     )
 )]
 fn file_vault_get(data_dir: &Path, account: &str) -> Result<Option<String>, String> {
+    ensure_vault_root(data_dir)?;
     let path = vault_file_path(data_dir);
     Ok(read_vault_file(&path)?.get(account).cloned())
 }
 
+fn ensure_vault_root(data_dir: &Path) -> Result<(), String> {
+    let root = crate::private_store::root(data_dir);
+    crate::private_store::ensure_root(&root)
+        .map_err(|error| format!("Failed to prepare private vault directory: {error}"))
+}
+
 fn file_vault_set(data_dir: &Path, account: &str, value: &str) -> Result<(), String> {
+    ensure_vault_root(data_dir)?;
     let path = vault_file_path(data_dir);
     let mut map = read_vault_file(&path)?;
     map.insert(account.to_string(), value.to_string());
@@ -153,6 +161,7 @@ fn file_vault_set(data_dir: &Path, account: &str, value: &str) -> Result<(), Str
 }
 
 fn file_vault_delete(data_dir: &Path, account: &str) -> Result<(), String> {
+    ensure_vault_root(data_dir)?;
     let path = vault_file_path(data_dir);
     let mut map = read_vault_file(&path)?;
     if map.remove(account).is_some() {
@@ -442,17 +451,32 @@ mod tests {
 
     #[test]
     fn file_vault_persists_and_deletes_reliably() {
-        let temp_dir = std::env::temp_dir().join(format!(
+        let temp_root = std::env::temp_dir().join(format!(
             "vak-vault-test-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
         ));
-        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::create_dir_all(&temp_root).unwrap();
+        let temp_dir = temp_root.join("data");
+        std::fs::create_dir(&temp_dir).unwrap();
 
         assert_eq!(file_vault_get(&temp_dir, "TEST_KEY").unwrap(), None);
         file_vault_set(&temp_dir, "TEST_KEY", "secret-123").unwrap();
+        assert!(!vault_file_path(&temp_dir).starts_with(&temp_dir));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(crate::private_store::root(&temp_dir))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o700
+            );
+        }
         assert_eq!(
             file_vault_get(&temp_dir, "TEST_KEY").unwrap(),
             Some("secret-123".into())
@@ -481,7 +505,7 @@ mod tests {
         assert!(file_vault_set(&temp_dir, "ANOTHER_KEY", "value").is_err());
         assert_eq!(std::fs::read(vault_path).unwrap(), corrupt);
 
-        let _ = std::fs::remove_dir_all(&temp_dir);
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 
     #[cfg(target_os = "linux")]

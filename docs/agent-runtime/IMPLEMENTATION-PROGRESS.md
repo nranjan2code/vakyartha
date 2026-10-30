@@ -2,6 +2,12 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Native file-vault fallback moved beside native stores — 2026-10-30
+
+The Rust file-vault fallback now uses `<native-data>/.vault.secrets`, under the same sibling root as control and canonical-session data. On Unix the directory is owner-only and the file is 0600; on Windows the path relies on the user-SID-protected AppData ACL. Every file get/set/delete validates that the root is a real directory and refuses a symlink. Tests cover sibling placement, Unix owner-only directory mode, persistence/deletion and symlink refusal. Existing `<data>/.vault.secrets` remains untouched and is not auto-read under the zero-user cutover. Platform credential vaults remain primary; this file is a fallback, not an OS isolation boundary. The same-UID sidecar can still derive the sibling path until the contained worker is actually launched.
+
+Verification: host Rust library suite 101/101, strict Rust Clippy, Rust 1.99.1 Linux Docker library suite 103/103 with strict Clippy, app typecheck, serial app suite 282/282, and desktop smoke covering private IPC, canonical rendering, FinOps, zero TCP listeners and parent-exit cleanup. The current desktop smoke is not an isolation proof. This closes no agent-runtime, ISO, QoS, recovery/drift or original outcome gate.
+
 ## Native store root separated from sidecar data — 2026-10-30
 
 Rust-owned control snapshots, candidate generations and canonical desktop session snapshots now reside at a hidden app-specific sibling `.<data-directory-name>-native/`, created and verified as an owner-only directory. The sidecar receives only `VAK_DATA_DIR`; the trusted UI still admits sessions through Rust. Existing native files under the previous `<data>/control`, `<data>/content` and `<data>/host-sessions` paths are left in place and are not read or automatically migrated, consistent with the zero-user clean cutover. The desktop WebKit smoke now verifies the sibling location, owner-only mode, canonical session migration/source preservation, private IPC, zero TCP listeners and parent-exit cleanup. This path separation is not yet an OS boundary: the current same-UID sidecar is uncontained and can derive/read the sibling path. It is groundwork for a Linux profile built from positive per-directory grants and for the macOS worker profile; it closes no confidentiality or ISO gate until the helper is actually supervising the sidecar.
