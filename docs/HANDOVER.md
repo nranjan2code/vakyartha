@@ -2,7 +2,7 @@
 
 ## Native candidate handoff — 2026-10-30
 
-Projection `6fd13f3` adds `VakHost.commitCandidate` and `discardCandidate` for bounded, one-use candidate results. The app pin now points to that pushed commit. The host passes its retained, unchanged candidate, base versions and task fence to a native-owner callback and requires a canonical/root revision receipt; same-identity retries preserve the candidate after callback failure. This removes the missing public framework handoff, but not its native implementation: Vakyartha still has to connect the callback to durable native prepare/fence/commit, receipt recovery after restart, and post-ack publication. No task path is routed through it yet. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#projection-fenced-candidate-commit-api--2026-10-30).
+Projection `6d81a23` adds explicit expected canonical revision compare-and-set to the bounded, one-use `VakHost.commitCandidate`/`discardCandidate` handoff from `6fd13f3`. The app pin now points to that pushed commit. The host passes its retained, unchanged candidate, base versions, canonical revision and task fence to a native-owner callback and requires a canonical/root revision receipt; same-identity retries preserve the candidate after callback failure. This removes the missing public framework handoff, but not its native implementation: Vakyartha still has to connect the callback to durable native prepare/fence/commit, receipt recovery after restart, and post-ack publication. No task path is routed through it yet. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#projection-fenced-candidate-commit-api--2026-10-30).
 
 ## Dormant sidecar provider framing adapter — 2026-10-30
 
