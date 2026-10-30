@@ -19,6 +19,8 @@ mkdirSync(path.join(out, "sessions"));
 const legacyChat = path.join(out, "sessions", "legacy-chat.json");
 const legacyBytes = Buffer.from(JSON.stringify({ id: "legacy-chat", title: "Preserved legacy chat", created: "2026-10-30T00:00:00.000Z", updated: "2026-10-30T00:00:01.000Z", messages: [], timeline: [], surfaces: [], external: [] }));
 writeFileSync(legacyChat, legacyBytes, { mode: 0o600 });
+const legacyVaultPath = path.join(out, ".vault.secrets"), legacyVaultBytes = Buffer.from("NATIVE_VAULT_PROBE=legacy-value\n");
+writeFileSync(legacyVaultPath, legacyVaultBytes, { mode: 0o600 });
 const log = path.join(out, "logs/engine.log"), stderr = createWriteStream(path.join(out, "native.stderr"), { mode: 0o600 });
 const probe = path.join(out, "desktop-probe.js");
 writeFileSync(probe, readFileSync(path.join(root, "scripts/desktop-probe.js"), "utf8").replaceAll("__WORKSPACE__", JSON.stringify(workspace)).replaceAll("__NEXT_WORKSPACE__", JSON.stringify(nextWorkspace)), { mode: 0o600 });
@@ -33,6 +35,7 @@ try {
   }
   assert.ok(existsSync(log) && readFileSync(log, "utf8").includes("NATIVE_PRIVATE_PASS"), `Native probe failed; see ${out}`);
   assert.deepEqual(readFileSync(legacyChat), legacyBytes, "Legacy chat source was changed during migration");
+  assert.deepEqual(readFileSync(legacyVaultPath), legacyVaultBytes, "Native vault commands modified the legacy in-data vault");
   assert.equal(statSync(path.join(nativeOut, "host-sessions", "session-legacy-chat.json")).mode & 0o077, 0, "Native chat storage permissions are too broad");
   const folder = path.join(out, "attachments/ipc-check"), uploads = readdirSync(folder).filter((file) => file.endsWith(".wav"));
   assert.equal(uploads.length, 1);
