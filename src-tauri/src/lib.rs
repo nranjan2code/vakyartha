@@ -38,6 +38,7 @@ mod control;
 use control::{CapacityProfile, ControlActor};
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 use control::ControlActor;
+use control::registry::{WorkspaceBinding, WorkspaceGrant, WorkspaceMode, WorkspaceRecord};
 use control::state::{RootCreate, RootTask};
 use engine::{Engine as Sidecar, engine_request, engine_ack, engine_cancel};
 
@@ -213,6 +214,82 @@ fn control_read_root(
         .handle()
         .read_root(id)
         .map_err(|_| "Native task was not found or could not be read".to_owned())
+}
+
+/// Registers a folder selected by the trusted app window in the native registry.
+#[tauri::command]
+fn control_register_workspace(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    id: String,
+    path: String,
+) -> Result<WorkspaceRecord, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native task control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .register_workspace(id, PathBuf::from(path))
+        .map_err(|_| "Workspace folder was refused".to_owned())
+}
+
+/// Binds a session to an admitted native workspace and returns its revision.
+#[tauri::command]
+fn control_bind_workspace(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    id: String,
+    session_id: String,
+    workspace_id: String,
+    realm_id: Option<String>,
+    mode: WorkspaceMode,
+) -> Result<WorkspaceBinding, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native task control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .bind_workspace(id, session_id, workspace_id, realm_id, mode)
+        .map_err(|_| "Workspace binding was refused".to_owned())
+}
+
+/// Creates a task with the actor's current grant for the named binding revision.
+#[tauri::command]
+fn control_create_root_in_workspace(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    request: RootCreate,
+    session_id: String,
+    binding_revision: u64,
+) -> Result<RootTask, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native task control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .create_root_in_workspace(request, session_id, binding_revision)
+        .map_err(|_| "Workspace task request was refused".to_owned())
+}
+
+/// Reads the actor-validated grant for a session at its expected binding revision.
+#[tauri::command]
+fn control_read_workspace_grant(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    session_id: String,
+    expected_revision: u64,
+) -> Result<WorkspaceGrant, String> {
+    engine::main_window(&window)?;
+    let actor = app
+        .try_state::<ControlActor>()
+        .ok_or_else(|| "Native task control is unavailable".to_owned())?;
+    actor
+        .handle()
+        .read_workspace_grant(session_id, expected_revision)
+        .map_err(|_| "Workspace grant is stale or unavailable".to_owned())
 }
 
 #[tauri::command]
@@ -450,6 +527,10 @@ pub fn run() {
             backend,
             control_create_root,
             control_read_root,
+            control_register_workspace,
+            control_bind_workspace,
+            control_create_root_in_workspace,
+            control_read_workspace_grant,
             engine_request,
             engine_ack,
             engine_cancel,

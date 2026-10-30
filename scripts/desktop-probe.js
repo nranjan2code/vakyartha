@@ -23,6 +23,17 @@
   check(nativeRetry.id===nativeTask.id&&nativeRetry.revision===nativeTask.revision,'native task creation retry was not idempotent');
   const nativeRead=await ipc.invoke('control_read_root',{id:'native-ipc-task'});
   check(nativeRead.id===nativeTask.id&&nativeRead.revision===nativeTask.revision,'native task readback failed');
+  const workspace=await ipc.invoke('control_register_workspace',{id:'native-ipc-workspace',path:__WORKSPACE__});
+  check(workspace.id==='native-ipc-workspace','native workspace registration failed');
+  const binding=await ipc.invoke('control_bind_workspace',{id:'native-ipc-binding',sessionId:'native-ipc-session',workspaceId:workspace.id,realmId:null,mode:'copy_review'});
+  check(binding.session_id==='native-ipc-session'&&binding.revision===1,'native workspace binding failed');
+  const grant=await ipc.invoke('control_read_workspace_grant',{sessionId:'native-ipc-session',expectedRevision:binding.revision});
+  check(grant.workspace_id===workspace.id&&grant.canonical_path===workspace.canonical_path,'native workspace grant does not match admitted folder');
+  const scopedTask=await ipc.invoke('control_create_root_in_workspace',{request:{...nativeRequest,id:'native-ipc-scoped-task'},sessionId:'native-ipc-session',bindingRevision:binding.revision});
+  check(scopedTask.workspace_grant?.workspace_id===workspace.id&&scopedTask.workspace_grant?.binding_revision===binding.revision,'native root did not capture its fixed workspace grant');
+  let staleBindingAccepted=false;
+  try{await ipc.invoke('control_create_root_in_workspace',{request:{...nativeRequest,id:'native-ipc-stale-task'},sessionId:'native-ipc-session',bindingRevision:binding.revision+1});staleBindingAccepted=true;}catch{}
+  check(!staleBindingAccepted,'native root accepted a stale workspace revision');
   let conflictingRequestAccepted=false;
   try{await ipc.invoke('control_create_root',{request:{...nativeRequest,criteria:'Conflicting request under a reused task identity'}});conflictingRequestAccepted=true;}catch{}
   check(!conflictingRequestAccepted,'native task creation accepted conflicting identity reuse');

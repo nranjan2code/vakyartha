@@ -2,6 +2,12 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Trusted native workspace task entry — 2026-10-30
+
+The trusted main/admin Tauri windows can register an admitted folder in the actor's durable workspace registry, bind a session to it, read the current grant at an expected revision, and create a root task scoped to that session/revision. The actor resolves and captures the grant; the caller supplies no grant or execution path. The isolated WebKit desktop smoke verifies registration, binding, grant readback, root grant capture, and stale-revision refusal. macOS Rust library tests pass 82/82; `npm run typecheck` passes; the pinned Rust 1.99.1 Linux Docker suite passes 84/84 with strict Clippy; `scripts/desktop-check.ts` passes on Node 26.13.0.
+
+This opens only a trusted-shell command seam. The visible task/workspace UI and TypeScript stores remain authoritative; no native folder picker-to-binding workflow, project membership, rebind/revoke UI, task lifecycle, approval, provider dispatch, worker fence handoff, or canonical commit uses these commands. The sidecar protocol remains health-only. Do not route one task through both stores. No AR, IA, ISO, or original task outcome gate is closed.
+
 ## Native cumulative model/tool operation accounting — 2026-10-30
 
 The native root aggregate now stores bounded cumulative model-request and tool-call limits plus charged operation identities. The control actor persists a charge before acknowledging it, accepts retry of the same identity idempotently, and persists a `LimitReached` stop when another unique operation arrives after exhaustion. A concurrent eight-caller regression proves one revision can admit at most one unique charge, stale callers cannot charge, and a fresh over-limit attempt stops the root. Root creation uses typed `BudgetLimits`; the native store schema is version 9. Focused macOS budget tests pass 2/2 plus the concurrency case, strict Rust 1.99.1 Clippy passes, and `scripts/linux-rust-check.sh` passes 83/83 with strict Clippy.
