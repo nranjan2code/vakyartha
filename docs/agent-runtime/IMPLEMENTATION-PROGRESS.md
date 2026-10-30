@@ -2,6 +2,10 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Primary-local record-view timeout diagnosis and frozen recheck — 2026-10-30
+
+The retained Projection contract failure was inspected offline and the exact prescribed `--run-local --table-only` gate was run once, without changing prompt, checks or timeout. The fresh receipt passes all three pairs and local edit behavior in 12.100/4.139/4.240 seconds. The retained failed run's sanitized provider log shows 49/50 prompt tokens processed, no observable provider event reaching the framework, an HTTP request ending at 60.0019 seconds, and a context-canceled termination. The installed local runtime was v0.40.13, the upstream current release that day. The failure is therefore located after prompt processing and before usable provider output, but its cause remains unknown; the new pass does not erase the failed receipt or close model/provider reliability, source-backed outcomes or installed latency gates. Details and private evidence pointer are in [evaluation](../EVALUATION.md#primary-local-record-view-contract-recheck--2026-10-30) and [failure lessons](LOCAL-FAILURE-LESSONS.md).
+
 ## Trusted native workspace task entry — 2026-10-30
 
 The trusted main/admin Tauri windows can register an admitted folder in the actor's durable workspace registry, bind a session to it, read the current grant at an expected revision, and create a root task scoped to that session/revision. The actor resolves and captures the grant; the caller supplies no grant or execution path. The isolated WebKit desktop smoke verifies registration, binding, grant readback, root grant capture, and stale-revision refusal. macOS Rust library tests pass 82/82; `npm run typecheck` passes; the pinned Rust 1.99.1 Linux Docker suite passes 84/84 with strict Clippy; `scripts/desktop-check.ts` passes on Node 26.13.0.
