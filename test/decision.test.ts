@@ -32,7 +32,7 @@ test("HeuristicDecisionProvider: classifies salutations and casual banter", asyn
     assert.equal(shape.historyPolicy, "strip_all");
     assert.deepEqual(shape.allowedToolNamespaces, []);
     assert.equal(shape.includeSurfaceGrammar, false);
-    assert.equal(shape.stepLimit, 1);
+    assert.equal(shape.stepLimit, 4);
     assert.equal(shape.toolBudget, 0);
     assert.ok(shape.confidence >= 0.9);
   }
@@ -51,7 +51,7 @@ test("HeuristicDecisionProvider: classifies canvas refinements when surface is a
   assert.equal(shape.historyPolicy, "last_turn_only");
   assert.deepEqual(shape.allowedToolNamespaces, []);
   assert.equal(shape.includeSurfaceGrammar, true);
-  assert.ok(shape.stepLimit <= 3);
+  assert.ok(shape.stepLimit <= 8);
   assert.equal(shape.toolBudget, 0);
 });
 
@@ -67,7 +67,7 @@ test("HeuristicDecisionProvider: classifies and prunes scoped tool tasks", async
   assert.equal(fileShape.historyPolicy, "recent_window");
   assert.ok(fileShape.allowedToolNamespaces.includes("filesystem_read"));
   assert.ok(!fileShape.allowedToolNamespaces.includes("web_search"));
-  assert.ok(fileShape.stepLimit <= 6);
+  assert.ok(fileShape.stepLimit <= 12);
 
   const searchShape = await provider.classifyTurn({
     message: "search the web for latest TypeScript 5.8 release notes",
@@ -108,7 +108,7 @@ test("HeuristicDecisionProvider: preserves full context on complex reasoning tas
   assert.equal(shape.historyPolicy, "full");
   assert.equal(shape.includeSurfaceGrammar, true);
   assert.deepEqual(shape.allowedToolNamespaces, ["filesystem_read", "web_search", "duckdb_query"]);
-  assert.equal(shape.stepLimit, 12);
+  assert.equal(shape.stepLimit, 24);
   assert.equal(shape.toolBudget, 8);
 });
 
@@ -190,8 +190,8 @@ test("shapeTurn: trims context, tools, and execution budgets on greetings", asyn
   assert.equal(result.shape.intent, "salutation");
   assert.deepEqual(result.payload.history, []);
   assert.deepEqual(result.payload.tools, []);
-  assert.equal(result.payload.maxSteps, 1);
-  assert.equal(result.payload.toolRounds, 0);
+  assert.equal(result.payload.maxSteps, 16); // Preserves user budget without throttling downward
+  assert.equal(result.payload.toolRounds, 12);
   assert.equal(result.originalToolCount, 2);
   assert.equal(result.prunedToolCount, 2);
   assert.equal(result.originalHistoryLength, 3);
@@ -218,6 +218,39 @@ test("shapeTurn: preserves payload unshaped when decision engine is disabled", a
   assert.equal(result.payload.toolRounds, 8);
   assert.equal(result.prunedToolCount, 0);
   assert.equal(result.prunedHistoryLength, 0);
+});
+
+test("shapeTurn: respects user budget and never artificially throttles maxSteps downward", async () => {
+  const config = getDecisionConfig();
+  config.enabled = true;
+  config.stripSalutations = true;
+
+  // Case 1: User explicitly configured 32 steps (e.g. Settings > Models > Step limit)
+  const userBudgeted = await shapeTurn(
+    {
+      message: "hi",
+      history: [{ role: "user", content: "prior 1" }],
+      maxSteps: 32,
+      toolRounds: 24,
+    },
+    config,
+  );
+
+  // Must preserve 32 steps instead of clamping to 1 or 4
+  assert.equal(userBudgeted.payload.maxSteps, 32);
+  assert.equal(userBudgeted.payload.toolRounds, 24);
+
+  // Case 2: Caller has unconfigured / Auto step limit (maxSteps undefined)
+  const autoBudgeted = await shapeTurn(
+    {
+      message: "hi",
+      history: [{ role: "user", content: "prior 1" }],
+    },
+    config,
+  );
+
+  // Must enforce a safe baseline floor of at least 8 steps so use_skill and answer rounds complete
+  assert.ok((autoBudgeted.payload.maxSteps ?? 0) >= 8);
 });
 
 test("Decision config persistence", () => {

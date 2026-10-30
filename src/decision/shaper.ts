@@ -179,8 +179,20 @@ export async function shapeTurn(
   }
 
   // 3. Execution Budgets
-  shapedPayload.maxSteps = Math.min(payload.maxSteps ?? 16, shape.stepLimit);
-  shapedPayload.toolRounds = Math.min(payload.toolRounds ?? 12, shape.toolBudget);
+  // Respect user-configured budget; never artificially throttle downward.
+  // When no budget is set by the user (Auto), provide a safe minimum floor of at least 8 steps
+  // so runtime skill selection (use_skill) and multi-round responses run to natural completion.
+  if (payload.maxSteps != null && payload.maxSteps > 0) {
+    shapedPayload.maxSteps = payload.maxSteps;
+  } else {
+    shapedPayload.maxSteps = Math.max(8, shape.stepLimit);
+  }
+
+  if (payload.toolRounds != null && payload.toolRounds > 0) {
+    shapedPayload.toolRounds = payload.toolRounds;
+  } else {
+    shapedPayload.toolRounds = shape.toolBudget;
+  }
 
   const prunedToolCount = originalToolCount - (shapedPayload.tools?.length ?? 0);
   const prunedHistoryLength = originalHistoryLength - (shapedPayload.history?.length ?? 0);

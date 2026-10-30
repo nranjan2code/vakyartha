@@ -857,8 +857,10 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
   };
 
   let historyLimit = Number(opt("history", "10")) || undefined;
-  let maxStepsLimit = Number(prefs.get(`opt:${provider}:maxSteps`) || opt("maxSteps", "0")) || undefined;
-  let toolRoundsLimit = Number(prefs.get(`opt:${provider}:toolRounds`) || opt("toolRounds", "0")) || undefined;
+  const rawMaxSteps = prefs.get(`opt:${provider}:maxSteps`) || opt("maxSteps", "0");
+  let maxStepsLimit = rawMaxSteps === "unlimited" ? 100 : (Number(rawMaxSteps) || undefined);
+  const rawToolRounds = prefs.get(`opt:${provider}:toolRounds`) || opt("toolRounds", "0");
+  let toolRoundsLimit = rawToolRounds === "unlimited" ? 100 : (Number(rawToolRounds) || undefined);
 
   if (req.message) {
     try {

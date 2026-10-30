@@ -163,7 +163,7 @@ export class OllamaDecisionProvider implements DecisionProvider {
                 : "full",
         allowedToolNamespaces,
         includeSurfaceGrammar: intent === "canvas_refinement" || intent === "complex_reasoning",
-        stepLimit: intent === "salutation" ? 1 : intent === "canvas_refinement" ? 3 : intent === "scoped_tool_task" ? 6 : 12,
+        stepLimit: intent === "salutation" ? 4 : intent === "canvas_refinement" ? 8 : intent === "scoped_tool_task" ? 12 : 24,
         toolBudget: intent === "salutation" || intent === "canvas_refinement" ? 0 : intent === "scoped_tool_task" ? 4 : 8,
         suggestedTier: intent === "salutation" || intent === "canvas_refinement" ? "local_fast" : "primary",
         reason: `Evaluated by local decision model ${data.model ?? this.model} (Single-pass probability: ${Math.round(confidence * 100)}%).`,

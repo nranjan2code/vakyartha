@@ -200,7 +200,7 @@ export class OpenAIDecisionProvider implements DecisionProvider {
             : (parsed.historyPolicy ?? "full"),
         allowedToolNamespaces: Array.isArray(parsed.allowedTools) ? parsed.allowedTools : [],
         includeSurfaceGrammar: Boolean(parsed.includeSurfaceGrammar),
-        stepLimit: typeof parsed.stepLimit === "number" ? Math.max(1, parsed.stepLimit) : 8,
+        stepLimit: typeof parsed.stepLimit === "number" ? Math.max(4, parsed.stepLimit) : 12,
         toolBudget: typeof parsed.toolBudget === "number" ? Math.max(0, parsed.toolBudget) : 4,
         suggestedTier: parsed.suggestedTier ?? "primary",
         reason: parsed.reason ?? `Evaluated by OpenAI model (${this.model}).`,
