@@ -1,5 +1,11 @@
 # Vakyartha handover — 2026-10-30
 
+## Native reasoner and assembled publication mechanism — 2026-10-30
+
+The native driver now carries a bound isolated reasoning run through human consent, exact-byte streamed I/O and verified cleanup. Schema 20 reserves its process once, releases process capacity independently of the root orchestration slot and retains uncertain ownership after restart. An actual packaged-worker fixture continues through separate canonical preparation and publication without marking the original result verified. Validation: 294 app tests/typecheck/bundling, 151 macOS/153 Linux native tests, strict Clippy and native desktop WebKit smoke pass. [Diagram, evidence and retained fixture failures](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-reasoning-supervisor-and-assembled-publication-path--2026-10-30).
+
+Product execution remains disabled: Work admission/lifecycle, context/skills/decision integration, result acknowledgement/continuation and the broader scheduler/workspace/IA/drift/QoS/outcome gates are open. The assembled test seeds admission through an explicitly test-only opcode and uses synthetic local HTTP; it is neither a live model outcome nor a human UI consent test. The separate decision feature is untouched; its updated shaping/scoring contract is a required integration dependency, with native authority and independent outcome checks preserved.
+
 ## Trusted model-request consent controls — 2026-10-30
 
 Trusted shell permission controls now read native disclosures, page the exact request and submit fingerprint-bound Allow once/Deny decisions. Native permits go only to the waiting supervisor. Schema 19 adds compact durable decision receipts; denial survives restart and repeated decisions return metadata without duplicating the permit or charge. Request bodies/previews stay ephemeral. Validation passes 292 app tests/typecheck/build, 145 macOS/147 Linux native tests, strict Clippy, dedicated wide/narrow WebKit permission tests, existing control/collection/Canvas/Skills checks and native desktop smoke. [Evidence, diagram and retained validation failure](agent-runtime/IMPLEMENTATION-PROGRESS.md#trusted-model-request-consent-controls--2026-10-30).

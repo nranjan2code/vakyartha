@@ -27,6 +27,9 @@ pub struct RootRun {
     pub status: RunStatus,
     pub supervisor_receipt: Option<String>,
     pub exit_receipt: Option<String>,
+    pub worker_lease_id: Option<u64>,
+    pub worker_exit_receipt: Option<String>,
+    pub worker_exit_code: Option<i32>,
 }
 
 pub(super) fn prepare(
@@ -60,7 +63,9 @@ pub(super) fn prepare(
             AdmissionError::ConflictingRequestIdentity,
         ));
     }
-    if super::generation::unsettled(ledger, root_id) || super::canonical_runs::unsettled(ledger, root_id) {
+    if super::generation::unsettled(ledger, root_id)
+        || super::canonical_runs::unsettled(ledger, root_id)
+    {
         return Err(ControlError::Admission(AdmissionError::RootRunUnsettled));
     }
     if ledger
@@ -102,6 +107,9 @@ pub(super) fn prepare(
             status: RunStatus::Prepared,
             supervisor_receipt: None,
             exit_receipt: None,
+            worker_lease_id: None,
+            worker_exit_receipt: None,
+            worker_exit_code: None,
         },
     );
     Ok(root)
@@ -135,7 +143,10 @@ pub(super) fn confirm(
         .roots
         .get(&run.root_id)
         .ok_or(ControlError::Admission(AdmissionError::RootNotFound))?;
-    if run.status != RunStatus::Prepared
+    if run
+        .worker_lease_id
+        .is_some_and(|id| !ledger.active.contains_key(&id))
+        || run.status != RunStatus::Prepared
         || root.status() != RootStatus::Running
         || root.cancellation_epoch() != run.cancellation_epoch
         || root.workspace_grant().is_some_and(|grant| {
@@ -182,6 +193,14 @@ pub(super) fn settle(
             ))
         };
     }
+    if run
+        .worker_lease_id
+        .is_some_and(|id| ledger.active.contains_key(&id))
+    {
+        return Err(ControlError::Admission(
+            AdmissionError::WorkerCompletionUnavailable,
+        ));
+    }
     let lease = ledger
         .active_lease(run.lease_id)
         .ok_or(ControlError::Admission(AdmissionError::UnknownLease))?;
@@ -218,6 +237,48 @@ pub(super) fn validate(ledger: &CapacityLedger) -> Result<(), StoreError> {
             .issued
             .get(&run.lease_id)
             .ok_or(StoreError::Corrupt)?;
+        if let Some(worker_id) = run.worker_lease_id {
+            let worker = ledger.issued.get(&worker_id).ok_or(StoreError::Corrupt)?;
+            if !leases.insert(worker_id)
+                || worker.root_id() != root.id()
+                || worker.request_id != format!("reasoner-{}", run.id)
+                || worker.amounts() != &BTreeMap::from([(Resource::ContainedProcess, 1)])
+                || ledger.active.contains_key(&worker_id) == run.worker_exit_receipt.is_some()
+                || run.status == RunStatus::Settled && run.worker_exit_receipt.is_none()
+            {
+                return Err(StoreError::Corrupt);
+            }
+        } else if run.worker_exit_receipt.is_some() || run.worker_exit_code.is_some() {
+            return Err(StoreError::Corrupt);
+        }
+        if let Some(receipt) = &run.worker_exit_receipt {
+            let valid = if run.worker_exit_code.is_some() {
+                receipt
+                    .strip_prefix(&format!("worker-exit-{}-", run.id))
+                    .is_some_and(|hash| {
+                        hash.len() == 64
+                            && hash
+                                .bytes()
+                                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                    })
+            } else {
+                *receipt == format!("reasoner-not-launched-{}", run.id)
+            };
+            if !valid {
+                return Err(StoreError::Corrupt);
+            }
+        }
+        if run
+            .worker_exit_code
+            .is_some_and(|code| !(0..=255).contains(&code))
+            || run.worker_exit_code.is_some() && run.worker_exit_receipt.is_none()
+            || run
+                .worker_exit_receipt
+                .as_deref()
+                .is_some_and(|receipt| !super::valid_identity(receipt))
+        {
+            return Err(StoreError::Corrupt);
+        }
         if id != &format!("run-{}", run.lease_id)
             || run.id != *id
             || !super::valid_identity(&run.request_id)

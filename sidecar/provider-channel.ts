@@ -34,7 +34,8 @@ type ProviderPending = {
   abort?: () => void;
 };
 
-export function providerChannel(send: (message: Record<string, unknown>) => Promise<void>, maxCalls = 4): { fetch: ProviderTransport; receive(frame: Record<string, unknown>): boolean; close(): void } {
+export function providerChannel(send: (message: Record<string, unknown>) => Promise<void>, maxCalls = 4, consentWaitMs = 0): { fetch: ProviderTransport; receive(frame: Record<string, unknown>): boolean; close(): void } {
+  if (!Number.isInteger(consentWaitMs) || consentWaitMs < 0 || consentWaitMs > 300_000) throw new Error("Invalid provider consent allowance");
   if (!Number.isInteger(maxCalls) || maxCalls < 1 || maxCalls > 4) throw new Error("Invalid provider channel capacity");
   const providerPending = new Map<string, ProviderPending>();
   const retiredProviderIds = new Set<string>();
@@ -118,7 +119,7 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
         void send({ id, type: "provider_cancel" }).catch(() => {});
         if (pending.controller) pending.controller.error(error);
         else reject(error);
-      }, 125_000);
+      }, 125_000 + consentWaitMs);
       timer.unref();
       const pending: ProviderPending = { resolve, reject, timer, ended: false, settled: false, signal };
       providerPending.set(id, pending);

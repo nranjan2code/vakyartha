@@ -1,5 +1,11 @@
 # Agent outcome evaluation
 
+## Native reasoner and assembled publication mechanism — 2026-10-30
+
+294 app tests/typecheck/bundling and 151 macOS/153 Linux native tests with strict Clippy and native desktop WebKit smoke pass. The packaged-worker/native-I/O fixture proves exact approved bytes, one charge, original inputs, independent surfaces/value 37.5, protected cleanup and canonical publication with original checks still pending. Negative paths include changed input, denied/cancelled consent, hostile private-channel frames, a ready uncooperative worker stopped by the native clock, missing helper, admission races and uncertain process ownership across restart. [Evidence and retained test-boundary mistakes](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-reasoning-supervisor-and-assembled-publication-path--2026-10-30).
+
+No real model, product Work dispatcher, actual human-dialog approval or installed build was evaluated. Admission is explicitly test-seeded; provider output is synthetic. Original source/value/interpretation/interaction/output outcomes and final Astra review remain open. Decision shaping/scoring must integrate through the existing capability and cannot count as independent source evidence or permission.
+
 ## Trusted model-request consent controls — 2026-10-30
 
 Trusted shell permission controls now read native disclosures, page the exact request and submit fingerprint-bound Allow once/Deny decisions. Native permits go only to the waiting supervisor. Schema 19 adds compact durable decision receipts; denial survives restart and repeated decisions return metadata without duplicating the permit or charge. Request bodies/previews stay ephemeral. Validation passes 292 app tests/typecheck/build, 145 macOS/147 Linux native tests, strict Clippy, dedicated wide/narrow WebKit permission tests, existing control/collection/Canvas/Skills checks and native desktop smoke. [Evidence, diagram and retained validation failure](agent-runtime/IMPLEMENTATION-PROGRESS.md#trusted-model-request-consent-controls--2026-10-30).

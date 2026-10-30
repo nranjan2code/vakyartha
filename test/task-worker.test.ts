@@ -106,3 +106,27 @@ test("cancelling an in-flight generation emits no candidate and retires the prov
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(h.frames.filter(frame => frame.type === "task_candidate").length, 0);
 });
+
+test("native consent pauses only active time and resumes the remaining bound", async t => {
+  const h = harness(t), context = { ...job(), activeMs: 1000 };
+  h.send({ type: "task_start", job: context });
+  await wait(() => h.frames.some(frame => frame.type === "provider_request"));
+  h.send({ type: "task_consent", waiting: true });
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  assert.equal(h.code(), undefined, "human wait is separate from active execution");
+  h.send({ type: "task_consent", waiting: false });
+  await wait(() => h.code() !== undefined);
+  assert.deepEqual(h.frames.at(-1), { v: 2, type: "task_failed", code: "active_time_limit" });
+  assert.equal(h.frames.filter(frame => frame.type === "task_candidate").length, 0);
+});
+
+test("consent phase cannot bootstrap a task or repeat a pause", async t => {
+  const early = harness(t); early.send({ type: "task_consent", waiting: true });
+  await wait(() => early.code() !== undefined);
+  assert.equal(early.frames.at(-1)?.code, "protocol_error");
+  const duplicate = harness(t); duplicate.send({ type: "task_start", job: job() });
+  await wait(() => duplicate.frames.some(frame => frame.type === "provider_request"));
+  duplicate.send({ type: "task_consent", waiting: true }); duplicate.send({ type: "task_consent", waiting: true });
+  await wait(() => duplicate.code() !== undefined);
+  assert.equal(duplicate.frames.at(-1)?.code, "protocol_error");
+});

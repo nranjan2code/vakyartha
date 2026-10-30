@@ -270,7 +270,7 @@ pub(super) fn validate_identity(value: &str) -> bool {
     valid_identity(value)
 }
 
-pub(super) fn digest(bytes: &[u8]) -> String {
+pub(crate) fn digest(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     let mut output = String::with_capacity(64);
     for byte in digest {

@@ -201,6 +201,7 @@ fn running<'a>(
         || run.cancellation_epoch != root.cancellation_epoch()
         || run.session_id.as_deref() != root.session_id()
         || !ledger.active.contains_key(&run.lease_id)
+        || run.worker_lease_id.is_some_and(|id| !ledger.active.contains_key(&id))
         || root
             .workspace_grant()
             .is_some_and(|grant| !ledger.workspace_grant_is_current(grant))

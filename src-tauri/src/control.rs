@@ -11,7 +11,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 19;
+const STORE_VERSION: u16 = 20;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 const MAX_CANDIDATE_RECEIPTS: usize = 10_000;
@@ -705,11 +705,17 @@ pub enum RootMutation {
 enum RootRunAction {
     Read,
     SettleWorker,
+    FinishReasoner,
+    AbandonReasoner,
     Confirm(String),
+    #[cfg(test)]
     Settle(String),
 }
 
 enum ActorCommand {
+    ReasonerTaskDefinition { run_id: String, reply: SyncSender<Result<Option<tasks::TaskRequest>, ControlError>> },
+    #[cfg(test)]
+    PrepareProductFixture { id: String, revision: u64, request_id: String, reply: SyncSender<Result<root_runs::RootRun, ControlError>> },
     IssueProviderApproval { run_id: String, operation_id: String, attempt: u32, body: Vec<u8>, delivery: Option<generation::Delivery>, in_flight: Arc<std::sync::atomic::AtomicBool>, reply: SyncSender<Result<generation::Approval, ControlError>> },
     #[cfg(test)]
     DecideProviderApproval { ticket_id: String, fingerprint: String, decision: generation::Decision, reply: SyncSender<Result<generation::Dispatch, ControlError>> },
@@ -1224,6 +1230,23 @@ impl ControlHandle {
         response.recv_timeout(self.response_timeout).map_err(response_error)?
     }
 
+    /// Native context adapter only; original file snapshots never come from a
+    /// reasoning worker or a task DTO synthesized by the presentation layer.
+    pub(crate) fn reasoner_task_definition(&self, run_id: String) -> Result<Option<tasks::TaskRequest>, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::ReasonerTaskDefinition { run_id, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    /// Test-only admission while product dispatch remains disabled. This opcode
+    /// has no production build, webview command or worker protocol equivalent.
+    #[cfg(test)]
+    pub(crate) fn prepare_product_fixture(&self, id: String, revision: u64, request_id: String) -> Result<root_runs::RootRun, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands.try_send(ActorCommand::PrepareProductFixture { id, revision, request_id, reply }).map_err(queue_error)?;
+        response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
     /// Trusted-supervisor entry points. These are not worker protocol operations.
     pub fn confirm_root_started(
         &self,
@@ -1233,6 +1256,7 @@ impl ControlHandle {
         self.root_run_command(run_id, RootRunAction::Confirm(receipt))
     }
 
+    #[cfg(test)]
     pub fn settle_root_exit(
         &self,
         run_id: String,
@@ -1246,6 +1270,13 @@ impl ControlHandle {
         let (reply, response) = sync_channel(1);
         self.commands.try_send(ActorCommand::PrepareWorkerCompletion { run_id, reply }).map_err(queue_error)?;
         response.recv_timeout(self.response_timeout).map_err(response_error)?
+    }
+
+    pub fn finish_reasoner(&self, run_id: String) -> Result<root_runs::RootRun, ControlError> {
+        self.root_run_command(run_id, RootRunAction::FinishReasoner)
+    }
+    pub fn abandon_reasoner_before_spawn(&self, run_id: String) -> Result<root_runs::RootRun, ControlError> {
+        self.root_run_command(run_id, RootRunAction::AbandonReasoner)
     }
 
     pub fn settle_worker_completion(&self, run_id: String) -> Result<root_runs::RootRun, ControlError> {
@@ -1990,6 +2021,22 @@ fn actor_loop(
     while let Ok(command) = receiver.recv() {
         provider_approvals.prune(&ledger);
         match command {
+            ActorCommand::ReasonerTaskDefinition { run_id, reply } => {
+                let result = ledger.root_runs.get(&run_id).ok_or(ControlError::Admission(AdmissionError::RootRunNotFound))
+                    .map(|run| ledger.product_tasks.get(&run.root_id).map(|record| record.request.clone()));
+                let _ = reply.send(result);
+            }
+            #[cfg(test)]
+            ActorCommand::PrepareProductFixture { id, revision, request_id, reply } => {
+                let mut next = ledger.clone();
+                let result = if !next.product_tasks.contains_key(&id) { Err(ControlError::Admission(AdmissionError::InvalidTask)) }
+                else { root_runs::prepare(&mut next, &profile, &id, revision, &request_id).and_then(|_| {
+                    store.persist(&next, &profile).map_err(ControlError::Store)?;
+                    let run = next.root_runs.values().find(|run| run.request_id == request_id).cloned().ok_or(ControlError::Admission(AdmissionError::RootRunNotFound))?;
+                    ledger = next; Ok(run)
+                }) };
+                let _ = reply.send(result);
+            }
             ActorCommand::IssueProviderApproval { run_id, operation_id, attempt, body, delivery, in_flight, reply } => {
                 let result = provider_approvals.issue(&ledger, run_id, operation_id, attempt, body).and_then(|ticket| {
                     if let Some(delivery) = delivery { provider_approvals.attach(&ticket, delivery)?; }
@@ -2046,9 +2093,23 @@ fn actor_loop(
                 let _ = reply.send(ledger.provider_operations.get(&id).cloned().ok_or(ControlError::Admission(AdmissionError::ProviderApprovalRefused)));
             }
             ActorCommand::PrepareWorkerCompletion { run_id, reply } => {
+                let mut next = ledger.clone();
                 let result = store.dir.parent().ok_or(ControlError::Store(StoreError::Corrupt))
-                    .and_then(|native| worker_completion::prepare(&ledger, native, &run_id));
-                let _ = reply.send(result);
+                    .and_then(|native| worker_completion::prepare(&mut next, &profile, native, &run_id));
+                match result {
+                    Ok(invocation) => match store.persist(&next, &profile) {
+                        Ok(_) => {
+                            ledger = next;
+                            if reply.send(Ok(invocation)).is_err() {
+                                let mut next = ledger.clone();
+                                if worker_completion::abandon_before_spawn(&mut next, &run_id).is_err() || store.persist(&next, &profile).is_err() { break; }
+                                ledger = next;
+                            }
+                        }
+                        Err(error) => { let _ = reply.send(Err(ControlError::Store(error))); break; }
+                    },
+                    Err(error) => { let _ = reply.send(Err(error)); }
+                }
             }
             ActorCommand::ProductTask { command, reply } => {
                 if let tasks::TaskCommand::Create { request } = &command
@@ -2146,6 +2207,8 @@ fn actor_loop(
             ActorCommand::Release { lease, reply } => {
                 let owned_resource = if ledger.root_runs.values().any(|run| run.lease_id == lease.id()) {
                     Some(Resource::Generation)
+                } else if ledger.root_runs.values().any(|run| run.worker_lease_id == Some(lease.id())) {
+                    Some(Resource::ContainedProcess)
                 } else if ledger.provider_operations.values().any(|record| record.lease_id == lease.id()) {
                     Some(Resource::ProviderRequest)
                 } else if canonical_runs::owns(&ledger, lease.id()) { Some(Resource::VerificationExecution) } else { None };
@@ -2599,10 +2662,14 @@ fn actor_loop(
                 let mut candidate = ledger.clone();
                 let result = match action {
                     RootRunAction::Confirm(receipt) => root_runs::confirm(&mut candidate, &run_id, &receipt),
+                    #[cfg(test)]
                     RootRunAction::Settle(receipt) => root_runs::settle(&mut candidate, &run_id, &receipt),
+                    RootRunAction::FinishReasoner => store.dir.parent().ok_or(ControlError::Store(StoreError::Corrupt))
+                        .and_then(|native| worker_completion::finish(&mut candidate, native, &run_id)),
+                    RootRunAction::AbandonReasoner => worker_completion::abandon_before_spawn(&mut candidate, &run_id),
                     RootRunAction::SettleWorker => store.dir.parent().ok_or(ControlError::Store(StoreError::Corrupt))
-                        .and_then(|native| worker_completion::exit_receipt(native, &run_id))
-                        .and_then(|receipt| root_runs::settle(&mut candidate, &run_id, &receipt)),
+                        .and_then(|native| worker_completion::finish(&mut candidate, native, &run_id))
+                        .and_then(|run| root_runs::settle(&mut candidate, &run_id, run.worker_exit_receipt.as_deref().expect("verified worker exit"))),
                     RootRunAction::Read => unreachable!("read handled above"),
                 };
                 match result {
@@ -3763,7 +3830,7 @@ mod tests {
     #[test]
     fn native_worker_completion_is_exact_private_and_retains_charges_across_restart() {
         let data = temp_data_dir();
-        let profile = CapacityProfile::new(BTreeMap::from([(Resource::Generation, 1)]), BTreeMap::from([(Resource::Generation, 1)]), 32).unwrap();
+        let profile = CapacityProfile::new(BTreeMap::from([(Resource::Generation, 1), (Resource::ContainedProcess, 1)]), BTreeMap::from([(Resource::Generation, 1), (Resource::ContainedProcess, 1)]), 32).unwrap();
         let actor = ControlActor::open(&data, "one-slot", profile.clone(), 16, Duration::from_secs(2)).unwrap();
         let handle = actor.handle();
         for id in ["first", "second"] {
@@ -3843,7 +3910,7 @@ fs.writeFileSync(process.env.VAK_DATA_DIR+'/positive','scratch-write-ok');
 const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); io.on('end',()=>{{}}); setInterval(()=>{{}},1000);
 "#, serde_json::to_string(&app_private).unwrap(), serde_json::to_string(&sibling_private).unwrap());
         fs::write(resources.join("task-worker.mjs"), hostile).unwrap();
-        let profile = CapacityProfile::new(BTreeMap::from([(Resource::Generation, 1)]), BTreeMap::from([(Resource::Generation, 1)]), 32).unwrap();
+        let profile = CapacityProfile::new(BTreeMap::from([(Resource::Generation, 1), (Resource::ContainedProcess, 1)]), BTreeMap::from([(Resource::Generation, 1), (Resource::ContainedProcess, 1)]), 32).unwrap();
         let actor = ControlActor::open(&data, "one-slot", profile.clone(), 16, Duration::from_secs(2)).unwrap();
         let handle = actor.handle();
         let root = handle.create_root("root".into(), "Bound work".into(), "Original outcome".into(), 2, vec![Requirement::new("check".into(), true).unwrap()]).unwrap();
@@ -3896,7 +3963,7 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         let data = temp_data_dir();
         let resources = data.with_extension("task-runtime"); fs::create_dir_all(&resources).unwrap();
         fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/task-worker.mjs"), resources.join("task-worker.mjs")).expect("bundle the task worker before running this gate");
-        let profile = CapacityProfile::new(BTreeMap::from([(Resource::Generation, 1), (Resource::ProviderRequest, 1)]), BTreeMap::from([(Resource::Generation, 1), (Resource::ProviderRequest, 1)]), 32).unwrap();
+        let profile = CapacityProfile::new(BTreeMap::from([(Resource::Generation, 1), (Resource::ContainedProcess, 1), (Resource::ProviderRequest, 1)]), BTreeMap::from([(Resource::Generation, 1), (Resource::ContainedProcess, 1), (Resource::ProviderRequest, 1)]), 32).unwrap();
         let actor = ControlActor::open(&data, "one-slot", profile, 16, Duration::from_secs(2)).unwrap();
         let handle = actor.handle();
         let root = handle.create_root_with_budget(RootCreate {

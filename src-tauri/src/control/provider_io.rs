@@ -351,3 +351,8 @@ async fn transfer(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(crate) fn start_fixture(control: ControlHandle, dispatch: Dispatch, data: PathBuf, cancel: Arc<AtomicBool>, deadline: Instant, url: reqwest::Url) -> Result<Exchange, ControlError> {
+    start_inner(control, dispatch, "no-local-vault".into(), data, cancel, deadline, Some(url))
+}

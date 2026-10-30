@@ -82,6 +82,11 @@ impl PendingConsent {
     pub fn approval(&self) -> &PendingApproval {
         self.approval.as_ref().expect("native issued consent")
     }
+    /// Retain the receiver until an actor barrier has retired its producer.
+    /// A buffered permit can then be recovered as definitely not dispatched.
+    pub fn close(&mut self) {
+        self.closed.store(true, Ordering::Release);
+    }
     pub fn try_decision(&mut self) -> Option<Result<Dispatch, ConsentRejection>> {
         if self.finished {
             return None;

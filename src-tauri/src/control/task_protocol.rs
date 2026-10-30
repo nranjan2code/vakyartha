@@ -248,6 +248,7 @@ impl TaskChannel {
                         | "cancelled"
                         | "bootstrap_timeout"
                         | "active_time_limit"
+                        | "consent_time_limit"
                 ) =>
             {
                 self.phase = Phase::Stopped;
@@ -276,6 +277,9 @@ mod tests {
                 status: RunStatus::Prepared,
                 supervisor_receipt: None,
                 exit_receipt: None,
+                worker_lease_id: None,
+                worker_exit_receipt: None,
+                worker_exit_code: None,
             },
             "local-model".into(),
         )

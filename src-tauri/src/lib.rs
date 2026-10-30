@@ -26,6 +26,8 @@ struct Backend {
 mod engine;
 mod worker;
 mod canonical_supervisor;
+#[allow(dead_code, reason = "product dispatch remains gated on the context and lifecycle adapters")]
+mod reasoner_supervisor;
 mod policy;
 mod private_store;
 mod vault;

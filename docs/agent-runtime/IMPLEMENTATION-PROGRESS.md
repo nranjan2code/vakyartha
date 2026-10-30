@@ -2,6 +2,50 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Native reasoning supervisor and assembled publication path — 2026-10-30
+
+A native supervisor now drives one packaged reasoning invocation from its bound run through private protocol readiness, explicit context, human consent, exact approved provider I/O and protected process cleanup. Its pipe reader/writer are nonblocking, frame-bounded and deadline-checked; no blocking reader thread survives the invocation. Provider headers/data/end come from the native I/O owner, and the worker's exact acknowledgement controls backpressure. Late cancellation of a retired request cannot cancel its successor. A candidate is returned only after terminal framing, EOF, current contract/workspace/cancellation checks and a protected zero-exit cleanup record. This result remains a proposal for the separate canonical role.
+
+Original task goal, criteria, model and output ceiling come from native state. The native-only task-definition reader checks supplied input snapshots against the original saved bytes and caps the per-invocation active allowance against the task definition. Instructions and initial surfaces are still explicit content slots; the existing skills/context/continuation adapter is not connected. Native execution does not read the app worker's stores or gain its environment/tools.
+
+Schema 20 adds a one-shot reasoning-process reservation, cleanup receipt and exit code to each root invocation. Process admission persists before returning a non-clonable launch object. Concurrent callers receive one object; the generic release API cannot settle its process lease. Protected cleanup releases process capacity while preserving the root orchestration slot for canonical verification. Proven failure before spawn releases both holds using native no-spawn evidence. Startup uncertainty retains process ownership across restart and blocks competing jobs until reconciliation; restart never infers that a prepared process was never launched. The raw caller-supplied root-exit controller is test-only. These are logical invocation reservations, not hard OS PID/CPU/memory/disk limits.
+
+Human consent has a separate cumulative five-minute allowance for the invocation; active work is capped at five minutes per invocation. The native monotonic clock enforces both independently of the worker. Phase transitions debit the outgoing allowance before switching; pipe writes and I/O admission share the remaining absolute deadline, so waiting or blocked writes cannot extend active execution. Cleanup closes a pending consent producer through an actor barrier before draining any already-buffered permit as definitely unsent; settling that permit retains its request charge. A failed settlement still proceeds through process teardown. The cooperative worker pauses its active clock only for native consent-phase messages, and its provider channel permits that separate wait before the existing network deadline. Repeated/early phase messages are refused. This does not yet implement cumulative active-time accounting across all task attempts or release the orchestration slot during a human wait.
+
+```mermaid
+sequenceDiagram
+    participant O as Native orchestration
+    participant A as Native actor
+    participant R as Isolated reasoner
+    participant U as Trusted consent controls
+    participant I as Native provider I/O
+    participant C as Isolated canonical role
+    O->>A: Reserve one reasoning process for admitted root run
+    A-->>O: One native launch object after durable selection
+    O->>R: Bound original definition and explicit context
+    R-->>O: Provider proposal for the same run/session/model
+    O->>A: Native consent request for exact bytes
+    U->>A: Fingerprint-bound one-use decision
+    A-->>O: Native permit, never serialized to the UI
+    O->>I: Consume permit and stream with exact worker ACKs
+    I-->>O: Settled local I/O receipt
+    R-->>O: Candidate followed by EOF
+    O->>A: Verify helper cleanup and release process hold
+    Note over A,O: Root orchestration hold remains charged
+    O->>A: Commit candidate with current authority fence
+    O->>C: Separately admitted canonical preparation
+    C-->>A: Prepared snapshot and independent helper cleanup
+    A->>A: Select publication and settle canonical holds atomically
+    O->>A: Settle root invocation from protected cleanup evidence
+    Note over A,U: Publication does not pass original checks or complete the task
+```
+
+Verification: 294 app tests, typecheck and runtime bundling pass. Native suites pass 151 macOS/153 Linux Docker tests, including all seven real-worker gates, with strict Clippy. Native desktop WebKit smoke also passes private IPC, canonical rendering, FinOps, zero TCP listeners and parent-exit cleanup; receipt: `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-desktop-private-8YCBPz`. The assembled fixture uses the actual packaged reasoner, native waiting-consent API, real loopback HTTP streaming and the separately packaged canonical role. It checks exact approved request bytes, original file content, two independent surfaces, numeric 37.5, one model charge, cleanup, canonical publication and the unchanged pending original-outcome requirement. Product admission is seeded by an explicitly test-only actor opcode; the human decision is made by the native fixture, not by automating the actual permission dialog. This is a synthetic-provider mechanism proof, not a live model or product Work outcome. Deterministic clock checks retain absolute deadlines over repeated wait/resume phases, and a native buffered-permit test covers close/barrier/unsent settlement. Other cases cover denial, root cancellation, unknown protocol frames on the real private channel, native stopping of a ready uncooperative worker, missing helper, changed original input, concurrent admission, protected-release refusal and restart uncertainty.
+
+Retained evidence: `/tmp/vak-reasoner-app-all.log`, `/tmp/vak-reasoner-mac-complete.log`, `/tmp/vak-reasoner-clippy-complete.log`, `/tmp/vak-reasoner-linux-complete.log`. The initial fixture omitted its data directory; `/tmp/vak-reasoner-integration.log` retains that setup failure. The next fixture used a generic root where publication correctly requires a native product task (`/tmp/vak-reasoner-integration-2.log`); the corrected fixture uses the saved task and test-only admission, preserving the publication check. An initial hostile/stalled-worker fixture wrote stdout while the helper exposes protocol FD 3; that exercised bootstrap timeout. `/tmp/vak-reasoner-focused-final.log` retains the incomplete proof; `/tmp/vak-reasoner-private-channel.log` records the corrected private-channel check, including an active deadline shorter than bootstrap. No outcome check was weakened.
+
+Next: product Work admission/lifecycle DTOs, context and selected-skill snapshots, result acknowledgement and continuation. Incorporate the user's updated decision/turn-shaping contract through the existing decision capability after branch integration: when enabled, shape before primary generation, prune unnecessary tool schemas and reduce step allowances; use its discrete verification/security scoring instead of speculative reasoning text. Decision output cannot grant egress, expand native limits or substitute for independent source/value/interaction/output evidence. The classification/scoring transport must use registered native operations and consent/budgets; the current task broker admits only local generation. This worktree does not contain the separate decision feature and does not replace or modify it. Hosted-provider admission, governed tools, scheduler, workspace/IA cutover, drift/QoS/hard quotas, original real-provider outcomes, installed proof and final Astra review remain open. Product execution stays disabled under the empty profile. No dependency, inference, installed-app or decision-feature change.
+
 ## Trusted model-request consent controls — 2026-10-30
 
 The shell now reads provider permissions directly from the native actor through three app-window-only commands: list disclosures, read an exact request page, and decide Allow once/Deny against the displayed fingerprint. The app worker and reasoning pipe have no ticket-creation or decision opcode. The earlier raw native approval controller is test-only; production uses a waiting supervisor receiver. A dispatch object never crosses the UI boundary.

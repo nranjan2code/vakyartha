@@ -55,6 +55,7 @@ export async function generateTaskCandidate(job: TaskWorkerJob, scratch: string,
 
 export function taskWorkerRuntime(input: Readable, output: Writable, scratch: string, finished: (code: number) => void): { close(): void } {
   let started = false, closed = false, finishedOnce = false;
+  let waitingConsent = false, activeRemaining = 0, activeSince = 0;
   const finish = (code: number) => { if (!finishedOnce) { finishedOnce = true; finished(code); } };
   const abort = new AbortController();
   const send = (frame: Record<string, unknown>) => new Promise<void>((resolve, reject) => {
@@ -63,7 +64,7 @@ export function taskWorkerRuntime(input: Readable, output: Writable, scratch: st
     if (Buffer.byteLength(bytes) > MAX_TASK_FRAME) { reject(new Error("Task frame exceeds its bound")); return; }
     output.write(bytes, error => error ? reject(error) : resolve());
   });
-  const providers = providerChannel(send, 1);
+  const providers = providerChannel(send, 1, 300_000);
   const close = () => { if (closed) return; closed = true; clearTimeout(timer); abort.abort(); providers.close(); finish(1); };
   const terminal = async (frame: Record<string, unknown>, code: number) => {
     if (closed) return;
@@ -84,9 +85,24 @@ export function taskWorkerRuntime(input: Readable, output: Writable, scratch: st
     if (!object(frame) || frame.v !== DESKTOP_PROTOCOL) throw new Error("Invalid task frame");
     if (providers.receive(frame)) return;
     if (frame.type === "task_cancel" && Object.keys(frame).length === 2) { fail("cancelled"); return; }
+    if (started && frame.type === "task_consent" && Object.keys(frame).length === 3 && typeof frame.waiting === "boolean") {
+      if (waitingConsent === frame.waiting) throw new Error("Duplicate consent phase");
+      clearTimeout(timer);
+      if (frame.waiting) {
+        activeRemaining = Math.max(0, activeRemaining - (performance.now() - activeSince));
+        if (activeRemaining === 0) { fail("active_time_limit"); return; }
+        timer = setTimeout(() => fail("consent_time_limit"), 300_000);
+      } else {
+        activeSince = performance.now();
+        timer = setTimeout(() => fail("active_time_limit"), activeRemaining);
+      }
+      waitingConsent = frame.waiting;
+      return;
+    }
     if (started || frame.type !== "task_start" || Object.keys(frame).length !== 3) throw new Error("Unexpected task command family");
     const job = parseTaskWorkerJob(frame.job); started = true;
-    clearTimeout(timer); timer = setTimeout(() => fail("active_time_limit"), job.activeMs);
+    activeRemaining = job.activeMs; activeSince = performance.now();
+    clearTimeout(timer); timer = setTimeout(() => fail("active_time_limit"), activeRemaining);
     void generateTaskCandidate(job, scratch, providers.fetch, abort.signal).then(candidate => {
       if (!closed) return terminal({ type: "task_candidate", runId: job.runId, candidate }, 0);
     }).catch(() => { if (!closed) fail("generation_error"); });

@@ -412,3 +412,55 @@ fn undelivered_permit_settles_capacity_without_refunding_committed_request() {
     drop(actor);
     cleanup(&data);
 }
+
+#[test]
+fn closed_receiver_retains_a_buffered_permit_until_native_barrier_and_unsent_settlement() {
+    let data = data();
+    let actor =
+        ControlActor::open(&data, "consent", profile(), 16, Duration::from_secs(2)).unwrap();
+    let handle = actor.handle();
+    let run = start(&handle, "root", 1);
+    let mut waiting = handle
+        .request_provider_consent(run, "buffered".into(), 0, body())
+        .unwrap();
+    let approval = waiting.approval().clone();
+    let receipt = handle
+        .decide_provider_consent(
+            approval.ticket_id.clone(),
+            approval.fingerprint,
+            Decision::AllowOnce,
+        )
+        .unwrap();
+    assert_eq!(receipt.state, "allowed");
+    waiting.close();
+    assert!(
+        handle.list_provider_consents().unwrap().is_empty(),
+        "actor barrier retires the sender"
+    );
+    let dispatch = waiting.try_decision().unwrap().unwrap();
+    assert_eq!(dispatch.operation().id, approval.ticket_id);
+    let record = handle
+        .settle_provider_operation(
+            approval.ticket_id,
+            ResultReceipt {
+                id: "buffered-unsent".into(),
+                outcome: IoOutcome::NotDispatched,
+                status_code: None,
+                response_bytes: 0,
+            },
+        )
+        .unwrap();
+    assert!(!record.io_started);
+    assert_eq!(record.status, OperationStatus::Returned);
+    assert_eq!(
+        handle
+            .read_root("root".into())
+            .unwrap()
+            .model_requests_used(),
+        1
+    );
+    assert!(waiting.try_decision().is_none());
+    drop(handle);
+    drop(actor);
+    cleanup(&data);
+}
