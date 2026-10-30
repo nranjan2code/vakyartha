@@ -238,3 +238,56 @@ test("private transport rejects incompatible frames and untrusted authority head
   assert.match(errors[0]!.message, /Incompatible/);
   bridge.close();
 });
+
+test("private transport reserves and releases native capacity leases", async () => {
+  const input = new PassThrough(), output = new PassThrough();
+  const frames: Record<string, unknown>[] = [];
+  const bridge = desktopTransport(async () => new Response(null), "token", input, output, (error) => { throw error; });
+  output.on("data", (chunk) => {
+    const raw = String(chunk);
+    for (const line of raw.split("\n")) {
+      if (!line.trim()) continue;
+      frames.push(JSON.parse(line));
+    }
+  });
+
+  const reservePromise = bridge.reserveCapacity("req-cap-1", "root-cap-1", { ContainedProcess: 1 });
+  for (let i = 0; i < 100 && frames.length < 1; i++) await new Promise((r) => setTimeout(r, 5));
+  assert.equal(frames[0]?.type, "control_request");
+  const reqOp = frames[0]?.operation as { capacity_reserve: { request_id: string; root_id: string; amounts: Record<string, number> } };
+  assert.equal(reqOp.capacity_reserve.request_id, "req-cap-1");
+  assert.equal(reqOp.capacity_reserve.root_id, "root-cap-1");
+
+  const lease = {
+    id: 101,
+    request_id: "req-cap-1",
+    root_id: "root-cap-1",
+    amounts: { ContainedProcess: 1 },
+  };
+  input.write(JSON.stringify({
+    v: DESKTOP_PROTOCOL,
+    id: frames[0]!.id,
+    type: "control_response",
+    status: "reserved",
+    lease,
+  }) + "\n");
+  const granted = await reservePromise;
+  assert.equal(granted.id, 101);
+  assert.equal(granted.request_id, "req-cap-1");
+
+  const releasePromise = bridge.releaseCapacity(granted);
+  for (let i = 0; i < 100 && frames.length < 2; i++) await new Promise((r) => setTimeout(r, 5));
+  assert.equal(frames[1]?.type, "control_request");
+  const relOp = frames[1]?.operation as { capacity_release: { lease: typeof lease } };
+  assert.equal(relOp.capacity_release.lease.id, 101);
+
+  input.write(JSON.stringify({
+    v: DESKTOP_PROTOCOL,
+    id: frames[1]!.id,
+    type: "control_response",
+    status: "released",
+  }) + "\n");
+  await releasePromise;
+
+  bridge.close();
+});

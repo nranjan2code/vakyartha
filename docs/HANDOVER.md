@@ -1,5 +1,22 @@
 # Vakyartha handover — 2026-10-30
 
+## Common capacity admission, resident-service leases and bounded child proposals — 2026-10-30
+
+In `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` (branch `codex/agent-runtime-implementation`), completed Area 6 common capacity admission and Area 7 bounded child proposal protocol wiring, establishing native capacity leases for app/worker execution over the private parent bridge and connecting bounded child proposals to the reasoning supervisor.
+
+Key implementations and invariants:
+- **Native capacity leases & bridge protocol (Area 6)**:
+  - Made `Lease` fields (`id`, `request_id`, `root_id`, `amounts`) public in `src-tauri/src/control.rs`.
+  - Added `Operation::CapacityReserve` and `Operation::CapacityRelease` to `src-tauri/src/control/bridge.rs`, with frame size and identity validation. Added `Status::Reserved` and `Status::Released` with typed `Response::capacity_reserve` and `Response::capacity_release`.
+  - In `src-tauri/src/engine.rs`, routed `CapacityReserve` and `CapacityRelease` to native `actor.reserve(...)` and `actor.release(...)`. Mapped admission errors (`CapacityUnavailable`, `UnconfiguredResource`, `ReservedForControl`, `RootLimit`, `UnknownLease`) to typed control error codes and status.
+  - Added `reserveCapacity` and `releaseCapacity` to `sidecar/desktop-transport.ts`, handling typed `Lease` deserialization.
+  - In `sidecar/sandbox-pool/pool-manager.ts`, `execute(tenantId, request)` now acquires a native `Resource::ContainedProcess` lease before sandbox execution and releases it in `finally`. Fails closed if the native actor refuses or an unconfigured profile is active.
+- **Bounded child delegation & protocol wiring (Area 7)**:
+  - In `src-tauri/src/control/task_protocol.rs`, added `Frame::ChildProposals { v, run_id, proposals }`, `ChildProposalPayload`, and `Event::Proposals(Vec<ChildProposal>)`. Strictly validates that proposals are bound to the current `run_id`, non-empty, and within the 4-child limit. Added unit test `child_proposals_frame_validates_and_converts_cleanly`.
+  - In `src-tauri/src/reasoner_supervisor.rs`, wired `Event::Proposals(proposals)` to `delegation::validate_proposal(DelegationMode::BoundedAdaptive, &proposals)`. When eligible, calls `control.admit_children(...)`, returning `child_proposals_admitted` with admitted IDs, or `child_proposals_refused` on refusal.
+  - In `sidecar/task-worker-runtime.ts`, admitted `child_proposals_admitted` and `child_proposals_refused` frames in `receive`.
+- **Validation**: All 157 Rust tests (including real contained worker tests with sandbox helper and Node 26) passed (0 failed, 0 ignored). All 325 app tests passed (1 paid test skipped). Canvas WebKit test passed at 1100px and 620px viewports (receipt `vak-canvas-check-vwi8bB`). `npm run typecheck`, `npm run build`, `npm run bundle-sidecar`, and strict `cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings` passed cleanly with 0 warnings or errors.
+
 ## Native workspace and IA single-writer cutover, project management and atomic projection — 2026-10-30
 
 In `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` (branch `codex/agent-runtime-implementation`), completed Area 4 cutover establishing the native control actor as the single authoritative writer for projects, workspaces, and session bindings in desktop mode, retiring the TypeScript `WorkspaceRegistry` writer while preserving direct, copy, and shared project Realm flows.

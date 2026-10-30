@@ -9,14 +9,15 @@ export { DESKTOP_PROTOCOL };
 import { providerChannel } from "./provider-channel.ts";
 
 const MAX_BODY = 32 * 1024 * 1024, MAX_FRAME = 48 * 1024 * 1024;
-const ID = /^[A-Za-z0-9-]{1,64}$/;
+const ID = /^[A-Za-z0-9_-]{1,64}$/;
 type Pending = { controller: AbortController; ack?: () => void };
 type ControlHealth = { status: "ready" | "unavailable" | "overloaded" };
-type ControlResult = ControlHealth | { status: "committed"; receipt: HostCandidateCommitReceipt } | { status: "loaded"; revision: number; snapshot: HostSessionSnapshot } | { status: "saved"; revision: number } | { status: "listed"; sessions: SessionSummary[] } | { status: "removed" };
+export type Lease = { id: number; request_id: string; root_id: string; amounts: Record<string, number> };
+type ControlResult = ControlHealth | { status: "committed"; receipt: HostCandidateCommitReceipt } | { status: "loaded"; revision: number; snapshot: HostSessionSnapshot } | { status: "saved"; revision: number } | { status: "listed"; sessions: SessionSummary[] } | { status: "removed" } | { status: "reserved"; lease: Lease } | { status: "released" };
 type CandidateIdentity = { commitId: string; session: string; rootId: string; rootRevision: number; contractRevision: number; cancellationEpoch: number; expectedCanonicalRevision: number };
-type ControlPending = { kind: "health" | "candidate" | "session"; candidate?: CandidateIdentity; accept?: (frame: Record<string, unknown>) => ControlResult; resolve(value: ControlResult): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
+type ControlPending = { kind: "health" | "candidate" | "session" | "capacity"; candidate?: CandidateIdentity; accept?: (frame: Record<string, unknown>) => ControlResult; resolve(value: ControlResult): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 
-export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth>; commitCandidate(candidate: HostCandidateCommitRequest): Promise<HostCandidateCommitReceipt>; hostSessionStore: HostSessionStore; providerFetch: ProviderTransport } {
+export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth>; commitCandidate(candidate: HostCandidateCommitRequest): Promise<HostCandidateCommitReceipt>; hostSessionStore: HostSessionStore; providerFetch: ProviderTransport; reserveCapacity(requestId: string, rootId: string, amounts: Record<string, number>): Promise<Lease>; releaseCapacity(lease: Lease): Promise<void> } {
   const active = new Map<string, Pending>();
   const controlPending = new Map<string, ControlPending>();
   let closed = false;
@@ -166,6 +167,59 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
       if (result.status !== "removed") throw new Error("Invalid native session removal response");
     },
   };
+  function reserveCapacity(requestId: string, rootId: string, amounts: Record<string, number>): Promise<Lease> {
+    if (closed) return Promise.reject(new Error("Native control connection closed"));
+    if (controlPending.size >= 8) return Promise.reject(new Error("Native control queue is full"));
+    if (!ID.test(requestId) || !ID.test(rootId) || !Object.keys(amounts).length || Object.values(amounts).some((a) => !Number.isInteger(a) || a <= 0)) {
+      return Promise.reject(new Error("Invalid capacity request"));
+    }
+    const id = `ctl-${randomUUID()}`;
+    const operation = { capacity_reserve: { request_id: requestId, root_id: rootId, amounts } };
+    return new Promise<ControlResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        controlPending.delete(id);
+        reject(new Error("Native capacity reservation timed out"));
+      }, 10_000);
+      timer.unref();
+      controlPending.set(id, { kind: "capacity", resolve, reject, timer });
+      void send({ id, type: "control_request", operation }).catch((error: unknown) => {
+        const pending = controlPending.get(id);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        controlPending.delete(id);
+        pending.reject(error instanceof Error ? error : new Error("Native control write failed"));
+      });
+    }).then((result) => {
+      if (result.status !== "reserved") throw new Error(`Native capacity reservation ${result.status}`);
+      return (result as { status: "reserved"; lease: Lease }).lease;
+    });
+  }
+  function releaseCapacity(lease: Lease): Promise<void> {
+    if (closed) return Promise.reject(new Error("Native control connection closed"));
+    if (controlPending.size >= 8) return Promise.reject(new Error("Native control queue is full"));
+    if (!lease || typeof lease !== "object" || !Number.isInteger(lease.id) || lease.id <= 0 || !ID.test(lease.request_id) || !ID.test(lease.root_id)) {
+      return Promise.reject(new Error("Invalid capacity lease"));
+    }
+    const id = `ctl-${randomUUID()}`;
+    const operation = { capacity_release: { lease } };
+    return new Promise<ControlResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        controlPending.delete(id);
+        reject(new Error("Native capacity release timed out"));
+      }, 10_000);
+      timer.unref();
+      controlPending.set(id, { kind: "capacity", resolve, reject, timer });
+      void send({ id, type: "control_request", operation }).catch((error: unknown) => {
+        const pending = controlPending.get(id);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        controlPending.delete(id);
+        pending.reject(error instanceof Error ? error : new Error("Native control write failed"));
+      });
+    }).then((result) => {
+      if (result.status !== "released") throw new Error(`Native capacity release ${result.status}`);
+    });
+  }
   async function run(id: string, frame: Record<string, unknown>): Promise<void> {
     const p: Pending = { controller: new AbortController() };
     active.set(id, p);
@@ -213,16 +267,17 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
     const f = frame as Record<string, unknown>, id = f.id;
     if (f.v !== DESKTOP_PROTOCOL || typeof id !== "string" || !ID.test(id)) throw new Error("Incompatible desktop frame");
     if (f.type === "control_response") {
-      if (!id.startsWith("ctl-") || !["ready", "unavailable", "overloaded", "committed", "refused", "loaded", "saved", "listed", "removed"].includes(String(f.status))) throw new Error("Invalid native control response");
+      if (!id.startsWith("ctl-") || !["ready", "unavailable", "overloaded", "committed", "refused", "loaded", "saved", "listed", "removed", "reserved", "released"].includes(String(f.status))) throw new Error("Invalid native control response");
       const pending = controlPending.get(id);
       if (pending) {
         const expectedKeys = pending.kind === "health" ? ["v", "id", "type", "status"]
           : pending.kind === "candidate" ? f.status === "committed" ? ["v", "id", "type", "status", "receipt"] : ["v", "id", "type", "status", "error"]
-            : f.status === "loaded" ? ["v", "id", "type", "status", "revision", "snapshot"]
-              : f.status === "saved" ? ["v", "id", "type", "status", "revision"]
-                : f.status === "listed" ? ["v", "id", "type", "status", "sessions"]
-                  : f.status === "removed" ? ["v", "id", "type", "status"]
-                    : ["v", "id", "type", "status", "error"];
+            : pending.kind === "capacity" ? f.status === "reserved" ? ["v", "id", "type", "status", "lease"] : f.status === "released" ? ["v", "id", "type", "status"] : ["v", "id", "type", "status", "error"]
+              : f.status === "loaded" ? ["v", "id", "type", "status", "revision", "snapshot"]
+                : f.status === "saved" ? ["v", "id", "type", "status", "revision"]
+                  : f.status === "listed" ? ["v", "id", "type", "status", "sessions"]
+                    : f.status === "removed" ? ["v", "id", "type", "status"]
+                      : ["v", "id", "type", "status", "error"];
         if (Object.keys(f).length !== expectedKeys.length || Object.keys(f).some((key) => !expectedKeys.includes(key))) throw new Error("Invalid native control response fields");
         if (pending.kind === "health" && !["ready", "unavailable", "overloaded"].includes(String(f.status))) throw new Error("Unexpected native health response");
         if (pending.kind === "candidate" && f.status === "committed") {
@@ -237,10 +292,15 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
             || receipt.canonical_revision !== identity.expectedCanonicalRevision + 1
             || typeof receipt.digest !== "string" || !/^[a-f0-9]{64}$/.test(receipt.digest)
             || typeof receipt.request_fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(receipt.request_fingerprint)) throw new Error("Invalid native candidate receipt");
-        } else if ((pending.kind === "candidate" || pending.kind === "session") && !["committed", "loaded", "saved", "listed", "removed"].includes(String(f.status)) && (typeof f.error !== "string" || f.error.length > 128)) throw new Error("Invalid native control refusal");
+        } else if ((pending.kind === "candidate" || pending.kind === "session" || pending.kind === "capacity") && !["committed", "loaded", "saved", "listed", "removed", "reserved", "released"].includes(String(f.status)) && (typeof f.error !== "string" || f.error.length > 128)) throw new Error("Invalid native control refusal");
         clearTimeout(pending.timer);
         controlPending.delete(id);
-        if (pending.kind === "session") {
+        if (pending.kind === "capacity") {
+          if (["refused", "unavailable", "overloaded"].includes(String(f.status))) pending.reject(new Error(`Native capacity operation ${String(f.status)}: ${String(f.error)}`));
+          else if (f.status === "reserved") pending.resolve({ status: "reserved", lease: f.lease as Lease });
+          else if (f.status === "released") pending.resolve({ status: "released" });
+          else pending.reject(new Error(`Unexpected native capacity response: ${String(f.status)}`));
+        } else if (pending.kind === "session") {
           if (["refused", "unavailable", "overloaded"].includes(String(f.status))) pending.reject(new Error(`Native session operation ${String(f.status)}: ${String(f.error)}`));
           else pending.resolve(pending.accept!(f));
         } else if (f.status === "committed") {
@@ -248,7 +308,7 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
           pending.resolve({ status: "committed", receipt: { canonicalRevision: receipt.canonical_revision, rootRevision: receipt.root_revision } });
         } else if (pending.kind === "candidate" && f.status === "refused") pending.reject(new Error(`Native candidate commit refused: ${String(f.error)}`));
         else pending.resolve({ status: f.status as ControlHealth["status"] });
-      } else if (Object.keys(f).some((key) => !["v", "id", "type", "status", "receipt", "error", "revision", "snapshot", "sessions"].includes(key))) {
+      } else if (Object.keys(f).some((key) => !["v", "id", "type", "status", "receipt", "error", "revision", "snapshot", "sessions", "lease"].includes(key))) {
         throw new Error("Invalid late native control response");
       }
       return;
@@ -278,5 +338,5 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
   input.on("end", close);
   input.on("error", (error) => { close(); failed(error); });
   output.on("error", (error) => { close(); failed(error); });
-  return { close, pingControl, commitCandidate, hostSessionStore, providerFetch: providers.fetch };
+  return { close, pingControl, commitCandidate, hostSessionStore, providerFetch: providers.fetch, reserveCapacity, releaseCapacity };
 }

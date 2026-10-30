@@ -142,10 +142,10 @@ impl CapacityProfile {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Lease {
-    id: u64,
-    request_id: String,
-    root_id: String,
-    amounts: BTreeMap<Resource, u32>,
+    pub id: u64,
+    pub request_id: String,
+    pub root_id: String,
+    pub amounts: BTreeMap<Resource, u32>,
 }
 
 impl Lease {

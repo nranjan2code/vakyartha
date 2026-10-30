@@ -26,6 +26,16 @@ const nativeSessionStore: HostSessionStore = {
   list: async () => { if (!nativeTransport) throw new Error("Native session transport is not ready"); return nativeTransport.hostSessionStore.list(); },
   remove: async (id, revision) => { if (!nativeTransport) throw new Error("Native session transport is not ready"); return nativeTransport.hostSessionStore.remove(id, revision); },
 };
+const capacityLease = {
+  reserve: async (requestId: string, rootId: string, amounts: Record<string, number>) => {
+    if (!nativeTransport) throw new Error("Native capacity transport is not ready");
+    return nativeTransport.reserveCapacity(requestId, rootId, amounts);
+  },
+  release: async (lease: import("./desktop-transport.ts").Lease) => {
+    if (!nativeTransport) throw new Error("Native capacity transport is not ready");
+    return nativeTransport.releaseCapacity(lease);
+  },
+};
 const app = await startAppServer({
   dataDir: process.env.VAK_DATA_DIR,
   envFiles: [],
@@ -36,6 +46,7 @@ const app = await startAppServer({
   sandboxBin: process.env.VAK_SANDBOX_BIN,
   candidateCommit: (candidate) => nativeCommit(candidate),
   nativeSessionStore,
+  capacityLease,
   providerTransport: (...args) => nativeProviderFetch(...args),
 });
 const transport = desktopTransport(app.request, app.token!, channel, channel, (error) => { console.error(error.message); void shutdown(); });

@@ -115,7 +115,12 @@ fn control_error_status(error: &ControlError) -> ControlStatus {
             | AdmissionError::CanonicalRevisionConflict
             | AdmissionError::CanonicalSessionOwned
             | AdmissionError::InvalidCandidate
-            | AdmissionError::InvalidIdentity,
+            | AdmissionError::InvalidIdentity
+            | AdmissionError::CapacityUnavailable(_)
+            | AdmissionError::UnconfiguredResource(_)
+            | AdmissionError::ReservedForControl(_)
+            | AdmissionError::RootLimit(_)
+            | AdmissionError::UnknownLease,
         )
         | ControlError::Store(StoreError::SessionRevisionConflict | StoreError::TooLarge)
         | ControlError::Admission(AdmissionError::TaskCapabilityUnavailable)
@@ -152,6 +157,11 @@ fn control_error_code(error: &ControlError) -> &'static str {
         ControlError::Store(StoreError::SessionRevisionConflict) => "session_revision_conflict",
         ControlError::Admission(AdmissionError::InvalidIdentity) => "invalid_session_identity",
         ControlError::Store(StoreError::UnsupportedDurability) => "durability_unavailable",
+        ControlError::Admission(AdmissionError::CapacityUnavailable(_)) => "capacity_unavailable",
+        ControlError::Admission(AdmissionError::UnconfiguredResource(_)) => "unconfigured_resource",
+        ControlError::Admission(AdmissionError::ReservedForControl(_)) => "reserved_for_control",
+        ControlError::Admission(AdmissionError::RootLimit(_)) => "root_limit_exceeded",
+        ControlError::Admission(AdmissionError::UnknownLease) => "unknown_lease",
         _ => "native_control_unavailable",
     }
 }
@@ -295,6 +305,20 @@ pub fn start(mut cmd: Command, control: Option<ControlHandle>) -> Engine {
                         Err(error) => bridge::Response::session_snapshot(&request.id, control_error_status(&error), None, None, Some(control_error_code(&error))),
                     },
                     None => bridge::Response::session_snapshot(&request.id, ControlStatus::Unavailable, None, None, Some("native_control_unavailable")),
+                },
+                ControlOperation::CapacityReserve { request_id, root_id, amounts } => match control.as_ref() {
+                    Some(actor) => match actor.reserve(request_id, root_id, amounts) {
+                        Ok(lease) => bridge::Response::capacity_reserve(&request.id, ControlStatus::Reserved, Some(lease), None),
+                        Err(error) => bridge::Response::capacity_reserve(&request.id, control_error_status(&error), None, Some(control_error_code(&error))),
+                    },
+                    None => bridge::Response::capacity_reserve(&request.id, ControlStatus::Unavailable, None, Some("native_control_unavailable")),
+                },
+                ControlOperation::CapacityRelease { lease } => match control.as_ref() {
+                    Some(actor) => match actor.release(lease) {
+                        Ok(()) => bridge::Response::capacity_release(&request.id, ControlStatus::Released, None),
+                        Err(error) => bridge::Response::capacity_release(&request.id, control_error_status(&error), Some(control_error_code(&error))),
+                    },
+                    None => bridge::Response::capacity_release(&request.id, ControlStatus::Unavailable, Some("native_control_unavailable")),
                 },
             };
             let response = serde_json::to_value(response).unwrap();

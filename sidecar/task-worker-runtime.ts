@@ -136,6 +136,9 @@ export function taskWorkerRuntime(input: Readable, output: Writable, scratch: st
       waitingConsent = frame.waiting;
       return;
     }
+    if (started && (frame.type === "child_proposals_admitted" || frame.type === "child_proposals_refused")) {
+      return;
+    }
     if (started || frame.type !== "task_start" || Object.keys(frame).length !== 3) throw new Error("Unexpected task command family");
     const job = parseTaskWorkerJob(frame.job); started = true;
     activeRemaining = job.activeMs; activeSince = performance.now();

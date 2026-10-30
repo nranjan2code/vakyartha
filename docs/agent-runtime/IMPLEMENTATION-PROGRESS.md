@@ -2,6 +2,29 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Common capacity admission, resident-service leases and bounded child proposals — 2026-10-30
+
+Completed Area 6 common capacity admission and Area 7 bounded child proposal protocol wiring, establishing native capacity leases for app/worker execution over the private parent bridge and connecting bounded child proposals to the reasoning supervisor.
+
+Key achievements and invariants:
+- **Native Capacity Leases & Bridge Protocol (Area 6)**:
+  - `src-tauri/src/control.rs`: Made `Lease` fields (`id`, `request_id`, `root_id`, `amounts`) publicly accessible within the crate.
+  - `src-tauri/src/control/bridge.rs`: Added `Operation::CapacityReserve { request_id, root_id, amounts }` and `Operation::CapacityRelease { lease }`. Bounded request frame parsing, verified identity bounds, and enforced valid non-empty resource demands. Added `Status::Reserved` and `Status::Released` with `Response::capacity_reserve` and `Response::capacity_release`. Added test `capacity_frames_are_typed_bounded_and_identity_checked`.
+  - `src-tauri/src/engine.rs`: Routed `ControlOperation::CapacityReserve` and `ControlOperation::CapacityRelease` to native `actor.reserve(...)` and `actor.release(...)`. Mapped `CapacityUnavailable`, `UnconfiguredResource`, `ReservedForControl`, `RootLimit`, and `UnknownLease` to typed control error codes and status.
+  - `sidecar/desktop-transport.ts`: Added `reserveCapacity(requestId, rootId, amounts)` and `releaseCapacity(lease)` to `desktopTransport`. Handles `"reserved"` and `"released"` response frames with typed `Lease` deserialization. Added test in `test/desktop-transport.test.ts`.
+  - `sidecar/main.ts` & `sidecar/server.ts`: Passed `capacityLease` into `startAppServer` and `SandboxPoolManager`.
+  - `sidecar/sandbox-pool/pool-manager.ts`: During `execute(tenantId, request)`, if `capacityLease` is configured, acquires a native `Resource::ContainedProcess` lease before sandbox execution and releases it in `finally`. Fails closed if the native actor refuses or unconfigured profile is active.
+- **Bounded Child Delegation & Protocol Wiring (Area 7)**:
+  - `src-tauri/src/control/task_protocol.rs`: Added `Frame::ChildProposals { v, run_id, proposals }`, `ChildProposalPayload`, and `Event::Proposals(Vec<ChildProposal>)`. Strictly validates that proposals are bound to the current `run_id`, non-empty, and within the 4-child limit. Added unit test `child_proposals_frame_validates_and_converts_cleanly`.
+  - `src-tauri/src/reasoner_supervisor.rs`: Wired `Event::Proposals(proposals)` to `delegation::validate_proposal(DelegationMode::BoundedAdaptive, &proposals)`. When eligible, calls `control.admit_children(...)`, returning `child_proposals_admitted` with admitted IDs, or `child_proposals_refused` on refusal.
+  - `sidecar/task-worker-runtime.ts`: Admitted `child_proposals_admitted` and `child_proposals_refused` frames in `receive`.
+- **Verification**:
+  - 157 Rust tests passed (0 failed, 0 ignored with real-worker parameters: `VAK_TEST_WORKER_HELPER`, `VAK_TEST_WORKER_NODE`, `TAURI_CONFIG`).
+  - 325 app tests passed (1 paid test skipped).
+  - Canvas WebKit check passed at 1100px and 620px viewports (receipt `vak-canvas-check-vwi8bB`).
+  - Strict `cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings` passed cleanly with 0 warnings.
+  - `npm run typecheck`, `npm run bundle-sidecar`, and `npm run build` passed with 0 errors.
+
 ## Native workspace and IA single-writer cutover, project management and atomic projection — 2026-10-30
 
 Completed the Area 4 cutover establishing the native control actor as the single authoritative writer for projects, workspaces, and session bindings in desktop mode, retiring the TypeScript `WorkspaceRegistry` writer while preserving direct, copy, and shared project Realm flows.

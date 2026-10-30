@@ -1,11 +1,41 @@
 //! A reasoning pipe is bound by Rust before any worker frame is read. Parsing a
 //! provider proposal grants no dispatch; canonical/session commands do not exist.
+use super::delegation::{ChildProposal, ClaimedBenefit};
 use super::root_runs::{RootRun, RunStatus};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
 
 pub const MAX_FRAME: usize = 20 * 1024 * 1024;
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChildProposalPayload {
+    #[serde(rename = "requestId")]
+    pub request_id: String,
+    pub objective: String,
+    pub acceptance: String,
+    pub inputs: Vec<String>,
+    #[serde(default)]
+    pub reads: Vec<String>,
+    #[serde(default)]
+    pub writes: Vec<String>,
+    pub benefit: ClaimedBenefit,
+}
+
+impl ChildProposalPayload {
+    pub fn into_proposal(self) -> ChildProposal {
+        ChildProposal {
+            request_id: self.request_id,
+            objective: self.objective,
+            acceptance: self.acceptance,
+            inputs: self.inputs,
+            reads: self.reads,
+            writes: self.writes,
+            benefit: self.benefit,
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -42,6 +72,12 @@ enum Frame {
         run_id: String,
         candidate: Value,
     },
+    ChildProposals {
+        v: u8,
+        #[serde(rename = "runId")]
+        run_id: String,
+        proposals: Vec<ChildProposalPayload>,
+    },
     TaskFailed {
         v: u8,
         code: String,
@@ -64,6 +100,7 @@ pub enum Event {
     Cancel { id: String },
     Candidate(Value),
     Failed(String),
+    Proposals(Vec<ChildProposal>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -245,6 +282,20 @@ impl TaskChannel {
                 self.phase = Phase::Stopped;
                 Ok(Event::Candidate(candidate))
             }
+            Frame::ChildProposals {
+                v: 2,
+                run_id,
+                proposals,
+            } if self.phase == Phase::Executing && self.active.is_none() => {
+                if run_id != self.run_id || proposals.is_empty() || proposals.len() > 4 {
+                    return Err(ProtocolError);
+                }
+                let items: Vec<_> = proposals
+                    .into_iter()
+                    .map(ChildProposalPayload::into_proposal)
+                    .collect();
+                Ok(Event::Proposals(items))
+            }
             Frame::TaskFailed { v: 2, code }
                 if matches!(
                     code.as_str(),
@@ -378,5 +429,47 @@ mod tests {
             matches!(send(&mut channel, json!({"v":2,"type":"task_candidate","runId":"run-1","candidate":candidate})), Ok(Event::Candidate(value)) if value["result"]["stop"] == "max_steps")
         );
         assert!(channel.start().is_err());
+    }
+
+    #[test]
+    fn child_proposals_frame_validates_and_converts_cleanly() {
+        let mut channel = executing();
+        let valid_proposal = json!({
+            "v": 2,
+            "type": "child_proposals",
+            "runId": "run-1",
+            "proposals": [{
+                "requestId": "child-req-1",
+                "objective": "Analyze test dataset",
+                "acceptance": "Clean summary output produced",
+                "inputs": ["input-doc-1"],
+                "reads": ["read-ref-1"],
+                "writes": ["write-target-1"],
+                "benefit": "independent_judgment"
+            }]
+        });
+        match send(&mut channel, valid_proposal) {
+            Ok(Event::Proposals(proposals)) => {
+                assert_eq!(proposals.len(), 1);
+                assert_eq!(proposals[0].request_id, "child-req-1");
+                assert_eq!(proposals[0].benefit, ClaimedBenefit::IndependentJudgment);
+            }
+            other => panic!("expected Event::Proposals, got {:?}", other),
+        }
+
+        // Cross-run child proposal is refused
+        let bad_run = json!({
+            "v": 2,
+            "type": "child_proposals",
+            "runId": "other-run",
+            "proposals": [{
+                "requestId": "child-req-2",
+                "objective": "Task",
+                "acceptance": "Criteria",
+                "inputs": ["in-1"],
+                "benefit": "independent_judgment"
+            }]
+        });
+        refused(bad_run);
     }
 }

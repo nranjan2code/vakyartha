@@ -56,6 +56,10 @@ export class SandboxPoolManager extends EventEmitter {
     } finally { this.queued--; }
     if (slot.state === "active") throw new Error("App already has an active invocation");
     if (this.closed || this.suspended || this.config.enabled?.() === false) throw new Error("Sandbox execution is disabled");
+    let nativeLease: { id: number; request_id: string; root_id: string; amounts: Record<string, number> } | undefined;
+    if (this.config.capacityLease) {
+      nativeLease = await this.config.capacityLease.reserve(`app-${tenantId.slice(0, 32)}-${Date.now()}`, "root-desktop", { ContainedProcess: 1 });
+    }
     this.active++; slot.state = "active"; slot.lastActiveAt = Date.now();
     const controller = new AbortController(); this.controllers.add(controller);
     let workspace: string | undefined;
@@ -116,6 +120,9 @@ export class SandboxPoolManager extends EventEmitter {
       else if (response.database !== undefined) throw new Error("Undeclared database snapshot");
       return response;
     } finally {
+      if (nativeLease && this.config.capacityLease) {
+        await this.config.capacityLease.release(nativeLease).catch(() => {});
+      }
       this.controllers.delete(controller); this.active--; slot.state = "hibernated";
       if (workspace) rmSync(workspace, { recursive: true, force: true });
     }

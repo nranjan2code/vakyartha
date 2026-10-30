@@ -1,8 +1,10 @@
+use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use super::canonical::{CandidateCommitReceipt, CandidateCommitRequest};
 use super::state::ExecutionFence;
 use super::canonical;
 use super::host_sessions::SessionSummary;
+use super::{Lease, Resource};
 
 pub const PROTOCOL_VERSION: u8 = 2;
 pub const MAX_HEALTH_FRAME_BYTES: usize = 4096;
@@ -61,6 +63,8 @@ pub enum Operation {
     SessionSave { session_id: String, expected_revision: u64, snapshot: serde_json::Value },
     SessionList {},
     SessionRemove { session_id: String, expected_revision: Option<u64> },
+    CapacityReserve { request_id: String, root_id: String, amounts: BTreeMap<Resource, u32> },
+    CapacityRelease { lease: Lease },
 }
 
 impl Request {
@@ -116,6 +120,33 @@ impl Request {
             Operation::SessionSave { .. } => Err("invalid_or_oversized_session"),
             Operation::SessionList {} if frame_len <= MAX_HEALTH_FRAME_BYTES => Ok(()),
             Operation::SessionList {} => Err("control_frame_too_large"),
+            Operation::CapacityReserve { request_id, root_id, amounts } => {
+                if frame_len > MAX_HEALTH_FRAME_BYTES {
+                    return Err("control_frame_too_large");
+                }
+                if !canonical::validate_identity(request_id) || !canonical::validate_identity(root_id) {
+                    return Err("invalid_control_identity");
+                }
+                if amounts.is_empty() || amounts.values().any(|&v| v == 0) {
+                    return Err("invalid_capacity_request");
+                }
+                Ok(())
+            }
+            Operation::CapacityRelease { lease } => {
+                if frame_len > MAX_HEALTH_FRAME_BYTES {
+                    return Err("control_frame_too_large");
+                }
+                if lease.id == 0
+                    || !canonical::validate_identity(&lease.request_id)
+                    || !canonical::validate_identity(&lease.root_id)
+                {
+                    return Err("invalid_control_identity");
+                }
+                if lease.amounts.is_empty() || lease.amounts.values().any(|&v| v == 0) {
+                    return Err("invalid_capacity_request");
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -132,6 +163,8 @@ pub enum Status {
     Saved,
     Listed,
     Removed,
+    Reserved,
+    Released,
 }
 
 #[derive(Serialize)]
@@ -152,6 +185,8 @@ pub struct Response<'a> {
     pub snapshot: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sessions: Option<Vec<SessionSummary>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lease: Option<Lease>,
 }
 
 impl<'a> Response<'a> {
@@ -166,6 +201,7 @@ impl<'a> Response<'a> {
             revision: None,
             snapshot: None,
             sessions: None,
+            lease: None,
         }
     }
 
@@ -180,6 +216,7 @@ impl<'a> Response<'a> {
             revision: None,
             snapshot: None,
             sessions: None,
+            lease: None,
         }
     }
 
@@ -189,6 +226,14 @@ impl<'a> Response<'a> {
 
     pub fn sessions(id: &'a str, sessions: Vec<SessionSummary>) -> Self {
         Self { sessions: Some(sessions), ..Self::candidate(id, Status::Listed, None, None) }
+    }
+
+    pub fn capacity_reserve(id: &'a str, status: Status, lease: Option<Lease>, error: Option<&'a str>) -> Self {
+        Self { lease, ..Self::candidate(id, status, None, error) }
+    }
+
+    pub fn capacity_release(id: &'a str, status: Status, error: Option<&'a str>) -> Self {
+        Self::candidate(id, status, None, error)
     }
 }
 
@@ -292,5 +337,49 @@ mod tests {
         let response = serde_json::to_value(Response::session_snapshot("ctl-session", Status::Loaded, Some(4), Some(serde_json::json!({"id":"chat-1"})), None)).unwrap();
         assert_eq!(response["revision"], 4);
         assert_eq!(response["snapshot"]["id"], "chat-1");
+    }
+
+    #[test]
+    fn capacity_frames_are_typed_bounded_and_identity_checked() {
+        let request: Request = serde_json::from_value(serde_json::json!({
+            "v": PROTOCOL_VERSION,
+            "id": "ctl-reserve-1",
+            "type": "control_request",
+            "operation": {
+                "capacity_reserve": {
+                    "request_id": "req-001",
+                    "root_id": "root-001",
+                    "amounts": {
+                        "ContainedProcess": 1
+                    }
+                }
+            }
+        })).unwrap();
+        assert!(request.validate(1024).is_ok());
+
+        let lease = Lease {
+            id: 42,
+            request_id: "req-001".into(),
+            root_id: "root-001".into(),
+            amounts: BTreeMap::from([(Resource::ContainedProcess, 1)]),
+        };
+        let response = serde_json::to_value(Response::capacity_reserve("ctl-reserve-1", Status::Reserved, Some(lease.clone()), None)).unwrap();
+        assert_eq!(response["status"], "reserved");
+        assert_eq!(response["lease"]["id"], 42);
+
+        let release_req: Request = serde_json::from_value(serde_json::json!({
+            "v": PROTOCOL_VERSION,
+            "id": "ctl-release-1",
+            "type": "control_request",
+            "operation": {
+                "capacity_release": {
+                    "lease": lease
+                }
+            }
+        })).unwrap();
+        assert!(release_req.validate(1024).is_ok());
+
+        let release_resp = serde_json::to_value(Response::capacity_release("ctl-release-1", Status::Released, None)).unwrap();
+        assert_eq!(release_resp["status"], "released");
     }
 }

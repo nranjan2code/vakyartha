@@ -2,6 +2,7 @@
 //! can propose provider operations; grants remain in the native actor.
 use crate::control::{
     AdmissionError, ControlError, ControlHandle,
+    delegation::{self, DelegationMode, ProposalDisposition},
     generation::{IoOutcome, PendingConsent},
     provider_io::{self, Exchange},
     root_runs::{RootRun, RunStatus},
@@ -478,6 +479,54 @@ fn execute(
                         candidate = Some(value);
                         terminal = true;
                         terminal_until = Some(now + Duration::from_secs(5));
+                    }
+                    Event::Proposals(proposals) => {
+                        let decision = delegation::validate_proposal(
+                            DelegationMode::BoundedAdaptive,
+                            &proposals,
+                        );
+                        if decision.disposition
+                            == ProposalDisposition::EligibleForTrustedAdmission
+                        {
+                            let root = control.read_root(original.root_id().into())?;
+                            let revision = root.revision();
+                            match control.admit_children(original.root_id().into(), revision, proposals) {
+                                Ok(children) => {
+                                    let child_ids: Vec<String> = children
+                                        .iter()
+                                        .map(|c| c.id().to_owned())
+                                        .collect();
+                                    pipe.send(
+                                        json!({
+                                            "v": 2,
+                                            "type": "child_proposals_admitted",
+                                            "count": child_ids.len(),
+                                            "childIds": child_ids
+                                        }),
+                                        cancel,
+                                    )?;
+                                }
+                                Err(_) => {
+                                    pipe.send(
+                                        json!({
+                                            "v": 2,
+                                            "type": "child_proposals_refused",
+                                            "reason": "admission_refused"
+                                        }),
+                                        cancel,
+                                    )?;
+                                }
+                            }
+                        } else {
+                            pipe.send(
+                                json!({
+                                    "v": 2,
+                                    "type": "child_proposals_refused",
+                                    "reason": format!("{:?}", decision.reason)
+                                }),
+                                cancel,
+                            )?;
+                        }
                     }
                     Event::Failed(_code) => return Err(refused()),
                 }

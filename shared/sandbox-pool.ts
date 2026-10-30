@@ -32,6 +32,10 @@ export interface PoolConfig {
   enabled?: () => boolean;
   nodeBin?: string;
   workerScript?: string;
+  capacityLease?: {
+    reserve(requestId: string, rootId: string, amounts: Record<string, number>): Promise<{ id: number; request_id: string; root_id: string; amounts: Record<string, number> }>;
+    release(lease: { id: number; request_id: string; root_id: string; amounts: Record<string, number> }): Promise<void>;
+  };
 }
 
 export interface FleetSnapshot {

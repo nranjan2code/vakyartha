@@ -71,6 +71,11 @@ export interface AppServerOptions {
   candidateCommit?: (request: HostCandidateCommitRequest) => Promise<HostCandidateCommitReceipt>;
   /** Native sole-writer boundary for desktop chat snapshots. */
   nativeSessionStore?: HostSessionStore;
+  /** Native capacity lease manager for desktop workloads. */
+  capacityLease?: {
+    reserve(requestId: string, rootId: string, amounts: Record<string, number>): Promise<{ id: number; request_id: string; root_id: string; amounts: Record<string, number> }>;
+    release(lease: { id: number; request_id: string; root_id: string; amounts: Record<string, number> }): Promise<void>;
+  };
   /** Built UI to serve at / (the playground); none: API only. */
   uiDir?: string;
   appName?: string;
@@ -363,7 +368,7 @@ ${skills.index()}`;
   });
 
   const sandboxBin = opts.sandboxBin || "vaksb";
-  const pool = new SandboxPoolManager({ sandboxBin, enabled: () => process.env.VAK_SANDBOX_ENABLED !== "false" });
+  const pool = new SandboxPoolManager({ sandboxBin, enabled: () => process.env.VAK_SANDBOX_ENABLED !== "false", capacityLease: opts.capacityLease });
   await pool.start();
   const appToolResults = new AppToolResults();
   const apps = new AppRegistry({ dataDir, pool, seedBuiltins: true, callTool: async (app, name, args, signal) => {
