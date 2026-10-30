@@ -48,6 +48,9 @@ export const dictationPrefs = {
   set enabled(v: boolean) { prefs.set("dictation:enabled", String(v)); if (!v) cancelDictation(); window.dispatchEvent(new Event("vak:dictation")); },
   get send(): boolean { return prefs.get("dictation:send") === "true"; },
   set send(v: boolean) { prefs.set("dictation:send", String(v)); },
+  /** Clean verbal fillers ('um', 'ah') and self-corrections using the chat model. */
+  get clean(): boolean { return prefs.get("dictation:clean") !== "false"; },
+  set clean(v: boolean) { prefs.set("dictation:clean", String(v)); },
   /** "" follows the system language. */
   get language(): string { return prefs.get("dictation:language") ?? ""; },
   set language(v: string) { prefs.set("dictation:language", v); },

@@ -9,6 +9,7 @@ import { parseFeed, canonical } from '../sidecar/builtin-apps/news-desk/feed.ts'
 import { project as newsProject, handleAction as newsAction, refresh as newsRefresh } from '../sidecar/builtin-apps/news-desk/server.ts';
 import { items, commits, repository, handleAction as projectAction } from '../sidecar/builtin-apps/project-desk/server.ts';
 import { paise, records, handleAction as financeAction, project as financeProject } from '../sidecar/builtin-apps/finance-workbench/server.ts';
+import { project as voiceProject, handleAction as voiceAction } from '../sidecar/builtin-apps/voice-desk/server.ts';
 import { AppRegistry } from '../sidecar/sandbox-pool/app-registry.ts';
 import { SandboxPoolManager } from '../sidecar/sandbox-pool/pool-manager.ts';
 import { APP_DOCUMENTS } from '../shared/app-scaffold.ts';
@@ -50,5 +51,47 @@ test('finance preserves exact paise, validates batches and rolls back duplicate 
 });
 test('reference discovery follows bundled packages without a separate hard-coded registry',async()=>{
   const dir=mkdtempSync(path.join(tmpdir(),'vak-reference-list-')),pool=new SandboxPoolManager(),registry=new AppRegistry({dataDir:dir,pool});
-  try{assert.deepEqual(registry.listBuiltins().map(m=>m.id).sort(),['finance-workbench','market-terminal','news-desk','project-desk']);}finally{await registry.shutdown();await pool.shutdown();rmSync(dir,{recursive:true,force:true});}
+  try{assert.deepEqual(registry.listBuiltins().map(m=>m.id).sort(),['finance-workbench','market-terminal','news-desk','project-desk','voice-desk']);}finally{await registry.shutdown();await pool.shutdown();rmSync(dir,{recursive:true,force:true});}
+});
+test('voice-desk initializes clean state, supports typing, notes lifecycle and action register',async()=>{
+  const c:any={state:{},surfaces:{workbench:{},actions:{}},async callTool(){throw Error('no external calls');}};
+  const initial=voiceProject(c);
+  assert.equal(initial.updates.length,2);
+  const wb=initial.updates.find(u=>u.surface==='workbench')!.data as any;
+  assert.equal(wb.noteCount,'1');
+  assert.equal(wb.actionCount,'1');
+  assert.equal(wb.decisionCount,'1');
+  assert.equal(wb.activeTitle,'Welcome to Voice Desk');
+
+  // Bound field updates
+  await voiceAction('/newNoteTitle','Architecture Strategy',c);
+  assert.equal(c.state.newNoteTitle,'Architecture Strategy');
+  await voiceAction('create_note',null,c,'create_note');
+  assert.equal(c.state.notes.length,2);
+  assert.equal(c.state.activeTitle,'Architecture Strategy');
+
+  // Edit active note content
+  await voiceAction('/activeContent','New architecture plan details',c);
+  await voiceAction('save_note',null,c,'save_note');
+  assert.equal(c.state.notes.find((n:any)=>n.id===c.state.activeId).content,'New architecture plan details');
+
+  // Add action item
+  await voiceAction('/newActionText','Benchmark latency with local 4B',c);
+  await voiceAction('/newActionOwner','Nisheeth',c);
+  await voiceAction('add_action',null,c,'add_action');
+  const activeNote=c.state.notes.find((n:any)=>n.id===c.state.activeId);
+  assert.equal(activeNote.actions.length,1);
+  assert.equal(activeNote.actions[0].task,'Benchmark latency with local 4B');
+  assert.equal(activeNote.actions[0].owner,'Nisheeth');
+
+  // Export
+  const exportRes=await voiceAction('export_markdown',null,c,'export_markdown');
+  assert.match((exportRes.updates[0]!.data as any).statusMessage,/ready for export/);
+
+  // Delete note
+  await voiceAction('delete_note',null,c,'delete_note');
+  assert.equal(c.state.notes.length,1);
+
+  // Unknown action throws
+  await assert.rejects(voiceAction('bad_action',null,c,'bad_action'),/Unknown Voice Desk action/);
 });

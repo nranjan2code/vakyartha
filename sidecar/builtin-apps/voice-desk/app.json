@@ -1,0 +1,31 @@
+{
+  "id": "voice-desk",
+  "version": "1.0.0",
+  "name": "Voice Desk & Note Taker",
+  "description": "Personal voice notes and work workbench with smart transcription cleanup, interactive action checklists, tag filtering, and spoken read-back.",
+  "author": "Vakyartha",
+  "icon": "voice",
+  "category": "productivity",
+  "entrypoints": {
+    "backend": "server.ts",
+    "surface": "surface.json"
+  },
+  "runtime": {
+    "engine": "node24",
+    "memoryLimitMb": 256,
+    "cpuTimeLimitSec": 30,
+    "maxStorageMb": 16
+  },
+  "entitlements": {
+    "network": {
+      "mode": "isolated",
+      "allowedDomains": []
+    },
+    "mcpTools": [],
+    "storage": {
+      "sqlite": false,
+      "duckdb": false
+    }
+  },
+  "triggers": []
+}

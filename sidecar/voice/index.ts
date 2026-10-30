@@ -5,7 +5,7 @@
 import type { HostRequest, HostResponse } from "@vak/host";
 import { json, readJson } from "@vak/host";
 import type { ProviderEntry } from "@vak/providers";
-import { resolveByModel } from "./resolve.ts";
+import { cleanDictationByModel, resolveByModel } from "./resolve.ts";
 import { installVoicePack, MAX_RECORDING_BYTES, speak, SpeechError, transcribe, voiceProviders } from "./speech.ts";
 
 export { VOICE_KEYS } from "./speech.ts";
@@ -27,6 +27,22 @@ export function voiceRoutes(voiceDir: string, log: (line: string) => void, provi
         if (abort.signal.aborted) return true;
         log(`voice resolve: ${(err as Error).message}`);
         json(res, 502, { error: (err as Error).message });
+      }
+      return true;
+    }
+    if (url.pathname === "/api/voice/clean" && req.method === "POST") {
+      const abort = new AbortController();
+      res.on("close", () => abort.abort());
+      try {
+        const b = await readJson(req);
+        const ok = (v: unknown, max: number) => typeof v === "string" && v.length > 0 && v.length <= max;
+        if (!ok(b.provider, 80) || !ok(b.model, 200) || typeof b.text !== "string") return json(res, 400, { error: "invalid request" }), true;
+        const text = await cleanDictationByModel(providers(), { provider: b.provider as string, model: b.model as string, text: b.text as string }, abort.signal);
+        json(res, 200, { text });
+      } catch (err) {
+        if (abort.signal.aborted) return true;
+        log(`voice clean: ${(err as Error).message}`);
+        json(res, 200, { text: "" });
       }
       return true;
     }

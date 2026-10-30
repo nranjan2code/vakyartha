@@ -15,7 +15,7 @@ async function api(route:string,method='GET',body?:unknown):Promise<any>{const r
 const action=async(id:string,controlId:string,value:unknown=null,action?:string)=>{const current=await api(`/api/apps/${id}`);return api(`/api/apps/${id}/action`,'POST',{controlId,value,action,revision:current.revision});};
 const check=(message:string)=>{report.checks.push(message);console.log(message);};
 try{
- const refs=await api('/api/apps/builtin');assert.deepEqual(refs.map((r:any)=>r.id).sort(),['finance-workbench','market-terminal','news-desk','project-desk']);check('Package discovery exposes all four documented references');
+ const refs=await api('/api/apps/builtin');assert.deepEqual(refs.map((r:any)=>r.id).sort(),['finance-workbench','market-terminal','news-desk','project-desk','voice-desk']);check('Package discovery exposes all five documented references');
  await api('/api/integrations/web/install','POST',{});await api('/api/integrations/web','PUT',{enabled:true,policies:{fetch_page:'allow'}});
  await action('news-desk','refresh',null,'refresh');let news=await api('/api/apps/news-desk');writeFileSync(path.join(out,'news-source-state.json'),JSON.stringify(news,null,2));
  assert.equal(news.state.receipts.filter((r:any)=>r.status!=='Validated').length,0,JSON.stringify(news.state.receipts));assert.ok(news.state.articles.length>0);assert.ok(new Set(news.state.articles.map((a:any)=>a.category)).size>=3);assert.equal(new Set(news.state.articles.map((a:any)=>a.id)).size,news.state.articles.length);

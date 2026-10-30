@@ -1367,7 +1367,20 @@ function toggleDictation(): void {
   composerHint("");
   input.focus();
   void startDictation({
-    onText(text, final) {
+    async onText(text, final) {
+      if (final && dictationPrefs.clean && current.provider && current.model && text.trim()) {
+        composerHint("Cleaning speech…");
+        try {
+          const r = await api<{ text?: string }>("/api/voice/clean", {
+            method: "POST",
+            body: JSON.stringify({ provider: current.provider, model: current.model, text }),
+          });
+          if (r.text?.trim()) text = r.text.trim();
+        } catch {
+          /* keep original text on cleanup failure */
+        }
+        composerHint("");
+      }
       input.value = dictationBase.trim() ? `${dictationBase.replace(/\s*$/, " ")}${text}` : text;
       autosize();
       input.setSelectionRange(input.value.length, input.value.length);

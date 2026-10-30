@@ -1,5 +1,34 @@
 # Vakyartha handover — 2026-10-30
 
+## Smart speech dictation cleanup, voice-notes skill & Voice Desk executable app — 2026-10-30
+
+Implemented end-to-end intelligent voice flow and note-taking capabilities across chat, skills, and the Canvas without hard-coded providers or models:
+
+1. **In-Composer Smart Dictation (Disfluency & Backtracking Cleanup):**
+   - Added speech-to-text normalizer `cleanDictationByModel` in `sidecar/voice/resolve.ts` exposed via `POST /api/voice/clean` in `sidecar/voice/index.ts`.
+   - Strips hesitation markers (*"um"*, *"uh"*, *"hmm"*, *"like"*, *"you know"*, *"if and but"*), eliminates stuttered repetitions, resolves mid-stream self-corrections, and fixes punctuation/sentence boundaries while strictly preserving first-person intent.
+   - Zero hardcoded providers or models: strictly uses the user's active model from settings (`current.provider` and `current.model`), with graceful non-throwing fallback to verbatim text on offline/error conditions.
+   - Added preference `dictationPrefs.clean` in `src/voice/dictation.ts` and user toggle in Settings → Voice (`src/voice/settings-page.ts`).
+   - Wired in `src/main.ts` so dictation (⌘D or mic button) normalizes final transcription before composer insertion and submission.
+
+2. **Built-in `voice-notes` Skill:**
+   - Authored `sidecar/builtin-skills/voice-notes/SKILL.md` (total 40 bundled skills).
+   - Methodology for transforming rambling spoken brain dumps and audio transcripts into structured notes: Executive Synthesis, Key Takeaways, Decisions Made, and Action Items with explicit Assignees & Deadlines.
+   - Chains with `surface-design`, `interactive-ui`, `meeting-actions`, `task-tracker`, and `write-email`.
+
+3. **Built-in `voice-desk` Executable App:**
+   - Authored complete package under `sidecar/builtin-apps/voice-desk/`:
+     - `app.json`: Productivity app manifest with isolated network mode and 256MB/30s quotas.
+     - `surface.json`: Responsive liquid layouts for `workbench` (split note explorer, multi-line `textarea` note editor, action checklist, audio transcript drawer, metric strip) and `actions` (central deliverable register). Verified with `@vak/core`'s `SurfaceStore(basicCatalog).render()`.
+     - `server.ts`: Full state management for note creation, deletion, editing, task addition, and markdown export receipts in `vaksb`.
+     - `README.md`, `AGENTS.md`, `SKILLS.md`, `ARCHITECTURE.md`: All four documents created (>1600 characters each).
+
+4. **Verification:**
+   - 294 Node unit tests pass (`test/**/*.test.ts`), including `test/reference-apps.test.ts` and `test/voice.test.ts`.
+   - TypeScript typechecking passes with 0 errors (`npm run typecheck`).
+   - Skills WebKit check passes (`node scripts/skills-check.ts` at 1100px, 620px, 375px).
+   - Apps WebKit check passes (`node scripts/apps-check.ts` at 1100px, 620px, 375px).
+
 ## TypeSafe AI provider, dynamic model discovery & official skill pack — 2026-10-30
 
 Integrated TypeSafe AI (`typesafe.ai`) and its flagship System One decision model family (Jev) as a first-class provider and decision provider adapter.
