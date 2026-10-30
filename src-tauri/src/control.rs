@@ -16,6 +16,7 @@ const MAX_ROOTS: usize = 10_000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub mod bridge;
+mod approval;
 mod broker;
 pub mod delegation;
 pub mod folder;
