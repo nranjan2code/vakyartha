@@ -35,6 +35,7 @@ pub mod host_sessions;
 pub mod registry;
 pub mod root_runs;
 pub mod tasks;
+pub mod task_protocol;
 pub mod worker_completion;
 pub mod state;
 use canonical::{
@@ -3447,7 +3448,15 @@ mod tests {
         let node = PathBuf::from(std::env::var_os("VAK_TEST_WORKER_NODE").expect("Node required"));
         let data = temp_data_dir();
         let resources = data.with_extension("runtime"); fs::create_dir_all(&resources).unwrap();
-        fs::write(resources.join("sidecar.mjs"), "import {Socket} from 'node:net'; const io=new Socket({fd:3,readable:true,writable:true}); io.write('ready\\n'); io.on('end',()=>{}); setInterval(()=>{},1000);").unwrap();
+        let app_private = data.join("worker/private"); fs::create_dir_all(app_private.parent().unwrap()).unwrap(); fs::write(&app_private, b"app-private").unwrap();
+        let sibling_private = data.join("task-workers/run-999999/private"); fs::create_dir_all(sibling_private.parent().unwrap()).unwrap(); fs::write(&sibling_private, b"sibling-private").unwrap();
+        let hostile = format!(r#"import fs from 'node:fs'; import {{Socket}} from 'node:net';
+for (const target of [{}, {}]) {{ let denied=false; try {{fs.readFileSync(target);}} catch(error) {{denied=['EPERM','EACCES'].includes(error.code);}} if(!denied) throw Error('role grant escaped'); }}
+if(process.env.VAK_NPM_CLI || process.env.VAK_SANDBOX_BIN) throw Error('app capability inherited');
+fs.writeFileSync(process.env.VAK_DATA_DIR+'/positive','scratch-write-ok');
+const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); io.on('end',()=>{{}}); setInterval(()=>{{}},1000);
+"#, serde_json::to_string(&app_private).unwrap(), serde_json::to_string(&sibling_private).unwrap());
+        fs::write(resources.join("task-worker.mjs"), hostile).unwrap();
         let profile = CapacityProfile::new(BTreeMap::from([(Resource::Generation, 1)]), BTreeMap::from([(Resource::Generation, 1)]), 32).unwrap();
         let actor = ControlActor::open(&data, "one-slot", profile.clone(), 16, Duration::from_secs(2)).unwrap();
         let handle = actor.handle();
@@ -3484,6 +3493,72 @@ mod tests {
         assert_eq!(settled.status, root_runs::RunStatus::Settled);
         assert_eq!(handle.settle_worker_completion(run.id).unwrap(), settled);
         assert_eq!(handle.read_root(root.id().into()).unwrap().status(), RootStatus::Cancelled);
+        assert_eq!(fs::read(data.join("task-workers").join(&invocation.run_id).join("positive")).unwrap(), b"scratch-write-ok");
+        assert_eq!(fs::read(app_private).unwrap(), b"app-private"); assert_eq!(fs::read(sibling_private).unwrap(), b"sibling-private");
+        drop(handle); drop(actor); remove_test_data(&data); fs::remove_dir_all(resources).unwrap();
+    }
+
+    #[test]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[ignore = "requires reviewed helper, Node paths, and bundled resources/task-worker.mjs"]
+    fn bundled_reasoner_uses_bound_provider_proposals_without_app_or_canonical_authority() {
+        use std::io::BufRead;
+        use std::process::Stdio;
+        use task_protocol::{Event, TaskChannel};
+        let helper = PathBuf::from(std::env::var_os("VAK_TEST_WORKER_HELPER").expect("reviewed helper required"));
+        let node = PathBuf::from(std::env::var_os("VAK_TEST_WORKER_NODE").expect("Node required"));
+        let data = temp_data_dir();
+        let resources = data.with_extension("task-runtime"); fs::create_dir_all(&resources).unwrap();
+        fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/task-worker.mjs"), resources.join("task-worker.mjs")).expect("bundle the task worker before running this gate");
+        let profile = CapacityProfile::new(BTreeMap::from([(Resource::Generation, 1)]), BTreeMap::from([(Resource::Generation, 1)]), 32).unwrap();
+        let actor = ControlActor::open(&data, "one-slot", profile, 16, Duration::from_secs(2)).unwrap();
+        let handle = actor.handle();
+        let root = handle.create_root_with_budget(RootCreate {
+            id: "root".into(), session_id: Some("task-session".into()), goal: "Check explicit context".into(), criteria: "Never publish a refused generation".into(), run_limit: 2,
+            budget_limits: BudgetLimits::new(1, 0).unwrap(), requirements: vec![Requirement::new("check".into(), true).unwrap()], delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0).unwrap(),
+        }).unwrap();
+        let root = handle.mutate_root(root.id().into(), root.revision(), RootMutation::StartAttempt { request_id: "start-1".into() }).unwrap();
+        let run = handle.read_root_run_for_start("start-1".into()).unwrap();
+        let invocation = handle.prepare_worker_completion(run.id.clone()).unwrap();
+        let mut protocol = TaskChannel::new(&run, "qwen3.5:4b-mlx".into()).unwrap();
+        let mut child = crate::worker::command_for_invocation(&helper, &node, &resources, &data, &invocation).unwrap()
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        let mut owner = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let (frames_tx, frames_rx) = sync_channel(2);
+        thread::spawn(move || {
+            let mut reader = std::io::BufReader::new(stdout);
+            loop {
+                let mut bytes = Vec::new();
+                if !matches!(reader.by_ref().take(task_protocol::MAX_FRAME as u64 + 1).read_until(b'\n', &mut bytes), Ok(count) if count > 0 && count <= task_protocol::MAX_FRAME && bytes.ends_with(b"\n")) { break; }
+                if frames_tx.send(bytes).is_err() { break; }
+            }
+        });
+        let receive = |protocol: &mut TaskChannel| protocol.receive(&frames_rx.recv_timeout(Duration::from_secs(15)).expect("bounded task response")).expect("native reasoning protocol");
+        assert!(matches!(receive(&mut protocol), Event::Ready));
+        handle.confirm_root_started(run.id.clone(), format!("supervisor-{}", run.id)).unwrap(); protocol.start().unwrap();
+        let job = serde_json::json!({"v":2,"type":"task_start","job":{"runId":run.id,"session":"task-session","provider":"ollama","model":"qwen3.5:4b-mlx","goal":"Check explicit context","criteria":"Never publish a refused generation","instructions":"","inputs":[],"initialSurfaces":[],"maxSteps":1,"maxTokens":256,"activeMs":10000}});
+        owner.write_all(format!("{job}\n").as_bytes()).unwrap();
+        let Event::Provider(proposal) = receive(&mut protocol) else { panic!("expected a bound provider proposal"); };
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&proposal.body).unwrap()["model"], "qwen3.5:4b-mlx");
+        assert!(!proposal.operation_id.is_empty()); assert_eq!(proposal.attempt, 0);
+        // This driver deliberately has no dispatch capability. Refusal is not
+        // model inference, user approval, a successful output or completion.
+        protocol.finish_provider(&proposal.id).unwrap();
+        owner.write_all(format!("{}\n", serde_json::json!({"v":2,"id":proposal.id,"type":"provider_error","message":"Native provider dispatch is not enabled"})).as_bytes()).unwrap();
+        let Event::Candidate(candidate) = receive(&mut protocol) else { panic!("expected the retained failed candidate"); };
+        assert_eq!(candidate["result"]["stop"], "error"); assert_eq!(candidate["surfaces"], serde_json::json!([]));
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while child.try_wait().unwrap().is_none() {
+            if std::time::Instant::now() >= deadline { drop(owner); let _ = child.kill(); let _ = child.wait(); panic!("task worker did not exit"); }
+            thread::sleep(Duration::from_millis(10));
+        }
+        drop(owner);
+        handle.mutate_root(root.id().into(), root.revision(), RootMutation::Stop { status: RootStatus::Failed, cause: StopCause::ExecutionError, reason: "Provider dispatch was refused".into() }).unwrap();
+        assert_eq!(handle.settle_worker_completion(run.id).unwrap().status, root_runs::RunStatus::Settled);
+        assert_eq!(handle.read_root(root.id().into()).unwrap().status(), RootStatus::Failed);
+        assert!(handle.list_host_sessions().unwrap().is_empty());
+        assert!(!data.join("worker").exists()); assert!(!data.join("task-workers").join(&invocation.run_id).join("sessions").exists());
         drop(handle); drop(actor); remove_test_data(&data); fs::remove_dir_all(resources).unwrap();
     }
 

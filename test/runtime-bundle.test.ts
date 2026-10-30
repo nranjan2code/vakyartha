@@ -36,11 +36,16 @@ test("sidecar bundles without frontend files or workspace dependencies and rejec
   writeFileSync(path.join(root, "public/unneeded.txt"), "frontend only");
   writeFileSync(path.join(root, "sidecar/builtin-skills/demo/SKILL.md"), "skill");
   writeFileSync(path.join(root, "sidecar/main.ts"), 'import { platform } from "node:os"; console.log(platform());');
+  writeFileSync(path.join(root, "sidecar/task-worker.ts"), 'import { arch } from "node:os"; console.log(arch());');
   const out = path.join(root, "out");
   await buildSidecar(root, out);
   assert.equal(existsSync(path.join(out, "unneeded.txt")), false);
   assert.equal(readFileSync(path.join(out, "builtin-skills/demo/SKILL.md"), "utf8"), "skill");
   assert.match(readFileSync(path.join(out, "sidecar.mjs"), "utf8"), /node:os/);
+  assert.match(readFileSync(path.join(out, "task-worker.mjs"), "utf8"), /node:os/);
+  writeFileSync(path.join(root, "sidecar/task-worker.ts"), 'import "unreviewed-external-package";');
+  await assert.rejects(buildSidecar(root, out), /Unexpected runtime dependency|Could not resolve|failed to resolve/);
+  writeFileSync(path.join(root, "sidecar/task-worker.ts"), 'console.log("task-worker");');
   writeFileSync(path.join(root, "sidecar/main.ts"), 'import "unreviewed-external-package";');
-  await assert.rejects(buildSidecar(root, out), /Unexpected sidecar runtime dependency|Could not resolve|failed to resolve/);
+  await assert.rejects(buildSidecar(root, out), /Unexpected runtime dependency|Could not resolve|failed to resolve/);
 });

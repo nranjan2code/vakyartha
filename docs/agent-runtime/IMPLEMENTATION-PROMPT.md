@@ -1,5 +1,7 @@
 # End-to-end implementation prompt
 
+Current source checkpoint (2026-10-30): desktop Work metadata/control is Rust-owned; native execution remains disabled. A separate `task-worker.mjs` runs one explicit candidate with a native invocation-bound provider-only protocol, fresh per-run scratch and protected cleanup receipts. Actual contained harnesses cover refusal/no canonical write/settlement and app/sibling filesystem denial. Do not rebuild those primitives or enable execution from a JavaScript-only test. Continue with native approval/budget/dispatch and a protected semantic owner’s durable canonical publication/recovery path, then connect the product dispatcher with mandatory completion checks. Skill/tool/continuation parity, workspace/IA, QoS, original outcomes and final Astra implementation review remain open. Read the latest progress entry before relying on historical API pins below.
+
 Prepared 2026-10-29. Copy the prompt below into the implementing agent's chat. It asks for implementation, not another architecture-only pass. The design remains subject to the repository's dependency, secret, release and original-outcome gates. Read current code first because it can advance beyond these documents.
 
 ---

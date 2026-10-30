@@ -71,7 +71,7 @@ console.log(`sidecar → ${path.relative(app, path.join(tauri, "resources/sideca
 
 // Bundle vaksb (vak-sandbox CLI) as an external binary alongside node.
 const sandboxRepo = path.resolve(app, "..", "sandbox");
-const sandboxRevision = "79433e29dcc0104344a6150b84eee7df00630ff2";
+const sandboxRevision = "19c493dc7f619ec772c99a5f6f397a4a71888f61";
 const sandboxGit = (...args: string[]) => execFileSync("git", ["-C", sandboxRepo, ...args], { encoding: "utf8" }).trim();
 if (sandboxGit("rev-parse", "HEAD") !== sandboxRevision || sandboxGit("status", "--porcelain")) {
   throw new Error(`Sandbox must be the clean reviewed revision ${sandboxRevision}`);
@@ -97,6 +97,7 @@ const receipt = {
   node: { version: process.version, ...treeReceipt(bin) },
   npm: { version: npmVersion, ...treeReceipt(path.join(resources, "npm")) },
   sidecar: treeReceipt(path.join(resources, "sidecar.mjs")),
+  taskWorker: treeReceipt(path.join(resources, "task-worker.mjs")),
   skills: treeReceipt(path.join(resources, "builtin-skills")),
   apps: treeReceipt(path.join(resources, "builtin-apps")),
   duckdb: { version: "2.0.0-r.1", ...treeReceipt(path.join(resources, "duckdb-runtime")) },

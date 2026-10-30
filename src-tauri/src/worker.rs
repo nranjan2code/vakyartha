@@ -1,5 +1,5 @@
-//! The desktop worker gets one writable private directory and read-only runtime
-//! resources. Native stores and original project folders are outside its grants.
+//! App and reasoning workers have disjoint data grants. A reasoning invocation
+//! gets a fresh scratch directory and never receives the app worker's stores.
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -44,7 +44,11 @@ fn command_inner(
     let resources = resources
         .canonicalize()
         .map_err(|_| "Desktop runtime resources are missing")?;
-    let script = existing_file(&resources.join("sidecar.mjs"))?;
+    let script = existing_file(&resources.join(if invocation.is_some() {
+        "task-worker.mjs"
+    } else {
+        "sidecar.mjs"
+    }))?;
     if !script.starts_with(&resources) {
         return Err("Desktop runtime script escapes its resource directory".into());
     }
@@ -52,12 +56,42 @@ fn command_inner(
     let data = data
         .canonicalize()
         .map_err(|_| "Cannot resolve desktop data directory")?;
-    let worker = data.join("worker");
-    crate::private_store::ensure_root(&worker).map_err(|_| "Desktop worker directory is unsafe")?;
+    let native = crate::private_store::root(&data);
+    if let Some(invocation) = invocation
+        && (!invocation
+            .run_id
+            .strip_prefix("run-")
+            .is_some_and(|id| id.parse::<u64>().is_ok_and(|number| number > 0))
+            || invocation.completion_record
+                != native
+                    .join("executions")
+                    .join(format!("{}.json", invocation.run_id)))
+    {
+        return Err("Worker completion must belong to the native run store".into());
+    }
+    let worker = if let Some(invocation) = invocation {
+        let runs = data.join("task-workers");
+        crate::private_store::ensure_root(&runs).map_err(|_| "Task scratch parent is unsafe")?;
+        let scratch = runs.join(&invocation.run_id);
+        let mut directory = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            directory.mode(0o700);
+        }
+        directory.create(&scratch).map_err(
+            |_| "Task scratch already exists or cannot be created; reconcile the prior invocation",
+        )?;
+        scratch
+    } else {
+        let worker = data.join("worker");
+        crate::private_store::ensure_root(&worker)
+            .map_err(|_| "Desktop worker directory is unsafe")?;
+        worker
+    };
     let worker = worker
         .canonicalize()
         .map_err(|_| "Cannot resolve desktop worker directory")?;
-    let native = crate::private_store::root(&data);
     // The pinned helper also admits fixed OS runtime directories. A custom
     // data root beneath one must not accidentally expose native persistence.
     #[cfg(target_os = "macos")]
@@ -93,17 +127,6 @@ fn command_inner(
     cmd.env_clear().env("PATH", "/usr/bin:/bin");
     cmd.arg("worker");
     if let Some(invocation) = invocation {
-        if !invocation
-            .run_id
-            .strip_prefix("run-")
-            .is_some_and(|id| id.parse::<u64>().is_ok_and(|number| number > 0))
-            || invocation.completion_record
-                != native
-                    .join("executions")
-                    .join(format!("{}.json", invocation.run_id))
-        {
-            return Err("Worker completion must belong to the native run store".into());
-        }
         cmd.arg("--completion-record")
             .arg(&invocation.completion_record)
             .arg("--invocation-id")
@@ -113,11 +136,9 @@ fn command_inner(
         .arg(&worker)
         .arg("--read")
         .arg(&resources)
-        .arg("--read")
-        .arg(&helper)
         .arg("--write")
         .arg(&worker);
-    for (name, value) in [
+    let mut environment = vec![
         ("PATH", "/usr/bin:/bin".to_owned()),
         // Node must not load host OpenSSL configuration/providers. Linux Node
         // otherwise opens /etc/ssl/openssl.cnf before running the worker code.
@@ -126,15 +147,21 @@ fn command_inner(
         ("TMPDIR", worker.to_string_lossy().into_owned()),
         ("VAK_DATA_DIR", worker.to_string_lossy().into_owned()),
         ("VAK_APP_VERSION", env!("CARGO_PKG_VERSION").to_owned()),
-        (
-            "VAK_NPM_CLI",
-            resources
-                .join("npm/bin/npm-cli.js")
-                .to_string_lossy()
-                .into_owned(),
-        ),
-        ("VAK_SANDBOX_BIN", helper.to_string_lossy().into_owned()),
-    ] {
+    ];
+    if invocation.is_none() {
+        cmd.arg("--read").arg(&helper);
+        environment.extend([
+            (
+                "VAK_NPM_CLI",
+                resources
+                    .join("npm/bin/npm-cli.js")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            ("VAK_SANDBOX_BIN", helper.to_string_lossy().into_owned()),
+        ]);
+    }
+    for (name, value) in environment {
         cmd.arg("--env").arg(format!("{name}={value}"));
     }
     cmd.arg("--command")
@@ -170,7 +197,7 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(root.join("runtime")).unwrap();
-        for name in ["node", "helper", "sidecar.mjs"] {
+        for name in ["node", "helper", "sidecar.mjs", "task-worker.mjs"] {
             std::fs::write(root.join("runtime").join(name), b"fixture").unwrap();
         }
         root
@@ -228,6 +255,63 @@ mod tests {
                 &root.join("data")
             )
             .is_err()
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reasoner_has_a_fresh_private_scratch_and_no_application_capability_environment() {
+        let root = fixture();
+        let runtime = root.join("runtime");
+        let data = root.join("data");
+        std::fs::create_dir(&data).unwrap();
+        let native = crate::private_store::root(&data.canonicalize().unwrap());
+        let invocation = crate::control::worker_completion::WorkerInvocation {
+            run_id: "run-1".into(),
+            completion_record: native.join("executions/run-1.json"),
+        };
+        let cmd = command_for_invocation(
+            &runtime.join("helper"),
+            &runtime.join("node"),
+            &runtime,
+            &data,
+            &invocation,
+        )
+        .unwrap();
+        let args: Vec<_> = cmd
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let scratch = data
+            .join("task-workers/run-1")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            args.windows(2)
+                .filter(|pair| pair[0] == "--write")
+                .map(|pair| pair[1].clone())
+                .collect::<Vec<_>>(),
+            [scratch]
+        );
+        assert!(args.last().unwrap().ends_with("task-worker.mjs"));
+        assert!(
+            !args
+                .iter()
+                .any(|arg| arg.contains("VAK_NPM_CLI") || arg.contains("VAK_SANDBOX_BIN"))
+        );
+        assert!(!data.join("worker").exists());
+        assert!(
+            command_for_invocation(
+                &runtime.join("helper"),
+                &runtime.join("node"),
+                &runtime,
+                &data,
+                &invocation
+            )
+            .is_err(),
+            "old scratch must not be silently reused"
         );
         std::fs::remove_dir_all(root).unwrap();
     }

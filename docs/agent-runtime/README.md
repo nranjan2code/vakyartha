@@ -4,6 +4,8 @@ Design baseline: 2026-10-29. Status: architecture and active implementation. Tau
 
 Native supervision proof now includes protected helper cleanup records and durable run settlement with real contained Node on macOS/Linux. Product task dispatch remains disabled. See [current implementation evidence](IMPLEMENTATION-PROGRESS.md#protected-worker-cleanup-and-native-settlement--2026-10-30).
 
+A separate contained task reasoning entry, fresh per-run scratch and native invocation-bound proposal channel are now packaged and proved through harnesses. It cannot use app/canonical session command families; product execution and provider dispatch remain unavailable. [Current evidence](IMPLEMENTATION-PROGRESS.md#separate-contained-reasoning-entry-and-bound-task-channel--2026-10-30).
+
 The design applies to one agent first. Delegation is an optional extension of the same task contract, authority, budgets, evidence and recovery. The default is zero children; neither task length nor a role name justifies creating one.
 
 ## Reading map

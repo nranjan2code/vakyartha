@@ -3,8 +3,8 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, utimes, readdir } fro
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { TaskFiles, digest, inputInstructions } from "../sidecar/task-files.ts";
-import { parseTaskFiles, parseOutputReceipt, parseDiagnosticDays } from "../shared/task-files.ts";
+import { TaskFiles, digest } from "../sidecar/task-files.ts";
+import { parseTaskFiles, parseOutputReceipt, parseDiagnosticDays, inputInstructions } from "../shared/task-files.ts";
 import { Tasks } from "../sidecar/tasks.ts";
 import { createHost, type HostTurn, type HostRunOptions } from "@vak/host";
 import { ProfileCache, type Provider } from "@vak/providers";

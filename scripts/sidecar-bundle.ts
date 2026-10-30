@@ -4,69 +4,29 @@ import { isBuiltin } from "node:module";
 import path from "node:path";
 import { build } from "vite";
 
-/** A release must run without workspace links or app node_modules. */
-export async function buildSidecar(app: string, outDir: string): Promise<void> {
+/** Every privileged/runtime entry is a self-contained module with built-ins only. */
+async function bundleRuntime(app: string, outDir: string, source: string, filename: string, emptyOutDir: boolean): Promise<void> {
   await build({
-    configFile: false,
-    root: app,
-    // Frontend assets are already in dist; the engine has no public directory.
-    publicDir: false,
-    logLevel: "warn",
+    configFile: false, root: app, publicDir: false, logLevel: "warn",
     build: {
-      ssr: path.join(app, "sidecar/main.ts"),
-      outDir,
-      emptyOutDir: true,
-      target: "node26",
-      minify: false,
-      reportCompressedSize: false,
-      rolldownOptions: { output: { entryFileNames: "sidecar.mjs", format: "es", codeSplitting: false } },
+      ssr: path.join(app, source), outDir, emptyOutDir, target: "node26", minify: false, reportCompressedSize: false,
+      rolldownOptions: { output: { entryFileNames: filename, format: "es", codeSplitting: false } },
     },
     ssr: { noExternal: true, target: "node" },
-    plugins: [{
-      name: "sidecar-runtime-boundary",
-      generateBundle(_options, bundle) {
-        const outputs = Object.values(bundle);
-        if (outputs.length !== 1 || outputs[0]?.type !== "chunk" || outputs[0].fileName !== "sidecar.mjs") {
-          throw new Error("The sidecar must be one self-contained module");
-        }
-        for (const id of [...outputs[0].imports, ...outputs[0].dynamicImports]) {
-          if (!isBuiltin(id)) throw new Error(`Unexpected sidecar runtime dependency: ${id}`);
-        }
-      },
-    }],
+    plugins: [{ name: "runtime-boundary", generateBundle(_options, bundle) {
+      const outputs = Object.values(bundle);
+      if (outputs.length !== 1 || outputs[0]?.type !== "chunk" || outputs[0].fileName !== filename) throw new Error("Runtime entry must be one self-contained module");
+      for (const id of [...outputs[0].imports, ...outputs[0].dynamicImports]) if (!isBuiltin(id)) throw new Error(`Unexpected runtime dependency: ${id}`);
+    } }],
   });
+}
 
+/** A release must run without workspace links or app node_modules. */
+export async function buildSidecar(app: string, outDir: string): Promise<void> {
+  await bundleRuntime(app, outDir, "sidecar/main.ts", "sidecar.mjs", true);
+  await bundleRuntime(app, outDir, "sidecar/task-worker.ts", "task-worker.mjs", false);
   const workerSrc = path.join(app, "sidecar/sandbox-pool/worker.ts");
-  if (existsSync(workerSrc)) {
-    await build({
-      configFile: false,
-      root: app,
-      publicDir: false,
-      logLevel: "warn",
-      build: {
-        ssr: workerSrc,
-        outDir,
-        emptyOutDir: false,
-        target: "node26",
-        minify: false,
-        reportCompressedSize: false,
-        rolldownOptions: { output: { entryFileNames: "worker.mjs", format: "es", codeSplitting: false } },
-      },
-      ssr: { noExternal: true, target: "node" },
-      plugins: [{
-        name: "worker-runtime-boundary",
-        generateBundle(_options, bundle) {
-          const outputs = Object.values(bundle);
-          if (outputs.length !== 1 || outputs[0]?.type !== "chunk" || outputs[0].fileName !== "worker.mjs") {
-            throw new Error("The worker must be one self-contained module");
-          }
-          for (const id of [...outputs[0].imports, ...outputs[0].dynamicImports]) {
-            if (!isBuiltin(id)) throw new Error(`Unexpected worker runtime dependency: ${id}`);
-          }
-        },
-      }],
-    });
-  }
+  if (existsSync(workerSrc)) await bundleRuntime(app, outDir, "sidecar/sandbox-pool/worker.ts", "worker.mjs", false);
 
   // Native analytics stays outside the JS bundle and is staged only for opted-in apps.
   const duckdbModules = path.join(app, "node_modules");

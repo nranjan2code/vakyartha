@@ -2,6 +2,37 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Separate contained reasoning entry and bound task channel — 2026-10-30
+
+A new self-contained `task-worker.mjs` entry runs one explicit candidate invocation using Projection’s public `runCandidate`; it does not start the application server or construct a canonical session adapter, task journal, output writer, integration launcher or credential store. The shared provider framing was extracted from the desktop transport, retaining its credential stripping, registered routes, bounded streaming/backpressure, cancellation and late-response handling. The reasoning channel permits one in-flight provider proposal. Only the primary local provider is admitted by this first worker contract; there is no hosted-provider fallback or inference in the new native tests.
+
+Rust launches the reasoning entry with a fresh owner-only `<app-data>/task-workers/<run-id>/` scratch write grant, runtime reads and the exact protected completion binding. It does not grant `<app-data>/worker/`, another invocation’s scratch or native stores, and omits package-installer/helper environment capabilities. Existing scratch refuses launch rather than being silently reused. Ordinary desktop launch keeps its separate existing worker directory. The release packager builds independent self-contained app/reasoner/app-execution modules, rejects non-built-in external imports for each, and records the reasoner bundle digest in the runtime manifest.
+
+```mermaid
+flowchart LR
+    A[Rust admission and durable run] -->|exact invocation and fresh scratch| H[Contained helper]
+    H <-->|private descriptor 3| R[One reasoning process]
+    A -->|explicit task inputs and surface snapshots| R
+    R -->|bound provider proposal| P[Native task channel validator]
+    P --> G[Provider dispatch still refused]
+    R -->|opaque candidate only| C[Native semantic validation and publication: pending]
+    R -->|read and write| S[This run scratch]
+    R -. OS denied .-> O[App worker files and sibling runs]
+    R -. protocol absent .-> N[Canonical session and task mutation APIs]
+    H --> E[Protected cleanup evidence]
+    E --> A
+```
+
+The native channel binds its root-run/session/model before reading worker messages. It accepts one ready/start lifecycle, bounded provider proposals/acknowledgements/cancellation and one returned candidate/failure. It rejects cross-run/session/model changes, unknown command families, provider/operation substitution, duplicate request or operation-attempt identities, excessive frames and candidate identity mismatches. An invalid frame permanently fences that channel. It has no canonical load/save/list/remove, root mutation or settlement operation. Valid envelope parsing is correlation/admission of a proposal, not permission to send a request, semantic verification, canonical publication or task completion. Failed and step-limited candidates remain failed/partial evidence, even if they contain surfaces.
+
+The worker receives bounded explicit instructions, original goal/criteria, captured input snapshots with checked hashes and supplied versioned surfaces. It inherits no conversation history or default external tools. It uses the existing untrusted-input wording through one shared pure formatter. Bootstrap/run deadlines, input/frame sizes, one-invocation state, output-flush deadline and cancellation fence bound its cooperative runtime. Native process/resource enforcement remains necessary against a compromised worker; these JavaScript limits do not establish hard memory/CPU/disk quotas. The skill-selection/context-loader adapter, task continuation and governed external tools are not connected to this worker yet.
+
+Verification: deterministic transport tests use the actual local-provider parser/schema and Projection candidate path with direct fetch forbidden. A synthetic schema-valid response yields two independent surfaces plus the preserved original, exact numeric 37.5, unchanged original input and no canonical/session/task/output files. No actual model was called. Cancellation produces no candidate; malformed contexts/changed input bytes/general app commands/duplicate starts are refused. Native tests run the actual packaged reasoner through the reviewed helper, bind its provider proposal, refuse dispatch, retain its error candidate, write no canonical session and settle verified cleanup. Separate hostile-worker checks prove app/sibling read denial and positive scratch writes on macOS/Linux. Source/package tests verify both runtime bundles and external-import refusal. Final Node 26.13.0 typecheck and all 288 app tests pass. Rust 1.99.1 full native suites with all three explicit real-worker gates included pass 118 on macOS and 120 in pinned ARM64 Linux Docker; strict Clippy passes on both. The native WebKit smoke passes canonical rendering/storage, Work controls, vault operations, exact upload bytes, no TCP listeners and parent-exit cleanup using the final helper pin. Receipt: `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-desktop-private-Fmki82` (source smoke, not an installed build).
+
+Retained failures: the first packaging fixture did not include the newly mandatory reasoner source; it now proves both bundles rather than making reasoner packaging optional. The full app suite also failed before a database assertion with `anchor group: Operation not permitted`. In the sandbox owner, revision `19c493dc7f619ec772c99a5f6f397a4a71888f61` replaces competing parent/anchor process-group setup with a private pre-target handoff and exact group check. Four concurrent hosts execute 32 verified startup commands; full helper macOS tests pass 66 and strict Clippy passes. The exact scheduling cause of the original failure was not independently reproduced. The original database assertions subsequently pass unchanged. No command retry or weaker containment fallback was added.
+
+Limits: this entry is connected through native harness execution, not the product Work dispatcher. Product task execution remains unavailable; native capacity stays unconfigured and provider dispatch remains refused. Atomic approval/budget/dispatch, protected semantic/canonical role and publication/recovery, scheduler, skill/tool/continuation parity, workspace/IA cutover, drift/evidence/stopping, multi-job QoS, original local-provider outcomes, installed proof and final Astra review remain open. No snapshot compatibility reader or new dependency was added; native schema stays 14.
+
 ## Protected worker cleanup and native settlement — 2026-10-30
 
 The native root-run ledger now has a trusted-only launcher preparation and file-backed settlement path. The actor derives `<native-data>/executions/<run-id>.json` from an existing prepared invocation, checks the current root/epoch/workspace, creates an owner-only evidence directory and refuses an existing record. The launcher binds that exact path/identity to the containment helper. Neither the webview nor the worker protocol accepts a completion path, receipt body or settlement command. Preparation is a freshness check, not an atomic dispatch permit.

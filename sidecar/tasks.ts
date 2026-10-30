@@ -1,8 +1,8 @@
 import { parseTaskResultPolicy, resultInstructions, reviewTaskResult } from "../shared/task-result.ts";
 import { reviseComparisonCriteria } from "../shared/comparison-contract.ts";
 import type { ResearchRead } from "../shared/research-contract.ts";
-import { parseTaskFiles, parseTaskOutput, parseDiagnosticDays } from "../shared/task-files.ts";
-import { TaskFiles, digest, inputInstructions, taskMarkdown } from "./task-files.ts";
+import { parseTaskFiles, parseTaskOutput, parseDiagnosticDays, inputInstructions } from "../shared/task-files.ts";
+import { TaskFiles, digest, taskMarkdown } from "./task-files.ts";
 import { MAX_TOOL_OUTPUT } from "@vak/mcp/client";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
