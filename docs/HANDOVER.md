@@ -2,7 +2,7 @@
 
 ## Revisioned canonical session store API pin — 2026-10-30
 
-Projection `822622e` adds the public `HostSessionStore`/`HostSessionSnapshot` interface for an app-owned revisioned canonical store, with compare-and-set writes, restart loading, list and revision-checked removal. The framework suite against the updated app submodule passes 418/418 under Node 26.13.0 Docker; this is framework verification only. Vakyartha still configures `sessionsDir` in `sidecar/server.ts` and has no Rust actor implementation of the adapter, so this pin does not yet transfer chat/session persistence to native ownership or alter the active app runtime. The native candidate ledger remains task-workspace-only and is not a substitute for the host session store.
+Projection `822622e` adds the public `HostSessionStore`/`HostSessionSnapshot` interface for an app-owned revisioned canonical store, with compare-and-set writes, restart loading, list and revision-checked removal. Current-revision verification: app tests 259 pass / 21 platform skips; Node 26.13.0 typecheck, Vite build, framework replay suite 418/418, Rust host tests 94/94 plus strict Clippy, and Rust 1.99.1 Linux Docker tests 96/96 plus strict Clippy pass. The Vite build reports two existing ineffective dynamic-import warnings. Vakyartha still configures `sessionsDir` in `sidecar/server.ts` and has no Rust actor implementation of the adapter, so this pin does not yet transfer chat/session persistence to native ownership or alter the active app runtime. The native candidate ledger remains task-workspace-only and is not a substitute for the host session store.
 
 ## Native canonical candidate persistence bridge — 2026-10-30
 

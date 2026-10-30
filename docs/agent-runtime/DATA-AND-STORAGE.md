@@ -39,6 +39,8 @@ The Rust control actor is started with the desktop engine and its current contro
 
 **Current native candidate state (2026-10-30):** the native actor now creates `<private-data>/content/sessions/<session-id>/` and can persist the exact bounded candidate proposal as immutable `generation-<revision>.json` files. The selected revision, digest, execution fence and exact-retry receipt live in the actor's single-writer control snapshot. It retains the current and previous generation and removes unselected generations at recovery. This is an intermediate commit boundary only: current app sessions still use `<private-data>/sessions/` through the framework host; product task runs do not yet call the candidate API, and native candidate bytes are not yet published into that canonical session/surface store. Do not treat the `content/sessions` directory as the current source for chats or surfaced outputs.
 
+Projection `822622e` now exports a revisioned `HostSessionStore` contract, but no Rust adapter is wired into this app. The active location and writer above remain unchanged; advancing the framework pin alone did not migrate or rewrite local chat data.
+
 ## 3. Target entity relationships
 
 ```mermaid
