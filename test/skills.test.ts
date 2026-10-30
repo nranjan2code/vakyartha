@@ -606,3 +606,41 @@ test("skills.provider: zero-latency salutation bypass and dynamic Session Skill 
   assert.equal(continuedEvents[0]?.type, "text");
   assert.equal(continuedEvents[0]?.delta, "Direct answer");
 });
+
+test("diagrams built-in skill loads templates and canonical diagram specifications", async () => {
+  const manager = new Skills(dir());
+  const diagramSkill = manager.view().find(skill => skill.name === "diagrams");
+  assert.ok(diagramSkill, "diagrams skill must be present in builtins");
+  assert.equal(diagramSkill.enabled, true);
+  assert.deepEqual(diagramSkill.files?.map(f => f.path), ["references/diagram-templates.json"]);
+
+  const [use, read] = manager.tools();
+  assert.ok(use && read);
+  const loaded = String(await use.execute({ names: ["diagrams"] }, {}));
+  assert.match(loaded, /Universal Diagram Architecture & Visual Design/);
+  assert.match(loaded, /First-Class Spoken Projection/);
+
+  const readOutput = String(await read.execute({ skill: "diagrams", path: "references/diagram-templates.json" }, {}));
+  assert.match(readOutput, /architecture/);
+  assert.match(readOutput, /feedback_control_loop/);
+
+  const templatesText = manager.fileText("diagrams", "references/diagram-templates.json").text;
+  const templates = JSON.parse(templatesText);
+  assert.ok(templates.flowchart && templates.architecture && templates.feedback_control_loop && templates.data_pipeline);
+
+  const store = new SurfaceStore(basicCatalog);
+  for (const [name, spec] of Object.entries(templates)) {
+    const surfaceId = `test-diagram-${name}`;
+    const diags = store.apply("vak_render", {
+      surface: surfaceId,
+      nodes: [spec],
+    });
+    assert.equal(diags.filter(d => d.severity === "error").length, 0, `Template ${name} had errors: ${JSON.stringify(diags)}`);
+    const retrieved = store.get(surfaceId);
+    assert.ok(retrieved, `Surface ${name} must be stored`);
+    const diagramNode = [...retrieved.nodes.values()].find(n => n.type === "diagram");
+    assert.ok(diagramNode, `Surface ${name} must contain a diagram node`);
+    assert.equal(diagramNode.type, "diagram");
+  }
+});
+

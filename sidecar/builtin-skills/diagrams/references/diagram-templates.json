@@ -1,0 +1,94 @@
+{
+  "flowchart": {
+    "type": "diagram",
+    "props": {
+      "directed": true,
+      "nodes": [
+        { "id": "start", "label": "Start Process", "group": "Boundary", "shape": "pill" },
+        { "id": "validate", "label": "Validate Input", "group": "Process", "shape": "box" },
+        { "id": "check", "label": "Checks Pass?", "group": "Decision", "shape": "diamond" },
+        { "id": "fix", "label": "Request Correction", "group": "Exception", "shape": "box" },
+        { "id": "execute", "label": "Execute Action", "group": "Process", "shape": "box" },
+        { "id": "end", "label": "Completed", "group": "Boundary", "shape": "pill" }
+      ],
+      "edges": [
+        { "from": "start", "to": "validate", "label": "initiates" },
+        { "from": "validate", "to": "check", "label": "evaluates" },
+        { "from": "check", "to": "execute", "label": "yes" },
+        { "from": "check", "to": "fix", "label": "no" },
+        { "from": "fix", "to": "validate", "label": "resubmits" },
+        { "from": "execute", "to": "end", "label": "finishes" }
+      ]
+    }
+  },
+  "architecture": {
+    "type": "diagram",
+    "props": {
+      "directed": true,
+      "nodes": [
+        { "id": "client", "label": "Web & Mobile Client", "group": "Frontend", "shape": "pill" },
+        { "id": "gateway", "label": "API Gateway", "group": "Edge", "shape": "box" },
+        { "id": "auth", "label": "Auth Service", "group": "Core", "shape": "box" },
+        { "id": "app", "label": "Application Service", "group": "Core", "shape": "box" },
+        { "id": "cache", "label": "Redis Cache", "group": "Data", "shape": "cylinder" },
+        { "id": "db", "label": "Primary PostgreSQL", "group": "Data", "shape": "cylinder" }
+      ],
+      "edges": [
+        { "from": "client", "to": "gateway", "label": "HTTPS / JSON" },
+        { "from": "gateway", "to": "auth", "label": "validates JWT" },
+        { "from": "gateway", "to": "app", "label": "routes request" },
+        { "from": "app", "to": "cache", "label": "reads cache" },
+        { "from": "app", "to": "db", "label": "queries & persists" }
+      ],
+      "subgraphs": [
+        { "id": "sg-edge", "label": "Edge Tier", "nodes": ["gateway", "auth"] },
+        { "id": "sg-core", "label": "Backend Tier", "nodes": ["app"] },
+        { "id": "sg-data", "label": "Data Tier", "nodes": ["cache", "db"] }
+      ]
+    }
+  },
+  "feedback_control_loop": {
+    "type": "diagram",
+    "props": {
+      "directed": true,
+      "nodes": [
+        { "id": "objective", "label": "System Goal", "group": "Strategy", "shape": "pill" },
+        { "id": "sensor", "label": "Telemetry & Inputs", "group": "Perception", "shape": "cylinder" },
+        { "id": "controller", "label": "Inference Controller", "group": "Processing", "shape": "box" },
+        { "id": "guard", "label": "Safety Policy", "group": "Governance", "shape": "diamond" },
+        { "id": "actuator", "label": "Actuator / Action", "group": "Execution", "shape": "box" },
+        { "id": "observer", "label": "Outcome Observer", "group": "Evaluation", "shape": "pill" }
+      ],
+      "edges": [
+        { "from": "objective", "to": "sensor", "label": "sets parameters" },
+        { "from": "sensor", "to": "controller", "label": "streams telemetry" },
+        { "from": "controller", "to": "guard", "label": "proposes change" },
+        { "from": "guard", "to": "actuator", "label": "enforces bounds" },
+        { "from": "actuator", "to": "observer", "label": "affects environment" },
+        { "from": "observer", "to": "objective", "label": "corrects drift" },
+        { "from": "observer", "to": "sensor", "label": "calibrates baselines" }
+      ]
+    }
+  },
+  "data_pipeline": {
+    "type": "diagram",
+    "props": {
+      "directed": true,
+      "nodes": [
+        { "id": "source", "label": "Raw Event Streams", "group": "Ingest", "shape": "cylinder" },
+        { "id": "kafka", "label": "Kafka Ingestion", "group": "Ingest", "shape": "box" },
+        { "id": "spark", "label": "Spark ETL Cleanse", "group": "Transform", "shape": "box" },
+        { "id": "lakehouse", "label": "Delta Lakehouse", "group": "Storage", "shape": "cylinder" },
+        { "id": "features", "label": "Feature Store", "group": "Serving", "shape": "cylinder" },
+        { "id": "models", "label": "Real-time Scorer", "group": "Serving", "shape": "box" }
+      ],
+      "edges": [
+        { "from": "source", "to": "kafka", "label": "publishes events" },
+        { "from": "kafka", "to": "spark", "label": "consumes batch" },
+        { "from": "spark", "to": "lakehouse", "label": "writes Parquet" },
+        { "from": "lakehouse", "to": "features", "label": "extracts features" },
+        { "from": "features", "to": "models", "label": "serves embeddings" }
+      ]
+    }
+  }
+}
