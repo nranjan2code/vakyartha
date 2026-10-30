@@ -13,7 +13,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createHost, json, readJson } from "@vak/host";
 import { attachmentsRoute } from "./attachments.ts";
 import { toolName, type Integrations } from "@vak/mcp/client";
-import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, type Provider, type AgentTool, type ProviderTransport, providersFromEnv, pinnedFetch } from "@vak/providers";
+import { hardenNetwork, loadEnvFile, ProfileCache, type ProviderEntry, type Provider, type AgentTool, type ProviderTransport, providersFromEnv, pinnedFetch, openai } from "@vak/providers";
 import { Channels, CHANNELS } from "./channels.ts";
 import { Marketplaces } from "./marketplaces.ts";
 import { Skills } from "./skills.ts";
@@ -90,6 +90,51 @@ export interface AppServer {
   workspaces?: WorkspaceRegistry;
   realms?: SandboxRealms;
 }
+
+export function typesafeProviderEntry(env: Record<string, string | undefined>): ProviderEntry {
+  const key = env.TYPESAFE_API_KEY;
+  const baseUrl = (env.TYPESAFE_BASE_URL || "https://api.typesafe.ai/v1").replace(/\/+$/, "");
+  return {
+    id: "typesafe",
+    label: "TypeSafe AI",
+    available: Boolean(key),
+    keyVar: "TYPESAFE_API_KEY",
+    reason: key ? undefined : "add its key in Providers",
+    make: options => {
+      const p = openai({
+        id: "typesafe",
+        baseUrl,
+        apiKey: key,
+        transport: options?.transport,
+        maxTokensParam: "max_tokens",
+      });
+      return {
+        ...p,
+        async listModels(signal) {
+          // Metadata follows the same native boundary as generation.
+          if (options?.transport) return p.listModels?.(signal) ?? [];
+          if (!key) return [];
+          try {
+            const res = await fetch(`${baseUrl}/models`, {
+              headers: { Authorization: `Bearer ${key}` },
+              signal: signal ?? AbortSignal.timeout(8000),
+            });
+            if (!res.ok) {
+              const err = await res.text().catch(() => "");
+              throw new Error(`TypeSafe AI returned HTTP ${res.status}: ${err || res.statusText}`);
+            }
+            const body = (await res.json()) as { data?: Array<{ id: string } | string> } | Array<{ id: string } | string>;
+            const list = Array.isArray(body) ? body : (body.data ?? []);
+            return list.map((m) => (typeof m === "string" ? m : m.id)).filter(Boolean).sort();
+          } catch {
+            return p.listModels?.(signal) ?? [];
+          }
+        },
+      };
+    },
+  };
+}
+
 
 export async function startAppServer(opts: AppServerOptions): Promise<AppServer> {
   const dataDir = opts.dataDir;
@@ -230,14 +275,19 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
     const sess = ctx?.session ?? activeTurnSession;
     return `You are the assistant inside ${opts.appName ?? "Vakyartha, a desktop app"}.
 Today is ${new Date().toISOString().slice(0, 10)}.${formatWorkspaceInfo(sess)}
+Prose style: Respond in fluid, elegant, human conversational prose. In dialogue, greetings, and direct answers, speak directly and warmly without gratuitous bold headers, synthetic bullet lists, or robotic markdown artifacts. Structure longer analytical answers with clean paragraphs and meaningful formatting only when complexity demands it.
 ${skills.index()}`;
   };
+
+  function allProviders(env: Record<string, string | undefined> = process.env): ProviderEntry[] {
+    return [...providersFromEnv(env), typesafeProviderEntry(env)];
+  }
 
   const profiles = new ProfileCache(opts.profilesPath ?? path.join(dataDir, "models.json"));
   const finops = new Finops(dataDir, log, opts.nativeSessionStore);
   const channels = new Channels({
     env: process.env,
-    providers: () => withProviderTransport(providersFromEnv(), opts.providerTransport).map(entry => ({ ...entry, make: options => skills.provider(entry.make(options)) })),
+    providers: () => withProviderTransport(allProviders(), opts.providerTransport).map(entry => ({ ...entry, make: options => skills.provider(entry.make(options)) })),
     profiles,
     dataDir,
     log,
@@ -271,7 +321,7 @@ ${skills.index()}`;
   function modelProviders(wrapSkills = true): ProviderEntry[] {
     // Bind admission checks and provider construction to the same configuration.
     const env = { ...process.env };
-    const entries = withProviderTransport(providersFromEnv(env), opts.providerTransport).map((entry) => ({ ...entry, make: (options: Parameters<typeof entry.make>[0]) => {
+    const entries = withProviderTransport(allProviders(env), opts.providerTransport).map((entry) => ({ ...entry, make: (options: Parameters<typeof entry.make>[0]) => {
       const spending = tasks?.providerSpending(entry.id);
       if (spending) checkTaskSpending(entry, spending, env);
       return entry.make(options);
@@ -358,7 +408,7 @@ ${skills.index()}`;
     permissionRevision: (server) => integrationRevisions.get(server) ?? 0,
     permitted: (server, tool) => integrations!.view().some((i) => i.entry.id === server && i.enabled && i.status === "ready" && i.tools.some((t) => t.name === tool && t.policy !== "off")),
     ready(provider, model, selected, confirmedFree, spending) {
-      const chosen = providersFromEnv().find((p) => p.id === provider && p.available);
+      const chosen = allProviders().find((p) => p.id === provider && p.available);
       if (!model || !chosen) throw new Error("Choose an available model");
       checkTaskSpending(chosen, spending, process.env);
       const available = integrations!.view();

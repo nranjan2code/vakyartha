@@ -1,11 +1,11 @@
 ---
 name: surface-design
-description: Design visual and spoken canvas content: forms, tables, charts, cards, metrics and mixed layouts. Combine with interactive-ui for data bindings and actions.
+description: Design visual and spoken canvas content: forms, tables, charts, cards, metrics, diagrams and mixed layouts. Combine with interactive-ui for data bindings and actions.
 license: MIT
 compatibility: Core required Vakyartha capability; active across desktop and web runtimes.
 metadata:
   author: nranjan2code
-  version: "1.7"
+  version: "1.8"
 allowed-tools: vak_render vak_update vak_submit
 ---
 
@@ -34,6 +34,10 @@ Use semantic tones neutral, info, success, warning and danger when offered. Let 
 - candlestick: dated real open/high/low/close records, four series in that order; separate volume. Never infer candles from close-only observations.
 
 Unsupported statistical/specialist plots need a supported alternative or an explicit limitation. Histogram bins must be calculated first; a bubble alias does not encode point size. Bars/areas include zero. Line/candlestick may fit observed ranges when that disclosed scale answers the question; use zero when it is the meaningful reference. Name units, periods and basis. Keep exact detail values when they matter. Inspection controls supplement, not replace, the visible interpretation.
+
+## Diagrams and topological structures
+
+For workflows, system architectures, state machines, entity relationships, sequence interactions, pipelines, or conceptual processes, load the `diagrams` skill. Use the canonical `diagram` component (`flow: "lr" | "tb"`, semantic shapes `box | diamond | cylinder | pill`, subgraphs for architectural boundaries, and cycle-aware back-edges). Do not force relational topologies into charts or unconstrained graphs.
 
 ## Meaning and continuity
 

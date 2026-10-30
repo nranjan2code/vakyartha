@@ -2,6 +2,31 @@ import { estimateCost, shapeTotal, type FinopsView, type Shape, type Turn } from
 import { api, el } from "./core.ts";
 import { select, title } from "./ui.ts";
 
+export const STANDARD_MODEL_RATES: Record<string, { input: number; cached: number; output: number }> = {
+  "openai/gpt-4o": { input: 2.50, cached: 1.25, output: 10.00 },
+  "openai/gpt-4o-mini": { input: 0.15, cached: 0.075, output: 0.60 },
+  "openai/o1": { input: 15.00, cached: 7.50, output: 60.00 },
+  "openai/o3-mini": { input: 1.10, cached: 0.55, output: 4.40 },
+  "anthropic/claude-3-5-sonnet": { input: 3.00, cached: 0.30, output: 15.00 },
+  "anthropic/claude-3-5-haiku": { input: 0.80, cached: 0.08, output: 4.00 },
+  "anthropic/claude-3-opus": { input: 15.00, cached: 1.50, output: 75.00 },
+  "gemini/gemini-2.5-pro": { input: 1.25, cached: 0.3125, output: 5.00 },
+  "gemini/gemini-2.5-flash": { input: 0.075, cached: 0.01875, output: 0.30 },
+  "gemini/gemini-1.5-pro": { input: 1.25, cached: 0.3125, output: 5.00 },
+  "gemini/gemini-1.5-flash": { input: 0.075, cached: 0.01875, output: 0.30 },
+};
+
+export function findStandardRate(provider: string, model: string): { input: number; cached: number; output: number } | undefined {
+  const direct = STANDARD_MODEL_RATES[`${provider}/${model}`];
+  if (direct) return direct;
+  const p = provider.toLowerCase(), m = model.toLowerCase();
+  for (const [key, val] of Object.entries(STANDARD_MODEL_RATES)) {
+    const [kp, km] = key.split("/") as [string, string];
+    if (p.includes(kp) && m.includes(km)) return val;
+  }
+  return undefined;
+}
+
 let disposeCurrent = () => {};
 export function disposeFinops(): void { disposeCurrent(); disposeCurrent = () => {}; }
 const keys = ["user", "text", "projection", "tools", "feedback", "results"] as const;
@@ -69,6 +94,11 @@ export async function finopsPage(): Promise<HTMLElement[]> {
       tr("Native replay", `${number(t.steps.reduce((a, s) => a + s.nativeChars, 0))} serialized characters, overlaps visible content; encrypted bytes are not tokens`);
     }
     for (const [name, key] of [["Input tokens", "input"], ["Cached input tokens", "cachedInput"], ["Output tokens", "outputTokens"]] as const) tr(name, usage(t, key) === undefined ? "Unknown" : number(usage(t, key)!));
+    const inp = usage(t, "input"), cached = usage(t, "cachedInput");
+    if (inp !== undefined && inp > 0 && cached !== undefined) {
+      const hitPct = Math.min(100, (cached / inp) * 100).toFixed(1);
+      tr("Prompt cache hit rate", `${hitPct}% (${number(cached)} of ${number(inp)} input tokens)`);
+    }
     const cost = estimateCost(t, data.rates);
     tr("Estimated API cost", cost === undefined ? "Unknown — missing usage, cache detail, or model rate" : t.local ? "$0 API rate · compute / hosting excluded" : `${usd(cost)} · current configured rates`);
     tr("Generated UI / tool args / text", `${number(t.output.projection)} / ${number(t.output.tools)} / ${number(t.output.text)} characters`);
@@ -127,11 +157,26 @@ export async function finopsPage(): Promise<HTMLElement[]> {
   rateModel.setAttribute("aria-label", "Rate model");
   const fields = ["Input", "Cached input", "Output"].map((label) => el("input", { type: "number", min: "0", step: "any", "aria-label": `${label} USD per million tokens` }));
   const rateDate = el("span", { className: "muted small" });
+  const applyPreset = el("button", { type: "button", className: "ghost", textContent: "Use standard preset", disabled: true });
+  applyPreset.addEventListener("click", () => {
+    const model = models.find(([id]) => id === rateModel.value)?.[1];
+    if (!model) return;
+    const preset = findStandardRate(model.provider, model.model);
+    if (preset) {
+      fields[0]!.value = String(preset.input);
+      fields[1]!.value = String(preset.cached);
+      fields[2]!.value = String(preset.output);
+      rateDate.textContent = `Applied standard preset for ${model.provider} / ${model.model} (click Save rates to save)`;
+    }
+  });
   function loadRate(): void {
     const model = models.find(([id]) => id === rateModel.value)?.[1];
     const r = data.rates.find((r) => r.provider === model?.provider && r.model === model?.model);
+    const preset = model ? findStandardRate(model.provider, model.model) : undefined;
+    applyPreset.disabled = !preset;
+    applyPreset.title = preset ? `Standard preset: $${preset.input} in / $${preset.cached} cached / $${preset.output} out` : "No standard preset available";
     fields.forEach((f, i) => f.value = r ? String([r.input, r.cached, r.output][i]) : "");
-    rateDate.textContent = r ? `Updated ${new Date(r.updated).toLocaleString()}` : "No rate configured";
+    rateDate.textContent = r ? `Updated ${new Date(r.updated).toLocaleString()}` : preset ? `No rate configured · Standard preset available ($${preset.input} in / $${preset.cached} cached / $${preset.output} out)` : "No rate configured";
   }
   const save = el("button", { type: "button", className: "ghost", textContent: "Save rates", disabled: !models.length });
   save.addEventListener("click", async () => {
@@ -146,7 +191,7 @@ export async function finopsPage(): Promise<HTMLElement[]> {
     } catch (e) { error.textContent = (e as Error).message; }
   });
   pricing.append(el("p", { className: "row-hint", textContent: "Hosted cost needs your exact model rates below; none are assumed. Local model API cost is zero. Estimates use current rates, not an invoice, and exclude provider extras, tool fees and local compute. Completed chats and task runs are included; calibration and channels are outside this view." }), rateModel,
-    el("div", { className: "finops-controls" }, ...fields.map((f, i) => el("label", {}, ["Input", "Cached input", "Output"][i], f))), save, rateDate);
+    el("div", { className: "finops-controls" }, ...fields.map((f, i) => el("label", {}, ["Input", "Cached input", "Output"][i], f))), save, applyPreset, rateDate);
   function metadata(): void {
     const sessions = [...new Set(data.turns.map((t) => t.session))];
     const labels = new Map(sessions.map((id, i) => [id, String(i + 1)]));
@@ -180,8 +225,12 @@ export async function finopsPage(): Promise<HTMLElement[]> {
   pricing.open = models.length > 0 && data.rates.length === 0;
   timer = setInterval(() => { if (box.isConnected && !document.hidden && !pricing.contains(document.activeElement)) void reload(); }, 5000);
   exportButton.addEventListener("click", () => {
-    const rows: (string | number)[][] = [["turn", "task_id", "run_id", "session", "at", "provider", "model", "source", "seconds", "steps", "input_tokens", "cached_tokens", "output_tokens", "estimated_usd", "first_context_chars", "repeated_context_chars", "ui_chars", "tool_arg_chars", "text_chars"]];
-    for (const t of visible()) rows.push([ordinals.get(t.id)!, t.task?.taskId ?? "", t.task?.runId ?? "", t.session, t.at, t.provider, t.model, t.source, t.ms / 1000, t.steps.length, usage(t, "input") ?? "", usage(t, "cachedInput") ?? "", usage(t, "outputTokens") ?? "", estimateCost(t, data.rates) ?? "", shapeTotal(t.context), t.steps.reduce((a, s) => a + shapeTotal(s.context), 0), t.output.projection, t.output.tools, t.output.text]);
+    const rows: (string | number)[][] = [["turn", "task_id", "run_id", "session", "at", "provider", "model", "source", "seconds", "steps", "input_tokens", "cached_tokens", "cache_hit_rate_pct", "output_tokens", "estimated_usd", "first_context_chars", "repeated_context_chars", "ui_chars", "tool_arg_chars", "text_chars"]];
+    for (const t of visible()) {
+      const inp = usage(t, "input"), cached = usage(t, "cachedInput");
+      const hitPct = (inp && inp > 0 && cached !== undefined) ? Number(((cached / inp) * 100).toFixed(1)) : "";
+      rows.push([ordinals.get(t.id)!, t.task?.taskId ?? "", t.task?.runId ?? "", t.session, t.at, t.provider, t.model, t.source, t.ms / 1000, t.steps.length, inp ?? "", cached ?? "", hitPct, usage(t, "outputTokens") ?? "", estimateCost(t, data.rates) ?? "", shapeTotal(t.context), t.steps.reduce((a, s) => a + shapeTotal(s.context), 0), t.output.projection, t.output.tools, t.output.text]);
+    }
     // Guard spreadsheet formula execution even when a custom provider supplies the model id.
     const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/^[=+@\-\t\r]/, "'$&").replaceAll('"', '""')}"`).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));

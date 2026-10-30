@@ -75,6 +75,18 @@ test("built-in folders seed reviewed references and update the whole package", a
   assert.equal(installed.update, undefined);
   assert.equal(installed.files?.length, 2);
   assert.match(upgraded.fileText(name, "references/market-dashboard-example.json").text, /"history"/);
+
+  // Outdated or mismatched manifest with corrupt disk files still allows updating to official bundled package
+  const statePath2 = path.join(d, "skills", "skills.json");
+  const state2 = JSON.parse(readFileSync(statePath2, "utf8"));
+  state2[name].files = [{ path: "references/market-dashboard-example.json", bytes: 100, sha256: "corrupt" }];
+  writeFileSync(statePath2, JSON.stringify(state2));
+  writeFileSync(path.join(d, "skills", name, "files", "references", "market-dashboard-example.json"), "tampered content");
+  const brokenManager = new Skills(d);
+  const brokenPreview = brokenManager.view().find(skill => skill.name === name)!.update!;
+  assert.ok(brokenPreview);
+  brokenManager.updateBuiltin(name, brokenPreview.fingerprint, brokenPreview.currentFingerprint);
+  assert.match(brokenManager.fileText(name, "references/market-dashboard-example.json").text, /"history"/);
 });
 
 test("builtin updates require a current preview and preserve edits, removals and disabled state", () => {
@@ -545,4 +557,89 @@ test("NSE MCP vendor skill package is seeded with tools guide and query pattern 
   const readGuide = String(await read.execute({ skill: "nse-mcp", path: "references/nse-tools-guide.md" }, {}));
   assert.match(readGuide, /Official NSE MCP Tools & Schema Guide/);
   assert.match(readGuide, /moving_average/);
+});
+
+test("skills.provider: zero-latency salutation bypass and dynamic Session Skill Cache", async () => {
+  const manager = new Skills(dir());
+  let providerCalls = 0;
+  const mockProvider: Provider = {
+    id: "mock",
+    async *stream(req) {
+      providerCalls++;
+      // If bypass works, req is the prepared prompt directly, not the selection prompt!
+      yield { type: "text", delta: "Direct answer" };
+      yield { type: "done", stop: "end" };
+    },
+  };
+
+  // 1. Salutation bypass: "hi" must proceed directly to answer without running selection LLM call
+  const wrapped = manager.provider(mockProvider);
+  const events = [];
+  for await (const e of wrapped.stream({
+    model: "test",
+    system: manager.index(),
+    messages: [{ role: "user", content: "hi" }],
+  })) {
+    events.push(e);
+  }
+  assert.equal(providerCalls, 1);
+  assert.equal(events[0]?.type, "text");
+  assert.equal(events[0]?.delta, "Direct answer");
+
+  // 2. Session Skill Cache: ongoing conversation with already-loaded skills continues directly
+  providerCalls = 0;
+  const continuedEvents = [];
+  for await (const e of wrapped.stream({
+    model: "test",
+    system: manager.index(),
+    messages: [
+      { role: "user", content: "build a chart" },
+      { role: "tool", toolName: "use_skill", content: "Skill interactive-ui instructions:\n..." },
+      { role: "assistant", content: "Chart is ready" },
+      { role: "user", content: "can you roughly calculate the total" },
+    ],
+  })) {
+    continuedEvents.push(e);
+  }
+  // Continues directly to generation without extra selection round
+  assert.equal(providerCalls, 1);
+  assert.equal(continuedEvents[0]?.type, "text");
+  assert.equal(continuedEvents[0]?.delta, "Direct answer");
+});
+
+test("diagrams built-in skill loads templates and canonical diagram specifications", async () => {
+  const manager = new Skills(dir());
+  const diagramSkill = manager.view().find(skill => skill.name === "diagrams");
+  assert.ok(diagramSkill, "diagrams skill must be present in builtins");
+  assert.equal(diagramSkill.enabled, true);
+  assert.deepEqual(diagramSkill.files?.map(f => f.path), ["references/diagram-templates.json"]);
+
+  const [use, read] = manager.tools();
+  assert.ok(use && read);
+  const loaded = String(await use.execute({ names: ["diagrams"] }, {}));
+  assert.match(loaded, /Universal Diagram Architecture & Visual Design/);
+  assert.match(loaded, /First-Class Spoken Projection/);
+
+  const readOutput = String(await read.execute({ skill: "diagrams", path: "references/diagram-templates.json" }, {}));
+  assert.match(readOutput, /architecture/);
+  assert.match(readOutput, /feedback_control_loop/);
+
+  const templatesText = manager.fileText("diagrams", "references/diagram-templates.json").text;
+  const templates = JSON.parse(templatesText);
+  assert.ok(templates.flowchart && templates.architecture && templates.feedback_control_loop && templates.data_pipeline);
+
+  const store = new SurfaceStore(basicCatalog);
+  for (const [name, spec] of Object.entries(templates)) {
+    const surfaceId = `test-diagram-${name}`;
+    const diags = store.apply("vak_render", {
+      surface: surfaceId,
+      nodes: [spec],
+    });
+    assert.equal(diags.filter(d => d.severity === "error").length, 0, `Template ${name} had errors: ${JSON.stringify(diags)}`);
+    const retrieved = store.get(surfaceId);
+    assert.ok(retrieved, `Surface ${name} must be stored`);
+    const diagramNode = [...retrieved.nodes.values()].find(n => n.type === "diagram");
+    assert.ok(diagramNode, `Surface ${name} must contain a diagram node`);
+    assert.equal(diagramNode.type, "diagram");
+  }
 });

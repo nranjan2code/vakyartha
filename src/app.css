@@ -497,7 +497,7 @@ body.collapsed .artifacts-sidebar { display: grid; margin-left: 58px; }
 
 .msg.assistant .text:empty { display: none; }
 /* Response typography: markdown elements share one rhythm instead of browser defaults. */
-.msg.assistant .text { line-height: 1.65; overflow-wrap: anywhere; }
+.msg.assistant .text { line-height: 1.65; overflow-wrap: anywhere; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; font-feature-settings: "cv02", "cv03", "cv04", "cv11"; }
 .msg.assistant .text > :first-child { margin-top: 0; }
 .msg.assistant .text > :last-child { margin-bottom: 0; }
 .msg.assistant .text p { margin: 0 0 0.75em; }

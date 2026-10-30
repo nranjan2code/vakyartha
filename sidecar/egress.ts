@@ -14,6 +14,7 @@ export const ALLOWED_EGRESS_HOSTS = new Set([
   "mcp.kite.trade",
   "mcp.nseindia.in",
   ...COMPATIBLE_PRESETS.map((preset) => new URL(preset.baseUrl).hostname),
+  "api.typesafe.ai",
 ]);
 
 export const ALLOWED_WORKSPACE_HOST_SUFFIXES = [

@@ -5,7 +5,7 @@ import { el, engine } from "./core.ts";
 import { tile } from "./icons.ts";
 import type { MarketplaceId, MarketplaceListing } from "../shared/marketplaces.ts";
 
-const BRANDS: Record<string, string> = { mcp: "mcp.svg", files: "mcp.svg", memory: "mcp.svg", github: "github.png", docker: "docker.png", "brave-search": "brave-search.png", tavily: "tavily.png", databricks: "databricks.png", notion: "notion.png", context7: "context7.png", zerodha: "zerodha.png" };
+const BRANDS: Record<string, string> = { mcp: "mcp.svg", files: "mcp.svg", memory: "mcp.svg", github: "github.png", docker: "docker.png", "brave-search": "brave-search.png", tavily: "tavily.png", databricks: "databricks.png", notion: "notion.png", context7: "context7.png", zerodha: "zerodha.png", "typesafe-ai": "typesafe-ai.png", typesafe: "typesafe-ai.png" };
 export function brandTile(id: string, fallback = "plug", size = 40): HTMLElement {
   if (!BRANDS[id]) return tile(fallback, size);
   const box = el("span", { className: "brand-tile" }, el("img", { src: `/brand/integrations/${BRANDS[id]}`, alt: "", width: size - 12, height: size - 12 }));
@@ -81,7 +81,8 @@ export function publisherIcon(item: MarketplaceListing, query: string, cursor: s
 }
 /** Publisher identity for a public GitHub skill repository. */
 export function skillPublisherIcon(repo: string, size = 40): HTMLElement {
-  const owner = repo.split("/")[0] ?? "Skill";
+  const owner = (repo.split("/")[0] ?? "Skill").toLowerCase();
+  if (BRANDS[owner]) return brandTile(owner, "spark", size);
   return imageTile(owner, `/api/skills/icon?repo=${encodeURIComponent(repo)}`, size);
 }
 export function importedIcon(id: string, title: string, size = 40, available = true): HTMLElement {

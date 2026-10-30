@@ -283,6 +283,7 @@ function dictationGroup(list: VoiceProvider[]): HTMLElement {
     row("Microphone button", "Speak instead of typing: ⌘D or the mic in the message box. Enter stops; Esc discards.", toggle(dictationPrefs.own, (on) => { dictationPrefs.enabled = on; })),
     which,
     row("Language", "Only the languages the chosen model transcribes. A regional choice sets spelling where the model supports it.", languageBox),
+    row("Clean speech with chat model", "Remove hesitation, fillers ('um', 'ah') and false starts using the active model.", toggle(dictationPrefs.clean, (on) => { dictationPrefs.clean = on; })),
     row("Send when dictation ends", "Otherwise the words wait in the message box for you to edit.", toggle(dictationPrefs.send, (on) => { dictationPrefs.send = on; })),
   );
 }

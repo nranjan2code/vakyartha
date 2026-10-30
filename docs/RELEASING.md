@@ -1,6 +1,6 @@
 # RELEASING.md: Vakyartha
 
-Current source runtime change (2026-10-30): both dev and release require the self-contained Node 26 runtime and reviewed clean sandbox helper `0c0a3473b2ddba595fef370d7266223723403a15`, built with Rust 1.99.1. Sidecar protocol is carried on descriptor 3 through `vaksb worker`. Worker data is `<app-data>/worker/`; native stores are outside its grants. Desktop no longer loads `.env` or forwards saved credentials to Node. The source canary and native WebKit smoke are recorded in [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#contained-desktop-launcher-and-native-only-credentials--2026-10-30). This source checkpoint is not installed; no new release or complete agent-runtime outcome is established.
+Current source runtime change (2026-10-30): both dev and release require the self-contained Node 26 runtime and reviewed clean sandbox helper `19c493dc7f619ec772c99a5f6f397a4a71888f61`, built with Rust 1.99.1. Sidecar protocol is carried on descriptor 3 through `vaksb worker`. Worker data is `<app-data>/worker/`; native stores are outside its grants. Desktop no longer loads `.env` or forwards saved credentials to Node. The source canary and native WebKit smoke are recorded in [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#contained-desktop-launcher-and-native-only-credentials--2026-10-30). This source checkpoint is not installed; no new release or complete agent-runtime outcome is established.
 
 ## Prompt and skill cleanup — installed 2026-10-29
 

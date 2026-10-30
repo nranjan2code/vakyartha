@@ -5,7 +5,7 @@ import { vaultPresence, engineFetch } from "./backend.ts";
 import { readSse } from "@vak/core";
 import { autostart, inTauri, openAdminConsole, revealPath, setKeepRunning } from "./backend.ts";
 import { $, api, ask, el, engine, prefs } from "./core.ts";
-import { choose, current, labelOf, listModels, loadProviders, modelOptions, parseChoice, type ProviderInfo, providers } from "./models.ts";
+import { choose, current, labelOf, listModels, loadProviders, modelOptions, modelsOf, parseChoice, type ProviderInfo, providers } from "./models.ts";
 import { applyAppearance, appearance, MODES, SIZES, THEMES } from "./theme.ts";
 import { icon } from "./icons.ts";
 import { pagedNodes } from "./pagination.ts";
@@ -15,6 +15,7 @@ import { disposeFinops, finopsPage } from "./finops-page.ts";
 import { TASK_LIMITS, parseTaskSummaries } from "../shared/task-contract.ts";
 import { loadVoices, voicePage, voiceSection, voiceSettingsPage } from "./voice/index.ts";
 import { group, pill, plainField, row, secretField, segmented, select, type Setting, title, toggle } from "./ui.ts";
+import { getDecisionConfig, saveDecisionConfig, type DecisionConfig } from "./decision/index.ts";
 import { disposeMediaPage } from "./media-page.ts";
 import { sandboxPage } from "./sandbox-page.ts";
 import type { MediaProvider } from "../shared/media.ts";
@@ -183,8 +184,8 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     const pLabel = providers.find((p) => p.id === provider)?.label ?? provider;
     limitsGroup.replaceChildren(
       el("div", { className: "group-title", textContent: `Execution limits (${pLabel})` }),
-      row("Step limit", "Bounds non-tool rounds (answers, canvas authoring, repair).", select([["", "Inherit general setting"], ["6", "6 steps"], ["8", "8 steps"], ["12", "12 steps"], ["16", "16 steps"], ["24", "24 steps"], ["32", "32 steps"]], prefs.get(`opt:${provider}:maxSteps`) ?? "", (v) => v ? prefs.set(`opt:${provider}:maxSteps`, v) : prefs.remove(`opt:${provider}:maxSteps`))),
-      row("Tool budget", "Bounds external MCP tool rounds per turn.", select([["", "Inherit general setting"], ["6", "6 rounds"], ["10", "10 rounds"], ["12", "12 rounds"], ["16", "16 rounds"], ["24", "24 rounds"]], prefs.get(`opt:${provider}:toolRounds`) ?? "", (v) => v ? prefs.set(`opt:${provider}:toolRounds`, v) : prefs.remove(`opt:${provider}:toolRounds`))),
+      row("Step limit", "Bounds non-tool rounds (answers, canvas authoring, repair).", select([["", "Inherit general setting"], ["6", "6 steps"], ["8", "8 steps"], ["12", "12 steps"], ["16", "16 steps"], ["24", "24 steps"], ["32", "32 steps"], ["unlimited", "Unlimited (run until completed)"]], prefs.get(`opt:${provider}:maxSteps`) ?? "", (v) => v ? prefs.set(`opt:${provider}:maxSteps`, v) : prefs.remove(`opt:${provider}:maxSteps`))),
+      row("Tool budget", "Bounds external MCP tool rounds per turn.", select([["", "Inherit general setting"], ["6", "6 rounds"], ["10", "10 rounds"], ["12", "12 rounds"], ["16", "16 rounds"], ["24", "24 rounds"], ["unlimited", "Unlimited (no tool limit)"]], prefs.get(`opt:${provider}:toolRounds`) ?? "", (v) => v ? prefs.set(`opt:${provider}:toolRounds`, v) : prefs.remove(`opt:${provider}:toolRounds`))),
     );
   }
   updateLimits();
@@ -275,6 +276,98 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     }
   });
 
+  const decisionGroup = el("div", { className: "group" });
+  function updateDecisionUi(): void {
+    const cfg = getDecisionConfig();
+    const providerOptions: [string, string][] = [
+      ["ollama", "Local Ollama (d1-omni / laya)"],
+      ["typesafe", "TypeSafe AI (Jev SystemOne)"],
+      ["openai", "OpenAI (GPT-4o-mini Structured Outputs)"],
+      ["openrouter", "OpenRouter (Microsoft-Decision-1)"],
+      ["heuristic", "Built-in Fast Heuristics (0ms)"],
+    ];
+
+    const detected = modelsOf.get(cfg.providerId) ?? [];
+    let modelOptionsList: [string, string][] = detected.map((m) => [m, m]);
+
+    if (modelOptionsList.length === 0) {
+      if (cfg.providerId === "openrouter") {
+        modelOptionsList = [
+          ["microsoft/decision-1", "microsoft/decision-1 (9B calibrated decider)"],
+          ["meta-llama/llama-3.2-3b-instruct", "meta-llama/llama-3.2-3b-instruct"],
+        ];
+      } else if (cfg.providerId === "openai") {
+        modelOptionsList = [
+          ["gpt-4o-mini", "gpt-4o-mini (fast strict JSON schema)"],
+          ["gpt-4o", "gpt-4o (standard)"],
+        ];
+      } else if (cfg.providerId === "ollama") {
+        modelOptionsList = [
+          ["d1-omni:latest", "d1-omni:latest (380M decision+vision)"],
+          ["laya:latest", "laya:latest (420M decision)"],
+          ["qwen2.5:3b", "qwen2.5:3b"],
+          ["qwen3.5:4b-mlx", "qwen3.5:4b-mlx"],
+        ];
+      }
+    }
+
+    if (cfg.modelId && !modelOptionsList.some(([v]) => v === cfg.modelId)) {
+      modelOptionsList.unshift([cfg.modelId, cfg.modelId]);
+    }
+
+    const activeProvider = providers.find((p) => p.id === cfg.providerId);
+    if (activeProvider && activeProvider.available && detected.length === 0) {
+      void listModels(activeProvider).then((res) => {
+        if (res.models.length > 0 && cfg.providerId === getDecisionConfig().providerId) {
+          updateDecisionUi();
+        }
+      });
+    }
+
+    const providerSelect = select(providerOptions, cfg.providerId, (v) => {
+      saveDecisionConfig({ providerId: v as DecisionConfig["providerId"] });
+      updateDecisionUi();
+    });
+
+    const modelSelect = select(modelOptionsList, cfg.modelId, (v) => {
+      saveDecisionConfig({ modelId: v });
+    });
+
+    decisionGroup.replaceChildren(
+      el("div", { className: "group-title", textContent: "Decision & Turn Optimization" }),
+      row(
+        "Dynamic turn shaping",
+        "Uses local decision models to classify intent and strip unneeded context, tools, and grammar on greetings and casual turns.",
+        toggle(cfg.enabled, (on) => {
+          saveDecisionConfig({ enabled: on });
+          updateDecisionUi();
+        }),
+      ),
+      ...(cfg.enabled
+        ? [
+            row("Decision provider", "Engine used to score user intent in milliseconds.", providerSelect),
+            ...(cfg.providerId !== "heuristic" ? [row("Decision model", cfg.providerId === "ollama" ? "Installed local model with decision capabilities." : cfg.providerId === "openai" ? "Fast OpenAI model using strict structured outputs." : "Hosted decision model on OpenRouter.", modelSelect)] : []),
+            row(
+              "Prune MCP tools",
+              "Strip external tool schemas when no tools are needed, keeping the primary model focused.",
+              toggle(cfg.pruneTools, (on) => saveDecisionConfig({ pruneTools: on })),
+            ),
+            row(
+              "Strip greeting history",
+              "Omit past conversation turns on simple salutations ('Hi', 'Thanks') to drop token count from ~15k to ~50.",
+              toggle(cfg.stripSalutations, (on) => saveDecisionConfig({ stripSalutations: on })),
+            ),
+            row(
+              "Context assembly optimization",
+              "Shape multi-turn context dynamically based on turn intent rather than sending a static last-N turns sliding window.",
+              toggle(cfg.optimizeContext, (on) => saveDecisionConfig({ optimizeContext: on })),
+            ),
+          ]
+        : []),
+    );
+  }
+  updateDecisionUi();
+
   void fillModels(focus && focus !== current.provider ? "" : current.model);
   if (current.model) void showPlan();
   return [
@@ -286,6 +379,7 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     ),
     group("How vak asks this model", el("div", { className: "row stack" }, plan, el("div", { className: "row-actions" }, calibrate, calibration))),
     limitsGroup,
+    decisionGroup,
   ];
 }
 
@@ -489,8 +583,8 @@ async function generalPage(): Promise<HTMLElement[]> {
       row("Thinking", "Let local models think before answering (Ollama). Slower, sometimes better.", toggle(opt("think", "false") === "true", (on) => prefs.set("opt:think", String(on)))),
       row("Generation", "auto lets the capability plan decide.", select([["auto", "auto"], ["tools", "tools"], ["constrained", "constrained"]], opt("generation", "auto"), (v) => prefs.set("opt:generation", v))),
       row("Reasoning effort", "For models that take one.", select([["", "default"], ["low", "low"], ["medium", "medium"], ["high", "high"]], opt("effort", ""), (v) => prefs.set("opt:effort", v))),
-      row("Step limit", "Default step limit across all providers. Bounds answers, canvas authoring and repairs. Auto uses the model capability plan (8–12 steps).", select([["0", "Auto (Plan default)"], ["6", "6 steps"], ["8", "8 steps"], ["12", "12 steps"], ["16", "16 steps"], ["24", "24 steps"], ["32", "32 steps"]], opt("maxSteps", "0"), (v) => prefs.set("opt:maxSteps", v))),
-      row("Tool budget", "Default tool budget across all providers. Bounds external MCP tool calls per turn. Auto uses 12 rounds.", select([["0", "Auto (12 rounds)"], ["6", "6 rounds"], ["10", "10 rounds"], ["12", "12 rounds"], ["16", "16 rounds"], ["24", "24 rounds"]], opt("toolRounds", "0"), (v) => prefs.set("opt:toolRounds", v))),
+      row("Step limit", "Default step limit across all providers. Bounds answers, canvas authoring and repairs. Auto uses the model capability plan (8–12 steps).", select([["0", "Auto (Plan default)"], ["6", "6 steps"], ["8", "8 steps"], ["12", "12 steps"], ["16", "16 steps"], ["24", "24 steps"], ["32", "32 steps"], ["unlimited", "Unlimited (run until completed)"]], opt("maxSteps", "0"), (v) => prefs.set("opt:maxSteps", v))),
+      row("Tool budget", "Default tool budget across all providers. Bounds external MCP tool calls per turn. Auto uses 12 rounds.", select([["0", "Auto (12 rounds)"], ["6", "6 rounds"], ["10", "10 rounds"], ["12", "12 rounds"], ["16", "16 rounds"], ["24", "24 rounds"], ["unlimited", "Unlimited (no tool limit)"]], opt("toolRounds", "0"), (v) => prefs.set("opt:toolRounds", v))),
     ),
   ].filter(Boolean) as HTMLElement[];
 }

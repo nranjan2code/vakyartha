@@ -1,8 +1,8 @@
 # Implementation status and acceptance gates
 
-Latest runtime checkpoint (2026-10-30): schema 20 adds one-shot reasoning-process admission and independent protected cleanup settlement. The native driver connects a bound reasoner through consent and streamed provider I/O; an assembled packaged-worker fixture reaches canonical publication while leaving original-outcome checks pending. Product Work admission, lifecycle/context/decision adapters and acknowledgement remain unconnected; execution stays disabled under the empty profile. Hosted-provider policies, tools/continuation, scheduler, workspace/IA, drift/QoS/hard quotas, original outcomes, installed proof and final Astra review remain open. Work in `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` on `codex/agent-runtime-implementation`; leave the decision-feature work untouched. [Evidence](agent-runtime/IMPLEMENTATION-PROGRESS.md#native-reasoning-supervisor-and-assembled-publication-path--2026-10-30).
+Latest integrated source checkpoint (2026-10-30): committed product `main` through `625787d` is reconciled into the isolated runtime branch, retaining schema 20 native authority and the newer decision, skills, cache, diagram and voice features. Existing task/review/output/schedule code is available for reuse. Product Work execution remains disabled; its admission/lifecycle, context/decision/tool adapters, acknowledgement and original-outcome gates remain open. [Code audit and integration result](agent-runtime/CODE-STATUS-AUDIT.md).
 
-Source-audited remaining scope: existing TypeScript task/review/output/scheduling behavior and the newer product decision/skills/voice/diagram/cache code must be reused in the native cutover. The two histories are not yet reconciled at this checkpoint. [Eight-area code audit and revised order](agent-runtime/CODE-STATUS-AUDIT.md). No acceptance checkbox is closed by the audit.
+Source-audited remaining scope: existing TypeScript task/review/output/scheduling behavior and the newer product decision/skills/voice/diagram/cache code must be reused in the native cutover. The committed product baseline is now reconciled in this worktree; pending edits in the original checkout remain untouched. [Eight-area code audit and revised order](agent-runtime/CODE-STATUS-AUDIT.md). No acceptance checkbox is closed by the audit.
 
 Maintained tracker, reviewed 2026-10-30. Replaces the former MVP checklist without resetting item IDs, checked states, failed outcomes or historical evidence. Sections distinguish current foundations, active work, proposed architecture and future candidates. A historical checked item proves only its stated scope, not a newer expanded contract.
 
@@ -165,6 +165,8 @@ Owner: Projection for the voice projector; Vakyartha for the `voice/` module. Ac
 - [ ] V12. Voice security: echo guard, spoken provenance for outside content, follow-ups only from controls, adversarial tests for each (M9.12). Partly: echo guard (a sentence that began while or just after the app spoke and matches what it said is ignored; tested, including our approval question). Open: provenance phrases and follow-ups, which arrive with V11. Provenance: a reply that drew on tools is introduced with "Based on what I found:". Follow-ups come only from agenda items (on-screen controls).
 - [ ] V13. Model-authored controls carry action, item payload and option values: catalog guidance, derivable repairs, dead-control diagnostics, replay-gated on local-model output (M9.13). Partly (Projection `2918883`): a per-item button whose payload names no item now sends `item` from its card heading, so a click tells the model which card (tested; replay gate unchanged). Chosen over a new prompt rule: it always works and adds nothing to the small model's prompt. Comparison options already keep price and specs as fields. Open: a dead-control diagnostic, if a real local-model output shows one.
 - [x] V10. Regression gates: recordings never stored; voice answers recorded like typed input; billed providers keep consent; keyboard parity for every voice action. Evidence: audio lives in window memory for one transcription; the local engine's clip is written 0600 and removed in `finally` (`sidecar/voice/whistle.ts`); a hosted transcriber receives it only when chosen in Settings → Voice. Heard sentences become ordinary messages, and spoken choices ordinary `vak-action`s, recorded like typed and clicked input. The model fallback uses the chat's chosen model and is counted by FinOps. Every voice action has a control: the approval card, the surface's own controls, the waves button / ⌘⇧D, Esc.
+- [x] V14. Smart dictation cleanup and Voice Desk app (2026-10-30): In-composer speech normalizer (`cleanDictationByModel` via `/api/voice/clean` using the user's active model from settings with zero hardcoded providers/models; toggle in Settings → Voice); built-in `voice-notes` skill for turning spoken brainstorms into structured executive summaries, decisions and tasks; and built-in `voice-desk` executable app (`sidecar/builtin-apps/voice-desk/`) featuring interactive action checklists, notes lifecycle, tag search, and dual spoken/visual projection. Unit tests (294 passing), typechecking, Skills WebKit check, and Apps WebKit check pass.
+
 
 ## Release readiness
 
@@ -436,3 +438,53 @@ Historical workspace checkpoint, read with the bounded FOLDER1–FOLDER7 criteri
 - [x] Governed binary media handoff: `/export-asset` and `/import-file` endpoints validate chat bindings, paths, resource limits (20 MB), and media signatures (PNG, WAV, MP4, PDF, text).
 - [x] UI integration: Responsive chat workspace bar and Projects sidebar (`src/workspaces-panel.ts`) with mode pills, review drawer, discard/refresh guards, and dialogs.
 - [x] Verification: All 255 tests pass (`test/workspace-*.test.ts`), WebKit geometry checks pass at 1440/1100/620/375px (`scripts/control-layout-check.ts`, `scripts/collection-ui-check.ts`, `scripts/canvas-check.ts`, `scripts/surface-design-check.ts`), and frozen primary-local Ollama outcome gate passes (`scripts/folder-workspace-outcome.ts`).
+
+## Pluggable Decision Scoring, Turn Shaper & Chaining checkpoint — 2026-10-30
+
+Imported product checkpoint: checked entries below record their original component/history scope. The [current code audit](agent-runtime/CODE-STATUS-AUDIT.md) identifies missing tool/grammar propagation, task/scoring integration, attributed decision usage and native mediation. No imported check closes those integration or original-outcome gates. Live paid tests now require explicit opt-in and exact model selection; missing credentials/fallback cannot pass as live success.
+
+- [x] Strongly-typed contracts (`src/decision/types.ts`) for `TurnShape`, `TurnIntent`, `HistoryPolicy`, `DecisionState`, and `DecisionConfig`.
+- [x] In-memory zero-latency heuristic decision provider (`src/decision/heuristic.ts`) for deterministic <1ms classification and infallible safety fallback.
+- [x] Local Ollama decision provider adapter (`src/decision/providers/ollama.ts`) utilizing the native `/v1/systemone` endpoint with local zero-token-output models (`d1-omni:latest` 380M, `laya:latest` 421M), calibrated probability scoring and capability-based tool pruning.
+- [x] Cloud OpenAI decision provider (`src/decision/providers/openai.ts`) utilizing 2026 Strict Structured Outputs (`strict: true` JSON schema) with Keychain credential retrieval.
+- [x] Multi-stage decision chaining engine (`src/decision/chain.ts`) with sequential/conditional branching and composite confidence scoring.
+- [x] Turn Shaper orchestration (`src/decision/shaper.ts`) and initiation hook in `src/main.ts`: trims history (0 prior turns on salutations, 1 turn on canvas refinements), prunes MCP tool schemas, and bounds step limits.
+- [x] Dynamic runtime discovery: dynamically discovers active tools from `/api/integrations`, active skills from `/api/skills`, and active UI projections from `client.store.list()` without hardcoding domain lists or static tool registries.
+- [x] Reactive settings UI in `src/settings.ts` under Models: toggle, provider selection, model selection, tool pruning toggle, and greeting history stripping toggle.
+- [x] Agent skills published: `decision-eval` in `sidecar/builtin-skills/decision-eval/SKILL.md` and `decision-chain` in `sidecar/builtin-skills/decision-chain/SKILL.md` for LLM criteria evaluation, security gating, and multi-step pipeline orchestration.
+- [x] Multi-Turn Benchmark: [`docs/decision/BENCHMARK-STOCK-DASHBOARD.md`](decision/BENCHMARK-STOCK-DASHBOARD.md) demonstrates 72.8% token savings, ~60ms local System 1 latency, and 100% canvas refinement accuracy.
+- [x] Senior QA Negative & Red/Blue Teaming: [`docs/decision/EVALUATION-NEGATIVE-REDBLUE-MULTIDOMAIN.md`](decision/EVALUATION-NEGATIVE-REDBLUE-MULTIDOMAIN.md) validates 22/22 adversarial scenarios, Ghost Canvas safeguards, generic CRUD verb collision resolution, and 9/9 multi-domain compound tests across 8 distinct enterprise domains.
+- [x] Verification: TypeScript typecheck passes with 0 errors; full suite of 16 tests in `test/decision.test.ts` passes; 0 TODOs, 0 mocks, 0 stubs.
+
+## TypeSafe AI Provider, Dynamic Model Discovery & Official Skill Pack checkpoint — 2026-10-30
+
+- [x] TypeSafe AI native System 1 decision provider adapter (`src/decision/providers/typesafe.ts`) calling `https://api.typesafe.ai/v1/systemone` with Bearer auth and dynamic tool pruning.
+- [x] Dynamic model discovery: no hardcoded models; detects models directly from API key via `GET /v1/models` in both sidecar server (`sidecar/server.ts`) and decision provider (`TypeSafeDecisionProvider.listModels()`).
+- [x] Preserved unique `provider + model` combination throughout the app, Settings UI, and preference store (`choose("typesafe", model)`).
+- [x] Retained `OpenRouter (Microsoft-Decision-1)` and `microsoft/decision-1` intact in settings.
+- [x] Rust Root of Trust and sidecar network egress gating: allowlisted `api.typesafe.ai` over HTTPS in `src-tauri/src/policy.rs` and `sidecar/egress.ts`.
+- [x] Stored secrets: `TYPESAFE_API_KEY` registered in `sidecar/settings.ts` with macOS Keychain / cross-platform vault storage.
+- [x] Official Skill Pack support: `typesafe-ai/skills` added to `SKILL_SOURCES` in `shared/skills.ts` with official 200×200 brand mark in `public/brand/integrations/typesafe-ai.png` and `src/catalog-icons.ts` (`skillPublisherIcon`), cleanly separated from built-in skills.
+- [x] Verification: TypeScript typecheck passes with 0 errors; all 287 Node tests pass; all 11 Rust cargo tests pass.
+
+## Cross-Provider Prompt Caching Governance & FinOps Visibility checkpoint — 2026-10-30
+
+- [x] Cross-provider prompt caching research and architecture (ADR-055): Analyzed prompt caching paradigms and cache invalidation rules across OpenAI (prefix caching), Anthropic (ephemeral breakpoints), and Google Gemini (implicit caching on 2.5/3/4).
+- [x] Stable prefix shaping (`src/decision/shaper.ts`): Implemented deterministic tool sorting by name and preserved tool schemas across ongoing multi-turn conversations on hosted prefix-cached providers (`openai`, `gemini`, `anthropic`) to eliminate `tools_changed` cache miss penalties.
+- [x] FinOps Prompt Cache Hit Rate metric (`src/finops-page.ts`): Surfaces `Prompt cache hit rate` (`hitPct% (cached / input tokens)`) in turn details and adds `cache_hit_rate_pct` to CSV exports.
+- [x] Standard Model Rate Presets (`src/finops-page.ts`): Pre-computed three-tier rate templates (`input`, `cached`, `output`) for OpenAI (`gpt-4o`, `gpt-4o-mini`, `o1`, `o3-mini`), Anthropic (`claude-3-5-sonnet`, `claude-3-5-haiku`, `claude-3-opus`), and Gemini (`gemini-2.5-pro`, `gemini-2.5-flash`), with 1-click "Use standard preset" action.
+- [x] Verification: TypeScript typecheck passes; full suite of unit tests in `test/decision.test.ts` and `test/finops.test.ts` pass; WebKit UI checks in `scripts/finops-check.ts` pass at 1100px and 620px widths with 0 regressions.
+
+## Smart Dictation Cleanup, Voice Notes Skill & Voice Desk App checkpoint — 2026-10-30
+
+- [x] Smart Dictation Normalization (`sidecar/voice/resolve.ts`, `POST /api/voice/clean`): `cleanDictationByModel` resolves speech disfluencies (*um*, *uh*, *like*, *you know*, *iff and but*), backtracked corrections, and generates markdown formatting (paragraphs, bullets, tables) using the user's active provider and model without hardcoding.
+- [x] Resilient offline fallback: Verbatim transcribed audio is returned immediately if the model is unreachable, times out, or fails, preventing any lost dictation input.
+- [x] UI & Preferences: Added "Clean speech with chat model" toggle in Settings → Voice (`src/voice/settings-page.ts`), wired to dictation preferences (`src/voice/dictation.ts`) and composer dictation submission (`src/main.ts`).
+- [x] Built-in `voice-notes` skill (`sidecar/builtin-skills/voice-notes/SKILL.md`): Turn spoken transcripts into executive summaries, decisions, action item registers, tags, and verbatim notes.
+- [x] Built-in executable app `voice-desk` (`sidecar/builtin-apps/voice-desk/`):
+  - Manifest (`app.json`) declaring isolated network, 256MB memory cap, and workbench/actions entrypoints.
+  - Two surfaces in `surface.json`: `workbench` (split note list, markdown textarea editor, audio drawer, task checklist) and `actions` (global action item register with tag filters).
+  - Backend runtime (`server.ts`) handling `create_note`, `save_note`, `delete_note`, `add_action`, `toggle_action`, `select_note`, `filter_tag`, and `export_markdown` with atomic Seatbelt-sandboxed JSON persistence.
+  - Package documentation: complete `README.md`, `AGENTS.md`, `SKILLS.md`, and `ARCHITECTURE.md` (>1,600 characters each).
+- [x] Adversarial Red/Blue Teaming Suite (`scripts/voice-redblue-eval.ts`): 12/12 scenarios passed covering injection resistance, jailbreak refusal, markup escaping, fuzzing, timeout fallbacks, Seatbelt sandbox containment, and path traversal rejection.
+- [x] Verification: TypeScript typecheck passes with 0 errors; full suite of 294 tests pass (`npm test`); WebKit apps-check passes at 1100px, 620px, and 375px (`scripts/apps-check.ts`); live local Ollama verification with `qwen3.5:4b-mlx` completes in <250ms.

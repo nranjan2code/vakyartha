@@ -514,7 +514,7 @@ Supersedes ADR-047 implementation assumptions. Pool execution capacity, not unco
 
 ## ADR-049: Atomic bounded DuckDB analytics and machine source receipts (2026-10-28)
 
-The user explicitly requested enabling missing DuckDB support for executable reference apps, approving adoption of its runtime dependency. The initial `@duckdb/node-api` and bindings were pinned to `1.5.6-r.1`; they are superseded by ADR-053's 2.0 LTS upgrade. npm installation used `--ignore-scripts`, provenance/signatures and the dependency graph were reviewed, and `npm audit signatures` verified registry signatures. No package install/build script executes. The native platform runtime is staged into opted-in disposable app workspaces and included with licenses/integrity receipt in release resources.
+The user explicitly requested enabling missing DuckDB support for executable reference apps, approving adoption of its runtime dependency. The initial `@duckdb/node-api` and bindings were pinned to `1.5.6-r.1`; they are superseded by ADR-056's 2.0 LTS upgrade. npm installation used `--ignore-scripts`, provenance/signatures and the dependency graph were reviewed, and `npm audit signatures` verified registry signatures. No package install/build script executes. The native platform runtime is staged into opted-in disposable app workspaces and included with licenses/integrity receipt in release resources.
 
 `context.database` owns the live sandbox connection. A closed, bounded 2 MiB DuckDB snapshot commits as base64 inside the existing atomic app record with state, validated surfaces and revision. There is one persistent writer, no new native relay/IPC, and no host SQL service. Failed computations/projections/checkpoints preserve the previous database. Queries are bounded by row/JSON result size and invocation timeout; external database access/automatic extensions are disabled. The 128 MiB DuckDB setting is not a whole-process memory quota. Apps own schema compatibility; this does not revive earlier arbitrary-volume or daemon claims.
 
@@ -569,7 +569,95 @@ This decision formalizes the explicit boundary between the indestructible Rust e
    - Because the app has 0 active production users, no backwards-compatibility shims or deprecated parallel stores are maintained.
    - The native vault and policy are verified via unit tests directly in the Rust crate. The general-purpose `vault_get` UI command was removed on 2026-10-29 because returning stored values to frontend code widened secret exposure; user-entered writes/deletes remain available. This does not yet remove direct credential reads from the TypeScript provider process or establish the native request broker.
 
-## ADR-053: Forward-only current runtime stack (2026-10-29)
+## ADR-053: Pluggable Decision Scoring, Dynamic Turn Shaping, and Decision Chaining (2026-10-30)
+
+Accepted at the user's direction: separate System 1 decision scoring from System 2 generative reasoning to eliminate the monolithic turn penalty and optimize local 4B model execution.
+
+1. **Context & Problem:**
+   - Every user turn—even greetings ("Hi", "Thanks") or minor UI adjustments ("Make the chart blue")—prepared an unpruned monolithic payload containing 3,000+ tokens of system instructions, up to 10,000 tokens of conversational history, and 5,000–15,000 tokens of MCP tool schemas.
+   - On the primary target (local 4B `qwen3.5:4b-mlx` via Ollama), prompt prefill latency took seconds, unified memory was saturated, and small models were prone to tool hallucination on casual chatter.
+
+2. **System 1 Decision Architecture:**
+   - Adopts native `/v1/systemone` structured decision-scoring endpoints: local Ollama zero-token-output models (`d1-omni:latest` 380M, `laya:latest` 421M), cloud TypeSafe AI (`https://api.typesafe.ai/v1/systemone` using flagship Jev models), OpenAI Structured Outputs (`gpt-4o-mini`), and OpenRouter (`microsoft/decision-1`).
+   - In single forward passes (<50ms, 0 output tokens), the decision model evaluates text against explicit typed criteria, returning calibrated probability distributions.
+   - An infallible in-memory heuristic provider (<1ms) guarantees zero failure modes or turn stalls on timeout or offline daemon.
+   - **TypeSafe AI Native Provider & Dynamic Model Detection:** Integrates TypeSafe AI as a first-class decision provider and general provider. Models are never hardcoded: detected dynamically via `GET https://api.typesafe.ai/v1/models` with the user's `TYPESAFE_API_KEY` (saved in macOS Keychain / secret vault). Egress is governed by the Rust root of trust (`src-tauri/src/policy.rs`) admitting `api.typesafe.ai` over HTTPS. The unique `provider + model` combination is strictly maintained across the app.
+   - **Official Skill Pack Catalog:** TypeSafe AI's official skill repository (`typesafe-ai/skills`) is supported as an external publisher catalog source in Explore Skills with the official brand logo (`public/brand/integrations/typesafe-ai.png`), keeping it cleanly separated from Vakyartha's built-in skills.
+
+3. **Dynamic Turn Shaper & Semantic Context Assembly:**
+   - Evaluates incoming turns at turn initialization before prompt assembly, replacing naive static sliding windows (e.g. indiscriminate "last 10 turns") with semantic context shaping.
+   - Shapes payloads dynamically:
+     - `salutation`: strips conversational history (0 prior turns, `history: 1`), prunes all external MCP tools (`[]`), clamps `maxSteps` to 1. Reduces token overhead by >95%.
+     - `canvas_refinement`: retains immediate prior turn only (`history: 2`), strips external tools (`[]`), preserves surface authoring rules and canonical surface projection note (`shownSurfacesNote`).
+     - `scoped_tool_task`: retains focused working memory (`history: 4`), prunes MCP tools strictly to the required namespace (e.g. `filesystem`, `web_search`, `database`).
+     - `complex_reasoning`: preserves full context and enabled tool catalog.
+
+4. **Decision Chaining & Skill Availability:**
+   - `DecisionChainRunner` enables multi-stage decision pipelines with conditional branching (e.g. *Domain Triage $\rightarrow$ Operation Type $\rightarrow$ Security Risk Gate*) with composite confidence aggregation.
+   - Built-in `decision-eval` skill enables running LLMs to delegate discrete criteria verification and security scoring to local System 1 decision models during complex agentic workflows.
+
+5. **Runtime Boundary, Discovery & Dynamic Plug-in Contract:**
+   - Pure TypeScript execution in `src/decision/` respecting the Rust Root of Trust. Rust continues to enforce egress and mutation approvals.
+   - **Zero Hardcoding & Full Domain Agnosticism:** Never hardcodes static domain or tool registries. MCP tools, procedures, and capabilities are discovered dynamically at runtime via `/api/integrations` (active tools where `enabled && status === 'ready'` and `policy !== 'off'`). Active skills are loaded dynamically from `/api/skills` (`enabled === true`). Active canvas visual projections are queried directly from the live `client.store.list()`. Works uniformly across any domain (Healthcare EHR, CRM/Sales, Financial Dashboards, Dev Tools, Customer Triage).
+   - Managed via user preferences in Settings > Models (`decision:enabled`, `decision:provider`, `decision:model`, `decision:pruneTools`, `decision:stripSalutations`, `decision:optimizeContext`). Default is enabled with local Ollama `d1-omni:latest`. [Contract and architecture](DECISION-MODELS.md).
+
+## ADR-054: Dynamic Reasoning Effort, Model Thinking Governance & Zero-Latency Execution (2026-10-30)
+
+Accepted at the user's direction: dynamically modulate model reasoning effort, local thinking traces, and skill-selection overhead based on System 1 intent classification to eliminate reasoning delays and token bloat on trivial conversational turns.
+
+1. **Context & Problem:**
+   - With the rise of reasoning models (OpenAI `o1`/`o3-mini`/`gpt-6-luna`, Anthropic Claude 3.7 with extended thinking, local DeepSeek-R1/Qwen-Thinking in Ollama), models produce thousands of hidden reasoning tokens (`rs_...` or `<think>...</think>`) before emitting response text.
+   - For complex analytical tasks, this deliberation is invaluable. However, on trivial greetings ("Hi"), gratitude ("Thanks"), or simple visual styling tweaks ("Make the chart emerald"), frontier reasoning models spend 8–15 seconds deliberating over conversational banter, producing high latency, user frustration, and wasted FinOps token spend.
+   - Furthermore, internal runtime skill selection (`use_skill`) previously issued a blocking synthetic LLM call on every turn, adding 8+ seconds of overhead and consuming execution steps.
+
+2. **Lab-by-Lab Thinking & Reasoning Effort Support:**
+   Vakyartha maps normalized System 1 decisions to provider-native reasoning APIs across all supported AI labs:
+   - **OpenAI (`openai`, `openai-responses`):** Maps `TurnShape.reasoningEffort` to native `reasoning_effort: "low" | "medium" | "high"` or `{ reasoning: { effort } }`.
+   - **Anthropic (`anthropic`):** Maps `TurnShape.reasoningEffort` to `output_config: { effort }` and bounds extended thinking budgets.
+   - **Ollama / Local (`ollama`):** Maps `TurnShape.think` to native `/api/chat` `think: boolean`, dynamically stripping or suppressing `<think>...</think>` loops on greetings and casual turns.
+   - **Google Gemini (`gemini`):** Maps thinking capabilities to `thinking: boolean` / `thinkingBudget`.
+
+3. **Dynamic System 1 / System 2 Execution Modulation:**
+   - **`salutation`:** `reasoningEffort: "low"`, `think: false`, `use_skill` bypassed in 0ms, external MCP tools pruned. Greeting replies stream in <500ms instead of 8.2s.
+   - **`canvas_refinement`:** `reasoningEffort: "low"`, `think: false`, external MCP tools pruned, surface authoring grammar injected directly.
+   - **`scoped_tool_task`:** `reasoningEffort: "medium"`, focused working memory.
+   - **`complex_reasoning`:** `reasoningEffort: "high"`, `think: true`, preserving deep analytical reasoning capacity.
+
+4. **Execution Budgets & Unthrottled Steps:**
+   - `shaper.ts` strictly respects caller/user configured budgets (`maxSteps`); user-configured budgets are never artificially throttled downward.
+   - Added `"unlimited"` execution mode in Settings (`Unlimited (run until completed)` / `Unlimited (no tool limit)`) governed by a safe 100-step circuit breaker.
+
+5. **Dynamic Session Skill Cache:**
+   - In ongoing multi-turn conversations where skills were already loaded in history and the user continues the active workflow, turns proceed directly to generation without re-invoking `use_skill`.
+   - Dynamically re-evaluates if the user enables, disables, adds, or removes skills in Settings between turns, or explicitly asks for an unloaded capability. [Contract and architecture](DECISION-MODELS.md).
+
+## ADR-055: Cross-Provider Prompt Caching Governance, Stable Prefix Shaping, and FinOps Hit Visibility (2026-10-30)
+
+Accepted at the user's direction: optimize cross-provider prompt caching efficiency across OpenAI, Anthropic, and Google Gemini through deterministic tool ordering, prefix-preserving turn shaping on hosted models, standard model rate presets, and explicit prompt cache hit rate metrics in FinOps.
+
+1. **Context & Problem:**
+   - Frontier AI providers (OpenAI, Anthropic, Google Gemini) offer prompt caching that reduces input latency and lowers input token pricing by 50% to 90% when token prefixes are reused across multi-turn conversations and agent loops.
+   - However, each provider enforces distinct caching paradigms and invalidation constraints:
+     - **OpenAI:** Operates automatic prefix caching (minimum 1,024 tokens) from token 0. The tokenized `tools` array is part of the cached prefix; altering or reordering tool schemas between turns invalidates downstream prompt cache blocks (`tools_changed`).
+     - **Anthropic:** Requires explicit `cache_control: { type: "ephemeral" }` breakpoints on system prompts, tools, and turn messages (up to 4 breakpoints), subject to minimum token limits (1,024 tokens for standard models, 2,048 tokens for Haiku).
+     - **Google Gemini:** Provides automated implicit caching on Gemini 2.5, 3, and 4 for prompts meeting model-specific thresholds (2,048 tokens for 2.5, 4,096 tokens for 3+), returning `usageMetadata.cachedContentTokenCount`.
+   - In Vakyartha, aggressive System 1 tool pruning under ADR-053 benefits small local models (Ollama 4B) by reducing memory pressure, but when applied dynamically mid-conversation to hosted prefix-cached providers, it altered the prefix and invalidated the provider's cached KV context on continuing turns.
+   - Additionally, FinOps recorded raw `cachedInput` counts but omitted calculated cache hit rates and standard preset rates, requiring manual rate configuration before cost estimation could occur.
+
+2. **Stable Prefix Shaping for Hosted Providers:**
+   - In [`src/decision/shaper.ts`](src/decision/shaper.ts), tool schemas are now deterministically sorted by name (`localeCompare`) so tool array serialization is invariant across turns.
+   - For hosted prefix-cached providers (`openai`, `gemini`, `anthropic`), when an active multi-turn conversation contains ongoing history and tool usage (`scoped_tool_task`), the active toolset is preserved across continuing turns rather than pruned per-step, avoiding `tools_changed` cache invalidations and maximizing KV reuse.
+   - Small local models (`ollama`) continue aggressive per-turn pruning to protect unified RAM and attention bandwidth.
+
+3. **FinOps Prompt Cache Hit Rate Visibility:**
+   - In [`src/finops-page.ts`](src/finops-page.ts), the turn details inspector renders a calculated `Prompt cache hit rate` percentage and ratio (`hitPct% (X of Y input tokens)`) whenever cached and total input tokens are recorded.
+   - FinOps CSV export includes `cache_hit_rate_pct` alongside raw token counts.
+
+4. **Standard Model Rate Presets:**
+   - Added `STANDARD_MODEL_RATES` and `findStandardRate()` in [`src/finops-page.ts`](src/finops-page.ts) covering standard baseline and cached input rates for OpenAI (`gpt-4o`, `gpt-4o-mini`, `o1`, `o3-mini`), Anthropic (`claude-3-5-sonnet`, `claude-3-5-haiku`, `claude-3-opus`), and Google Gemini (`gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-1.5-pro`, `gemini-1.5-flash`).
+   - The rate editor provides an "Apply standard preset" action with cached discounts pre-calculated, while preserving the core rule that estimates use explicit configured rates and never invent invoice amounts.
+
+## ADR-056: Forward-only current runtime stack (2026-10-29)
 
 Accepted at the user's direction to use the latest stable/LTS stack and with 0 active users. The release pipeline now requires the newest official Node.js LTS line and its latest patch; on this date it is Node 26.13.0. Stable Tauri remains on the latest 2.x line while Tauri 3 is alpha. Rust verification uses the latest stable release, 1.99.1.
 

@@ -719,3 +719,29 @@ test("a canonical report keeps decimal findings, period and caveats in visual an
   store.setValue("report", "/records/7/reading", 14.5);
   check(14.5);
 });
+
+test("cleanDictationByModel removes speech disfluencies and preserves intent with fallback on error", async () => {
+  const { cleanDictationByModel } = await import("../sidecar/voice/resolve.ts");
+
+  // Empty or whitespace returns empty
+  assert.equal(await cleanDictationByModel([], { provider: "mock", model: "m", text: "   " }), "");
+
+  // Missing provider falls back cleanly to original text
+  const original = "um so I was thinking we should do X";
+  assert.equal(await cleanDictationByModel([], { provider: "unknown", model: "m", text: original }), original);
+
+  // Mock provider returning cleaned speech
+  const mockProvider = {
+    id: "mock",
+    available: true,
+    make() {
+      return {
+        async *stream() {
+          yield { type: "text", delta: "We should do X." };
+        },
+      };
+    },
+  };
+  const cleaned = await cleanDictationByModel([mockProvider as any], { provider: "mock", model: "m", text: original });
+  assert.equal(cleaned, "We should do X.");
+});

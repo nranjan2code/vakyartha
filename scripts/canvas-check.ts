@@ -13,6 +13,8 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const out = await mkdtemp(path.join(tmpdir(), "vak-canvas-check-"));
 const app = await startAppServer({ dataDir: path.join(out, "data"), keychainService: "com.nranjan2code.vakyartha.canvas-check", port: 0, access: "open", uiDir: path.join(root, "dist") });
 const setup = `
+  // This fixture tests UI streaming, with no live classification/model call.
+  localStorage.setItem('vak:decision:provider','heuristic');
   const style = document.createElement('style'); style.textContent='.app {transition:none!important}'; document.head.append(style);
   const check = (ok, message) => { if (!ok) throw new Error(message); };
   // An off-screen WKWebView pauses animation frames; flush its renderer and
@@ -76,8 +78,9 @@ const steps = [
      : window.qaRealFetch(url,init);
    window.qaEmit=e=>window.qaController.enqueue(new TextEncoder().encode('data: '+JSON.stringify(e)+'\\n\\n'));
    const pick=document.getElementById('model-pick'); const value=JSON.stringify(['qa','scripted']); pick.add(new Option('Scripted',value)); pick.value=value; pick.dispatchEvent(new Event('change'));
-   window.qaSubmit=()=>{document.getElementById('input').value='Update the artifact';document.getElementById('composer').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}))};
-   window.qaSubmit(); await new Promise(r=>setTimeout(r,30));
+   window.qaSubmit=()=>{window.qaController=undefined;document.getElementById('input').value='Update the artifact';document.getElementById('composer').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}))};
+   window.qaReady=async()=>{for(let i=0;i<100;i++){if(window.qaController)return;await new Promise(r=>setTimeout(r,20));}throw Error('Scripted stream did not start after decision preparation')};
+   window.qaSubmit(); await window.qaReady();
    window.qaEmit({type:'tool_start',id:'u1',name:'vak_update'}); await new Promise(r=>setTimeout(r,30));
    check(document.getElementById('canvas').hidden,'a closed canvas should wait for the snapshot to decide placement');
    const session=new URLSearchParams(location.search).get('session');
@@ -90,7 +93,7 @@ const steps = [
    window.qaEmit({type:'surface',snapshot:window.qaSnapshot}); window.qaEmit({type:'tool_start',id:'u2',name:'vak_update'}); await new Promise(r=>setTimeout(r,30));
    check(document.getElementById('canvas').hidden,'stream reopened canvas after manual close');
    window.qaEmit({type:'run_end',stop:'done'}); window.qaController.close(); await new Promise(r=>setTimeout(r,30));
-   window.qaSubmit(); await new Promise(r=>setTimeout(r,30));
+   window.qaSubmit(); await window.qaReady();
    window.qaEmit({type:'tool_start',id:'u3',name:'vak_render'}); window.qaEmit({type:'surface',snapshot:window.qaSnapshot}); await new Promise(r=>setTimeout(r,30)); flush();
    check(!document.getElementById('canvas').hidden,'next turn should reopen canvas');
    window.qaEmit({type:'error',message:'Scripted failure'}); window.qaEmit({type:'run_end',stop:'error'}); window.qaController.close(); await new Promise(r=>setTimeout(r,30));
@@ -99,7 +102,7 @@ const steps = [
   `window.fetch=async (url, init) => String(url).endsWith('/api/chat')
      ? new Response(new ReadableStream({start(c){window.qaController=c}}),{headers:{'content-type':'text/event-stream'}})
      : window.qaRealFetch(url,init);
-   const turn=async (snap)=>{ window.qaSubmit(); await new Promise(r=>setTimeout(r,30)); window.qaEmit({type:'surface',snapshot:snap}); window.qaEmit({type:'run_end',stop:'done'}); window.qaController.close(); await new Promise(r=>setTimeout(r,60)); flush(); };
+   const turn=async (snap)=>{ window.qaSubmit(); await window.qaReady(); window.qaEmit({type:'surface',snapshot:snap}); window.qaEmit({type:'run_end',stop:'done'}); window.qaController.close(); await new Promise(r=>setTimeout(r,60)); flush(); };
    await turn(window.qaSnapshot);
    const next=JSON.parse(JSON.stringify(window.qaSnapshot).replace('Updated monthly sales','Revised monthly sales')); next.version=window.qaSnapshot.version+1;
    await turn(next);
@@ -121,7 +124,7 @@ const steps = [
      : window.qaRealFetch(url,init);
    const session=new URLSearchParams(location.search).get('session');
    const form=(await (await window.qaRealFetch('/api/sessions/'+session)).json()).surfaces.find(s=>s.id==='signup');
-   const turn=async (snap)=>{ window.qaSubmit(); await new Promise(r=>setTimeout(r,30)); window.qaEmit({type:'surface',snapshot:snap}); window.qaEmit({type:'run_end',stop:'done'}); window.qaController.close(); await new Promise(r=>setTimeout(r,60)); flush(); };
+   const turn=async (snap)=>{ window.qaSubmit(); await window.qaReady(); window.qaEmit({type:'surface',snapshot:snap}); window.qaEmit({type:'run_end',stop:'done'}); window.qaController.close(); await new Promise(r=>setTimeout(r,60)); flush(); };
    await turn({...form, id:'step-a', title:'First step', version:1});
    await turn({...form, id:'step-b', title:'Second step', version:1});
    const home=id=>document.querySelector('.surface-home[data-surface="'+id+'"]');
@@ -130,7 +133,7 @@ const steps = [
    check(!home('signup').classList.contains('folded'),'interface with unsent input folded');
    home('step-a').querySelector('.surface-head > span').click();
    check(!home('step-a').classList.contains('folded'),'folded title did not open it');
-   window.qaSubmit(); await new Promise(r=>setTimeout(r,30));
+   window.qaSubmit(); await window.qaReady();
    for (const id of ['step-a','step-b']) window.qaEmit({type:'surface_removed',id});
    window.qaEmit({type:'run_end',stop:'done'}); window.qaController.close(); await new Promise(r=>setTimeout(r,60)); flush();
    window.fetch=window.qaRealFetch; return 'earlier interfaces fold to one line';`,

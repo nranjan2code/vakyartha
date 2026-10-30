@@ -1,6 +1,6 @@
 # Executable reference applications
 
-Four independent source packages exercise Vakyartha's supported app runtime and ordinary Projection surfaces. They are examples of actual executable behavior with explicit bounds. They do not certify arbitrary model-generated apps or capabilities the runtime does not expose.
+Five independent source packages exercise Vakyartha's supported app runtime and ordinary Projection surfaces. They are examples of actual executable behavior with explicit bounds. They do not certify arbitrary model-generated apps or capabilities the runtime does not expose.
 
 | Package | Purpose and views | Canonical owner and source | Native projections |
 | --- | --- | --- | --- |
@@ -8,6 +8,7 @@ Four independent source packages exercise Vakyartha's supported app runtime and 
 | [News Desk](../sidecar/builtin-apps/news-desk/README.md) | Headlines, Reading list, Sources & refresh | Bounded publisher feed records and local bookmarks in app state | Responsive article cards, category/text controls, original links and source receipts |
 | [Project Activity Desk](../sidecar/builtin-apps/project-desk/README.md) | Triage, Activity, Source ledger | Bounded public repository issue/PR/commit samples; local lanes in app state | Keyboard/pointer board, timeline, exact tables and retrieval receipts |
 | [Personal Finance Workbench](../sidecar/builtin-apps/finance-workbench/README.md) | Overview, Ledger, Import & methods | User-imported INR records in bounded DuckDB; integer-paise arithmetic | Category expense bars, daily signed net-flow bars, budget progress, exact ledger and import form |
+| [Voice Desk](../sidecar/builtin-apps/voice-desk/README.md) | Workbench (Notes, Editor, Checklist), Actions register | Local user-created voice transcripts, notes, and task items in sandboxed app state | Multi-pane note list, Markdown note editor textarea, interactive task toggles, tag filters, audio drawer |
 
 ## Install and operate
 

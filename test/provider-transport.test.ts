@@ -33,3 +33,24 @@ test("without an injected host transport, providers retain their normal factory"
 
   assert.strictEqual(withProviderTransport([entry])[0], entry);
 });
+
+test("new app provider routes both metadata and generation through native transport", async t => {
+  const { typesafeProviderEntry } = await import("../sidecar/server.ts");
+  t.mock.method(globalThis, "fetch", () => { throw new Error("Ambient network is forbidden"); });
+  const requests: { provider: string; url: string; method: string }[] = [];
+  const transport: ProviderTransport = async (provider, input, init = {}) => {
+    requests.push({ provider, url: String(input), method: String(init.method ?? "GET") });
+    if ((init.method ?? "GET") === "GET") return Response.json({ data: [{ id: "fixture-model" }] });
+    return new Response('data: {"choices":[{"delta":{"content":"Fixture result"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n', { headers: { "content-type": "text/event-stream" } });
+  };
+  const [entry] = withProviderTransport([typesafeProviderEntry({})], transport);
+  const provider = entry!.make();
+  assert.deepEqual(await provider.listModels?.(), ["fixture-model"]);
+  const events = [];
+  for await (const event of provider.stream({ model: "fixture-model", messages: [{ role: "user", content: "Bound request" }] })) events.push(event);
+  assert.ok(events.some(event => event.type === "text" && event.delta === "Fixture result"));
+  assert.deepEqual(requests, [
+    { provider: "typesafe", url: "https://api.typesafe.ai/v1/models", method: "GET" },
+    { provider: "typesafe", url: "https://api.typesafe.ai/v1/chat/completions", method: "POST" },
+  ]);
+});

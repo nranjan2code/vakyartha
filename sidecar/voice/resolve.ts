@@ -48,3 +48,46 @@ export async function resolveByModel(entries: readonly ProviderEntry[], r: Resol
     return {};
   }
 }
+
+export interface CleanDictationRequest {
+  provider: string;
+  model: string;
+  text: string;
+}
+
+const CLEAN_SYSTEM = [
+  "You are a speech-to-text normalizer.",
+  "Your task is to take the verbatim transcription of spoken words and produce polished, cleanly structured text.",
+  "Rules:",
+  "1. Remove verbal fillers and hesitation markers ('um', 'uh', 'hmm', 'ah', 'like', 'you know', 'if and but', 'so yeah').",
+  "2. Resolve mid-sentence self-corrections (e.g. 'meet at 2, actually make it 3' -> 'meet at 3'; 'write a test for... wait no, first refactor' -> 'first refactor... then write a test').",
+  "3. Structure and format naturally: when the speaker lists items, steps, or action points ('first...', 'second...', 'three things...'), format them as clean markdown bullet points ('- ') or numbered lists. When the speaker dictates structured comparative or tabular data, format as a clean markdown table. Break distinct thoughts into separate paragraphs.",
+  "4. Fix punctuation, capitalization, and sentence boundaries.",
+  "5. Preserve the speaker's exact first-person meaning and intent. Do NOT answer questions, do NOT add commentary, and do NOT change the tone.",
+  "6. Output ONLY the clean text, with no introductory text, quotes, or conversational preamble.",
+].join(" ");
+
+export async function cleanDictationByModel(entries: readonly ProviderEntry[], r: CleanDictationRequest, signal?: AbortSignal): Promise<string> {
+  const original = r.text.trim();
+  if (!original) return "";
+  const entry = entries.find((e) => e.id === r.provider);
+  if (!entry?.available) return original;
+  try {
+    const provider = entry.make({ think: false });
+    const req = {
+      model: r.model,
+      system: CLEAN_SYSTEM,
+      messages: [{ role: "user" as const, content: original }],
+      maxTokens: 1000,
+      signal,
+    };
+    let cleaned = "";
+    for await (const e of provider.stream(req)) {
+      if (e.type === "text") cleaned += e.delta;
+    }
+    const result = cleaned.trim().replace(/^["']|["']$/g, "").trim();
+    return result || original;
+  } catch {
+    return original;
+  }
+}

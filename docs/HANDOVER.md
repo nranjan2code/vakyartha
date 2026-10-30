@@ -1,5 +1,11 @@
 # Vakyartha handover — 2026-10-30
 
+## Current product integrated into native runtime branch — 2026-10-30
+
+Committed product `main` through `625787d` is reconciled into the isolated runtime branch, preserving newer decision/skills/cache/diagram/voice features and native authority. Framework `196b796` retains the runtime APIs. The [code audit](agent-runtime/CODE-STATUS-AUDIT.md) corrects absence claims and identifies actual integration gaps. The original checkout's pending edits are untouched.
+
+Combined checks pass 323 app tests (one paid opt-in skipped), 423 framework tests, typecheck/build/bundling, 151 macOS/153 Linux native tests, strict Clippy, affected wide/narrow WebKit flows and native desktop smoke. [Scope, receipts and retained fixture/merge failures](agent-runtime/IMPLEMENTATION-PROGRESS.md#current-product-features-reconciled-with-native-runtime--2026-10-30). Paid live tests now require explicit opt-in/model selection; no paid call or stored-key lookup was performed. Product execution, real original outcomes, installed proof and final Astra review remain open.
+
 ## Current product/runtime source audit — 2026-10-30
 
 Before further Work implementation, audited runtime `ab25c07` against product `main` `625787d`. Existing task/review/output/scheduling and native primitives should be reused; newer product decision, skills, caching, diagrams and voice features must be incorporated. Product has 19 commits after the shared base; runtime has 111. Its framework pin is a descendant of the runtime API pin. [Source inventory, eight-area status and concrete integration gaps](agent-runtime/CODE-STATUS-AUDIT.md). Both app worktrees were clean; this was a source-only check with no inference or key access. Default product decision tests include an implicit live hosted call and must be gated before a combined suite. No outcome gate is closed.
@@ -231,6 +237,46 @@ The inactive Rust control actor now captures the exact admitted binding revision
 ## Latest agent-runtime checkpoint — 2026-10-30
 
 Pushed app commit `7f8e857` on `codex/agent-runtime-implementation`. The active task journal now binds the trusted sandbox `create_realm` response to its exact operation and persists only a validated Realm UUID plus timestamp, never the helper response or project path. Run history retains that identity across cancellation/restart, and task deletion names the retained Realm and requires exact receipt-ID acknowledgement before removing its recovery link. Typed stop-cause persistence and the fix for preserving a returned effect during cancellation are earlier pushed checkpoints. Validation: the serialized app suite passed 274/274 before the final receipt-deletion guard; after that guard, focused task/file tests passed 26/26, typecheck passed, and task WebKit checks passed at 1100px/620px. This is recovery metadata in the current TypeScript task writer. Native actor cutover, child dispatch/attempts, provider and integration mediation, common QoS, fixed native workspace grants, and canonical commit/recovery remain open; see [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md).
+
+## Smart speech dictation cleanup, voice-notes skill & Voice Desk executable app — 2026-10-30
+
+Implemented end-to-end intelligent voice flow and note-taking capabilities across chat, skills, and the Canvas without hard-coded providers or models:
+
+1. **In-Composer Smart Dictation (Disfluency & Backtracking Cleanup):**
+   - Added speech-to-text normalizer `cleanDictationByModel` in `sidecar/voice/resolve.ts` exposed via `POST /api/voice/clean` in `sidecar/voice/index.ts`.
+   - Strips hesitation markers (*"um"*, *"uh"*, *"hmm"*, *"like"*, *"you know"*, *"if and but"*), eliminates stuttered repetitions, resolves mid-stream self-corrections, and fixes punctuation/sentence boundaries while strictly preserving first-person intent.
+   - Zero hardcoded providers or models: strictly uses the user's active model from settings (`current.provider` and `current.model`), with graceful non-throwing fallback to verbatim text on offline/error conditions.
+   - Added preference `dictationPrefs.clean` in `src/voice/dictation.ts` and user toggle in Settings → Voice (`src/voice/settings-page.ts`).
+   - Wired in `src/main.ts` so dictation (⌘D or mic button) normalizes final transcription before composer insertion and submission.
+
+2. **Built-in `voice-notes` Skill:**
+   - Authored `sidecar/builtin-skills/voice-notes/SKILL.md` (total 40 bundled skills).
+   - Methodology for transforming rambling spoken brain dumps and audio transcripts into structured notes: Executive Synthesis, Key Takeaways, Decisions Made, and Action Items with explicit Assignees & Deadlines.
+   - Chains with `surface-design`, `interactive-ui`, `meeting-actions`, `task-tracker`, and `write-email`.
+
+3. **Built-in `voice-desk` Executable App:**
+   - Authored complete package under `sidecar/builtin-apps/voice-desk/`:
+     - `app.json`: Productivity app manifest with isolated network mode and 256MB/30s quotas.
+     - `surface.json`: Responsive liquid layouts for `workbench` (split note explorer, multi-line `textarea` note editor, action checklist, audio transcript drawer, metric strip) and `actions` (central deliverable register). Verified with `@vak/core`'s `SurfaceStore(basicCatalog).render()`.
+     - `server.ts`: Full state management for note creation, deletion, editing, task addition, and markdown export receipts in `vaksb`.
+     - `README.md`, `AGENTS.md`, `SKILLS.md`, `ARCHITECTURE.md`: All four documents created (>1600 characters each).
+
+4. **Verification:**
+   - 294 Node unit tests pass (`test/**/*.test.ts`), including `test/reference-apps.test.ts` and `test/voice.test.ts`.
+   - TypeScript typechecking passes with 0 errors (`npm run typecheck`).
+   - Skills WebKit check passes (`node scripts/skills-check.ts` at 1100px, 620px, 375px).
+   - Apps WebKit check passes (`node scripts/apps-check.ts` at 1100px, 620px, 375px).
+
+## TypeSafe AI provider, dynamic model discovery & official skill pack — 2026-10-30
+
+Integrated TypeSafe AI (`typesafe.ai`) and its flagship System One decision model family (Jev) as a first-class provider and decision provider adapter.
+
+1. **Dynamic Model Discovery (No Hardcoding):** Models are discovered dynamically using the user's configured `TYPESAFE_API_KEY` via `GET https://api.typesafe.ai/v1/models` in both the sidecar server provider registry (`sidecar/server.ts`) and `TypeSafeDecisionProvider.listModels()`. The Settings UI populates available models live from the API without static lists.
+2. **Provider + Model Combination:** Preserved the unique `[provider, model]` combination contract across all preference stores, active provider state, and turn execution. `OpenRouter (Microsoft-Decision-1)` and `microsoft/decision-1` are retained unchanged.
+3. **Rust Root of Trust & Network Egress:** Admitted `api.typesafe.ai` over HTTPS in the indestructible Rust engine (`src-tauri/src/policy.rs`) and sidecar egress guard (`sidecar/egress.ts`).
+4. **Secret Management:** Registered `TYPESAFE_API_KEY` in `sidecar/settings.ts`, storing credentials securely in the macOS Keychain / cross-platform vault.
+5. **Official Skill Pack Catalog:** Added `typesafe-ai/skills` as an official external publisher catalog source in Explore Skills (`shared/skills.ts`) with dedicated 200×200 brand mark (`public/brand/integrations/typesafe-ai.png`) and `skillPublisherIcon` mapping, completely separated from built-in skills.
+6. **Verification:** All 287 Node tests (`test/**/*.test.ts`), all 11 Rust crate tests (`cargo test --manifest-path src-tauri/Cargo.toml --lib`), and TypeScript type checking pass with 0 errors.
 
 ## Agent runtime architecture documentation — 2026-10-29
 

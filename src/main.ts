@@ -20,6 +20,7 @@ import { icon, tile } from "./icons.ts";
 import { closest, onContextMenu } from "./menu.ts";
 import { closeSettings, openSettings, settingsOpen } from "./settings.ts";
 import { closeSkillStudio, isSkillStudioOpen, openSkillStudio } from "./skills-studio.ts";
+import { getDecisionConfig, shapeTurn } from "./decision/index.ts";
 import type { SkillView } from "../shared/skills.ts";
 import { resolveMedia } from "./media.ts";
 
@@ -692,6 +693,59 @@ function updateSend(): void {
   send.disabled = !runningHere && ((!input.value.trim() && !attached.length) || !current.model);
 }
 
+interface RuntimeDiscoveryCache {
+  timestamp: number;
+  tools: Array<{ name: string; namespace: string; description?: string }>;
+  skills: Array<{ name: string; description?: string }>;
+}
+
+let runtimeDiscoveryCache: RuntimeDiscoveryCache | null = null;
+
+async function getRuntimeDiscovery(): Promise<{
+  tools: Array<{ name: string; namespace: string; description?: string }>;
+  skills: Array<{ name: string; description?: string }>;
+}> {
+  const now = Date.now();
+  if (runtimeDiscoveryCache && now - runtimeDiscoveryCache.timestamp < 5000) {
+    return runtimeDiscoveryCache;
+  }
+
+  try {
+    const [integrationsList, skillsList] = await Promise.all([
+      api<Array<{
+        enabled: boolean;
+        status: string;
+        entry: { id: string; name: string };
+        tools: Array<{ name: string; title?: string; description?: string; policy?: string }>;
+      }>>("/api/integrations").catch(() => []),
+      api<Array<{ name: string; description?: string; enabled: boolean }>>("/api/skills").catch(() => []),
+    ]);
+
+    const tools: Array<{ name: string; namespace: string; description?: string }> = [];
+    for (const integration of integrationsList || []) {
+      if (!integration.enabled || integration.status !== "ready") continue;
+      const namespace = integration.entry.id;
+      for (const tool of integration.tools || []) {
+        if (tool.policy === "off") continue;
+        tools.push({
+          name: `${namespace}__${tool.name}`,
+          namespace,
+          description: tool.description || tool.title,
+        });
+      }
+    }
+
+    const skills: Array<{ name: string; description?: string }> = (skillsList || [])
+      .filter((s) => s.enabled)
+      .map((s) => ({ name: s.name, description: s.description }));
+
+    runtimeDiscoveryCache = { timestamp: now, tools, skills };
+    return runtimeDiscoveryCache;
+  } catch {
+    return { tools: [], skills: [] };
+  }
+}
+
 async function runTurn(req: { message?: string; continue?: boolean; action?: VakActionDetail["action"] & { data: Record<string, unknown> } }): Promise<void> {
   if (isRunning(session)) {
     const note = newTurn("Wait for the current response, or stop it before starting another.");
@@ -788,19 +842,81 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
     }
   };
 
+  let historyLimit = Number(opt("history", "10")) || undefined;
+  const rawMaxSteps = prefs.get(`opt:${provider}:maxSteps`) || opt("maxSteps", "0");
+  let maxStepsLimit = rawMaxSteps === "unlimited" ? 100 : (Number(rawMaxSteps) || undefined);
+  const rawToolRounds = prefs.get(`opt:${provider}:toolRounds`) || opt("toolRounds", "0");
+  let toolRoundsLimit = rawToolRounds === "unlimited" ? 100 : (Number(rawToolRounds) || undefined);
+  let effectiveThink = opt("think") === "true";
+  let effectiveEffort = opt("effort") || undefined;
+
+  if (req.message) {
+    try {
+      const decisionCfg = getDecisionConfig();
+      if (decisionCfg.enabled) {
+        const liveSurfaces = client.store.list().map((s) => ({
+          id: s.id,
+          title: s.title,
+          componentTypes: Array.from(s.nodes.values()).map((n) => n.type),
+        }));
+        const { tools: runtimeTools, skills: runtimeSkills } = await getRuntimeDiscovery();
+
+        const shaped = await shapeTurn({
+          message: req.message,
+          surfaceKind: liveSurfaces[0]?.componentTypes[0] ?? liveSurfaces[0]?.id,
+          surfaces: liveSurfaces,
+          skills: runtimeSkills,
+          tools: runtimeTools,
+          maxSteps: maxStepsLimit,
+          toolRounds: toolRoundsLimit,
+          provider,
+          model,
+        }, decisionCfg);
+
+        // Host history option specifies the total turns to inspect:
+        // history = 1 means only the current turn (0 prior history).
+        if (shaped.shape.historyPolicy === "strip_all" && decisionCfg.stripSalutations) {
+          historyLimit = 1;
+        } else if (decisionCfg.optimizeContext) {
+          if (shaped.shape.historyPolicy === "last_turn_only") {
+            historyLimit = 2; // Immediate prior turn + current turn
+          } else if (shaped.shape.historyPolicy === "recent_window") {
+            historyLimit = 4; // Recent 3 prior turns + current turn
+          }
+        }
+        maxStepsLimit = shaped.payload.maxSteps;
+        toolRoundsLimit = shaped.payload.toolRounds;
+        if (shaped.shape.think !== undefined) {
+          effectiveThink = shaped.shape.think;
+        }
+        if (shaped.shape.reasoningEffort) {
+          if (shaped.shape.intent === "salutation" || shaped.shape.intent === "canvas_refinement") {
+            effectiveEffort = "low";
+          } else if (opt("effort")) {
+            effectiveEffort = opt("effort");
+          } else {
+            effectiveEffort = shaped.shape.reasoningEffort;
+          }
+        }
+      }
+    } catch {
+      // Infallible fallback: continue with unshaped defaults
+    }
+  }
+
   try {
     await client.turn(
       {
         session: turnSession,
         provider,
         model,
-        think: opt("think") === "true",
+        think: effectiveThink,
         generation: opt("generation", "auto"),
-        effort: opt("effort") || undefined,
+        effort: effectiveEffort,
         // Long everyday chats would otherwise send every turn and overflow a small model's context.
-        history: Number(opt("history", "10")) || undefined,
-        maxSteps: Number(prefs.get(`opt:${provider}:maxSteps`) || opt("maxSteps", "0")) || undefined,
-        toolRounds: Number(prefs.get(`opt:${provider}:toolRounds`) || opt("toolRounds", "0")) || undefined,
+        history: historyLimit,
+        maxSteps: maxStepsLimit,
+        toolRounds: toolRoundsLimit,
         ...req,
       },
       onEvent,
@@ -1245,7 +1361,20 @@ function toggleDictation(): void {
   composerHint("");
   input.focus();
   void startDictation({
-    onText(text, final) {
+    async onText(text, final) {
+      if (final && dictationPrefs.clean && current.provider && current.model && text.trim()) {
+        composerHint("Cleaning speech…");
+        try {
+          const r = await api<{ text?: string }>("/api/voice/clean", {
+            method: "POST",
+            body: JSON.stringify({ provider: current.provider, model: current.model, text }),
+          });
+          if (r.text?.trim()) text = r.text.trim();
+        } catch {
+          /* keep original text on cleanup failure */
+        }
+        composerHint("");
+      }
       input.value = dictationBase.trim() ? `${dictationBase.replace(/\s*$/, " ")}${text}` : text;
       autosize();
       input.setSelectionRange(input.value.length, input.value.length);

@@ -1,27 +1,66 @@
-<p align="center"><img src="public/icon.svg" width="96" alt="Vakyartha"></p>
+<p align="center">
+  <img src="public/icon.svg" width="96" alt="Vakyartha">
+</p>
 
 <h1 align="center">Vakyartha</h1>
 
-<p align="center"><b>Ask. Then go live your day.</b><br>
-An AI helper that stays with the work: everyday jobs, unfinished plans, and what comes next.</p>
+<p align="center">
+  <b>Ask. Then go live your day.</b><br>
+  An AI desktop assistant that stays with the work: generative canvas interfaces, hands-free voice, and connected tools.
+</p>
 
-<p align="center"><a href="https://vakyartha.com">vakyartha.com</a> · <a href="#get-started">Get started</a> · <a href="#where-the-rebuild-stands">Where the rebuild stands</a> · <a href="#your-control">Your control</a> · <a href="#develop">Develop</a> · <a href="LICENSE">MIT license</a></p>
+<p align="center">
+  <a href="https://github.com/nranjan2code/vakyartha/releases/latest"><img src="https://img.shields.io/github/v/release/nranjan2code/vakyartha?color=blue&label=release" alt="Release"></a>
+  <a href="https://github.com/nranjan2code/vakyartha/releases/latest"><img src="https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-555555.svg?logo=apple" alt="macOS"></a>
+  <a href="https://v2.tauri.app"><img src="https://img.shields.io/badge/Tauri_v2-Rust_%26_TS-24C8D8.svg?logo=tauri&logoColor=white" alt="Tauri"></a>
+  <a href="https://ollama.com"><img src="https://img.shields.io/badge/local_model-Ollama_ready-black.svg?logo=ollama" alt="Ollama"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
+</p>
+
+<p align="center">
+  <a href="#download"><b>Download .dmg</b></a> ·
+  <a href="https://vakyartha.com">vakyartha.com</a> ·
+  <a href="#key-capabilities">Key capabilities</a> ·
+  <a href="#where-the-rebuild-stands">Rebuild status</a> ·
+  <a href="#your-control">Security & privacy</a> ·
+  <a href="#develop">Develop</a> ·
+  <a href="#documentation">Docs</a>
+</p>
 
 ---
 
-From *Vākyārtha*, the meaning of a sentence. You bring an idea in your own words; Vakyartha helps carry its meaning into useful work, from the first thought to the next step.
+From *Vākyārtha* (Sanskrit: the meaning of a sentence). You bring an idea in your own words; Vakyartha carries its meaning into useful work, from the first thought to the next step.
 
-1. **Bring what you have.** A rough idea, a document, a spreadsheet. Start with what you want to get done.
-2. **Make something useful.** Answers come back as interfaces you can use, not just read: cards, tables, charts, dashboards, forms and buttons, opened in a canvas beside the conversation.
-3. **Keep your say.** You choose which tools and services it can reach, approve what writes or goes online, and see what every turn cost.
+Unlike typical chatbots that only respond with walls of text, Vakyartha projects live, interactive user interfaces directly beside the conversation. It runs completely offline with local models through Ollama, or connects to hosted providers when you want them.
 
-This repository is the **rebuild** of the app described on [vakyartha.com](https://vakyartha.com): a desktop app (macOS first) with a local model as the primary target (Ollama `qwen3.5:4b-mlx`) and hosted providers when you want them. It is built on the **[Projection framework](https://github.com/nranjan2code/Projection)** (`@vak/*`), the engine that parses, repairs and projects model-written interfaces, pinned here as a git submodule.
+## Key Capabilities
+
+- 🎨 **Generative Canvas & Live Surfaces**: Answers come back as interfaces you can use, not just read—interactive cards, sortable tables, reactive charts, dashboards, forms, buttons, and node-and-edge graphs opened in a canvas beside the chat.
+- 🔒 **Local & Private by Default**: The local 4B model (Ollama `qwen3.5:4b-mlx`) is the primary target. Your chats, artifacts, and keys stay on your Mac. Optional hosted models (11 providers) store keys securely in the macOS Keychain.
+- 🎙️ **Hands-Free Conversation Mode**: Talk and listen naturally (`⌘⇧D`). Forms, interactive choices, and tool approvals can be answered aloud in your own words (transcribed offline via Whistle/Phonon on Apple Silicon).
+- 🔌 **Pluggable Tools via MCP**: Connect Model Context Protocol servers for web reading, search, time, files, persistent memory, and workspace data. Pinned packages, zero ambient environment variables, and strict approval defaults.
+- 🛠️ **Skill Studio & Workbench**: Author, lint, visually stage, and rehearse multi-file agent skills (`SKILL.md`, schemas, scripts, references) with live Projection canvas previews (`sm`, `md`, `lg`, `full`).
+- 📊 **Local FinOps Ledger**: Track tokens, context depth, and estimated cost per turn in a transparent local ledger with CSV export.
+
+---
+
+## Download
+
+Pre-built Apple Silicon packages are available on GitHub Releases:
+
+👉 **[Download Vakyartha for macOS (.dmg)](https://github.com/nranjan2code/vakyartha/releases/latest)**
+
+> [!NOTE]
+> Builds are currently unsigned. After dragging `Vakyartha.app` to `/Applications`, either allow it under **System Settings → Privacy & Security**, or run this one-line command in Terminal:
+> ```bash
+> xattr -cr /Applications/Vakyartha.app
+> ```
+
+---
 
 ## Where the rebuild stands
 
-The site describes where Vakyartha is going. Here is what this repository does today.
-
-Current authoring cleanup uses skills and shared record mappings for forms, tables, charts and metrics. The earlier specialized source-report compiler is removed. General source calculations and continuations still require live outcome verification; [evaluation](docs/EVALUATION.md) distinguishes current results from older installed builds.
+This repository is the active **rebuild** of the app described on [vakyartha.com](https://vakyartha.com). It is built on the **[Projection framework](https://github.com/nranjan2code/Projection)** (`@vak/*`), the engine that parses, repairs, and projects model-written interfaces, pinned here as a git submodule.
 
 | On vakyartha.com | In this rebuild |
 |---|---|
@@ -41,28 +80,7 @@ Current authoring cleanup uses skills and shared record mappings for forms, tabl
 | macOS and Linux | macOS only so far. |
 | `vak setup`, `vak doctor`, `vak serve` | Those belong to the [earlier codebase](https://github.com/nranjan2code/code) the site still links to; the rebuild installs from source as below. |
 
-Executable apps extend this into persistent local software: chat/Studio builds reviewed packages, and ordinary sandboxed code performs published actions and data refreshes without an LLM per interaction. Canvas can seed an inert app draft; missing behavior must still be authored and tested. Real-data access uses existing integration permissions. [Architecture, lifecycle and current limits](docs/sandboxed-apps/README.md). The primary-provider authoring gate remains open; source verification does not imply an installed-app update.
-
-## Get started
-
-Open source under MIT. Download the latest Apple-silicon build from [Releases](https://github.com/nranjan2code/vakyartha/releases) (unsigned and not notarized: quit any running Vakyartha first, drag it to Applications, then allow it in System Settings → Privacy & Security), or build it from source.
-
-You need **macOS**, **Node.js 24+**, npm, **Rust** (stable) and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). For a free local model, run [Ollama](https://ollama.com) with `qwen3.5:4b-mlx` (or any installed model). Hosted AI services may charge for use.
-
-```bash
-git clone --recurse-submodules https://github.com/nranjan2code/vakyartha.git
-cd vakyartha
-npm ci
-npm run desktop:build
-```
-
-Then install the bundle (quit a running copy first: `osascript -e 'quit app "Vakyartha"'`):
-
-```bash
-ditto src-tauri/target/release/bundle/macos/Vakyartha.app /Applications/Vakyartha.app
-```
-
-Builds are not code-signed or notarized yet: install only what you built yourself. Add hosted provider keys in **Settings → Providers**. The release procedure is in [RELEASING.md](docs/RELEASING.md).
+---
 
 ## Your control
 
@@ -74,7 +92,29 @@ Builds are not code-signed or notarized yet: install only what you built yoursel
 
 Details: [SECURITY.md](SECURITY.md).
 
+---
+
 ## Develop
+
+### Prerequisites
+You need **macOS**, **Node.js 24+**, npm, **Rust** (stable), and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). For a free local model, run [Ollama](https://ollama.com) with `qwen3.5:4b-mlx` (or any installed model).
+
+### Build from source
+
+```bash
+git clone --recurse-submodules https://github.com/nranjan2code/vakyartha.git
+cd vakyartha
+npm ci
+npm run desktop:build
+```
+
+Install the built application:
+```bash
+osascript -e 'quit app "Vakyartha"' 2>/dev/null || true
+ditto src-tauri/target/release/bundle/macos/Vakyartha.app /Applications/Vakyartha.app
+```
+
+### Dev commands
 
 ```bash
 npm run desktop          # dev window: Vite on :1420 + Tauri; the engine runs from source
@@ -85,10 +125,6 @@ npm run typecheck
 ```
 
 For development, provider keys can also go in a local `.env` (see [`.env.example`](.env.example)). Changes to the engine belong in [Projection](https://github.com/nranjan2code/Projection), never in `framework/`; [RELEASING.md](docs/RELEASING.md) explains how to pull them in. Working rules: [AGENTS.md](AGENTS.md).
-
-### Build a skill, report or dashboard
-
-Start with the [reusable authoring guide](docs/SKILL-AUTHORING.md): existing daily workflows, how skills select and chain, canonical data/bindings, responsive layout, supported chart types, visual/spoken projections and verification. [Skills](docs/SKILLS.md) explains reviewed catalog packages, supporting text files, installing/editing and built-in updates. A report's daily/weekly/monthly window does not create automatic recurring delivery. The [current prompt audit](docs/PROMPT-AUDIT.md) records instruction conflicts and open assembly/evaluation repairs; the [earlier skill audit](docs/SKILL-AUDIT.md) retains its dated evidence and reliability limits.
 
 ### How it fits together
 
@@ -122,13 +158,14 @@ Each folder holds `sessions/`, `integrations/`, `integrations.json`, `channels.j
 - **Probe the real window** (debug builds): `VAK_DEBUG_JS=/path/probe.js npm run desktop`.
 - **Inspector:** Option-right-click in a dev build.
 
+---
+
 ## Documentation
 
 - [SKILL-AUTHORING.md](docs/SKILL-AUTHORING.md): start here for reusable skills, reports, dashboards, chart selection and visual/spoken composition; [SKILLS.md](docs/SKILLS.md) defines the lifecycle, and [SKILL-AUDIT.md](docs/SKILL-AUDIT.md) retains evidence.
-
 - [SPECS.md](docs/SPECS.md): what the app is, its framework dependency and identity.
 - [AGENT-TASKS.md](docs/AGENT-TASKS.md), [IMPLEMENTATION-STATUS.md](docs/IMPLEMENTATION-STATUS.md) and [ADR.md](docs/ADR.md): ongoing task requirements, preserved interactive surfaces, architecture decisions, verified progress and open acceptance gates.
-- [Agent runtime architecture](docs/agent-runtime/README.md): proposed single-agent/delegated execution, diagrams, drift/stopping, recovery, multi-job resources, QoS and observability.
+- [Agent runtime architecture](docs/agent-runtime/README.md): single-agent/delegated execution, diagrams, drift/stopping, recovery, multi-job resources, QoS and observability.
 - [RELEASING.md](docs/RELEASING.md): releasing the app and updating Projection.
 - [EXTERNAL-CATALOGS.md](docs/EXTERNAL-CATALOGS.md): external discovery, review/import UX, lifecycle ownership, supported runtimes/authentication and verification.
 - [DATABRICKS.md](docs/DATABRICKS.md): workspace MCP endpoint/token setup, supported clouds, permissions, costs and verification limits.
@@ -136,6 +173,8 @@ Each folder holds `sessions/`, `integrations/`, `integrations.json`, `channels.j
 - [AGENTS.md](AGENTS.md) and [HANDOVER.md](docs/HANDOVER.md): working rules and where work stands.
 - [SECURITY.md](SECURITY.md), [CANVAS.md](docs/CANVAS.md), [FINOPS.md](docs/FINOPS.md) and [CHANGELOG.md](CHANGELOG.md).
 - The framework: [Projection](https://github.com/nranjan2code/Projection).
+
+---
 
 ## Contributions and license
 

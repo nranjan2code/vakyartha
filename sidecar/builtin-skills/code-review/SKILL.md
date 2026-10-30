@@ -16,6 +16,11 @@ Actionable, evidence-backed code review focusing on correctness, security, perfo
 
 Use this skill when the user asks to review, critique, audit or improve source code, pull requests, diffs or architectural patterns. Provide structured, prioritized feedback rather than superficial commentary.
 
+## Skill Chaining
+
+- Load `decision-eval` to classify finding severities (`Critical`, `Major`, `Minor`, `Nit`) against discrete criteria without subjective guessing.
+- Load `decision-chain` when conducting multi-stage security audits (Domain Triage -> Vulnerability Inspection -> Exploitation Risk Gate).
+
 ## Review Priorities
 
 1. **Correctness & Logic**:

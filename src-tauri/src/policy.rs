@@ -23,6 +23,7 @@ pub const ALLOWED_EGRESS_HOSTS: &[&str] = &[
     "registry.npmjs.org",
     "mcp.kite.trade",
     "mcp.nseindia.in",
+    "api.typesafe.ai",
 ];
 
 /// Hosted model API origins. This narrower set is for the native model
