@@ -133,13 +133,6 @@ fn write_vault_file(path: &Path, map: &BTreeMap<String, String>) -> Result<(), S
     result
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "Secret reads are reserved for the native credential broker, which is not wired yet"
-    )
-)]
 fn file_vault_get(data_dir: &Path, account: &str) -> Result<Option<String>, String> {
     ensure_vault_root(data_dir)?;
     let path = vault_file_path(data_dir);

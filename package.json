@@ -21,7 +21,6 @@
     "web": "npm run build --silent && node --disable-warning=ExperimentalWarning scripts/web.ts",
     "dev": "vite",
     "build": "vite build",
-    "sidecar": "node --disable-warning=ExperimentalWarning sidecar/main.ts",
     "bundle-sidecar": "node --disable-warning=ExperimentalWarning scripts/bundle-sidecar.ts",
     "tauri": "tauri",
     "build:app": "tauri build --config src-tauri/tauri.release.conf.json"

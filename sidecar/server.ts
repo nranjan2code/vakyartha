@@ -22,7 +22,7 @@ import { integrationCatalog, createIntegrations } from "./integrations.ts";
 import { runUsage } from "../shared/finops.ts";
 import { Finops } from "./finops.ts";
 import { TaskFiles } from "./task-files.ts";
-import { fileSecrets, keychainStore, Settings, SettingsError } from "./settings.ts";
+import { fileSecrets, keychainStore, nativeSecrets, Settings, SettingsError } from "./settings.ts";
 import { checkTaskSpending } from "./task-policy.ts";
 import { Tasks } from "./tasks.ts";
 import { voiceRoutes } from "./voice/index.ts";
@@ -114,7 +114,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   const settingsFile = path.join(dataDir, "settings.env");
   const settings = new Settings({
     file: settingsFile,
-    secrets: process.platform === "darwin" ? keychainStore(opts.keychainService ?? "com.nranjan2code.vakyartha") : fileSecrets(settingsFile),
+    secrets: opts.nativeSessionStore ? nativeSecrets() : process.platform === "darwin" ? keychainStore(opts.keychainService ?? "com.nranjan2code.vakyartha") : fileSecrets(settingsFile),
   });
   // Settings saved in the app win over a developer's .env.
   try {

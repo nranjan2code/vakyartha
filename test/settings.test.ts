@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { fileSecrets, type SecretStore, Settings, SettingsError } from "../sidecar/settings.ts";
+import { nativeSecrets, fileSecrets, type SecretStore, Settings, SettingsError } from "../sidecar/settings.ts";
 
 const dir = () => mkdtempSync(path.join(tmpdir(), "vak-settings-"));
 
@@ -79,4 +79,18 @@ test("sandbox settings validate the whole change before persisting or changing r
   assert.throws(() => settings.save({ VAK_SANDBOX_WORKSPACE: path.join(folder, "absent") }), SettingsError);
   settings.save({ VAK_SANDBOX_WORKSPACE: "" });
   assert.equal(env.VAK_SANDBOX_WORKSPACE, undefined);
+});
+
+
+test("desktop settings never adopt secret bytes and refuse mixed secret updates atomically", () => {
+  const file = path.join(dir(), "settings.env"), env: Record<string, string | undefined> = {};
+  const original = 'OPENAI_API_KEY="synthetic-retained-key"\nOLLAMA_HOST="http://127.0.0.1:11434"\n';
+  writeFileSync(file, original);
+  const settings = new Settings({ file, secrets: nativeSecrets(), env });
+  settings.load();
+  assert.equal(env.OPENAI_API_KEY, undefined);
+  assert.equal(settings.view().find((item) => item.name === "OPENAI_API_KEY")!.set, false);
+  assert.throws(() => settings.save({ OLLAMA_HOST: "http://changed", OPENAI_API_KEY: "synthetic-new-key" }), SettingsError);
+  assert.equal(env.OLLAMA_HOST, "http://127.0.0.1:11434");
+  assert.equal(readFileSync(file, "utf8"), original);
 });

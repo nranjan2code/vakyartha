@@ -21,7 +21,12 @@
  await wait(()=>!document.querySelector('#ask[open]'));
   const backend=await ipc.invoke('backend');check(backend.url==='vak://localhost','unexpected backend');
  await ipc.invoke('vault_set',{account:'NATIVE_VAULT_PROBE',value:'synthetic-native-vault-value'});
+ const presence=await ipc.invoke('vault_presence',{accounts:['NATIVE_VAULT_PROBE']});
+ check(presence.NATIVE_VAULT_PROBE===true,'native credential presence failed');
+ const secretUpdate=await request('/api/settings','PUT',{values:{OPENAI_API_KEY:'synthetic-refused-worker-key'}});
+ check(secretUpdate.status===400,'desktop worker accepted credential bytes');
  await ipc.invoke('vault_delete',{account:'NATIVE_VAULT_PROBE'});
+ check((await ipc.invoke('vault_presence',{accounts:['NATIVE_VAULT_PROBE']})).NATIVE_VAULT_PROBE===false,'native credential deletion presence failed');
  const nativeSessions=await ipc.invoke('control_list_host_sessions');
  check(nativeSessions.some(s=>s.id==='legacy-chat'&&s.title==='Preserved legacy chat'),'confirmed legacy migration was not visible in native session index');
   await ipc.invoke('control_admit_host_session',{sessionId:'legacy-chat'});

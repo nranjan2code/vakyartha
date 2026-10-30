@@ -2,9 +2,9 @@
 // Node sidecar (sidecar/main.ts); this side only starts it,
 // provides private main-window IPC, and stops it on quit.
 //
-// Dev builds run the sidecar source with the `node` on PATH (or VAK_NODE) and
-// keep data in <repo>/.vak/desktop. Release builds run the bundled Node binary
-// and bundled sidecar, with data in the OS app-data directory.
+// Both development and release launch a bundled Node worker through the
+// reviewed sandbox helper. Worker data lives below the app-data worker directory;
+// native control, canonical storage and credentials remain outside its grants.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -24,6 +24,7 @@ struct Backend {
 }
 
 mod engine;
+mod worker;
 mod policy;
 mod private_store;
 mod vault;
@@ -49,11 +50,11 @@ use engine::{Engine as Sidecar, engine_request, engine_ack, engine_cancel};
 /// channels (Telegram, ...) keep running; Quit in the tray menu ends both.
 static KEEP_RUNNING: AtomicBool = AtomicBool::new(true);
 
-fn default_service() -> String {
+fn default_service(app: &AppHandle) -> String {
     if cfg!(debug_assertions) {
-        "com.nranjan2code.vakyartha.dev".into()
+        format!("{}.dev", app.config().identifier)
     } else {
-        "com.nranjan2code.vakyartha".into()
+        app.config().identifier.clone()
     }
 }
 
@@ -90,20 +91,38 @@ fn control_data_dir(app: &AppHandle) -> std::io::Result<PathBuf> {
 
 /// Store a secret into the cross-platform Vault through the trusted engine broker.
 #[tauri::command]
-fn vault_set(window: tauri::WebviewWindow, service: Option<String>, account: String, value: String) -> Result<(), String> {
+fn vault_set(window: tauri::WebviewWindow, account: String, value: String) -> Result<(), String> {
     engine::main_window(&window)?;
-    let svc = service.unwrap_or_else(default_service);
+    let svc = default_service(window.app_handle());
     let data_dir = app_data_dir(window.app_handle());
     vault::set(&svc, &account, &value, &data_dir)
 }
 
 /// Delete a secret from the cross-platform Vault through the trusted engine broker.
 #[tauri::command]
-fn vault_delete(window: tauri::WebviewWindow, service: Option<String>, account: String) -> Result<(), String> {
+fn vault_delete(window: tauri::WebviewWindow, account: String) -> Result<(), String> {
     engine::main_window(&window)?;
-    let svc = service.unwrap_or_else(default_service);
+    let svc = default_service(window.app_handle());
     let data_dir = app_data_dir(window.app_handle());
     vault::delete(&svc, &account, &data_dir)
+}
+
+/// Only presence crosses into trusted Settings UI, never stored credential bytes.
+#[tauri::command]
+async fn vault_presence(window: tauri::WebviewWindow, accounts: Vec<String>) -> Result<std::collections::BTreeMap<String, bool>, String> {
+    engine::main_window(&window)?;
+    if accounts.len() > 64 || accounts.iter().any(|name| name.is_empty() || name.len() > 128 || !name.bytes().all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')) {
+        return Err("Invalid credential presence request".into());
+    }
+    let data = app_data_dir(window.app_handle());
+    let service = default_service(window.app_handle());
+    tauri::async_runtime::spawn_blocking(move || {
+        accounts.into_iter().map(|name| {
+            vault::get(&service, &name, &data)
+                .map(|value| (name, value.is_some_and(|value| !value.is_empty())))
+                .map_err(|_| "Credential presence is unavailable".to_owned())
+        }).collect()
+    }).await.map_err(|_| "Credential presence is unavailable".to_owned())?
 }
 
 /// Egress validation gate: checks whether a destination URL is permitted by broker policy.
@@ -534,82 +553,28 @@ fn tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-fn configure_release_runtime(cmd: &mut Command) {
-    // The installed engine chooses its own runtime and settings. Terminal or
-    // launch-agent hooks must not preload code or override these boundaries.
-    for name in ["NODE_OPTIONS", "NODE_PATH", "NODE_TLS_REJECT_UNAUTHORIZED", "NODE_V8_COVERAGE", "NODE_COMPILE_CACHE", "VAK_ENV_FILES", "VAK_PORT", "VAK_KEYCHAIN_SERVICE", "VAK_SANDBOX_BIN", "VAK_SANDBOX_ENABLED"] {
-        cmd.env_remove(name);
-    }
-    // This bundle imports only Node built-ins; integrations run in separate processes.
-    cmd.arg("--no-addons");
-}
-
-#[cfg(test)]
-mod runtime_tests {
-    use super::configure_release_runtime;
-    use std::process::Command;
-
-    #[test]
-    fn release_discards_inherited_startup_hooks_and_development_overrides() {
-        let mut cmd = Command::new("node");
-        cmd.env("NODE_OPTIONS", "--import=untrusted.mjs").env("VAK_ENV_FILES", "/untrusted.env");
-        configure_release_runtime(&mut cmd);
-        let changes: std::collections::HashMap<_, _> = cmd.get_envs().collect();
-        for name in ["NODE_OPTIONS", "NODE_PATH", "NODE_TLS_REJECT_UNAUTHORIZED", "VAK_ENV_FILES", "VAK_PORT", "VAK_KEYCHAIN_SERVICE", "VAK_SANDBOX_BIN", "VAK_SANDBOX_ENABLED"] {
-            assert_eq!(changes.get(std::ffi::OsStr::new(name)), Some(&None));
-        }
-        assert!(cmd.get_args().any(|arg| arg == "--no-addons"));
-        assert!(!changes.contains_key(std::ffi::OsStr::new("HOME")));
-        assert!(!changes.contains_key(std::ffi::OsStr::new("PATH")));
-    }
-}
-
 fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
+    let data = app_data_dir(app);
     if cfg!(debug_assertions) {
-        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let repo = repo.canonicalize().map_err(|e| format!("repo path: {e}"))?;
-        let node = std::env::var("VAK_NODE").unwrap_or_else(|_| "node".into());
-        let mut cmd = Command::new(node);
-        cmd.arg("--disable-warning=ExperimentalWarning")
-            .arg(repo.join("sidecar/main.ts"))
-            .env("VAK_DATA_DIR", std::env::var_os("VAK_DATA_DIR").map(PathBuf::from).unwrap_or_else(|| repo.join(".vak/desktop")))
-            // Dev keys stay apart from the installed app's.
-            .env("VAK_KEYCHAIN_SERVICE", std::env::var("VAK_KEYCHAIN_SERVICE").unwrap_or_else(|_| "com.nranjan2code.vakyartha.dev".into()))
-            .env("VAK_ENV_FILES", std::env::var_os("VAK_ENV_FILES").unwrap_or_else(|| repo.join(".env").into_os_string()));
-        // Dev: point at the sandbox binary if built.
-        let dev_vaksb = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("sandbox").join("target").join("release").join("vaksb");
-        if dev_vaksb.exists() {
-            cmd.env("VAK_SANDBOX_BIN", dev_vaksb);
-        }
-        Ok(cmd)
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let suffix = if cfg!(windows) { ".exe" } else { "" };
+        let triple = env!("VAK_TARGET_TRIPLE");
+        worker::command(
+            &root.join(format!("binaries/vaksb-{triple}{suffix}")),
+            &root.join(format!("binaries/node-{triple}{suffix}")),
+            &root.join("resources"),
+            &data,
+        )
     } else {
-        // externalBin binaries land next to the app executable, without the target triple.
-        let exe = std::env::current_exe().map_err(|e| format!("executable path: {e}"))?;
-        let dir = exe.parent().ok_or("executable has no directory")?;
-        let node = dir.join(if cfg!(windows) { "node.exe" } else { "node" });
-        if !node.exists() {
-            // `tauri build` without tauri.release.conf.json bundles no engine.
-            return Err("this build has no engine bundled: build it with `npm run desktop:build`".into());
-        }
-        let script = app
-            .path()
-            .resource_dir()
-            .map_err(|e| format!("resource dir: {e}"))?
-            .join("resources/sidecar.mjs");
-        let data = app.path().app_data_dir().map_err(|e| format!("app data dir: {e}"))?;
-        let npm = app
-            .path()
-            .resource_dir()
-            .map_err(|e| format!("resource dir: {e}"))?
-            .join("resources/npm/bin/npm-cli.js");
-        let vaksb = dir.join(if cfg!(windows) { "vaksb.exe" } else { "vaksb" });
-        let mut cmd = Command::new(node);
-        configure_release_runtime(&mut cmd);
-        cmd.arg("--disable-warning=ExperimentalWarning").arg(script).env("VAK_DATA_DIR", data).env("VAK_APP_VERSION", env!("CARGO_PKG_VERSION")).env("VAK_NPM_CLI", npm);
-        if vaksb.exists() {
-            cmd.env("VAK_SANDBOX_BIN", vaksb);
-        }
-        Ok(cmd)
+        let exe = std::env::current_exe().map_err(|_| "Cannot resolve desktop executable")?;
+        let dir = exe.parent().ok_or("Desktop executable has no directory")?;
+        let resources = app.path().resource_dir().map_err(|_| "Cannot resolve desktop resources")?.join("resources");
+        worker::command(
+            &dir.join(if cfg!(windows) { "vaksb.exe" } else { "vaksb" }),
+            &dir.join(if cfg!(windows) { "node.exe" } else { "node" }),
+            &resources,
+            &data,
+        )
     }
 }
 
@@ -656,6 +621,7 @@ pub fn run() {
             autostart,
             save_canvas,
             show_admin,
+            vault_presence,
             vault_set,
             vault_delete,
             check_egress_endpoint,

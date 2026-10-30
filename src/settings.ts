@@ -1,4 +1,4 @@
-import { engineFetch } from "./backend.ts";
+import { vaultPresence, engineFetch } from "./backend.ts";
 // Settings: a full page with a section sidebar. Every change applies as it is
 // made (keys when you press Save next to them), so there is no page-wide Save.
 
@@ -106,6 +106,10 @@ async function show(to: Section, arg?: string): Promise<void> {
   content().replaceChildren(el("p", { className: "row-hint", role: "status", textContent: "Loading settings…" }));
   try {
     settings = await api<Setting[]>("/api/settings");
+    if (inTauri) {
+      const presence = await vaultPresence(settings.filter((setting) => setting.secret).map((setting) => setting.name));
+      settings = settings.map((setting) => setting.secret ? { ...setting, set: presence[setting.name] === true } : setting);
+    }
     const integration = to.startsWith("integration:") ? to.slice("integration:".length) : undefined;
     const render: Record<string, () => Promise<HTMLElement[]>> = {
       integrations: async () => marketplace((id) => void show(`integration:${id}`), () => void show("integrations:add")),

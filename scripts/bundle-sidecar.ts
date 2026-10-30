@@ -9,13 +9,27 @@
 // an LTS line, or not that line's newest patch on nodejs.org (security fixes).
 // VAK_NODE_CHECK=offline skips only the nodejs.org lookup, with a warning.
 
+import { randomUUID } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSidecar, copyNpm, treeReceipt } from "./sidecar-bundle.ts";
 
 const NODE_TEAM = "HX7739G8FX"; // Developer ID: Node.js Foundation
+
+function installExecutable(source: string, destination: string): void {
+  // Replace the inode instead of overwriting signed executable pages. On macOS
+  // an in-place helper update can retain stale kernel code-signing state and be
+  // killed at exec even though codesign verifies the new bytes.
+  const temporary = `${destination}.stage-${randomUUID()}`;
+  try {
+    copyFileSync(source, temporary);
+    chmodSync(temporary, 0o755);
+    renameSync(temporary, destination);
+  } finally { rmSync(temporary, { force: true }); }
+}
+
 
 async function checkNode(): Promise<void> {
   const exe = realpathSync(process.execPath);
@@ -49,8 +63,7 @@ if (!triple) throw new Error("could not read the Rust host triple from `rustc -v
 const ext = process.platform === "win32" ? ".exe" : "";
 const bin = path.join(tauri, "binaries", `node-${triple}${ext}`);
 mkdirSync(path.dirname(bin), { recursive: true });
-copyFileSync(realpathSync(process.execPath), bin);
-chmodSync(bin, 0o755);
+installExecutable(realpathSync(process.execPath), bin);
 // npm, so integrations can be installed in the release app (it runs with the bundled Node).
 const npmDir = path.resolve(path.dirname(realpathSync(process.execPath)), "../lib/node_modules/npm");
 copyNpm(npmDir, path.join(tauri, "resources", "npm"));
@@ -58,15 +71,19 @@ console.log(`sidecar → ${path.relative(app, path.join(tauri, "resources/sideca
 
 // Bundle vaksb (vak-sandbox CLI) as an external binary alongside node.
 const sandboxRepo = path.resolve(app, "..", "sandbox");
+const sandboxRevision = "0c0a3473b2ddba595fef370d7266223723403a15";
+const sandboxGit = (...args: string[]) => execFileSync("git", ["-C", sandboxRepo, ...args], { encoding: "utf8" }).trim();
+if (sandboxGit("rev-parse", "HEAD") !== sandboxRevision || sandboxGit("status", "--porcelain")) {
+  throw new Error(`Sandbox must be the clean reviewed revision ${sandboxRevision}`);
+}
 const vaksbSrc = path.join(sandboxRepo, "target", triple, "release", `vaksb${ext}`);
 // Always ask Cargo to validate current sources and its lockfile. Its incremental
 // build is cheap; binary existence alone cannot establish source provenance.
-const sandboxBuild = spawnSync("cargo", ["build", "--locked", "--release", "--target", triple, "-p", "vak-sandbox-ctl"], { cwd: sandboxRepo, stdio: "inherit", env: { ...process.env, CARGO_TARGET_DIR: path.join(sandboxRepo, "target") } });
+const sandboxBuild = spawnSync("cargo", ["build", "--locked", "--release", "--target", triple, "-p", "vak-sandbox-ctl"], { cwd: sandboxRepo, stdio: "inherit", env: { ...process.env, RUSTUP_TOOLCHAIN: "1.99.1", CARGO_TARGET_DIR: path.join(sandboxRepo, "target") } });
 if (sandboxBuild.error) throw sandboxBuild.error;
 if (sandboxBuild.status !== 0) throw new Error(`Sandbox build failed (${sandboxBuild.status ?? sandboxBuild.signal}); refusing to package an old binary`);
 const vaksbBin = path.join(tauri, "binaries", `vaksb-${triple}${ext}`);
-copyFileSync(vaksbSrc, vaksbBin);
-chmodSync(vaksbBin, 0o755);
+installExecutable(vaksbSrc, vaksbBin);
 console.log(`vaksb → ${path.relative(app, vaksbBin)}`);
 
 const git = (repo: string, ...args: string[]) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" }).trim();

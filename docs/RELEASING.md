@@ -1,5 +1,7 @@
 # RELEASING.md: Vakyartha
 
+Current source runtime change (2026-10-30): both dev and release require the self-contained Node 26 runtime and reviewed clean sandbox helper `0c0a3473b2ddba595fef370d7266223723403a15`, built with Rust 1.99.1. Sidecar protocol is carried on descriptor 3 through `vaksb worker`. Worker data is `<app-data>/worker/`; native stores are outside its grants. Desktop no longer loads `.env` or forwards saved credentials to Node. The source canary and native WebKit smoke are recorded in [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#contained-desktop-launcher-and-native-only-credentials--2026-10-30). This source checkpoint is not installed; no new release or complete agent-runtime outcome is established.
+
 ## Prompt and skill cleanup — installed 2026-10-29
 
 Pushed executable app source `4746d717aed490b3d84565ab94e820bfe5f84940`, pushed Projection `d017a18474c8cac844e44b87ae71bd8058186501`, clean sandbox `475ae9851bb30fe45ff62d011480235eac13817b`. A fresh recursive remote clone, script-free npm install (zero reported vulnerabilities), regenerated frontend/sidecar and initially absent Rust release target produced a complete app and DMG. Node 24.22.2/npm 11.19.1 uses the previously verified official archive; the bundler re-verifies Foundation signing and newest LTS status. The global runtime is unchanged. Version remains local 0.2.0, unsigned/unnotarized; no tag or public release.

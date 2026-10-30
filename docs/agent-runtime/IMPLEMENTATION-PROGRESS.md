@@ -2,6 +2,27 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Contained desktop launcher and native-only credentials — 2026-10-30
+
+Both debug and release launch the bundled Node runtime through the reviewed `vaksb worker` helper. There is one launch path: missing runtime/helper or unavailable OS enforcement refuses startup. The worker receives read-only runtime resources plus the reviewed helper's fixed OS runtime read grants, and one owner-only `<app-data>/worker/` write grant, an explicit environment and private descriptor 3. Rust keeps the existing framed parent protocol through the helper's stdin/stdout relay. No source-tree, selected-project, native-store or old app-data grant is added. Runtime grants cannot cover the native store (including through implicit OS runtime roots), runtime code and writable data cannot overlap; a replaced worker directory is refused. Development now rebuilds the self-contained runtime before launch. The direct `npm run sidecar` entry was removed. Executable packaging stages each binary on a fresh inode and atomically renames it, avoiding the observed macOS signing-cache failure from overwriting a signed helper in place. Packaging requires clean helper revision `0c0a3473b2ddba595fef370d7266223723403a15`; the app and helper build use Rust 1.99.1, and JavaScript bundles target Node 26.
+
+The Settings UI writes secrets only to Rust. Vault operations use the build-owned app identifier (with a development suffix), so callers cannot select another credential service and isolated smoke identities do not share the development vault. It retrieves bounded native presence flags; it no longer sends saved values to `/api/settings`. Desktop settings use a native-only secret-store adapter that neither reads secret values from old settings files nor accepts secret updates, including mixed plain/secret batches. Browser development retains its separate configured secret backend. The worker receives no environment files or inherited credential/preload variables. `OPENSSL_CONF=/dev/null` prevents Linux Node from loading ambient host crypto configuration.
+
+```mermaid
+flowchart LR
+    UI[Trusted Settings UI] -->|write/delete; presence only| R[Rust host and vault]
+    R -->|private pipes| H[Reviewed containment helper]
+    H <-->|descriptor 3| W[Node sidecar]
+    W -->|read only| CODE[Bundled runtime]
+    W -->|read/write| DATA[app-data/worker]
+    W -. direct filesystem access denied .-> N[Native stores and credentials]
+    W -->|existing admitted-session API| R
+```
+
+Evidence: real Node canaries pass on macOS and digest-pinned Linux Docker. They prove outside-file read/write denial, denial of a connection to a real loopback listener, omission of helper-only synthetic secrets/preload hooks, positive worker-directory writes and private-channel output. Native WebKit desktop smoke passes with contained startup, canonical native persistence/import, actual native vault presence/deletion, secret-write refusal, binary upload, no helper/worker TCP listeners and descendant cleanup. The first smoke retained a checker failure because its upload path still pointed at the former data directory; the path expectation was corrected without changing the uploaded bytes. The first Linux canary retained OpenSSL configuration denial; the explicit empty config fixes startup without broader filesystem grants. Node 26.13.0 typecheck and all 284 app tests pass. Rust 1.99.1 full library tests pass 105/105 on macOS and 107/107 in digest-pinned Linux Docker, including the real Node canary on both; strict Clippy passes on both. The regular Linux gate separately passes 106 tests with the explicit canary opt-in left ignored.
+
+Limits: this changes the desktop launch boundary, not task authority. Reasoning and canonical adapters still share a process, and the admitted-session API still returns canonical bytes to that sidecar. No complete confidentiality or ISO1 closure is claimed. Existing desktop operations needing direct network, credentials or original-folder access now refuse under containment until their native brokers/grants are implemented. Desktop provider dispatch remains refused. Native task/workspace cutover, common capacity, hard CPU/memory quotas, child supervision, recovery/drift, IA and original outcome gates remain open. The installed app has not been replaced; no final Astra review has run.
+
 ## Distinguish framework step exhaustion in run recovery — 2026-10-30
 
 The latest three retained local selected-file report evaluations (2026-10-26 17:29, 17:34 and 17:40 UTC) all ended at the framework `max_steps` limit after 12 model requests. Across them, independent-surface checks failed 3/3, exact visible-value checks failed 3/3, and verified output receipts failed 3/3; source naming failed in 1/3. The runs also show surface churn (four surfaces in one attempt, one in another), while the third produced one combined form/table. These are frozen outcome failures, not evidence that a particular prompt or added agent fixes the task.

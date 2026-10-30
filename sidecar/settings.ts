@@ -41,10 +41,18 @@ export interface SettingView {
 }
 
 export interface SecretStore {
-  readonly kind: "keychain" | "file";
+  readonly kind: "keychain" | "file" | "native";
   get(name: string): string | undefined;
   set(name: string, value: string): void;
   delete(name: string): void;
+}
+
+export function nativeSecrets(): SecretStore {
+  return {
+    kind: "native", get: () => undefined,
+    set() { throw new SettingsError("Save credentials through the native vault"); },
+    delete() { throw new SettingsError("Remove credentials through the native vault"); },
+  };
 }
 
 const SECURITY = "/usr/bin/security";
@@ -174,6 +182,7 @@ export class Settings {
     for (const [name, value] of Object.entries(values)) {
       const s = SETTINGS.find((x) => x.name === name);
       if (!s) continue;
+      if (s.secret && this.secrets.kind === "native") throw new SettingsError("Credentials are managed by the native vault");
       const v = typeof value === "string" ? value.trim() : "";
       // A newline would start another variable in the file; quotes and spaces
       // never occur in API keys and would break the Keychain command line.

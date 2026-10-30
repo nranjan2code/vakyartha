@@ -1,5 +1,12 @@
 # Vakyartha handover — 2026-10-30
 
+## Contained desktop launch — 2026-10-30
+
+Development and release now launch bundled Node through the exact reviewed sandbox helper with descriptor 3, read-only runtime resources and one `<app-data>/worker/` write grant. Native stores and original folders are outside its grants. Desktop secret saves go only to Rust; Settings reads native presence flags, and the worker refuses secret updates. Rust is pinned to 1.99.1 and bundling targets Node 26. Real Node denial canaries pass on macOS/Linux; native WebKit smoke passes canonical rendering/storage, credentials, binary upload, no TCP listeners and descendant cleanup. Node 26.13.0 typecheck and 284 app tests pass. Rust 1.99.1 library suites pass 105/105 on macOS and 107/107 in Linux Docker with real worker canaries and strict Clippy on both. The final native WebKit smoke passes after atomic executable replacement; the prior signing failure remains recorded. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#contained-desktop-launcher-and-native-only-credentials--2026-10-30).
+
+This source change is not installed. Task/workspace authority is still TypeScript, canonical/reasoning adapters still share a process, and provider dispatch remains refused. Existing desktop operations needing direct network or original-folder access now refuse until mediated; no fallback is retained. Complete native authority, quotas, QoS, recovery/drift, IA, child execution, original outcomes and final Astra review remain open.
+
+
 ## Framework step-budget recovery signal — 2026-10-30
 
 Three retained local selected-file report runs stopped at `max_steps` after 12 model requests. All failed independent-surface, exact-value and verified-output checks; source naming failed once. The TypeScript task journal previously recorded this framework step stop as a generic execution error. It now persists `step_budget_exhausted`, keeps the task failed, creates no output receipt and does not replay automatically. A focused regression proves the cause survives journal reopen. Node 26.13.0 focused task tests pass 21/21, typecheck passes, and the full serial app suite passes 283/283. The original report outcome remains failed and unclosed; this slice changes diagnosis/recovery state only. See [failure evidence](agent-runtime/LOCAL-FAILURE-LESSONS.md#selected-file-report-budget-exhaustion--2026-10-26) and [runtime progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#distinguish-framework-step-exhaustion-in-run-recovery--2026-10-30).

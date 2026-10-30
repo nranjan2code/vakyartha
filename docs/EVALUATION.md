@@ -1,5 +1,12 @@
 # Agent outcome evaluation
 
+## Contained desktop launch — 2026-10-30
+
+Development and release now launch bundled Node through the exact reviewed sandbox helper with descriptor 3, read-only runtime resources and one `<app-data>/worker/` write grant. Native stores and original folders are outside its grants. Desktop secret saves go only to Rust; Settings reads native presence flags, and the worker refuses secret updates. Rust is pinned to 1.99.1 and bundling targets Node 26. Real Node denial canaries pass on macOS/Linux; native WebKit smoke passes canonical rendering/storage, credentials, binary upload, no TCP listeners and descendant cleanup. Node 26.13.0 typecheck and 284 app tests pass. Rust 1.99.1 library suites pass 105/105 on macOS and 107/107 in Linux Docker with real worker canaries and strict Clippy on both. The final native WebKit smoke passes after atomic executable replacement; the prior signing failure remains recorded. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#contained-desktop-launcher-and-native-only-credentials--2026-10-30).
+
+This source change is not installed. Task/workspace authority is still TypeScript, canonical/reasoning adapters still share a process, and provider dispatch remains refused. Existing desktop operations needing direct network or original-folder access now refuse until mediated; no fallback is retained. Complete native authority, quotas, QoS, recovery/drift, IA, child execution, original outcomes and final Astra review remain open.
+
+
 ## Retained step-budget exhaustion in selected-file reports — 2026-10-26
 
 The three latest local selected-file report results (`17-29-10.950Z-141e5632`, `17-34-57.875Z-3e2d14d1`, `17-40-38.659Z-cf77d009`) all stopped at `max_steps` after 12 model requests. Independent-surface, exact-visible-value, current-surface-reference and verified-output-receipt checks failed in every run. Source naming failed once; budget initialization failed twice. These results remain failed under their original checks. A 2026-10-30 task-journal change now records the framework's typed step limit separately as `step_budget_exhausted`; it does not improve or re-evaluate the report. The focused task suite passes 21/21, full app suite 283/283, and typecheck passes on Node 26.13.0. No paid model call or acceptance-check change was made. Full evidence and limits: [local failure lessons](agent-runtime/LOCAL-FAILURE-LESSONS.md#selected-file-report-budget-exhaustion--2026-10-26).

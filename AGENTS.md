@@ -21,7 +21,7 @@ Vakyartha is an app built on the [Projection framework](https://github.com/nranj
 
 ## Secrets and the public repo
 
-- Keys live in the Keychain (the app) or in `.env` (development, gitignored): `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, etc. Never print or quote values; when checking, show key names and lengths only.
+- Keys live in the native vault (desktop) or in `.env` (browser development, gitignored): `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, etc. Never print or quote values; when checking, show key names and lengths only.
 - Never commit `.env` or `.vak/` (dev data, chats, transcripts).
 - The repo is public (`github.com/nranjan2code/vakyartha`). Before every push, scan the staged diff:
   ```bash
@@ -70,10 +70,10 @@ Node 26 LTS runs `.ts` directly; the UI is bundled by Vite, the sidecar by `scri
 
 ## Running the app while the user tests
 
-- The dev window runs the sidecar from source: quit and relaunch after sidecar or framework changes.
+- The dev window rebuilds and launches the bundled sidecar through the pinned containment helper: quit and relaunch after sidecar or framework changes. Desktop workers receive no `.env` files.
 - `npm run web` loads the engine at start and serves the built UI: restart it after changes.
 - Don't restart a channel (Telegram) while the user is mid-test; say so first.
-- Data: `.vak/desktop/` (dev window), `.vak/web/` (browser), `~/Library/Application Support/com.nranjan2code.vakyartha/` (installed).
+- Worker data: `.vak/desktop/worker/` (dev window), `.vak/web/` (browser), `~/Library/Application Support/com.nranjan2code.vakyartha/worker/` (installed). Rust-owned stores use the app-specific hidden sibling of the desktop app-data root, outside worker grants.
 
 ## UI density and collections
 

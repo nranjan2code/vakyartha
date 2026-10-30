@@ -112,16 +112,22 @@ export async function downloadMarkdown(filename: string, content: string): Promi
 }
 
 /** Store a secret into the trusted engine vault. */
-export async function vaultSet(account: string, value: string, service?: string): Promise<void> {
+export async function vaultSet(account: string, value: string): Promise<void> {
   if (inTauri) {
-    await invoke("vault_set", { account, value, service });
+    await invoke("vault_set", { account, value });
   }
 }
 
+/** Native storage exposes presence only; saved values never enter the worker. */
+export async function vaultPresence(accounts: string[]): Promise<Record<string, boolean>> {
+  if (!inTauri) throw new Error("Native vault is unavailable");
+  return invoke("vault_presence", { accounts });
+}
+
 /** Remove a secret from the trusted engine vault. */
-export async function vaultDelete(account: string, service?: string): Promise<void> {
+export async function vaultDelete(account: string): Promise<void> {
   if (inTauri) {
-    await invoke("vault_delete", { account, service });
+    await invoke("vault_delete", { account });
   }
 }
 

@@ -1,5 +1,7 @@
 # Rust-first implementation design
 
+Current launch checkpoint (2026-10-30): both desktop modes now use the reviewed helper with a bundled Node 26 runtime, private descriptor 3, read-only runtime resources and one `<app-data>/worker/` write grant. Native stores and credentials are outside the filesystem grants; desktop secret updates route only through Rust and the worker receives no environment files. Direct filesystem/network denial canaries pass on macOS/Linux, with a native WebKit smoke for the actual desktop. Canonical/reasoning adapters remain in the same process, the admitted-session API still returns canonical bytes to it, and task/workspace scheduling/control remain TypeScript. Provider dispatch stays refused. This supersedes earlier uncontained-launch descriptions below without closing the full authority/isolation gates.
+
 Status: detailed proposal, active implementation 2026-10-29. The user selected Rust for durable authority and system control, TypeScript for runtime-flexible model/presentation work, and root corrections without legacy compatibility layers. A blocking native HTTP/TLS client with streaming support has been explicitly approved at an exact version with default features disabled. Its existence does not certify a broker or make it safe to enable before endpoint, credential, approval, payload and streaming controls are implemented. Read with [root corrections](ROOT-CORRECTIONS.md), [delivery plan](DELIVERY-PLAN.md) and the [architecture](ARCHITECTURE.md).
 
 ## 1. Language and ownership rule
