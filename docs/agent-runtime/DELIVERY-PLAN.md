@@ -47,7 +47,7 @@ The first enabled cutover must include common capacity admission for every simul
 
 1. Add native `control/` pure domain/command/store proof with temporary fixtures; wire only explicit test harness entry points initially.
 2. Prove native HTTP/TLS/credential dispatch and sandbox channels using synthetic endpoints/secrets; do not route through broad UI commands.
-3. Make required general framework transport/prepare/fence/persistence changes in Projection's owning checkout, test/push, then deliberately move the app pin.
+3. Wire the already-exported Projection `ProviderTransport` API (`65f183c`) into app provider construction through the native broker protocol; no provider-transport framework change is required. Separately, add the missing public prepare/fence/commit persistence seam in Projection's owning checkout, test/push, then deliberately move the app pin. Never edit the app's `framework/` submodule.
 4. Split the existing sidecar composition into reasoning and protected canonical/checker adapters using public APIs. Do not copy internal framework session code.
 5. Replace authoritative `Tasks` and `WorkspaceRegistry` behavior and their mutation routes with the native control client in one enabled implementation state. Update task/workspace contracts, project membership and typed UI navigation together; remove stale formats/aliases rather than keep runtime shims. Preserve direct/copy/shared modes and existing source/Realm ownership.
 6. Route app/integration/provider capacity through native leases; remove independent host-level counters from TS pools while retaining their domain invocation code.

@@ -2,6 +2,10 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Provider transport seam code-audit correction — 2026-10-30
+
+Current app and pinned Projection source were compared directly. Projection `65f183c` publicly exports provider-aware `ProviderTransport` injection through each provider factory; `sidecar/server.ts:modelProviders()` currently calls `entry.make(options)` without passing a transport, leaving providers on default `fetch`. The app can inject a transport without another framework change. The missing work is the native private-pipe request/stream protocol, exact operation authorization, approval/receipt lifecycle and TypeScript secret removal. Separately, `VakHost` still persists canonical sessions through `sessionsDir`; the protected native prepare/fence/commit persistence adapter remains a real public-API gap. No execution path changed in this audit.
+
 ## Fixed-loopback local generation transport primitive — 2026-10-30
 
 Extended the inactive native broker with the app's primary local Ollama `/api/chat` contract: only `http://127.0.0.1:11434/api/chat` is accepted, the client disables proxy discovery and redirects, and this route takes no credential. The model is pinned by the permit; streaming is required; output count is inserted or capped; only a small allowlist of generation options is accepted; `think` and `keep_alive` must exactly match admitted policy fields. Tests reject alternate hosts/ports/paths, query redirects, model substitution, non-streaming requests, unsupported resource options and output-limit bypass. macOS Rust library tests pass 83/83 with host strict Clippy; the pinned Rust 1.99.1 Linux Docker gate passes 85/85 with strict Clippy.
