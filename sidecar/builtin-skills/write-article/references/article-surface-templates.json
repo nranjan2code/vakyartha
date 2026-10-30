@@ -1,0 +1,222 @@
+{
+  "surfaces": [
+    {
+      "op": "replace",
+      "surface": "article-feature-template",
+      "title": "Feature & News Analysis Template",
+      "data": {
+        "article": {
+          "headline": "The AI Transition: From Model Scale to Commercial Utility",
+          "deck": "As hyperscalers commit record capital expenditures, enterprise adoption turns toward measurable productivity and unit economics.",
+          "author": "Editorial Desk",
+          "date": "2026-10-30",
+          "readingTime": "5 min read",
+          "tags": ["AI", "Enterprise", "Cloud", "Infrastructure"],
+          "heroImage": {
+            "src": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80",
+            "alt": "Data center compute clusters under ambient illumination"
+          },
+          "stats": [
+            { "label": "Cloud Capex (2026)", "value": "$220B", "delta": "+39% YoY", "trend": "up" },
+            { "label": "Enterprise Adoption", "value": "68%", "delta": "+14% YoY", "trend": "up" }
+          ],
+          "takeaways": [
+            "Infrastructure spending continues to surge, led by cloud provider investments exceeding $200B annually.",
+            "Enterprise buyers are shifting focus from experimental prototypes to auditable ROI and task automation.",
+            "Macroeconomic studies urge caution, noting productivity gains take time to reflect in aggregate corporate margins."
+          ],
+          "body": "The clearest signal in enterprise technology this quarter is not a solitary algorithmic breakthrough, but the rapid acceleration of enterprise integration...\n\nWhile model capabilities expand, business leaders face mounting pressure to demonstrate tangible operating leverage."
+        }
+      },
+      "root": {
+        "type": "stack",
+        "props": { "gap": "md", "maxWidth": "lg" },
+        "children": [
+          {
+            "type": "text",
+            "props": { "variant": "heading", "content": "{/article/headline}" }
+          },
+          {
+            "type": "text",
+            "props": { "variant": "subheading", "content": "{/article/deck}" }
+          },
+          {
+            "type": "text",
+            "props": {
+              "variant": "caption",
+              "content": "By **{/article/author}** • {/article/date} • ⏱ {/article/readingTime}"
+            }
+          },
+          {
+            "type": "image",
+            "props": {
+              "src": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80",
+              "alt": "Data center compute clusters under ambient illumination"
+            }
+          },
+          {
+            "type": "alert",
+            "props": {
+              "tone": "info",
+              "title": "Executive Takeaways",
+              "body": "- Infrastructure spending continues to surge, led by cloud provider investments.\n- Enterprise buyers are prioritizing cost control and measurable ROI.\n- Broad economic productivity gains are emerging gradually across sectors."
+            }
+          },
+          {
+            "type": "grid",
+            "props": { "columns": 2 },
+            "children": [
+              {
+                "type": "stat",
+                "props": { "label": "Cloud Capex (2026)", "value": "$220B", "delta": "+39% YoY", "trend": "up" }
+              },
+              {
+                "type": "stat",
+                "props": { "label": "Enterprise Adoption", "value": "68%", "delta": "+14% YoY", "trend": "up" }
+              }
+            ]
+          },
+          {
+            "type": "section",
+            "props": { "title": "1. Cloud Infrastructure Drives the Surge" },
+            "children": [
+              {
+                "type": "text",
+                "props": {
+                  "variant": "body",
+                  "content": "The commercial momentum underpinning recent developments centers on cloud providers expanding infrastructure to meet unprecedented workload demand. Capital commitments have surged as organizations migrate core data workflows."
+                }
+              },
+              {
+                "type": "text",
+                "props": {
+                  "variant": "body",
+                  "content": "> “The investment cycle reflects a foundational transition: companies are provisioning capacity for a decade of automated computation.”"
+                }
+              }
+            ]
+          },
+          {
+            "type": "section",
+            "props": { "title": "2. Shifting from Experimentation to Measured Value" },
+            "children": [
+              {
+                "type": "text",
+                "props": {
+                  "variant": "body",
+                  "content": "Where early deployments focused on conversational novelty, enterprise organizations are now establishing strict telemetry around cost, accuracy, and workflow throughput. Operational teams require auditable evidence before expanding deployments."
+                }
+              }
+            ]
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "section",
+            "props": { "title": "Sources & Methodology Disclosures" },
+            "children": [
+              {
+                "type": "text",
+                "props": {
+                  "variant": "caption",
+                  "content": "- **Quarterly Financial Filings**: Corporate earnings announcements retrieved October 2026.\n- **Industry Research**: Macroeconomic analysis on corporate labor productivity.\n- **Editorial Standard**: Financial figures are company-reported; commentary is analytical and non-advisory."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "op": "replace",
+      "surface": "article-split-template",
+      "title": "Split Editorial & Analysis Template",
+      "root": {
+        "type": "split",
+        "props": { "ratio": "2:1", "maxWidth": "lg" },
+        "children": [
+          {
+            "type": "stack",
+            "props": { "gap": "md" },
+            "children": [
+              {
+                "type": "text",
+                "props": { "variant": "heading", "content": "Rethinking Modern Workflow Automation" }
+              },
+              {
+                "type": "text",
+                "props": { "variant": "subheading", "content": "How decentralized tooling and bounded execution environments are redefining software architecture." }
+              },
+              {
+                "type": "text",
+                "props": {
+                  "variant": "body",
+                  "content": "As software engineering systems grow increasingly complex, the traditional approach to centralized workflow orchestration faces diminishing returns...\n\nModern platforms increasingly isolate untrusted model reasoning inside bounded runtimes while preserving determinism in the core execution layer."
+                }
+              },
+              {
+                "type": "text",
+                "props": {
+                  "variant": "body",
+                  "content": "> “Robust architectures decouple creative reasoning from root-of-trust execution boundaries.”"
+                }
+              },
+              {
+                "type": "text",
+                "props": {
+                  "variant": "body",
+                  "content": "By enforcing immutable verification contracts, developers can grant agents operational freedom without compromising process integrity or security guarantees."
+                }
+              }
+            ]
+          },
+          {
+            "type": "stack",
+            "props": { "gap": "sm" },
+            "children": [
+              {
+                "type": "card",
+                "children": [
+                  {
+                    "type": "text",
+                    "props": { "variant": "heading", "content": "Article Metadata" }
+                  },
+                  {
+                    "type": "text",
+                    "props": { "variant": "caption", "content": "**Author**: Engineering Systems\n**Date**: October 2026\n**Reading Time**: 4 min\n**Domain**: Architecture & Security" }
+                  }
+                ]
+              },
+              {
+                "type": "card",
+                "children": [
+                  {
+                    "type": "text",
+                    "props": { "variant": "heading", "content": "Key Metrics" }
+                  },
+                  {
+                    "type": "stat",
+                    "props": { "label": "Isolation Overhead", "value": "< 2ms", "trend": "flat" }
+                  },
+                  {
+                    "type": "stat",
+                    "props": { "label": "Verification Accuracy", "value": "99.8%", "trend": "up" }
+                  }
+                ]
+              },
+              {
+                "type": "alert",
+                "props": {
+                  "tone": "neutral",
+                  "title": "Reference Note",
+                  "body": "Compliant with ADR-044 runtime boundaries and non-ambient authority standards."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
