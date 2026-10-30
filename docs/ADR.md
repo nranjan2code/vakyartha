@@ -598,3 +598,33 @@ Accepted at the user's direction: separate System 1 decision scoring from System
    - Pure TypeScript execution in `src/decision/` respecting the Rust Root of Trust. Rust continues to enforce egress and mutation approvals.
    - **Zero Hardcoding & Full Domain Agnosticism:** Never hardcodes static domain or tool registries. MCP tools, procedures, and capabilities are discovered dynamically at runtime via `/api/integrations` (active tools where `enabled && status === 'ready'` and `policy !== 'off'`). Active skills are loaded dynamically from `/api/skills` (`enabled === true`). Active canvas visual projections are queried directly from the live `client.store.list()`. Works uniformly across any domain (Healthcare EHR, CRM/Sales, Financial Dashboards, Dev Tools, Customer Triage).
    - Managed via user preferences in Settings > Models (`decision:enabled`, `decision:provider`, `decision:model`, `decision:pruneTools`, `decision:stripSalutations`, `decision:optimizeContext`). Default is enabled with local Ollama `d1-omni:latest`. [Contract and architecture](DECISION-MODELS.md).
+
+## ADR-054: Dynamic Reasoning Effort, Model Thinking Governance & Zero-Latency Execution (2026-10-30)
+
+Accepted at the user's direction: dynamically modulate model reasoning effort, local thinking traces, and skill-selection overhead based on System 1 intent classification to eliminate reasoning delays and token bloat on trivial conversational turns.
+
+1. **Context & Problem:**
+   - With the rise of reasoning models (OpenAI `o1`/`o3-mini`/`gpt-6-luna`, Anthropic Claude 3.7 with extended thinking, local DeepSeek-R1/Qwen-Thinking in Ollama), models produce thousands of hidden reasoning tokens (`rs_...` or `<think>...</think>`) before emitting response text.
+   - For complex analytical tasks, this deliberation is invaluable. However, on trivial greetings ("Hi"), gratitude ("Thanks"), or simple visual styling tweaks ("Make the chart emerald"), frontier reasoning models spend 8–15 seconds deliberating over conversational banter, producing high latency, user frustration, and wasted FinOps token spend.
+   - Furthermore, internal runtime skill selection (`use_skill`) previously issued a blocking synthetic LLM call on every turn, adding 8+ seconds of overhead and consuming execution steps.
+
+2. **Lab-by-Lab Thinking & Reasoning Effort Support:**
+   Vakyartha maps normalized System 1 decisions to provider-native reasoning APIs across all supported AI labs:
+   - **OpenAI (`openai`, `openai-responses`):** Maps `TurnShape.reasoningEffort` to native `reasoning_effort: "low" | "medium" | "high"` or `{ reasoning: { effort } }`.
+   - **Anthropic (`anthropic`):** Maps `TurnShape.reasoningEffort` to `output_config: { effort }` and bounds extended thinking budgets.
+   - **Ollama / Local (`ollama`):** Maps `TurnShape.think` to native `/api/chat` `think: boolean`, dynamically stripping or suppressing `<think>...</think>` loops on greetings and casual turns.
+   - **Google Gemini (`gemini`):** Maps thinking capabilities to `thinking: boolean` / `thinkingBudget`.
+
+3. **Dynamic System 1 / System 2 Execution Modulation:**
+   - **`salutation`:** `reasoningEffort: "low"`, `think: false`, `use_skill` bypassed in 0ms, external MCP tools pruned. Greeting replies stream in <500ms instead of 8.2s.
+   - **`canvas_refinement`:** `reasoningEffort: "low"`, `think: false`, external MCP tools pruned, surface authoring grammar injected directly.
+   - **`scoped_tool_task`:** `reasoningEffort: "medium"`, focused working memory.
+   - **`complex_reasoning`:** `reasoningEffort: "high"`, `think: true`, preserving deep analytical reasoning capacity.
+
+4. **Execution Budgets & Unthrottled Steps:**
+   - `shaper.ts` strictly respects caller/user configured budgets (`maxSteps`); user-configured budgets are never artificially throttled downward.
+   - Added `"unlimited"` execution mode in Settings (`Unlimited (run until completed)` / `Unlimited (no tool limit)`) governed by a safe 100-step circuit breaker.
+
+5. **Dynamic Session Skill Cache:**
+   - In ongoing multi-turn conversations where skills were already loaded in history and the user continues the active workflow, turns proceed directly to generation without re-invoking `use_skill`.
+   - Dynamically re-evaluates if the user enables, disables, adds, or removes skills in Settings between turns, or explicitly asks for an unloaded capability. [Contract and architecture](DECISION-MODELS.md).

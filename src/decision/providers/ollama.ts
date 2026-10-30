@@ -87,13 +87,17 @@ export class OllamaDecisionProvider implements DecisionProvider {
     }
 
     try {
+      const contextText = state.activeSurfaceKind
+        ? `Active surface on canvas: ${state.activeSurfaceKind}.\nUser request: ${state.message}`
+        : state.message;
+
       const response = await fetch(`${this.host}/v1/systemone`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
         body: JSON.stringify({
           model: this.model,
-          state: state.message,
+          state: contextText,
           questions,
         }),
       });

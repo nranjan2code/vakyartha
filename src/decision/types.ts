@@ -39,6 +39,12 @@ export interface TurnShape {
   /** Recommended per-turn MCP tool call budget */
   readonly toolBudget: number;
 
+  /** Recommended reasoning effort for frontier reasoning models ("low" | "medium" | "high") */
+  readonly reasoningEffort?: "low" | "medium" | "high";
+
+  /** Recommended thinking toggle for local models (<think>...</think>) */
+  readonly think?: boolean;
+
   /** Recommended model tier */
   readonly suggestedTier: "local_fast" | "primary" | "frontier_cloud";
 

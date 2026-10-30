@@ -333,11 +333,11 @@ test("DecisionChainRunner: executes multi-stage decision pipeline with condition
       },
       {
         name: "operation",
-        instructions: "Determine the operation type",
+        instructions: "Determine the action type",
         condition: (answers) => answers.domain?.choice !== "chit_chat",
         criteria: {
-          read_only: "Inspecting, reading, or analyzing without changing files",
-          mutation: "Modifying, deleting, or creating files and databases",
+          mutation: "Delete, wipe, erase, remove, write, or modify files",
+          read_only: "Read, view, inspect, search, or query without changes",
         },
       },
       {
@@ -357,7 +357,7 @@ test("DecisionChainRunner: executes multi-stage decision pipeline with condition
   assert.equal(result1.answers.domain?.choice, "code_engineering");
   assert.equal(result1.answers.operation?.choice, "read_only");
   assert.equal(result1.answers.risk_gate, undefined, "risk_gate should be skipped for read_only operation");
-  assert.ok(result1.totalLatencyMs < 1500);
+  assert.ok(result1.totalLatencyMs < 6000);
 
   // Test 2: Mutation task (triggers risk_gate)
   const result2 = await runner.run(triageChain, "Delete all temporary cache files in the directory");

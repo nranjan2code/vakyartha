@@ -861,6 +861,8 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
   let maxStepsLimit = rawMaxSteps === "unlimited" ? 100 : (Number(rawMaxSteps) || undefined);
   const rawToolRounds = prefs.get(`opt:${provider}:toolRounds`) || opt("toolRounds", "0");
   let toolRoundsLimit = rawToolRounds === "unlimited" ? 100 : (Number(rawToolRounds) || undefined);
+  let effectiveThink = opt("think") === "true";
+  let effectiveEffort = opt("effort") || undefined;
 
   if (req.message) {
     try {
@@ -898,6 +900,18 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         }
         maxStepsLimit = shaped.payload.maxSteps;
         toolRoundsLimit = shaped.payload.toolRounds;
+        if (shaped.shape.think !== undefined) {
+          effectiveThink = shaped.shape.think;
+        }
+        if (shaped.shape.reasoningEffort) {
+          if (shaped.shape.intent === "salutation" || shaped.shape.intent === "canvas_refinement") {
+            effectiveEffort = "low";
+          } else if (opt("effort")) {
+            effectiveEffort = opt("effort");
+          } else {
+            effectiveEffort = shaped.shape.reasoningEffort;
+          }
+        }
       }
     } catch {
       // Infallible fallback: continue with unshaped defaults
@@ -910,9 +924,9 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         session: turnSession,
         provider,
         model,
-        think: opt("think") === "true",
+        think: effectiveThink,
         generation: opt("generation", "auto"),
-        effort: opt("effort") || undefined,
+        effort: effectiveEffort,
         // Long everyday chats would otherwise send every turn and overflow a small model's context.
         history: historyLimit,
         maxSteps: maxStepsLimit,

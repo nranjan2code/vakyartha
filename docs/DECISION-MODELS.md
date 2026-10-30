@@ -191,4 +191,44 @@ For complete empirical benchmarks, multi-domain multi-intent evaluations, and ad
 - [`docs/decision/BENCHMARK-STOCK-DASHBOARD.md`](decision/BENCHMARK-STOCK-DASHBOARD.md): Multi-turn token savings (72.8% reduction), prefill latency acceleration, and canvas accuracy across local Ollama and OpenAI models.
 - [`docs/decision/EVALUATION-NEGATIVE-REDBLUE-MULTIDOMAIN.md`](decision/EVALUATION-NEGATIVE-REDBLUE-MULTIDOMAIN.md): Comprehensive 22-scenario Red/Blue adversarial evaluation, Ghost Canvas safeguards, generic CRUD collision resolution, and 8-domain multi-intent compound routing.
 
+---
+
+## 12. Dynamic Reasoning, Thinking & Effort Modulation across AI Labs
+
+Modern reasoning models produce internal chain-of-thought tokens (`rs_...` on OpenAI, `<think>...</think>` on Ollama/DeepSeek, thinking blocks on Anthropic) before generating visible output. While invaluable for complex coding or financial modeling, unmodulated reasoning creates an **8–15 second latency penalty** on trivial banter like `"hi"`, burning thousands of unbilled reasoning tokens and stalling conversational flow.
+
+Vakyartha's Decision Engine dynamically modulates reasoning depth and thinking traces turn-by-turn based on classified intent.
+
+### 1. Lab-by-Lab & Provider Capabilities Matrix
+
+| AI Lab / Provider | Flagship Reasoning Models | Parameter / Wire Protocol | How Vakyartha Modulates per Turn |
+| :--- | :--- | :--- | :--- |
+| **OpenAI** | `o1`, `o1-mini`, `o3-mini`, `gpt-6-luna`, `o3` | `reasoning_effort: "low" \| "medium" \| "high"`<br>`{ reasoning: { effort } }` | Drops to `"low"` on greetings and canvas tweaks (<500ms); engages `"high"` on complex reasoning. |
+| **Anthropic** | Claude 3.7 Sonnet, Claude 3.5 Sonnet | `output_config: { effort: "low" \| "medium" \| "high" }`<br>`thinking: { type: "enabled", budget_tokens }` | Suppresses extended thinking budget on salutations; provisions deep budget on complex analytical tasks. |
+| **Ollama (Local)** | `qwen3.5:4b-mlx`, `deepseek-r1`, `qwq`, `llama3.3` | Native `/api/chat` body: `think: boolean`<br>`extra.think` override | Sets `think: false` on greetings, stripping `<think>` tags and prefill latency; sets `think: true` on architecture. |
+| **Google Gemini** | Gemini 2.0 Flash Thinking, Gemini 2.5 | `thinkingConfig: { thinkingBudget: number }`<br>`thinking: boolean` | Disables thinking budget on conversational banter; enables full thinking on open-ended analysis. |
+| **OpenRouter** | Multi-provider routing to reasoning models | `reasoning: { effort }`, `include_reasoning: false` | Passes down normalized reasoning effort hints to target upstream lab endpoints. |
+
+### 2. Intent-to-Reasoning Shaping Rules
+
+```mermaid
+flowchart TD
+    UserPrompt["Incoming Turn Prompt"] --> Shaper{"Turn Intent Classifier"}
+    
+    Shaper -->|"salutation ('hi', 'thanks')"| FastS1["System 1 Fast-Path<br>think: false<br>effort: low<br>tools: []<br>use_skill: bypassed"]
+    Shaper -->|"canvas_refinement ('make it blue')"| UIPath["Canvas Styling<br>think: false<br>effort: low<br>tools: [] (surface-design only)"]
+    Shaper -->|"scoped_tool_task ('read file')"| ToolPath["Scoped Execution<br>think: false<br>effort: medium<br>tools: [matchedNamespace]"]
+    Shaper -->|"complex_reasoning ('architect system')"| DeepS2["System 2 Deep Analytical<br>think: true<br>effort: high<br>tools: [full catalog]"]
+    
+    FastS1 --> Resp1["Instant Reply (<500ms)"]
+    UIPath --> Resp2["Fast Canvas Patch (~1s)"]
+    ToolPath --> Resp3["Targeted Tool Response (~2s)"]
+    DeepS2 --> Resp4["Deep Reasoning Synthesis (~10s)"]
+```
+
+### 3. Execution Budgets & Unthrottled Steps
+- **Preserved User Budgets:** The Decision Engine never artificially throttles user-configured execution budgets downward. If a user sets `32 steps`, the budget remains 32 steps. When set to Auto, a safe baseline floor of at least 8 steps is enforced so runtime skill selection and multi-stage answers never get choked.
+- **Unlimited Execution Mode:** Settings expose `Unlimited (run until completed)` with a 100-step emergency circuit breaker to prevent infinite loops while allowing any realistic multi-stage agentic workflow to run to natural completion.
+- **Dynamic Session Skill Cache:** In ongoing multi-turn conversations where skills were already loaded in history, continuing turns proceed directly to generation without re-invoking `use_skill`, while immediately re-evaluating if skills are added, removed, or enabled in Settings between turns.
+
 
