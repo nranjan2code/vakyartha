@@ -70,3 +70,8 @@ The first contained desktop smoke reached its actual success marker, then the ch
 
 
 A subsequent startup refused the private handshake because the packaged helper was killed before running. Direct `--version` on that copied helper exited 137 while the build output ran; signature verification alone passed. The macOS kernel log recorded load code-signature error 2 for the packaged helper. The packager had overwritten executable files in place. It now copies Node/helper binaries to fresh staging files and atomically renames them. The replaced helper runs, its SHA-256 equals the build source, and the full contained native WebKit smoke passes. This addresses the observed packaging boundary without expanding worker authority or relaxing startup checks.
+
+
+## Native start did not reserve execution capacity — 2026-10-30
+
+The old native `StartAttempt` changed root status without a run record or generation reservation. Replacing it with atomic root/run/lease admission exposed five fixture failures: three tests used a metadata-only empty profile while starting runs, one held multiple running roots plus an extra generation request beyond its profile, and one workspace rebind sequence reused execution capacity without supervisor exit settlement. Execution tests now configure capacity explicitly and settle only with a trusted test supervisor receipt. Unconfigured start remains refused; revocation/cancellation alone still does not refund a live execution charge. New regressions retain those distinctions. Product task supervision and native scheduler cutover remain open.

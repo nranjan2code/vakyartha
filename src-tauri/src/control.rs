@@ -11,7 +11,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const STORE_VERSION: u16 = 12;
+const STORE_VERSION: u16 = 13;
 const MAX_SNAPSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ROOTS: usize = 10_000;
 const MAX_CANDIDATE_RECEIPTS: usize = 10_000;
@@ -33,9 +33,12 @@ pub mod delegation;
 pub mod folder;
 pub mod host_sessions;
 pub mod registry;
+pub mod root_runs;
 pub mod state;
+use canonical::{
+    CandidateCommitReceipt, CandidateCommitRequest, CanonicalContentStore, CanonicalSessionRecord,
+};
 use delegation::{ChildProposal, DelegationPolicy};
-use canonical::{CandidateCommitReceipt, CandidateCommitRequest, CanonicalContentStore, CanonicalSessionRecord};
 use folder::WorkspaceAdmissionPolicy;
 use registry::{
     ProjectMembership, ProjectRecord, RegistryError, RegistryState, WorkspaceBinding,
@@ -82,6 +85,8 @@ pub enum AdmissionError {
     DuplicateRoot,
     RootLedgerFull,
     RootNotFound,
+    RootRunNotFound,
+    RootRunUnsettled,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -158,6 +163,7 @@ pub struct CapacityLedger {
     registry: RegistryState,
     canonical_sessions: BTreeMap<String, CanonicalSessionRecord>,
     candidate_receipts: BTreeMap<String, CandidateCommitReceipt>,
+    root_runs: BTreeMap<String, root_runs::RootRun>,
 }
 
 impl CapacityLedger {
@@ -340,6 +346,7 @@ impl CapacityLedger {
             registry: self.registry.clone(),
             canonical_sessions: self.canonical_sessions.clone(),
             candidate_receipts: self.candidate_receipts.clone(),
+            root_runs: self.root_runs.clone(),
         }
     }
 
@@ -357,6 +364,7 @@ impl CapacityLedger {
             registry: snapshot.registry,
             canonical_sessions: snapshot.canonical_sessions,
             candidate_receipts: snapshot.candidate_receipts,
+            root_runs: snapshot.root_runs,
             ..Self::default()
         };
         if ledger.canonical_sessions.len() > MAX_ROOTS
@@ -564,6 +572,7 @@ impl CapacityLedger {
         }) {
             return Err(StoreError::Corrupt);
         }
+        root_runs::validate(&ledger)?;
         Ok(ledger)
     }
 }
@@ -578,6 +587,7 @@ struct LedgerSnapshot {
     registry: RegistryState,
     canonical_sessions: BTreeMap<String, CanonicalSessionRecord>,
     candidate_receipts: BTreeMap<String, CandidateCommitReceipt>,
+    root_runs: BTreeMap<String, root_runs::RootRun>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -628,7 +638,9 @@ pub enum ControlError {
 
 #[derive(Clone, Debug)]
 pub enum RootMutation {
-    StartAttempt,
+    StartAttempt {
+        request_id: String,
+    },
     WaitForInput,
     WaitForApproval,
     Stop {
@@ -648,6 +660,12 @@ pub enum RootMutation {
     },
     RequestReview,
     AcceptReview(UserReview),
+}
+
+enum RootRunAction {
+    Read,
+    Confirm(String),
+    Settle(String),
 }
 
 enum ActorCommand {
@@ -710,6 +728,15 @@ enum ActorCommand {
         kind: BudgetKind,
         request_id: String,
         reply: SyncSender<Result<(BudgetCharge, RootTask), ControlError>>,
+    },
+    ReadRootRunForStart {
+        request_id: String,
+        reply: SyncSender<Result<root_runs::RootRun, ControlError>>,
+    },
+    RootRunCommand {
+        run_id: String,
+        action: RootRunAction,
+        reply: SyncSender<Result<root_runs::RootRun, ControlError>>,
     },
     ReadRoot {
         id: String,
@@ -1046,6 +1073,58 @@ impl ControlHandle {
                 id,
                 expected_revision,
                 mutation,
+                reply,
+            })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    /// Trusted-supervisor entry points. These are not worker protocol operations.
+    pub fn confirm_root_started(
+        &self,
+        run_id: String,
+        receipt: String,
+    ) -> Result<root_runs::RootRun, ControlError> {
+        self.root_run_command(run_id, RootRunAction::Confirm(receipt))
+    }
+
+    pub fn settle_root_exit(
+        &self,
+        run_id: String,
+        receipt: String,
+    ) -> Result<root_runs::RootRun, ControlError> {
+        self.root_run_command(run_id, RootRunAction::Settle(receipt))
+    }
+
+    pub fn read_root_run_for_start(
+        &self,
+        request_id: String,
+    ) -> Result<root_runs::RootRun, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::ReadRootRunForStart { request_id, reply })
+            .map_err(queue_error)?;
+        response
+            .recv_timeout(self.response_timeout)
+            .map_err(response_error)?
+    }
+
+    pub fn read_root_run(&self, run_id: String) -> Result<root_runs::RootRun, ControlError> {
+        self.root_run_command(run_id, RootRunAction::Read)
+    }
+
+    fn root_run_command(
+        &self,
+        run_id: String,
+        action: RootRunAction,
+    ) -> Result<root_runs::RootRun, ControlError> {
+        let (reply, response) = sync_channel(1);
+        self.commands
+            .try_send(ActorCommand::RootRunCommand {
+                run_id,
+                action,
                 reply,
             })
             .map_err(queue_error)?;
@@ -1433,6 +1512,15 @@ impl ControlActor {
             ledger.release(&lease).map_err(|_| StoreError::Corrupt)?;
             recovered = true;
         }
+        for run in ledger.root_runs.values_mut() {
+            if matches!(
+                run.status,
+                root_runs::RunStatus::Prepared | root_runs::RunStatus::Running
+            ) {
+                run.status = root_runs::RunStatus::Interrupted;
+                recovered = true;
+            }
+        }
         if recovered {
             store.persist(&ledger, &profile)?;
         }
@@ -1514,6 +1602,7 @@ fn commit_candidate(
     if root.revision() != request.fence.root_revision()
         || root.contract_revision() != request.fence.contract_revision()
         || root.cancellation_epoch() != request.fence.cancellation_epoch()
+        || !root_runs::has_running_invocation(ledger, root)
     {
         return Err(ControlError::TaskState(StateError::ExecutionFenceStale));
     }
@@ -1649,6 +1738,16 @@ fn actor_loop(
                 }
             }
             ActorCommand::Release { lease, reply } => {
+                if ledger
+                    .root_runs
+                    .values()
+                    .any(|run| run.lease_id == lease.id())
+                {
+                    let _ = reply.send(Err(ControlError::Admission(
+                        AdmissionError::ReservedForControl(Resource::Generation),
+                    )));
+                    continue;
+                }
                 let mut candidate = ledger.clone();
                 match candidate.release(&lease) {
                     Err(error) => {
@@ -2071,6 +2170,43 @@ fn actor_loop(
                     }
                 }
             }
+            ActorCommand::ReadRootRunForStart { request_id, reply } => {
+                let _ = reply.send(
+                    ledger
+                        .root_runs
+                        .values()
+                        .find(|run| run.request_id == request_id)
+                        .cloned()
+                        .ok_or(ControlError::Admission(AdmissionError::RootRunNotFound)),
+                );
+            }
+            ActorCommand::RootRunCommand { run_id, action, reply } => {
+                if matches!(action, RootRunAction::Read) {
+                    let _ = reply.send(ledger.root_runs.get(&run_id).cloned().ok_or(ControlError::Admission(AdmissionError::RootRunNotFound)));
+                    continue;
+                }
+                let mut candidate = ledger.clone();
+                let result = match action {
+                    RootRunAction::Confirm(receipt) => root_runs::confirm(&mut candidate, &run_id, &receipt),
+                    RootRunAction::Settle(receipt) => root_runs::settle(&mut candidate, &run_id, &receipt),
+                    RootRunAction::Read => unreachable!("read handled above"),
+                };
+                match result {
+                    Err(error) => {
+                        let _ = reply.send(Err(error));
+                    }
+                    Ok(run) => match store.persist(&candidate, &profile) {
+                        Ok(_) => {
+                            ledger = candidate;
+                            let _ = reply.send(Ok(run));
+                        }
+                        Err(error) => {
+                            let _ = reply.send(Err(ControlError::Store(error)));
+                            break;
+                        }
+                    },
+                }
+            }
             ActorCommand::MutateRoot {
                 id,
                 expected_revision,
@@ -2078,6 +2214,57 @@ fn actor_loop(
                 reply,
             } => {
                 let mut candidate = ledger.clone();
+                if let RootMutation::StartAttempt { request_id } = &mutation {
+                    let Some(root) = candidate.roots.get(&id) else {
+                        let _ =
+                            reply.send(Err(ControlError::Admission(AdmissionError::RootNotFound)));
+                        continue;
+                    };
+                    if root
+                        .workspace_grant()
+                        .is_some_and(|grant| !candidate.workspace_grant_is_current(grant))
+                    {
+                        let _ = reply.send(Err(ControlError::TaskState(
+                            StateError::WorkspaceGrantStale,
+                        )));
+                        continue;
+                    }
+                    match root_runs::prepare(
+                        &mut candidate,
+                        &profile,
+                        &id,
+                        expected_revision,
+                        request_id,
+                    ) {
+                        Err(error) => {
+                            let _ = reply.send(Err(error));
+                        }
+                        Ok(root) => match store.persist(&candidate, &profile) {
+                            Ok(_) => {
+                                ledger = candidate;
+                                let _ = reply.send(Ok(root));
+                            }
+                            Err(error) => {
+                                let _ = reply.send(Err(ControlError::Store(error)));
+                                break;
+                            }
+                        },
+                    }
+                    continue;
+                }
+                if matches!(
+                    mutation,
+                    RootMutation::RequestReview | RootMutation::AcceptReview(_)
+                ) && candidate
+                    .root_runs
+                    .values()
+                    .any(|run| run.root_id == id && run.status != root_runs::RunStatus::Settled)
+                {
+                    let _ = reply.send(Err(ControlError::Admission(
+                        AdmissionError::RootRunUnsettled,
+                    )));
+                    continue;
+                }
                 let (changed, invalidated_queue_ids) = {
                     let Some(root) = candidate.roots.get_mut(&id) else {
                         let _ =
@@ -2112,7 +2299,9 @@ fn actor_loop(
                         Err(StateError::WorkspaceGrantStale)
                     } else {
                         match mutation {
-                            RootMutation::StartAttempt => root.start_attempt(expected_revision),
+                            RootMutation::StartAttempt { .. } => {
+                                unreachable!("handled by native run admission")
+                            }
                             RootMutation::WaitForInput => root.wait_for_input(expected_revision),
                             RootMutation::WaitForApproval => {
                                 root.wait_for_approval(expected_revision)
@@ -3015,6 +3204,343 @@ mod tests {
 
     static TEST_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+    fn root_start() -> RootMutation {
+        RootMutation::StartAttempt {
+            request_id: format!(
+                "native-start-{}",
+                TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ),
+        }
+    }
+
+    #[test]
+    fn native_root_run_holds_capacity_until_supervisor_exit_and_recovers_exactly() {
+        let data = temp_data_dir();
+        let timeout = Duration::from_secs(2);
+        let profile = CapacityProfile::new(
+            BTreeMap::from([(Resource::Generation, 1)]),
+            BTreeMap::from([(Resource::Generation, 1)]),
+            32,
+        )
+        .unwrap();
+        let actor = ControlActor::open(&data, "one-slot", profile.clone(), 16, timeout).unwrap();
+        let handle = actor.handle();
+        let create = |id: &str| {
+            handle
+                .create_root_with_budget(RootCreate {
+                    id: id.into(),
+                    session_id: Some("shared-chat".into()),
+                    goal: "Perform bounded work".into(),
+                    criteria: "Require independently checked output".into(),
+                    run_limit: 2,
+                    budget_limits: BudgetLimits::new(2, 2).unwrap(),
+                    requirements: vec![Requirement::new("output".into(), true).unwrap()],
+                    delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0)
+                        .unwrap(),
+                })
+                .unwrap()
+        };
+        let first = create("first-root");
+        let second = create("second-root");
+        let start = || RootMutation::StartAttempt {
+            request_id: "first-launch".into(),
+        };
+        let callers: Vec<_> = (0..8)
+            .map(|_| {
+                let handle = handle.clone();
+                let id = first.id().to_owned();
+                let revision = first.revision();
+                thread::spawn(move || {
+                    handle.mutate_root(
+                        id,
+                        revision,
+                        RootMutation::StartAttempt {
+                            request_id: "first-launch".into(),
+                        },
+                    )
+                })
+            })
+            .collect();
+        let roots: Vec<_> = callers
+            .into_iter()
+            .map(|caller| caller.join().unwrap().unwrap())
+            .collect();
+        let running = roots[0].clone();
+        assert!(roots.iter().all(|root| root == &running));
+        assert_eq!(
+            handle
+                .mutate_root(first.id().into(), first.revision(), start())
+                .unwrap(),
+            running
+        );
+        let run = handle
+            .read_root_run_for_start("first-launch".into())
+            .unwrap();
+        assert_eq!(
+            handle.release(Lease {
+                id: run.lease_id,
+                request_id: run.request_id.clone(),
+                root_id: run.root_id.clone(),
+                amounts: ask(Resource::Generation, 1)
+            }),
+            Err(ControlError::Admission(AdmissionError::ReservedForControl(
+                Resource::Generation
+            )))
+        );
+        assert_eq!(run.status, root_runs::RunStatus::Prepared);
+        assert_eq!(run.session_id.as_deref(), Some("shared-chat"));
+        assert_eq!(
+            handle.mutate_root(second.id().into(), second.revision(), root_start()),
+            Err(ControlError::Admission(
+                AdmissionError::CapacityUnavailable(Resource::Generation)
+            ))
+        );
+        assert_eq!(handle.read_root(second.id().into()).unwrap(), second);
+        let launched = handle
+            .confirm_root_started(run.id.clone(), "supervisor-first".into())
+            .unwrap();
+        assert_eq!(launched.status, root_runs::RunStatus::Running);
+        assert_eq!(
+            handle
+                .confirm_root_started(run.id.clone(), "supervisor-first".into())
+                .unwrap(),
+            launched
+        );
+        assert_eq!(
+            handle.mutate_root(
+                running.id().into(),
+                running.revision(),
+                RootMutation::RequestReview
+            ),
+            Err(ControlError::Admission(AdmissionError::RootRunUnsettled))
+        );
+        let stopped = handle
+            .mutate_root(
+                running.id().into(),
+                running.revision(),
+                RootMutation::Stop {
+                    status: RootStatus::Cancelled,
+                    cause: StopCause::UserCancelled,
+                    reason: "User cancelled the task".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(stopped.status(), RootStatus::Cancelled);
+        assert_eq!(
+            handle.mutate_root(second.id().into(), second.revision(), root_start()),
+            Err(ControlError::Admission(
+                AdmissionError::CapacityUnavailable(Resource::Generation)
+            ))
+        );
+        drop(handle);
+        drop(actor);
+        let reopened = ControlActor::open(&data, "one-slot", profile, 16, timeout).unwrap();
+        let handle = reopened.handle();
+        assert_eq!(
+            handle.read_root_run(run.id.clone()).unwrap().status,
+            root_runs::RunStatus::Interrupted
+        );
+        assert_eq!(
+            handle.mutate_root(second.id().into(), second.revision(), root_start()),
+            Err(ControlError::Admission(
+                AdmissionError::CapacityUnavailable(Resource::Generation)
+            ))
+        );
+        let settled = handle
+            .settle_root_exit(run.id.clone(), "supervisor-exit-first".into())
+            .unwrap();
+        assert_eq!(settled.status, root_runs::RunStatus::Settled);
+        assert_eq!(
+            handle
+                .settle_root_exit(run.id.clone(), "supervisor-exit-first".into())
+                .unwrap(),
+            settled
+        );
+        assert_eq!(
+            handle.settle_root_exit(run.id.clone(), "different-exit".into()),
+            Err(ControlError::Admission(
+                AdmissionError::ConflictingRequestIdentity
+            ))
+        );
+        let second_running = handle
+            .mutate_root(
+                second.id().into(),
+                second.revision(),
+                RootMutation::StartAttempt {
+                    request_id: "second-launch".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(second_running.status(), RootStatus::Running);
+        let second_run = handle
+            .read_root_run_for_start("second-launch".into())
+            .unwrap();
+        assert_eq!(
+            handle.confirm_root_started(second_run.id.clone(), "supervisor-first".into()),
+            Err(ControlError::Admission(
+                AdmissionError::ConflictingRequestIdentity
+            ))
+        );
+        let waiting = handle
+            .mutate_root(
+                second_running.id().into(),
+                second_running.revision(),
+                RootMutation::WaitForInput,
+            )
+            .unwrap();
+        assert_eq!(
+            handle.confirm_root_started(second_run.id.clone(), "late-supervisor-second".into()),
+            Err(ControlError::TaskState(StateError::ExecutionFenceStale))
+        );
+        let revised = handle
+            .mutate_root(
+                waiting.id().into(),
+                waiting.revision(),
+                RootMutation::ReviseContract {
+                    goal: "Continue the same bounded work".into(),
+                    criteria: "Check current evidence".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            handle.mutate_root(revised.id().into(), revised.revision(), root_start()),
+            Err(ControlError::Admission(AdmissionError::RootRunUnsettled))
+        );
+        handle
+            .settle_root_exit(second_run.id, "exit-second".into())
+            .unwrap();
+        assert_eq!(
+            handle
+                .mutate_root(revised.id().into(), revised.revision(), root_start())
+                .unwrap()
+                .runs_started(),
+            2
+        );
+        assert_eq!(
+            handle.read_root(first.id().into()).unwrap().runs_started(),
+            1
+        );
+        drop(handle);
+        drop(reopened);
+        remove_test_data(&data);
+    }
+
+    #[test]
+    fn native_root_start_requires_configured_capacity_and_cannot_adopt_generic_lease() {
+        let data = temp_data_dir();
+        let timeout = Duration::from_secs(2);
+        let actor = ControlActor::open(
+            &data,
+            "no-execution",
+            CapacityProfile::unconfigured().unwrap(),
+            8,
+            timeout,
+        )
+        .unwrap();
+        let handle = actor.handle();
+        let root = handle
+            .create_root(
+                "root".into(),
+                "Bound work".into(),
+                "Checked output".into(),
+                2,
+                vec![Requirement::new("check".into(), true).unwrap()],
+            )
+            .unwrap();
+        assert_eq!(
+            handle.mutate_root(root.id().into(), root.revision(), root_start()),
+            Err(ControlError::Admission(
+                AdmissionError::UnconfiguredResource(Resource::Generation)
+            ))
+        );
+        assert_eq!(handle.read_root(root.id().into()).unwrap(), root);
+        drop(handle);
+        drop(actor);
+        remove_test_data(&data);
+        let data = temp_data_dir();
+        let actor = ControlActor::open(&data, "configured", profile(), 8, timeout).unwrap();
+        let handle = actor.handle();
+        let root = handle
+            .create_root(
+                "root".into(),
+                "Bound work".into(),
+                "Checked output".into(),
+                2,
+                vec![Requirement::new("check".into(), true).unwrap()],
+            )
+            .unwrap();
+        let lease = handle
+            .reserve(
+                "reserved".into(),
+                root.id().into(),
+                ask(Resource::Generation, 1),
+            )
+            .unwrap();
+        assert_eq!(
+            handle.mutate_root(
+                root.id().into(),
+                root.revision(),
+                RootMutation::StartAttempt {
+                    request_id: "reserved".into()
+                }
+            ),
+            Err(ControlError::Admission(
+                AdmissionError::ConflictingRequestIdentity
+            ))
+        );
+        handle.release(lease).unwrap();
+        assert_eq!(handle.read_root(root.id().into()).unwrap(), root);
+        drop(handle);
+        drop(actor);
+        remove_test_data(&data);
+    }
+
+    #[test]
+    fn root_run_recovery_rejects_missing_lease_mismatched_session_and_fake_settlement() {
+        let mut ledger = CapacityLedger::default();
+        let root = RootTask::create_with_grant(
+            RootCreate {
+                id: "root".into(),
+                session_id: Some("chat".into()),
+                goal: "Bound work".into(),
+                criteria: "Checked output".into(),
+                run_limit: 2,
+                budget_limits: BudgetLimits::new(2, 2).unwrap(),
+                requirements: vec![Requirement::new("check".into(), true).unwrap()],
+                delegation: DelegationPolicy::new(delegation::DelegationMode::Disabled, 0).unwrap(),
+            },
+            None,
+        )
+        .unwrap();
+        ledger.roots.insert("root".into(), root);
+        root_runs::prepare(&mut ledger, &profile(), "root", 1, "launch").unwrap();
+        assert_eq!(root_runs::validate(&ledger), Ok(()));
+        let mut bad = ledger.clone();
+        bad.root_runs.clear();
+        assert!(matches!(
+            CapacityLedger::restore(bad.snapshot(), &profile()),
+            Err(StoreError::Corrupt)
+        ));
+        let mut bad = ledger.clone();
+        bad.root_runs.get_mut("run-1").unwrap().session_id = Some("another-chat".into());
+        assert!(matches!(
+            CapacityLedger::restore(bad.snapshot(), &profile()),
+            Err(StoreError::Corrupt)
+        ));
+        let mut bad = ledger.clone();
+        bad.root_runs.get_mut("run-1").unwrap().status = root_runs::RunStatus::Settled;
+        assert!(matches!(
+            CapacityLedger::restore(bad.snapshot(), &profile()),
+            Err(StoreError::Corrupt)
+        ));
+        let mut bad = ledger.clone();
+        bad.active.clear();
+        assert!(matches!(
+            CapacityLedger::restore(bad.snapshot(), &profile()),
+            Err(StoreError::Corrupt)
+        ));
+    }
+
     fn profile() -> CapacityProfile {
         CapacityProfile::new(
             BTreeMap::from([(Resource::Generation, 2), (Resource::ContainedProcess, 4)]),
@@ -3110,7 +3636,7 @@ mod tests {
     fn cumulative_operation_budgets_persist_before_ack_and_retry_idempotently() {
         let data = temp_data_dir();
         let timeout = Duration::from_secs(2);
-        let profile = CapacityProfile::unconfigured().unwrap();
+        let profile = profile();
         let actor =
             ControlActor::open(&data, "unconfigured-v1", profile.clone(), 16, timeout).unwrap();
         let handle = actor.handle();
@@ -3127,11 +3653,7 @@ mod tests {
             })
             .unwrap();
         let running = handle
-            .mutate_root(
-                queued.id().into(),
-                queued.revision(),
-                RootMutation::StartAttempt,
-            )
+            .mutate_root(queued.id().into(), queued.revision(), root_start())
             .unwrap();
         let (first, after_model) = handle
             .charge_model_request(running.id().into(), running.revision(), "model-op-1".into())
@@ -3202,11 +3724,7 @@ mod tests {
             })
             .unwrap();
         let running = handle
-            .mutate_root(
-                queued.id().into(),
-                queued.revision(),
-                RootMutation::StartAttempt,
-            )
+            .mutate_root(queued.id().into(), queued.revision(), root_start())
             .unwrap();
         let first_bytes = br#"{"session":"session-candidate","surfaces":[{"id":"main","version":1}]}"#.to_vec();
         let first = CandidateCommitRequest {
@@ -3222,6 +3740,15 @@ mod tests {
             handle.commit_candidate(wrong_session),
             Err(ControlError::Admission(AdmissionError::CandidateSessionMismatch))
         );
+        assert_eq!(
+            handle.commit_candidate(first.clone()),
+            Err(ControlError::TaskState(StateError::ExecutionFenceStale)),
+            "prepared capacity is not a supervisor-started invocation"
+        );
+        let invocation = handle.read_root_run("run-1".into()).unwrap();
+        handle
+            .confirm_root_started(invocation.id.clone(), "candidate-supervisor".into())
+            .unwrap();
         let receipt = handle.commit_candidate(first.clone()).unwrap();
         assert_eq!(receipt.canonical_revision, 1);
         assert_eq!(receipt.root_revision, running.revision());
@@ -3256,6 +3783,21 @@ mod tests {
                 candidate_bytes: br#"{"stale":true}"#.to_vec(),
             }),
             Err(ControlError::Admission(AdmissionError::CanonicalRevisionConflict))
+        );
+        handle
+            .settle_root_exit(invocation.id, "candidate-worker-exit".into())
+            .unwrap();
+        let mut after_exit = first.clone();
+        after_exit.commit_id = "commit-after-exit".into();
+        after_exit.expected_canonical_revision = 2;
+        assert_eq!(
+            handle.commit_candidate(after_exit),
+            Err(ControlError::TaskState(StateError::ExecutionFenceStale))
+        );
+        assert_eq!(
+            handle.commit_candidate(first.clone()).unwrap(),
+            receipt,
+            "a recorded receipt retry cannot dispatch or commit new bytes"
         );
         drop(handle);
         drop(actor);
@@ -3321,7 +3863,7 @@ mod tests {
     fn native_root_creation_retries_across_recovery_without_accepting_conflicts() {
         let data = temp_data_dir();
         let timeout = Duration::from_secs(2);
-        let profile = CapacityProfile::unconfigured().unwrap();
+        let profile = profile();
         let actor =
             ControlActor::open(&data, "unconfigured-v1", profile.clone(), 16, timeout).unwrap();
         let handle = actor.handle();
@@ -3354,11 +3896,7 @@ mod tests {
         );
         let created = created[0].clone();
         let running = handle
-            .mutate_root(
-                created.id().into(),
-                created.revision(),
-                RootMutation::StartAttempt,
-            )
+            .mutate_root(created.id().into(), created.revision(), root_start())
             .unwrap();
         drop(handle);
         drop(actor);
@@ -3399,7 +3937,7 @@ mod tests {
     fn concurrent_unique_budget_charges_cannot_overshoot_the_root_limit() {
         let data = temp_data_dir();
         let timeout = Duration::from_secs(5);
-        let profile = CapacityProfile::unconfigured().unwrap();
+        let profile = profile();
         let actor = ControlActor::open(&data, "unconfigured-v1", profile, 32, timeout).unwrap();
         let handle = actor.handle();
         let queued = handle
@@ -3415,11 +3953,7 @@ mod tests {
             })
             .unwrap();
         let running = handle
-            .mutate_root(
-                queued.id().into(),
-                queued.revision(),
-                RootMutation::StartAttempt,
-            )
+            .mutate_root(queued.id().into(), queued.revision(), root_start())
             .unwrap();
         let expected_revision = running.revision();
         let workers: Vec<_> = (0..8)
@@ -3542,11 +4076,7 @@ mod tests {
         identity_prefix: &str,
     ) -> RootTask {
         let running = handle
-            .mutate_root(
-                root.id().into(),
-                root.revision(),
-                RootMutation::StartAttempt,
-            )
+            .mutate_root(root.id().into(), root.revision(), root_start())
             .unwrap();
         handle
             .admit_children(
@@ -3688,11 +4218,7 @@ mod tests {
             )
             .unwrap();
         let running = handle
-            .mutate_root(
-                root.id().into(),
-                root.revision(),
-                RootMutation::StartAttempt,
-            )
+            .mutate_root(root.id().into(), root.revision(), root_start())
             .unwrap();
         let proposal_a = child_proposal("request-a", "candidate-a");
         let proposal_b = child_proposal("request-b", "candidate-b");
@@ -3786,11 +4312,7 @@ mod tests {
             )
             .unwrap();
         let running = handle
-            .mutate_root(
-                root.id().into(),
-                root.revision(),
-                RootMutation::StartAttempt,
-            )
+            .mutate_root(root.id().into(), root.revision(), root_start())
             .unwrap();
         handle
             .admit_children(
@@ -3849,11 +4371,7 @@ mod tests {
             )
             .unwrap();
         let running_root = handle
-            .mutate_root(
-                root.id().into(),
-                root.revision(),
-                RootMutation::StartAttempt,
-            )
+            .mutate_root(root.id().into(), root.revision(), root_start())
             .unwrap();
         let queued = handle
             .admit_children(
@@ -4018,11 +4536,7 @@ mod tests {
             )
             .unwrap();
         let running_root = handle
-            .mutate_root(
-                root.id().into(),
-                root.revision(),
-                RootMutation::StartAttempt,
-            )
+            .mutate_root(root.id().into(), root.revision(), root_start())
             .unwrap();
         let queued = handle
             .admit_children(
@@ -4070,11 +4584,7 @@ mod tests {
             )
             .unwrap();
         let other_running = recovered_handle
-            .mutate_root(
-                other_root.id().into(),
-                other_root.revision(),
-                RootMutation::StartAttempt,
-            )
+            .mutate_root(other_root.id().into(), other_root.revision(), root_start())
             .unwrap();
         let other_children = recovered_handle
             .admit_children(
@@ -4539,11 +5049,7 @@ mod tests {
             )
             .unwrap();
         let running = handle
-            .mutate_root(
-                root.id().into(),
-                root.revision(),
-                RootMutation::StartAttempt,
-            )
+            .mutate_root(root.id().into(), root.revision(), root_start())
             .unwrap();
         let checked = handle
             .mutate_root(
@@ -4556,6 +5062,9 @@ mod tests {
                     receipt: Some("receipt-1".into()),
                 },
             )
+            .unwrap();
+        handle
+            .settle_root_exit("run-1".into(), "exit-task-1".into())
             .unwrap();
         let ready = handle
             .mutate_root(
@@ -4574,11 +5083,7 @@ mod tests {
             )
             .unwrap();
         let active = handle
-            .mutate_root(
-                active.id().into(),
-                active.revision(),
-                RootMutation::StartAttempt,
-            )
+            .mutate_root(active.id().into(), active.revision(), root_start())
             .unwrap();
         let lease = handle
             .reserve(
@@ -4754,7 +5259,7 @@ mod tests {
             restarted_handle.mutate_root(
                 persisted_root.id().into(),
                 persisted_root.revision(),
-                RootMutation::StartAttempt,
+                root_start(),
             ),
             Err(ControlError::TaskState(StateError::WorkspaceGrantStale))
         );
@@ -4882,6 +5387,10 @@ mod tests {
                 None,
                 WorkspaceMode::CopyReview,
             )
+            .unwrap();
+        // Revocation does not prove that a worker exited.
+        handle
+            .settle_root_exit("run-1".into(), "exit-first-root".into())
             .unwrap();
         let third_root = start_with_two_children(
             &handle,

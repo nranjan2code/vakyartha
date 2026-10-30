@@ -2,6 +2,33 @@
 
 Status: active implementation, 2026-10-30. This log records source changes and evidence; it does not close any AR, IA, ISO, or user-outcome gate by itself.
 
+## Durable root-run admission and settlement — 2026-10-30
+
+Native `StartAttempt` now requires a stable start-request identity and atomically persists the root transition, a native run identity, its root/session/epoch binding and a `Generation` lease. Empty profiles refuse execution without changing the root. Exact start retries recover the existing state rather than consuming another run or slot; conflicting identity reuse and attempts to adopt a generic reservation are refused. Only one unsettled invocation per root is admitted. Trusted Rust supervisor methods confirm launch and settle an exact exit identity; neither method is exposed to the worker protocol or UI.
+
+A root cancellation, input/approval wait, workspace invalidation or restart does not prove worker exit and therefore does not refund the root-run lease. Restart marks prepared/running invocations interrupted and retains the charge. Supervisor settlement releases capacity and persists its receipt in the same transaction; identical settlement retries recover the receipt, conflicting receipts fail. Generic lease release cannot release a root-run reservation. Review/acceptance waits for unsettled root invocations. New candidate commits require a supervisor-confirmed running invocation with the current root epoch and active lease, while exact historical receipt recovery remains idempotent after exit/restart.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Prepared: atomic root transition + capacity lease
+    Prepared --> Running: trusted supervisor launch receipt
+    Prepared --> Interrupted: restart
+    Running --> Interrupted: restart
+    Prepared --> Settled: supervisor proves no live worker
+    Running --> Settled: supervisor proves exit
+    Interrupted --> Settled: supervisor reconciles exit
+    note right of Interrupted
+      Capacity remains charged.
+      Task cancellation does not refund it.
+    end note
+```
+
+The native snapshot is schema 13 with no schema-12 reader. No native control directory was present in the checked ordinary development or installed-app data paths before this change; temporary smoke stores remain separate. Existing data is not deleted or automatically reset. Recovery validates root/session/run/lease associations, cumulative run counts, receipt uniqueness and active-versus-settled charges. The run ledger is bounded by the configured request-identity and snapshot limits.
+
+Verification covers eight concurrent exact starts, one-slot contention across two roots in one chat, rollback on unavailable/unconfigured capacity, generic-lease adoption/release refusal, late launch confirmation, cancellation, continuation blocking before settlement, restart charge retention, exact/conflicting settlement, tampered recovery, and candidate refusal before launch/after exit. Rust 1.99.1 full suites pass 107 tests on macOS and 109 in pinned Linux Docker, each with the separately opted-in worker canary ignored, and strict Clippy passes on both. The native WebKit desktop smoke passes with schema 13; it checks metadata/storage/transport, not task model execution. Earlier tests started native runs with an empty profile or reused capacity without exit settlement; they now configure execution explicitly or supply the trusted test supervisor exit. This corrects those fixtures' lifecycle assumptions rather than widening production limits.
+
+Limits: supervisor identities in these native tests are supplied by the Rust harness, not a product run supervisor. The contained app sidecar exists, but task-specific workers, actual launch/exit receipts, the product scheduler/control cutover, provider run binding/approval/dispatch and canonical publication remain unconnected. The active product `Tasks` and workspace registry remain TypeScript; the app profile is still empty and provider dispatch remains refused. This closes no AR, IA, ISO, original outcome or full delivery slice.
+
 ## Contained desktop launcher and native-only credentials — 2026-10-30
 
 Both debug and release launch the bundled Node runtime through the reviewed `vaksb worker` helper. There is one launch path: missing runtime/helper or unavailable OS enforcement refuses startup. The worker receives read-only runtime resources plus the reviewed helper's fixed OS runtime read grants, and one owner-only `<app-data>/worker/` write grant, an explicit environment and private descriptor 3. Rust keeps the existing framed parent protocol through the helper's stdin/stdout relay. No source-tree, selected-project, native-store or old app-data grant is added. Runtime grants cannot cover the native store (including through implicit OS runtime roots), runtime code and writable data cannot overlap; a replaced worker directory is refused. Development now rebuilds the self-contained runtime before launch. The direct `npm run sidecar` entry was removed. Executable packaging stages each binary on a fresh inode and atomically renames it, avoiding the observed macOS signing-cache failure from overwriting a signed helper in place. Packaging requires clean helper revision `0c0a3473b2ddba595fef370d7266223723403a15`; the app and helper build use Rust 1.99.1, and JavaScript bundles target Node 26.

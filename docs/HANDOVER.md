@@ -1,5 +1,10 @@
 # Vakyartha handover — 2026-10-30
 
+## Native root-run admission — 2026-10-30
+
+Native attempt start now atomically reserves a generation slot and persists a run/root/session/epoch identity. Cancellation and restart retain the charge until trusted supervisor exit settlement. Review waits for unsettled runs, and new candidate commits require a confirmed live invocation; historical receipts remain recoverable. Schema 13 rejects older native snapshots without deleting data. Rust 1.99.1 macOS/Linux suites pass 107/109 tests respectively (one opt-in containment test ignored in each), strict Clippy passes, and native WebKit desktop smoke passes. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#durable-root-run-admission-and-settlement--2026-10-30) for evidence and limits. This is native admission/persistence work: no product task supervisor supplies these receipts yet, the app profile is empty, TypeScript still schedules tasks, and provider dispatch remains refused.
+
+
 ## Contained desktop launch — 2026-10-30
 
 Development and release now launch bundled Node through the exact reviewed sandbox helper with descriptor 3, read-only runtime resources and one `<app-data>/worker/` write grant. Native stores and original folders are outside its grants. Desktop secret saves go only to Rust; Settings reads native presence flags, and the worker refuses secret updates. Rust is pinned to 1.99.1 and bundling targets Node 26. Real Node denial canaries pass on macOS/Linux; native WebKit smoke passes canonical rendering/storage, credentials, binary upload, no TCP listeners and descendant cleanup. Node 26.13.0 typecheck and 284 app tests pass. Rust 1.99.1 library suites pass 105/105 on macOS and 107/107 in Linux Docker with real worker canaries and strict Clippy on both. The final native WebKit smoke passes after atomic executable replacement; the prior signing failure remains recorded. See [implementation progress](agent-runtime/IMPLEMENTATION-PROGRESS.md#contained-desktop-launcher-and-native-only-credentials--2026-10-30).
