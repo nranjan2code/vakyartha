@@ -21,6 +21,8 @@ Key implementations and invariants:
   - **Linux Container Verification (`scripts/linux-worker-check.sh`)**: Ran inside Linux Docker container (`vakyartha-linux-rust-check:1.99.1`); all 160 Rust tests passed (0 failed, 0 ignored).
   - **macOS Native Rust Suite**: 151 Rust tests passed (0 failed, 7 ignored requiring manual worker parameters).
   - **TypeScript App Suite**: All 326 tests passed (0 failed, 1 paid test skipped).
+  - **Desktop Smoke Verification (`scripts/desktop-check.ts`)**: Executed native desktop check with Node 26 LTS (`v26.13.0`); all assertions passed with binary receipt at `/var/folders/bz/dq3r0_6s4msbsq08r5h4slcr0000gn/T/vak-desktop-private-VTXUn2/receipt.json` with 0 Node TCP listeners.
+  - **Canvas WebKit Smoke Check (`scripts/canvas-check.ts`)**: 14/14 steps passed at both 1100px and 620px viewports (receipt `vak-canvas-check-9YB4QT`).
   - **Typecheck & Cleanliness**: `npm run typecheck` passed with 0 errors.
 - **Outcome Acceptance Gate (`AGENTS.md`)**:
   - Executed primary-provider contract check in `~/Projects/vakProjection` (`node scripts/record-view-check.ts --run-local --table-only`) using local Ollama `qwen3.5:4b-mlx`.
