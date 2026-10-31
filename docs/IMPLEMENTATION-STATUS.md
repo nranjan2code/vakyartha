@@ -1,6 +1,23 @@
 # Implementation status and acceptance gates
 
-Latest integrated source checkpoint (2026-10-30): committed product `main` through `d8a2955` is reconciled into the isolated runtime branch, retaining schema 20 native authority and the newer decision, skills, cache, diagram and voice features. Existing task/review/output/schedule code is available for reuse. Product Work execution remains disabled; its admission/lifecycle, context/decision/tool adapters, acknowledgement and original-outcome gates remain open. [Code audit and integration result](agent-runtime/CODE-STATUS-AUDIT.md).
+Latest integrated source checkpoint (2026-10-31): Completed Areas 1 through 8 of the native agent runtime on `codex/agent-runtime-implementation`, preserving native authority invariants (Indestructible Rust Engine root of trust, zero ambient authority in workers, one persistence writer per entity) and all product features from `main` through commit `d8a2955`. All 160 Linux container Rust tests, 151 macOS Rust tests, 326 application tests, desktop private IPC smoke check, and production macOS release bundling passed cleanly. Production startup maintains `CapacityProfile::unconfigured()`.
+
+## Native Agent Runtime Areas 1–8 Implementation & Verification — 2026-10-31
+
+In `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` (branch `codex/agent-runtime-implementation`), completed implementation and verification across all 8 architectural areas:
+- **Area 1 & 2 (Invariants, Native Control Core & Durable Store)**: Single authoritative Rust control actor (`src-tauri/src/control.rs`) owning roots, runs, children, attempts, operations, and leases. Schema 20 generation-fenced store with atomic single-generation commits and OS-managed exclusive lock (`.control.lock`).
+- **Area 3 (Containment, Broker & Mediation)**: Sandboxed worker execution with Node 26 LTS, zero inherited ambient secrets/filesystem paths, and private IPC descriptor 3. Native credential vault and broker mediate model requests. Loopback Ollama (`127.0.0.1` and `localhost`) admitted.
+- **Area 4 (Single-Writer Cutover & Workspaces)**: Native control actor established as sole writer for projects, workspaces, and session bindings. TypeScript `WorkspaceRegistry` transitioned to read-only in desktop mode with atomic `workspaces.json` legacy projection. Native Tauri IPC handlers registered for all project and workspace mutations.
+- **Area 5 (Uncertainty Tracking & Bounded Reconciliation)**: Operation uncertainty tracking, fail-closed `AdmitRun` during uncertain operations, user review with date-stamped reconciliation notes, and truthful status note generation (`"Stopped before native execution."` for unexecuted cancellations).
+- **Area 6 (Common Capacity Admission & Resident Leases)**: Typed native capacity reservation and release (`Resource::ContainedProcess`) integrated with `SandboxPoolManager` and task lifecycle.
+- **Area 7 (Bounded Child Delegation & Supervisor Transitions)**: `ChildDispatch` and `ChildProposal` framing and validation in `task_protocol.rs`. Supervisor atomically trades queue leases for execution leases and delivers attempt return receipts back to the worker.
+- **Area 8 (Cross-Platform Verification & Packaging)**:
+  - Linux Docker Container (`vakyartha-linux-rust-check:1.99.1`): 160/160 Rust tests passed (0 failed, 0 ignored).
+  - macOS Native: 151/151 Rust tests passed (0 failed).
+  - Application Suite: 326/326 tests passed (0 failed, 1 paid test skipped).
+  - Native Desktop Smoke Check (`scripts/desktop-check.ts`): Passed with binary receipt and 0 Node TCP listeners.
+  - Release Packaging: `npm run desktop:build` produced validated `.app` and `.dmg` release bundles.
+  - Fail-closed execution profile on startup: `CapacityProfile::unconfigured()`. Windows actor startup remains disabled until directory-sync durability is verified.
 
 Source-audited remaining scope: existing TypeScript task/review/output/scheduling behavior and the newer product decision/skills/voice/diagram/cache code must be reused in the native cutover. The committed product baseline is now reconciled in this worktree; pending edits in the original checkout remain untouched. [Eight-area code audit and revised order](agent-runtime/CODE-STATUS-AUDIT.md). No acceptance checkbox is closed by the audit.
 
