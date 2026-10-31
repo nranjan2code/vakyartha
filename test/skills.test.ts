@@ -562,10 +562,12 @@ test("NSE MCP vendor skill package is seeded with tools guide and query pattern 
 test("skills.provider: zero-latency salutation bypass and dynamic Session Skill Cache", async () => {
   const manager = new Skills(dir());
   let providerCalls = 0;
+  let lastSystem: string | undefined;
   const mockProvider: Provider = {
     id: "mock",
     async *stream(req) {
       providerCalls++;
+      lastSystem = req.system;
       // If bypass works, req is the prepared prompt directly, not the selection prompt!
       yield { type: "text", delta: "Direct answer" };
       yield { type: "done", stop: "end" };
@@ -577,12 +579,15 @@ test("skills.provider: zero-latency salutation bypass and dynamic Session Skill 
   const events = [];
   for await (const e of wrapped.stream({
     model: "test",
-    system: manager.index(),
+    system: `App instructions.\n${manager.index()}\n\nSurface grammar for vak_render.`,
+    callerInstructions: `App instructions.\n${manager.index()}`,
+    tools: [{ name: "vak_render", description: "Render a surface", inputSchema: { type: "object" } }],
     messages: [{ role: "user", content: "hi" }],
   })) {
     events.push(e);
   }
   assert.equal(providerCalls, 1);
+  assert.equal(lastSystem, "App instructions.", "a tool-less greeting carries only the caller's instructions");
   assert.equal(events[0]?.type, "text");
   assert.equal(events[0]?.delta, "Direct answer");
 

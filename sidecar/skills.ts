@@ -687,10 +687,12 @@ export class Skills {
 
       if (!request.responseSchema && isSalutationMessage(lastUserMsg)) {
         selected = true;
-        const cleanSystem = (prepared.system ?? "").replace(index, "").trim();
+        // No tools are offered, so the surface grammar and surface-design body
+        // describe calls the model cannot make; only the caller's own instructions apply.
+        const callerSystem = request.callerInstructions?.replace(index, "").trim();
         yield* provider.stream({
-          ...prepared,
-          system: cleanSystem,
+          ...request,
+          system: callerSystem ?? (prepared.system ?? "").replace(index, "").trim(),
           tools: undefined,
         });
         return;
