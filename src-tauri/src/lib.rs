@@ -979,12 +979,12 @@ pub fn run() {
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             {
                 let data_dir = control_data_dir(app.handle())?;
-                let profile = CapacityProfile::unconfigured().map_err(|error| {
+                let profile = CapacityProfile::desktop().map_err(|error| {
                     std::io::Error::other(format!("control profile: {error:?}"))
                 })?;
                 let control = ControlActor::open(
                     &data_dir,
-                    "unconfigured-v1",
+                    "desktop-v1",
                     profile,
                     32,
                     std::time::Duration::from_secs(1),

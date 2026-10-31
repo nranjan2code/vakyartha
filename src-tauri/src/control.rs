@@ -138,6 +138,24 @@ impl CapacityProfile {
     pub fn unconfigured() -> Result<Self, AdmissionError> {
         Self::new(BTreeMap::new(), BTreeMap::new(), MAX_ROOTS)
     }
+
+    /// The desktop app's execution capacity: sandboxed app actions and
+    /// triggers, bounded like the app runtime's own pool (three at a time).
+    pub fn desktop() -> Result<Self, AdmissionError> {
+        let contained = BTreeMap::from([(Resource::ContainedProcess, 3)]);
+        Self::new(contained.clone(), contained, MAX_ROOTS)
+    }
+
+    /// Whether this profile keeps every limit of `older` or raises it, so
+    /// leases recorded under `older` remain within bounds.
+    fn widens(&self, older: &Self) -> bool {
+        let covers = |new: &BTreeMap<Resource, u32>, old: &BTreeMap<Resource, u32>| {
+            old.iter().all(|(resource, limit)| new.get(resource).is_some_and(|n| n >= limit))
+        };
+        covers(&self.global, &older.global)
+            && covers(&self.per_root, &older.per_root)
+            && self.max_request_identities >= older.max_request_identities
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -3649,10 +3667,10 @@ impl ControlStore {
             if snapshot.version != STORE_VERSION || snapshot.sequence != sequence {
                 return Err(StoreError::Corrupt);
             }
-            if snapshot.profile_revision != profile_revision {
-                return Err(StoreError::ProfileMismatch);
-            }
-            if snapshot.profile != *profile {
+            // A newer profile may only widen capacity; durable state then carries
+            // over and the next persisted generation records the new revision.
+            let same = snapshot.profile_revision == profile_revision && snapshot.profile == *profile;
+            if !same && !profile.widens(&snapshot.profile) {
                 return Err(StoreError::ProfileMismatch);
             }
             let ledger = CapacityLedger::restore(snapshot.ledger, profile)?;
@@ -6042,15 +6060,27 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
     }
 
     #[test]
-    fn store_fails_closed_on_profile_change_and_corrupt_selected_pointer() {
+    fn store_accepts_only_widening_profile_changes_and_fails_closed_on_corrupt_pointer() {
         let data = temp_data_dir();
         let (mut store, ledger) = ControlStore::open(&data, "profile-1", &profile()).unwrap();
         store.persist(&ledger, &profile()).unwrap();
         drop(store);
+        // Wider limits under a new revision keep the stored state.
+        let wider = CapacityProfile::new(
+            BTreeMap::from([(Resource::Generation, 2), (Resource::ContainedProcess, 6), (Resource::ProviderRequest, 1)]),
+            BTreeMap::from([(Resource::Generation, 1), (Resource::ContainedProcess, 3), (Resource::ProviderRequest, 1)]),
+            8,
+        )
+        .unwrap();
+        let (mut store, ledger) = ControlStore::open(&data, "profile-2", &wider).unwrap();
+        store.persist(&ledger, &wider).unwrap();
+        drop(store);
+        // Narrowing back is refused: recorded leases could exceed it.
         assert_eq!(
-            ControlStore::open(&data, "profile-2", &profile()).unwrap_err(),
+            ControlStore::open(&data, "profile-1", &profile()).unwrap_err(),
             StoreError::ProfileMismatch
         );
+        assert!(CapacityProfile::desktop().unwrap().widens(&CapacityProfile::unconfigured().unwrap()));
         let changed_limits = CapacityProfile::new(
             BTreeMap::from([(Resource::Generation, 1)]),
             BTreeMap::from([(Resource::Generation, 1)]),
@@ -6058,12 +6088,12 @@ const io=new Socket({{fd:3,readable:true,writable:true}}); io.write('ready\n'); 
         )
         .unwrap();
         assert_eq!(
-            ControlStore::open(&data, "profile-1", &changed_limits).unwrap_err(),
+            ControlStore::open(&data, "profile-2", &changed_limits).unwrap_err(),
             StoreError::ProfileMismatch
         );
         fs::write(data.join("control/current"), b"not-a-sequence\n").unwrap();
         assert_eq!(
-            ControlStore::open(&data, "profile-1", &profile()).unwrap_err(),
+            ControlStore::open(&data, "profile-2", &wider).unwrap_err(),
             StoreError::Corrupt
         );
         remove_test_data(&data);
