@@ -124,11 +124,15 @@ async fn vault_presence(window: tauri::WebviewWindow, accounts: Vec<String>) -> 
     let data = app_data_dir(window.app_handle());
     let service = default_service(window.app_handle());
     tauri::async_runtime::spawn_blocking(move || {
-        accounts.into_iter().map(|name| {
-            vault::get(&service, &name, &data)
-                .map(|value| (name, value.is_some_and(|value| !value.is_empty())))
-                .map_err(|_| "Credential presence is unavailable".to_owned())
-        }).collect()
+        // Each lookup is a Keychain query; asking for them together keeps Settings quick.
+        std::thread::scope(|scope| {
+            let lookups: Vec<_> = accounts.into_iter().map(|name| {
+                let (service, data) = (&service, &data);
+                scope.spawn(move || vault::get(service, &name, data).map(|value| (name, value.is_some_and(|value| !value.is_empty()))))
+            }).collect();
+            lookups.into_iter().map(|lookup| lookup.join().map_err(|_| ()).and_then(|r| r.map_err(|_| ()))
+                .map_err(|_| "Credential presence is unavailable".to_owned())).collect()
+        })
     }).await.map_err(|_| "Credential presence is unavailable".to_owned())?
 }
 

@@ -115,19 +115,30 @@ export async function downloadMarkdown(filename: string, content: string): Promi
 export async function vaultSet(account: string, value: string): Promise<void> {
   if (inTauri) {
     await invoke("vault_set", { account, value });
+    presence = undefined;
   }
 }
+
+// Each check asks the Keychain, so presence is kept until a key is saved or removed.
+let presence: { key: string; value: Promise<Record<string, boolean>> } | undefined;
 
 /** Native storage exposes presence only; saved values never enter the worker. */
 export async function vaultPresence(accounts: string[]): Promise<Record<string, boolean>> {
   if (!inTauri) throw new Error("Native vault is unavailable");
-  return invoke("vault_presence", { accounts });
+  const key = [...accounts].sort().join(",");
+  if (presence?.key !== key) {
+    const value = invoke<Record<string, boolean>>("vault_presence", { accounts });
+    presence = { key, value };
+    value.catch(() => { if (presence?.value === value) presence = undefined; });
+  }
+  return presence.value;
 }
 
 /** Remove a secret from the trusted engine vault. */
 export async function vaultDelete(account: string): Promise<void> {
   if (inTauri) {
     await invoke("vault_delete", { account });
+    presence = undefined;
   }
 }
 

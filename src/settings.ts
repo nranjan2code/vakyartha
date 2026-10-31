@@ -109,7 +109,8 @@ async function show(to: Section, arg?: string): Promise<void> {
   section = to;
   prefs.set("settings:section", to);
   nav();
-  content().replaceChildren(el("p", { className: "row-hint", role: "status", textContent: "Loading settings…" }));
+  // Only a slow load says so; a quick one goes straight to the page without a flash.
+  const loading = setTimeout(() => { if (section === to) content().replaceChildren(el("p", { className: "row-hint", role: "status", textContent: "Loading settings…" })); }, 250);
   try {
     settings = await api<Setting[]>("/api/settings");
     if (inTauri) {
@@ -144,10 +145,12 @@ async function show(to: Section, arg?: string): Promise<void> {
     };
     const voiceId = to.startsWith("voice:") ? to.slice("voice:".length) : undefined;
     const parts = voiceId ? await voicePage(voiceId, settings, { label: providerOrigin === "voice" ? "Voice" : "All providers", go: () => void show(providerOrigin) }, () => void show(to, providerOrigin), () => void show("voice")) : integration ? await integrationPage(integration, () => void show("integrations"), () => void show(to)) : await (render[to] ?? render.models!)();
+    clearTimeout(loading);
     if (section !== to) return;
     content().replaceChildren(...parts);
     content().scrollTop = 0;
   } catch (error) {
+    clearTimeout(loading);
     if (section !== to) return;
     content().replaceChildren(...title("Settings unavailable", "Your settings could not be loaded."), el("p", { className: "settings-feedback bad", role: "alert", textContent: (error as Error).message }), el("button", { type: "button", className: "primary small", textContent: "Try again", onclick: () => void show(to, arg) }));
   }
