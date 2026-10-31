@@ -8,6 +8,7 @@
     "resources": [
       "resources/sidecar.mjs",
       "resources/worker.mjs",
+      "resources/mcp-bridge.mjs",
       "resources/runtime-manifest.json",
       "resources/npm/**/*",
       "resources/builtin-skills/**/*",
