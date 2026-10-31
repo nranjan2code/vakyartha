@@ -22,6 +22,10 @@ Key implementations and invariants:
   - **macOS Native Rust Suite**: 151 Rust tests passed (0 failed, 7 ignored requiring manual worker parameters).
   - **TypeScript App Suite**: All 326 tests passed (0 failed, 1 paid test skipped).
   - **Typecheck & Cleanliness**: `npm run typecheck` passed with 0 errors.
+- **Outcome Acceptance Gate (`AGENTS.md`)**:
+  - Executed primary-provider contract check in `~/Projects/vakProjection` (`node scripts/record-view-check.ts --run-local --table-only`) using local Ollama `qwen3.5:4b-mlx`.
+  - All 3 test scenarios (`[12, 17]`, `[3, 2]`, `[100, 70]`) passed on the first request (`stop: "end"`, `pass: true`, `issues: []`), producing contract receipt `.vak/contracts/record-view-2026-10-31T01-59-22.431Z.json`.
+  - Full multi-view contract check (`node scripts/record-view-check.ts --run-local`) was also run and retained honest per `AGENTS.md`: receipt `.vak/contracts/record-view-2026-10-31T02-01-05.451Z.json` remains open as the local 4B model struggled with the combined 7-component inline form/chart/stat tree in a single turn without prompt overrides.
 
 ## Desktop smoke verification, Ollama loopback admittance and release bundle packaging — 2026-10-31
 
