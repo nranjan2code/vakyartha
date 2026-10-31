@@ -12,16 +12,34 @@ const MAX_BODY = 32 * 1024 * 1024, MAX_FRAME = 48 * 1024 * 1024;
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 type Pending = { controller: AbortController; ack?: () => void };
 type ControlHealth = { status: "ready" | "unavailable" | "overloaded" };
+/** One helper operation Rust runs for a chat session (or the Sandbox page folder when none). */
+export type SandboxRequest = { session?: string; op: "binding" | "run" | "run_scratch" | "realm" | "realm_create"; args: string[]; cwd?: string; timeoutSeconds?: number };
+export type SandboxCall = (request: SandboxRequest, signal?: AbortSignal) => Promise<unknown>;
 export type Lease = { id: number; request_id: string; root_id: string; amounts: Record<string, number> };
 type ControlResult = ControlHealth | { status: "committed"; receipt: HostCandidateCommitReceipt } | { status: "loaded"; revision: number; snapshot: HostSessionSnapshot } | { status: "saved"; revision: number } | { status: "listed"; sessions: SessionSummary[] } | { status: "removed" } | { status: "reserved"; lease: Lease } | { status: "released" };
 type CandidateIdentity = { commitId: string; session: string; rootId: string; rootRevision: number; contractRevision: number; cancellationEpoch: number; expectedCanonicalRevision: number };
 type ControlPending = { kind: "health" | "candidate" | "session" | "capacity"; candidate?: CandidateIdentity; accept?: (frame: Record<string, unknown>) => ControlResult; resolve(value: ControlResult): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 
-export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth>; commitCandidate(candidate: HostCandidateCommitRequest): Promise<HostCandidateCommitReceipt>; hostSessionStore: HostSessionStore; providerFetch: ProviderTransport; egressFetch: typeof fetch; reserveCapacity(requestId: string, rootId: string, amounts: Record<string, number>): Promise<Lease>; releaseCapacity(lease: Lease): Promise<void> } {
+export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth>; commitCandidate(candidate: HostCandidateCommitRequest): Promise<HostCandidateCommitReceipt>; hostSessionStore: HostSessionStore; providerFetch: ProviderTransport; egressFetch: typeof fetch; sandbox: SandboxCall; reserveCapacity(requestId: string, rootId: string, amounts: Record<string, number>): Promise<Lease>; releaseCapacity(lease: Lease): Promise<void> } {
   const active = new Map<string, Pending>();
   const controlPending = new Map<string, ControlPending>();
   let closed = false;
   const providers = providerChannel(send);
+  const sandboxPending = new Map<string, { resolve(value: unknown): void; reject(error: Error): void }>();
+  const sandbox: SandboxCall = (request, signal) => {
+    if (closed) return Promise.reject(new Error("Native sandbox is unavailable"));
+    if (sandboxPending.size >= 8) return Promise.reject(new Error("Native sandbox queue is full"));
+    signal?.throwIfAborted();
+    const id = `sbx-${randomUUID()}`;
+    // Rust bounds and supervises the run; an abort here only stops waiting for its result.
+    return new Promise((resolve, reject) => {
+      const abort = () => { sandboxPending.delete(id); reject(new Error("Sandbox operation cancelled. Inspect its status before retrying.")); };
+      signal?.addEventListener("abort", abort, { once: true });
+      const done = <T,>(fn: (v: T) => void) => (v: T) => { signal?.removeEventListener("abort", abort); fn(v); };
+      sandboxPending.set(id, { resolve: done(resolve), reject: done(reject) });
+      void send({ id, type: "sandbox_request", ...request }).catch((error: unknown) => { sandboxPending.delete(id); reject(error instanceof Error ? error : new Error("Native sandbox write failed")); });
+    });
+  };
   function send(message: Record<string, unknown>): Promise<void> {
     if (closed) return Promise.reject(new Error("Parent connection closed"));
     return new Promise((resolve, reject) => output.write(JSON.stringify({ v: DESKTOP_PROTOCOL, ...message }) + "\n", (error) => error ? reject(error) : resolve()));
@@ -33,6 +51,8 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
     active.clear();
     for (const p of controlPending.values()) { clearTimeout(p.timer); p.reject(new Error("Parent connection closed")); }
     controlPending.clear();
+    for (const p of sandboxPending.values()) p.reject(new Error("Parent connection closed"));
+    sandboxPending.clear();
     providers.close();
   }
   function pingControl(): Promise<ControlHealth> {
@@ -313,6 +333,15 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
       }
       return;
     }
+    if (f.type === "sandbox_result" || f.type === "sandbox_error") {
+      const ok = f.type === "sandbox_result";
+      if (!id.startsWith("sbx-") || Object.keys(f).some((key) => !["v", "id", "type", ok ? "result" : "message"].includes(key)) || (!ok && typeof f.message !== "string")) throw new Error("Invalid native sandbox frame");
+      const pending = sandboxPending.get(id);
+      sandboxPending.delete(id);
+      if (ok) pending?.resolve(f.result);
+      else pending?.reject(new Error(String(f.message)));
+      return;
+    }
     if (providers.receive(f)) return;
     if (f.type === "ack") { active.get(id)?.ack?.(); return; }
     if (f.type === "cancel") { const p = active.get(id); p?.controller.abort(); p?.ack?.(); return; }
@@ -338,5 +367,5 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
   input.on("end", close);
   input.on("error", (error) => { close(); failed(error); });
   output.on("error", (error) => { close(); failed(error); });
-  return { close, pingControl, commitCandidate, hostSessionStore, providerFetch: providers.fetch, egressFetch: providers.egressFetch, reserveCapacity, releaseCapacity };
+  return { close, pingControl, commitCandidate, hostSessionStore, providerFetch: providers.fetch, egressFetch: providers.egressFetch, sandbox, reserveCapacity, releaseCapacity };
 }

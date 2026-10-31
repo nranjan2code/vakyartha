@@ -140,6 +140,16 @@ export async function setEgressApproval(host: string, allow: boolean): Promise<v
   await invoke("egress_set_approval", { host, allow });
 }
 
+/** The Sandbox page's project folder, stored by Rust. */
+export async function sandboxFolder(): Promise<string | null> {
+  return inTauri ? await invoke<string | null>("sandbox_folder") : null;
+}
+
+export async function setSandboxFolder(folder: string | null): Promise<string | null> {
+  if (!inTauri) throw new Error("Command execution needs the desktop app.");
+  return await invoke<string | null>("sandbox_set_folder", { folder });
+}
+
 /** Open native folder picker dialog and return selected path, or null if cancelled. */
 export async function pickFolder(): Promise<string | null> {
   if (inTauri) {

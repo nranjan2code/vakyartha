@@ -7,7 +7,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import type { FleetSnapshot, PoolConfig, WorkerSlotSummary, WorkloadClass } from "../../shared/sandbox-pool.ts";
-import { runSandboxCommand } from "../sandbox-execution.ts";
 import { stageDuckDB, databaseSnapshot } from "./database.ts";
 import { readBounded, packageFiles, appId } from "./package.ts";
 
@@ -55,7 +54,7 @@ export class SandboxPoolManager extends EventEmitter {
       }
     } finally { this.queued--; }
     if (slot.state === "active") throw new Error("App already has an active invocation");
-    if (this.closed || this.suspended || this.config.enabled?.() === false) throw new Error("Sandbox execution is disabled");
+    if (this.closed || this.suspended) throw new Error("Sandbox execution is disabled");
     let nativeLease: { id: number; request_id: string; root_id: string; amounts: Record<string, number> } | undefined;
     if (this.config.capacityLease) {
       nativeLease = await this.config.capacityLease.reserve(`app-${tenantId.slice(0, 32)}-${Date.now()}`, "root-desktop", { ContainedProcess: 1 });
@@ -80,7 +79,8 @@ export class SandboxPoolManager extends EventEmitter {
       const runner = `.vak-worker${worker.endsWith(".ts") ? ".ts" : ".mjs"}`;
       writeFileSync(path.join(workspace, runner), readBounded(worker));
       writeFileSync(path.join(workspace, ".vak-request.json"), JSON.stringify({ ...request, files: undefined, callTool: undefined }));
-      const run = runSandboxCommand(this.config.sandboxBin ?? process.env.VAK_SANDBOX_BIN ?? "vaksb", workspace, this.config.nodeBin ?? process.execPath, ["--disable-warning=ExperimentalWarning", runner], workspace, Math.min(request.timeoutMs ?? 30000, 30000), controller.signal);
+      if (!this.config.run) throw new Error("App runs need the desktop app");
+      const run = this.config.run(workspace, [this.config.nodeBin ?? process.execPath, "--disable-warning=ExperimentalWarning", runner], Math.min(request.timeoutMs ?? 30000, 30000), controller.signal);
       let done = false;
       const completion = run.finally(() => { done = true; controller.abort(new Error("App invocation finished")); });
       // File mailboxes adapt to the helper's intentionally closed target stdin.
@@ -89,7 +89,6 @@ export class SandboxPoolManager extends EventEmitter {
       const broker = (async () => {
         let next = 0;
         while (!done) {
-          if (this.config.enabled?.() === false) controller.abort(new Error("Sandbox access revoked"));
           const file = path.join(workspace!, ".vak-tool.json");
           if (existsSync(file)) {
             const msg = JSON.parse(readBounded(file, 16384));

@@ -8,7 +8,7 @@
 
 import { Socket } from "node:net";
 import { startAppServer } from "./server.ts";
-import { desktopTransport, DESKTOP_PROTOCOL } from "./desktop-transport.ts";
+import { desktopTransport, DESKTOP_PROTOCOL, type SandboxCall } from "./desktop-transport.ts";
 import type { HostCandidateCommitRequest, HostCandidateCommitReceipt, HostSessionStore } from "@vak/host";
 import type { ProviderTransport } from "@vak/providers";
 
@@ -21,6 +21,7 @@ let nativeCommit: (candidate: HostCandidateCommitRequest) => Promise<HostCandida
 let nativeTransport: ReturnType<typeof desktopTransport> | undefined;
 let nativeProviderFetch: ProviderTransport = async () => { throw new Error("Native provider transport is not ready"); };
 let nativeEgressFetch: typeof fetch = async () => { throw new Error("Native egress is not ready"); };
+let nativeSandbox: SandboxCall = async () => { throw new Error("Native sandbox is not ready"); };
 const nativeSessionStore: HostSessionStore = {
   load: async (id) => { if (!nativeTransport) throw new Error("Native session transport is not ready"); return nativeTransport.hostSessionStore.load(id); },
   save: async (snapshot, revision) => { if (!nativeTransport) throw new Error("Native session transport is not ready"); return nativeTransport.hostSessionStore.save(snapshot, revision); },
@@ -50,12 +51,14 @@ const app = await startAppServer({
   capacityLease,
   providerTransport: (...args) => nativeProviderFetch(...args),
   egressTransport: (...args) => nativeEgressFetch(...args),
+  sandbox: (...args) => nativeSandbox(...args),
 });
 const transport = desktopTransport(app.request, app.token!, channel, channel, (error) => { console.error(error.message); void shutdown(); });
 nativeCommit = transport.commitCandidate;
 nativeTransport = transport;
 nativeProviderFetch = transport.providerFetch;
 nativeEgressFetch = transport.egressFetch;
+nativeSandbox = transport.sandbox;
 channel.write(`VAK_READY ${JSON.stringify({ transport: "stdio", version: DESKTOP_PROTOCOL })}\n`);
 
 // The shell holds our stdin open; when it goes away (quit or crash), so do

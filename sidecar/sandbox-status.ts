@@ -1,7 +1,4 @@
 import { execFile } from "node:child_process";
-import { accessSync, constants, realpathSync, statSync } from "node:fs";
-import { homedir } from "node:os";
-import path from "node:path";
 
 interface SandboxCapabilities {
   contract?: number;
@@ -12,21 +9,6 @@ interface SandboxCapabilities {
 export function compatibleSandboxHelper(capabilities: SandboxCapabilities, runHelp: string): boolean {
   return capabilities.contract === 4 && capabilities.supervised_processes === true && capabilities.detachment_denied === true
     && ["--workspace", "--cwd", "--timeout-seconds", "--max-output-bytes"].every(flag => runHelp.includes(flag));
-}
-
-/** Settings and execution use the same scope check; saving never copies or runs a project. */
-export function validateSandboxWorkspace(value: string): string {
-  if (!path.isAbsolute(value)) throw new Error("Enter an absolute path to a project folder.");
-  let root: string;
-  try {
-    root = realpathSync(value);
-    if (!statSync(root).isDirectory()) throw new Error();
-    accessSync(root, constants.R_OK | constants.X_OK);
-  } catch { throw new Error("This folder does not exist or cannot be read. Choose an accessible project folder."); }
-  if (["/", "/Users", "/home", "/System", "/Library", "/private", "/var", homedir()].includes(root)) {
-    throw new Error("Choose a specific project folder, rather than your home or a system folder.");
-  }
-  return root;
 }
 
 /** Probe the command contract without executing project code. */

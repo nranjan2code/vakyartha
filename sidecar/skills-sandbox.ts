@@ -6,11 +6,11 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import type { SkillSandboxRunResponse } from "../shared/skills.ts";
 import type { Skills } from "./skills.ts";
-import { runSandboxCommand } from "./sandbox-execution.ts";
+import { runScratch } from "./sandbox-execution.ts";
+import type { SandboxCall } from "./desktop-transport.ts";
 
 export interface SkillRehearsalOptions {
-  binaryPath: string;
-  enabled: () => boolean;
+  sandbox?: SandboxCall;
   authorized: () => boolean;
   scriptSha256: string;
 }
@@ -20,7 +20,7 @@ export async function runSkillScript(skills: Skills, skillName: string, scriptPa
   const start = performance.now();
   let temporary: string | undefined;
   try {
-    if (!options?.enabled() || !options.authorized()) throw new Error("Enable sandbox execution and its run_command integration policy before rehearsing scripts. No command was run.");
+    if (!options?.authorized()) throw new Error("Enable sandbox execution and its run_command integration policy before rehearsing scripts. No command was run.");
     if (!/^[a-z0-9-]{1,64}$/.test(skillName) || !relative(scriptPath) || !/^scripts\/.+\.(?:py|sh|js|mjs|cjs)$/.test(scriptPath)) throw new Error("Choose a supported script under scripts/.");
     if (!Array.isArray(args) || args.some(arg => typeof arg !== "string" || arg.includes("\0"))) throw new Error("Script arguments must be strings without NUL characters.");
     const draft = skills.getDraft(skillName);
@@ -40,9 +40,9 @@ export async function runSkillScript(skills: Skills, skillName: string, scriptPa
       await writeFile(target, file.text, { mode: 0o600, flag: "wx" });
     }
     // Disablement during staging also revokes this not-yet-started operation.
-    if (!options.enabled() || !options.authorized()) throw new Error("Sandbox access changed before execution. No command was run.");
+    if (!options.authorized()) throw new Error("Sandbox access changed before execution. No command was run.");
     const command = scriptPath.endsWith(".py") ? "python3" : /\.(?:mjs|cjs|js)$/.test(scriptPath) ? process.execPath : "/bin/bash";
-    const result = await runSandboxCommand(options.binaryPath, temporary, command, [scriptPath, ...args], temporary, 15000);
+    const result = await runScratch(options.sandbox, temporary, [command, scriptPath, ...args], 15000);
     return { exitCode: result.code, stdout: result.stdout, stderr: result.stderr, durationMs: Math.round(performance.now() - start), scriptPath, scriptSha256, source: draft.hasDraft ? "saved-draft" : "published" };
   } catch (error) {
     const message = (error as Error).message;

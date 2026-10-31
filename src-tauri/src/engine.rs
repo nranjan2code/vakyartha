@@ -658,14 +658,16 @@ fn fail_pending(pending: &Pending) {
     }
 }
 
+#[cfg(test)]
 pub fn start(cmd: Command, control: Option<ControlHandle>) -> Engine {
-    start_with_dispatch(cmd, control, None)
+    start_with_dispatch(cmd, control, None, None)
 }
 
 pub fn start_with_dispatch(
     mut cmd: Command,
     control: Option<ControlHandle>,
     dispatch_context: Option<(String, PathBuf)>,
+    helper: Option<PathBuf>,
 ) -> Engine {
     let mut child = match cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn() {
         Ok(child) => child,
@@ -702,6 +704,7 @@ pub fn start_with_dispatch(
         }
         // Dropping the only stdin writer terminates the child even after a crash.
     });
+    let sandbox_control = control.clone();
     let (control_tx, control_rx) = sync_channel::<ControlRequest>(2);
     let control_writer = sender.clone();
     let control_queue_size = queued.clone();
@@ -845,6 +848,27 @@ pub fn start_with_dispatch(
                 if msg_type == "provider_ack" || msg_type == "provider_cancel" {
                     continue;
                 }
+            }
+            if value.get("type").and_then(serde_json::Value::as_str) == Some("sandbox_request") {
+                let Some(id) = value.get("id").and_then(serde_json::Value::as_str).filter(|id| id.starts_with("sbx-") && valid_id(id)).map(str::to_owned) else { continue; };
+                let (sender, queued) = (connection.clone(), response_queue.clone());
+                let context = match (&dispatch_context, &helper) {
+                    (Some((_, data_dir)), Some(helper)) => Some(crate::sandbox::Context { helper: helper.clone(), data_dir: data_dir.clone(), control: sandbox_control.clone() }),
+                    _ => None,
+                };
+                tauri::async_runtime::spawn_blocking(move || {
+                    let outcome = match (context, serde_json::from_value::<crate::sandbox::SandboxRequest>(value)) {
+                        (Some(context), Ok(request)) => crate::sandbox::handle(&context, &request, PROTOCOL_VERSION),
+                        (None, _) => Err("Native sandbox is not enabled".into()),
+                        (_, Err(_)) => Err("Malformed sandbox request".into()),
+                    };
+                    let frame = match outcome {
+                        Ok(result) => serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "sandbox_result", "result": result }),
+                        Err(message) => serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "sandbox_error", "message": message.chars().take(2048).collect::<String>() }),
+                    };
+                    send_frame(&sender, &queued, frame);
+                });
+                continue;
             }
             if value.get("type").and_then(serde_json::Value::as_str) == Some("egress_request") {
                 let Some(id) = value.get("id").and_then(serde_json::Value::as_str).filter(|id| id.starts_with("egr-") && valid_id(id)).map(str::to_owned) else { continue; };

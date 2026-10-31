@@ -67,21 +67,6 @@ test("values that could inject another variable or command are refused", () => {
   assert.throws(() => s.save({ OPENAI_API_KEY: 'a" -w "b' }), SettingsError);
 });
 
-test("sandbox settings validate the whole change before persisting or changing runtime values", () => {
-  const folder = dir(), file = path.join(folder, "settings.env"), env: Record<string, string | undefined> = {};
-  const settings = new Settings({ file, secrets: memoryKeychain(), env });
-  settings.save({ VAK_SANDBOX_ENABLED: "true", VAK_SANDBOX_WORKSPACE: folder });
-  assert.throws(() => settings.save({ VAK_SANDBOX_ENABLED: "false", VAK_SANDBOX_WORKSPACE: "/" }), SettingsError);
-  assert.equal(env.VAK_SANDBOX_ENABLED, "true");
-  assert.equal(env.VAK_SANDBOX_WORKSPACE, folder);
-  assert.throws(() => settings.save({ VAK_SANDBOX_ENABLED: "yes" }), SettingsError);
-  assert.throws(() => settings.save({ VAK_SANDBOX_WORKSPACE: "relative/project" }), SettingsError);
-  assert.throws(() => settings.save({ VAK_SANDBOX_WORKSPACE: path.join(folder, "absent") }), SettingsError);
-  settings.save({ VAK_SANDBOX_WORKSPACE: "" });
-  assert.equal(env.VAK_SANDBOX_WORKSPACE, undefined);
-});
-
-
 test("desktop settings never adopt secret bytes and refuse mixed secret updates atomically", () => {
   const file = path.join(dir(), "settings.env"), env: Record<string, string | undefined> = {};
   const original = 'OPENAI_API_KEY="synthetic-retained-key"\nOLLAMA_HOST="http://127.0.0.1:11434"\n';

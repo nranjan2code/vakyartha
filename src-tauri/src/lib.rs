@@ -30,6 +30,7 @@ mod canonical_supervisor;
 mod reasoner_supervisor;
 mod policy;
 mod egress;
+mod sandbox;
 mod private_store;
 mod vault;
 // The native control actor and store start with an empty execution profile.
@@ -861,7 +862,7 @@ fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
         let suffix = if cfg!(windows) { ".exe" } else { "" };
         let triple = env!("VAK_TARGET_TRIPLE");
         worker::command(
-            &root.join(format!("binaries/vaksb-{triple}{suffix}")),
+            &sandbox_helper(app)?,
             &root.join(format!("binaries/node-{triple}{suffix}")),
             &root.join("resources"),
             &data,
@@ -872,13 +873,39 @@ fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
         let dir = exe.parent().ok_or("Desktop executable has no directory")?;
         let resources = app.path().resource_dir().map_err(|_| "Cannot resolve desktop resources")?.join("resources");
         worker::command(
-            &dir.join(if cfg!(windows) { "vaksb.exe" } else { "vaksb" }),
+            &sandbox_helper(app)?,
             &dir.join(if cfg!(windows) { "node.exe" } else { "node" }),
             &resources,
             &data,
             vault_presence_param,
         )
     }
+}
+
+/// The pinned vak-sandbox helper bundled beside the app.
+fn sandbox_helper(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let name = if cfg!(windows) { "vaksb.exe" } else { "vaksb" };
+    if cfg!(debug_assertions) {
+        let suffix = if cfg!(windows) { ".exe" } else { "" };
+        Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("binaries/vaksb-{}{suffix}", env!("VAK_TARGET_TRIPLE"))))
+    } else {
+        let exe = std::env::current_exe().map_err(|_| "Cannot resolve desktop executable")?;
+        Ok(exe.parent().ok_or("Desktop executable has no directory")?.join(name))
+    }
+}
+
+/// Default project folder for Sandbox page runs, stored natively.
+#[tauri::command]
+fn sandbox_folder(window: tauri::WebviewWindow) -> Result<Option<PathBuf>, String> {
+    engine::main_window(&window)?;
+    Ok(sandbox::folder(&app_data_dir(window.app_handle())))
+}
+
+#[tauri::command]
+fn sandbox_set_folder(window: tauri::WebviewWindow, folder: Option<String>) -> Result<Option<PathBuf>, String> {
+    engine::main_window(&window)?;
+    if folder.as_ref().is_some_and(|f| f.len() > 4096 || !std::path::Path::new(f).is_absolute()) { return Err("Enter an absolute path to a project folder.".into()); }
+    sandbox::set_folder(&app_data_dir(window.app_handle()), folder.as_deref().map(std::path::Path::new))
 }
 
 fn start(app: &tauri::AppHandle) -> Sidecar {
@@ -889,7 +916,7 @@ fn start(app: &tauri::AppHandle) -> Sidecar {
     let service = default_service(app);
     let data_dir = app_data_dir(app);
     match sidecar_command(app) {
-        Ok(cmd) => engine::start_with_dispatch(cmd, control, Some((service, data_dir))),
+        Ok(cmd) => engine::start_with_dispatch(cmd, control, Some((service, data_dir)), sandbox_helper(app).ok()),
         Err(error) => Sidecar::failed(error),
     }
 }
@@ -951,6 +978,8 @@ pub fn run() {
             vault_delete,
             egress_approvals,
             egress_set_approval,
+            sandbox_folder,
+            sandbox_set_folder,
             pick_folder
         ])
         .on_window_event(|window, event| {

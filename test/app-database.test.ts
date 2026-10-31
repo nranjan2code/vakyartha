@@ -9,6 +9,7 @@ import { AppRegistry } from '../sidecar/sandbox-pool/app-registry.ts';
 import { SandboxPoolManager } from '../sidecar/sandbox-pool/pool-manager.ts';
 import { databaseSnapshot, MAX_DATABASE_BYTES } from '../sidecar/sandbox-pool/database.ts';
 import { AppToolResults } from '../sidecar/app-tool-results.ts';
+import { helperRun } from "./support/sandbox-run.ts";
 
 test('machine source receipts retain full JSON while refusing errors, absent receipts and oversize',async()=>{
   const bridge=new AppToolResults(), text=JSON.stringify({rows:'a'.repeat(20000)});
@@ -46,7 +47,7 @@ test('DuckDB 2 reads and writes a persisted DuckDB 1.5 snapshot', async()=>{
 });
 test('DuckDB persists across sandbox invocations and restart; failed SQL and file reads cannot commit', {skip:process.platform!=='darwin'}, async()=>{
   const dir=mkdtempSync(path.join(tmpdir(),'vak-db-test-'));
-  const pool=new SandboxPoolManager({sandboxBin:path.resolve('../sandbox/target/debug/vaksb')});
+  const pool=new SandboxPoolManager({run:helperRun(path.resolve('../sandbox/target/debug/vaksb'))});
   const registry=new AppRegistry({dataDir:dir,pool});
   const manifest={id:'sql-app',name:'SQL app',version:'1.0.0',entrypoints:{backend:'main.ts'},entitlements:{storage:{duckdb:true}}};
   const dispatch = (id: string, value: unknown) => registry.dispatchAction('sql-app', id, value, undefined, registry.getApp('sql-app')!.revision);

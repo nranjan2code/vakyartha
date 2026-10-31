@@ -1,7 +1,7 @@
 import { api, ask, el } from "./core.ts";
 import { group, pill, row } from "./ui.ts";
 import type { SandboxStatus } from "../shared/sandbox.ts";
-import type { RealmReview, RealmSummary } from "../sidecar/sandbox-realms.ts";
+import type { RealmReview, RealmSummary } from "../shared/sandbox-realms.ts";
 
 type Receipt = { transaction_id: string; paths: string[]; phase: string };
 type Status = { realm: RealmSummary; ready: boolean; change_count: number | null; recovery_paths: string[]; last_receipt?: Receipt | null };
@@ -27,7 +27,7 @@ export function realmSettings(getStatus: () => SandboxStatus): HTMLElement {
   const reload = button("Refresh workspaces", async () => { await refresh(); });
   async function refresh(): Promise<void> {
     const status = getStatus();
-    create.disabled = !status.enabled || !status.helper.realms || !status.workspace.valid || !status.execution.enabled;
+    create.disabled = !status.native || !status.helper.realms || !status.workspace.valid || !status.execution.enabled;
     if (!status.helper.realms) { list.replaceChildren(el("p", { className: "row-hint", textContent: "The sandbox helper needs the Realm lifecycle commands. Rebuild or reinstall it to use retained workspaces." })); return; }
     const realms = await call<RealmSummary[]>("list_realms");
     list.replaceChildren(...realms.map(realm => row(realm.realm_id, `${realm.status} · ${realm.base_path ?? "No original project"}`, button("Inspect workspace", () => inspect(realm.realm_id)))));
@@ -73,7 +73,7 @@ export function realmSettings(getStatus: () => SandboxStatus): HTMLElement {
         const receipt = await call<Receipt>("promote_realm", { realmId, fingerprint, paths });
         await refresh(); await inspect(realmId); feedback.textContent = `Applied ${receipt.paths.length} paths. Receipt: ${receipt.transaction_id}`;
       }, true);
-      apply.disabled = !snapshot.can_promote || all.length !== snapshot.total || !getStatus().enabled;
+      apply.disabled = !snapshot.can_promote || all.length !== snapshot.total || !getStatus().native;
       changes.append(el("div", { className: "row-actions" }, apply));
     });
     const discard = button("Discard workspace", async () => {

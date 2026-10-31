@@ -28,8 +28,8 @@ export interface WorkerSlotSummary {
 export interface PoolConfig {
   /** Concurrent supervised invocations, default 3; no warm processes. */
   maxActiveWorkers: number;
-  sandboxBin?: string;
-  enabled?: () => boolean;
+  /** Runs one contained command in a staged folder; desktop routes it through Rust. */
+  run?: (workspace: string, argv: string[], timeoutMs: number, signal: AbortSignal) => Promise<{ code: number; stdout: string; stderr: string }>;
   nodeBin?: string;
   workerScript?: string;
   capacityLease?: {

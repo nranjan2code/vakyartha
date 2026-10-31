@@ -7,6 +7,7 @@ import { SandboxPoolManager } from "../sidecar/sandbox-pool/pool-manager.ts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { helperRun } from "../test/support/sandbox-run.ts";
 
 interface Result {
   name: string;
@@ -95,7 +96,7 @@ async function run() {
   console.log("\n--- Group 4: Sandbox & State Integrity on Voice Desk ---");
 
   const dir = mkdtempSync(path.join(tmpdir(), "vak-redblue-app-"));
-  const pool = new SandboxPoolManager({ sandboxBin: path.resolve("../sandbox/target/debug/vaksb") });
+  const pool = new SandboxPoolManager({ run: helperRun(path.resolve("../sandbox/target/debug/vaksb")) });
   const registry = new AppRegistry({ dataDir: dir, pool });
 
   try {

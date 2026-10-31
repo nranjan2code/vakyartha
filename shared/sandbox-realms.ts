@@ -1,0 +1,3 @@
+// Realm records as the vak-sandbox helper reports them.
+export interface RealmSummary { realm_id: string; base_path: string | null; workspace: string; created_at: string; status: string; last_transaction: string | null; entries: number; bytes: number }
+export interface RealmReview { realm_id: string; fingerprint: string; total: number; offset: number; next_offset: number; can_promote: boolean; changes: { path: string; before: { kind: string; hash: string; bytes: number; mode: number } | null; after: { kind: string; hash: string; bytes: number; mode: number } | null; conflict: boolean; blocked: boolean }[] }

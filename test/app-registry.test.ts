@@ -5,6 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { AppRegistry, isCronMatch } from "../sidecar/sandbox-pool/app-registry.ts";
 import { SandboxPoolManager } from "../sidecar/sandbox-pool/pool-manager.ts";
+import { helperRun } from "./support/sandbox-run.ts";
 
 const helper = process.env.VAK_TEST_SANDBOX_BIN ?? path.resolve("../sandbox/target/debug/vaksb");
 const manifest = { id: "computed-app", name: "Computed app", version: "1.0.0", entrypoints: { backend: "main.ts", surface: "surface.json" }, triggers: [{ id: "refresh", kind: "cron", expression: "* * * * *", action: "refreshData", maxDurationSec: 10 }] };
@@ -13,7 +14,7 @@ const files = { "surface.json": JSON.stringify(surface), "main.ts": `export asyn
 export async function refreshData(ctx){ctx.state.total=(ctx.state.total??0)+3;return {data:{total:ctx.state.total}}}` };
 function setup() {
   const tmp = mkdtempSync(path.join(tmpdir(), "vak-app-registry-"));
-  const pool = new SandboxPoolManager({ sandboxBin: helper });
+  const pool = new SandboxPoolManager({ run: helperRun(helper) });
   const registry = new AppRegistry({ dataDir: tmp, pool });
   return { tmp, pool, registry, async close() { await pool.shutdown(); await registry.shutdown(); rmSync(tmp, { recursive: true, force: true }); } };
 }

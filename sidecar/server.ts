@@ -29,15 +29,15 @@ import { voiceRoutes } from "./voice/index.ts";
 import { Media } from "./media/index.ts";
 import { mediaType } from "./media/io.ts";
 import { isMediaKind, type MediaAsset } from "../shared/media.ts";
-import { sandboxHelper, validateSandboxWorkspace } from "./sandbox-status.ts";
+import { sandboxHelper } from "./sandbox-status.ts";
 import { generateSkillPackage, suggestSkillElement } from "./skills-copilot.ts";
 import { evaluateSkillPrompts } from "./skills-eval.ts";
 import { runSkillScript } from "./skills-sandbox.ts";
 import type { SkillGenerateRequest, SkillSuggestRequest } from "../shared/skills.ts";
 import { SandboxPoolManager } from "./sandbox-pool/pool-manager.ts";
 import { AppRegistry } from "./sandbox-pool/app-registry.ts";
-import { WorkspaceRegistry, validateWorkspaceFolder } from "./workspace-registry.ts";
-import { SandboxRealms } from "./sandbox-realms.ts";
+import { runScratch, sandboxSession } from "./sandbox-execution.ts";
+import type { SandboxCall } from "./desktop-transport.ts";
 import { withProviderTransport } from "./provider-transport.ts";
 
 export interface AppServerOptions {
@@ -68,6 +68,8 @@ export interface AppServerOptions {
   providerTransport?: ProviderTransport;
   /** Desktop: the worker has no network; integration HTTPS goes through the native egress gate. */
   egressTransport?: typeof fetch;
+  /** Desktop: command runs, Realms and folder bindings are native; absent in web mode. */
+  sandbox?: SandboxCall;
   /** Native sole-writer boundary for a completed candidate. */
   candidateCommit?: (request: HostCandidateCommitRequest) => Promise<HostCandidateCommitReceipt>;
   /** Native sole-writer boundary for desktop chat snapshots. */
@@ -93,8 +95,6 @@ export interface AppServer {
   shutdown(): Promise<void>;
   pool?: SandboxPoolManager;
   apps?: AppRegistry;
-  workspaces?: WorkspaceRegistry;
-  realms?: SandboxRealms;
 }
 
 export function typesafeProviderEntry(env: Record<string, string | undefined>): ProviderEntry {
@@ -191,16 +191,9 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
 
   async function settingsRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
     if (url.pathname === "/api/sandbox" && req.method === "GET") {
-      const enabled = process.env.VAK_SANDBOX_ENABLED !== "false";
-      const workspace = process.env.VAK_SANDBOX_WORKSPACE ?? "";
-      let workspaceError: string | undefined;
-      try { if (workspace) validateSandboxWorkspace(workspace); else workspaceError = "Choose a project folder to enable command execution."; }
-      catch (error) { workspaceError = (error as Error).message; }
       const execution = integrations!.view().find(i => i.entry.id === "sandbox-execution");
       json(res, 200, {
-        enabled, processIsolationEnabled, restartRequired: enabled !== processIsolationEnabled,
-        platform: process.platform, helper: await sandboxHelper(sandboxBin),
-        workspace: { path: workspace, valid: !workspaceError, error: workspaceError },
+        platform: process.platform, native: Boolean(opts.sandbox), helper: await sandboxHelper(sandboxBin),
         execution: { enabled: execution?.enabled ?? false, status: execution?.status ?? "off", policy: execution?.tools.find(t => t.name === "run_command")?.policy ?? "ask" },
       });
       return true;
@@ -270,22 +263,26 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   }
 
   const skills = new Skills(dataDir, opts.marketplaceFetch);
-  const workspaces = new WorkspaceRegistry(dataDir, { readOnly: Boolean(opts.nativeSessionStore) });
+  // The chat's folder as Rust admits it, refreshed at each turn start for the model's context.
+  type FolderBinding = { folder: string; mode: "direct" | "copy_review"; realmId?: string | null };
+  const folderBindings = new Map<string, FolderBinding | null>();
+  const refreshBinding = async (session: string): Promise<FolderBinding | null> => {
+    const binding = opts.sandbox ? ((await opts.sandbox({ session, op: "binding", args: [] }).catch(() => null)) as FolderBinding | null) : null;
+    folderBindings.set(session, binding);
+    return binding;
+  };
   let activeTurnSession: string | undefined;
 
   const formatWorkspaceInfo = (sess?: string): string => {
-    if (!sess) return "";
-    const b = workspaces.getBinding(sess);
-    if (!b || b.accessState !== "admitted") return "";
-    return `\nActive workspace: folder "${b.folder}" (mode: ${b.mode}, status: admitted).`;
+    const b = sess ? folderBindings.get(sess) : undefined;
+    return b ? `\nActive workspace: folder "${b.folder}" (mode: ${b.mode}, status: admitted).` : "";
   };
 
   const getWorkspaceScope = (sess: string): string => {
-    const b = workspaces.getBinding(sess);
+    const b = folderBindings.get(sess);
     if (!b) return "Admitted workspace scope for this session:\n- No project folder is admitted for this chat session. Ask the user to use \"Work in folder\" to admit one.";
-    if (b.accessState !== "admitted") return `Admitted workspace scope for this session:\n- Project folder "${b.folder}" access is ${b.accessState}. Re-admit an accessible folder with "Work in folder".`;
     const modeDesc = b.mode === "direct"
-      ? "direct in-place editing (commands and edits write directly to the project folder under macOS Seatbelt protection; no staging or Apply step is needed)"
+      ? "direct in-place editing (commands and edits write directly to the project folder under OS containment; no staging or Apply step is needed)"
       : "isolated copy mode (edits stage in a durable Realm across turns; inspect with snapshot_realm and promote with promote_realm to apply to original)";
     return `Admitted workspace scope for this session:\n- Folder: "${b.folder}"\n- Mode: ${b.mode} (${modeDesc})\n- Status: admitted`;
   };
@@ -363,10 +360,10 @@ ${skills.index()}`;
     tools: async ({ session }) => {
       finops.session(session);
       activeTurnSession = session;
-      const workspaceRevision = workspaces.captureBindingRevision(session);
+      await refreshBinding(session);
       return withSkill([...appAuthoringTools(), ...(await integrations?.toolsFor(session) ?? [])].map((tool) => ({
         ...tool,
-        execute: (args, ctx) => workspaces.withSession(session, () => media.withSession(session, () => tool.execute(args, ctx)), workspaceRevision),
+        execute: (args, ctx) => sandboxSession.run(session, () => media.withSession(session, () => tool.execute(args, ctx))),
       })), session);
     },
     providers: () => modelProviders(),
@@ -381,12 +378,12 @@ ${skills.index()}`;
     origins: ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420", "http://127.0.0.1:1420"],
     // Outside agents get a link to watch what they projected (only when this server serves the UI).
     viewerUrl: opts.uiDir ? (session) => `http://127.0.0.1:${listening}/?session=${encodeURIComponent(session)}` : undefined,
-    routes: async (req, res, url) => (await attachRoute(req, res, url)) || (await media.route(req, res, url)) || (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await skillsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await voiceRoute(req, res, url)) || (await adminFleetRoute(req, res, url)) || (await appsRoute(req, res, url)) || (await workspacesRoute(req, res, url)) || infoRoute(req, res, url),
+    routes: async (req, res, url) => (await attachRoute(req, res, url)) || (await media.route(req, res, url)) || (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await skillsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await voiceRoute(req, res, url)) || (await adminFleetRoute(req, res, url)) || (await appsRoute(req, res, url)) || (await realmReviewRoute(req, res, url)) || infoRoute(req, res, url),
     log,
   });
 
   const sandboxBin = opts.sandboxBin || "vaksb";
-  const pool = new SandboxPoolManager({ sandboxBin, enabled: () => process.env.VAK_SANDBOX_ENABLED !== "false", capacityLease: opts.capacityLease });
+  const pool = new SandboxPoolManager({ run: (workspace, argv, timeoutMs, signal) => runScratch(opts.sandbox, workspace, argv, timeoutMs, signal), capacityLease: opts.capacityLease });
   await pool.start();
   const appToolResults = new AppToolResults();
   const apps = new AppRegistry({ dataDir, pool, seedBuiltins: true, callTool: async (app, name, args, signal) => {
@@ -405,11 +402,8 @@ ${skills.index()}`;
     });
   } });
   await apps.init();
-  const getWorkspace = () => workspaces.resolveEffectiveWorkspace() || (process.env.VAK_SANDBOX_WORKSPACE ?? "");
-  const processIsolationEnabled = process.env.VAK_SANDBOX_ENABLED !== "false";
-  const realms = new SandboxRealms({ binaryPath: sandboxBin, dataDir, enabled: () => processIsolationEnabled, workspace: getWorkspace, workspaces });
-  marketplaces = new Marketplaces(dataDir, integrationCatalog(media, sandboxBin, dataDir, getWorkspace, workspaces), opts.marketplaceFetch, opts.marketplaceImageFetch);
-  integrations = createIntegrations({ dataDir, observe: (request, result) => { appToolResults.observe(request.session, result); tasks?.observeResult(request, result); }, secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: processIsolationEnabled, binaryPath: sandboxBin } }, media, marketplaces.catalog, getWorkspace, workspaces);
+  marketplaces = new Marketplaces(dataDir, integrationCatalog(media, opts.sandbox), opts.marketplaceFetch, opts.marketplaceImageFetch);
+  integrations = createIntegrations({ dataDir, observe: (request, result) => { appToolResults.observe(request.session, result); tasks?.observeResult(request, result); }, secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: true, binaryPath: sandboxBin } }, media, marketplaces.catalog, opts.sandbox);
   // Refresh app-owned tool schemas after an upgrade; the integration journal
   // may otherwise retain an older model's controls indefinitely.
   for (const entry of integrations.view().filter((i) => i.enabled && (i.entry.id.startsWith("media-") || i.entry.id === "sandbox-execution"))) {
@@ -421,10 +415,10 @@ ${skills.index()}`;
     files: new TaskFiles(path.join(dataDir, "outputs"), opts.transcriptsDir ?? path.join(dataDir, "transcripts")),
     dir: path.join(dataDir, "tasks"), run: host.run, view: host.view, remove: host.remove,
     tools: async (session) => {
-      const workspaceRevision = workspaces.captureBindingRevision(session);
+      await refreshBinding(session);
       return withSkill((await integrations!.toolsFor(session)).map((tool) => ({
         ...tool,
-        execute: (args, ctx) => workspaces.withSession(session, () => media.withSession(session, () => tool.execute(args, ctx)), workspaceRevision),
+        execute: (args, ctx) => sandboxSession.run(session, () => media.withSession(session, () => tool.execute(args, ctx))),
       })), session);
     }, instructions: INSTRUCTIONS,
     observe: (session, work, run) => finops.chat(async () => { finops.session(session); await work(); }, run), warn: log,
@@ -576,8 +570,7 @@ ${skills.index()}`;
       else if (m[2] && m[3] === "sandbox-test" && req.method === "POST") {
         const b = await readJson(req);
         const result = await runSkillScript(skills, m[2], String(b.scriptPath ?? ""), Array.isArray(b.args) ? b.args : [], {
-          binaryPath: sandboxBin,
-          enabled: () => process.env.VAK_SANDBOX_ENABLED !== "false",
+          sandbox: opts.sandbox,
           authorized: () => integrations!.view().some(i => i.entry.id === "sandbox-execution" && i.enabled && i.status === "ready" && i.tools.some(t => t.name === "run_command" && t.policy !== "off")),
           scriptSha256: String(b.scriptSha256 ?? ""),
         });
@@ -886,491 +879,37 @@ ${skills.index()}`;
     }
   }
 
-  async function workspacesRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
-    const p = url.pathname;
-    if (!p.startsWith("/api/projects") && !p.startsWith("/api/workspaces")) return false;
-
-    if (opts.nativeSessionStore) {
-      if (p === "/api/projects" && req.method === "POST") {
-        json(res, 403, { error: "Desktop projects are controlled by the native application window" });
-        return true;
-      }
-      if (/^\/api\/projects\/[^/]+$/.test(p) && (req.method === "PATCH" || req.method === "DELETE")) {
-        json(res, 403, { error: "Desktop projects are controlled by the native application window" });
-        return true;
-      }
-      if (/^\/api\/workspaces\/bindings\/[^/]+$/.test(p) && (req.method === "POST" || req.method === "DELETE")) {
-        json(res, 403, { error: "Desktop workspace bindings are controlled by the native application window" });
-        return true;
-      }
-    }
-
+  // The chat panel's Realm review for a folder-bound chat. Bindings themselves are
+  // managed by the main window through Rust; Realm work goes through the helper there.
+  async function realmReviewRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
+    const m = /^\/api\/workspaces\/bindings\/([^/]+)\/realm(?:\/(review|apply|undo|refresh|ensure))?$/.exec(url.pathname);
+    if (!m) return false;
+    const session = decodeURIComponent(m[1]!), action = m[2];
     try {
-      if (p === "/api/projects" && req.method === "GET") {
-        json(res, 200, workspaces.listProjects());
-        return true;
-      }
-      if (p === "/api/projects" && req.method === "POST") {
-        const body = (await readJson(req)) as Record<string, unknown>;
-        const project = await workspaces.createProject(
-          String(body.name ?? ""),
-          String(body.folder ?? ""),
-          Boolean(body.sharedRealm)
-        );
-        json(res, 201, project);
-        return true;
-      }
-
-      const projectMatch = /^\/api\/projects\/([^/]+)$/.exec(p);
-      if (projectMatch) {
-        const id = projectMatch[1]!;
-        if (req.method === "GET") {
-          const project = workspaces.getProject(id);
-          if (!project) json(res, 404, { error: `Project '${id}' not found` });
-          else json(res, 200, project);
-          return true;
+      const binding = await refreshBinding(session);
+      if (!binding) return json(res, opts.sandbox ? 404 : 501, { error: opts.sandbox ? `No folder is admitted for chat '${session}'` : "Folder work needs the desktop app" }), true;
+      if (binding.mode === "direct") return json(res, 200, { mode: "direct", bound: true, total: 0, changes: [], message: "Direct editing mode is active. Changes save directly to the folder; no Realm staging is used." }), true;
+      const realm = (args: string[]) => opts.sandbox!({ session, op: "realm", args });
+      const body = req.method === "POST" ? ((await readJson(req).catch(() => ({}))) as { fingerprint?: string; paths?: string[]; transactionId?: string; force?: boolean }) : {};
+      const pathArgs = (body.paths ?? []).map((p) => `--paths=${p}`);
+      if (!action && req.method === "GET") json(res, 200, binding.realmId ? { bound: true, realmId: binding.realmId, status: await realm(["status", "{realm}"]) } : { bound: false, message: "No Realm created yet for this session." });
+      else if (!action && req.method === "DELETE") { if (binding.realmId) await realm(["destroy", "{realm}"]); json(res, 200, { ok: true }); }
+      else if (action === "ensure" && req.method === "POST") json(res, 200, { status: await realm(["status", "{realm}"]) });
+      else if (action === "review" && req.method === "GET") json(res, 200, await realm(["snapshot", "{realm}", `--offset=${Math.max(0, Math.trunc(Number(url.searchParams.get("offset") ?? 0)) || 0)}`]));
+      else if (action === "apply" && req.method === "POST") json(res, 200, await realm(["promote", "{realm}", `--fingerprint=${String(body.fingerprint ?? "")}`, ...pathArgs]));
+      else if (action === "undo" && req.method === "POST") json(res, 200, await realm(["rollback", "{realm}", String(body.transactionId ?? ""), ...pathArgs]));
+      else if (action === "refresh" && req.method === "POST") {
+        if (binding.realmId) {
+          const review = (await realm(["snapshot", "{realm}", "--offset=0"])) as { total?: number };
+          if ((review.total ?? 0) > 0 && !body.force) return json(res, 409, { error: `Realm has ${review.total} uncommitted changes. Review and apply or pass force: true to discard.`, total: review.total }), true;
+          await realm(["destroy", "{realm}"]);
         }
-        if (req.method === "PATCH") {
-          const body = (await readJson(req)) as Record<string, unknown>;
-          const updated = await workspaces.updateProject(id, {
-            name: typeof body.name === "string" ? body.name : undefined,
-            folder: typeof body.folder === "string" ? body.folder : undefined,
-            sharedRealm: typeof body.sharedRealm === "boolean" ? body.sharedRealm : undefined,
-          });
-          json(res, 200, updated);
-          return true;
-        }
-        if (req.method === "DELETE") {
-          const ok = await workspaces.removeProject(id);
-          json(res, 200, { ok });
-          return true;
-        }
-      }
-
-      if (p === "/api/workspaces/bindings" && req.method === "GET") {
-        json(res, 200, workspaces.listBindings());
-        return true;
-      }
-
-      const realmActionMatch = /^\/api\/workspaces\/bindings\/([^/]+)\/realm(?:\/([^/]+))?$/.exec(p);
-      if (realmActionMatch) {
-        const session = decodeURIComponent(realmActionMatch[1]!);
-        const action = realmActionMatch[2];
-        const storedBinding = workspaces.getBinding(session);
-        if (!storedBinding) {
-          json(res, 404, { error: `No workspace binding for session '${session}'` });
-          return true;
-        }
-        const dispatchScope = workspaces.verifyDispatchScope(session, storedBinding.revision);
-        if (!dispatchScope.ok) {
-          json(res, 409, { error: dispatchScope.error });
-          return true;
-        }
-        const binding = dispatchScope.binding;
-
-        if (binding.mode === "direct") {
-          if (!action && req.method === "GET") {
-            json(res, 200, { mode: "direct", bound: true, message: "Direct editing mode is active. Changes save directly to folder." });
-            return true;
-          }
-          if (action === "ensure" && req.method === "POST") {
-            json(res, 200, { mode: "direct", message: "Direct editing mode is active." });
-            return true;
-          }
-          if (action === "review" && req.method === "GET") {
-            json(res, 200, { mode: "direct", total: 0, changes: [], message: "Direct editing mode is active. No Realm staging is used." });
-            return true;
-          }
-          if (action === "apply" && req.method === "POST") {
-            json(res, 200, { mode: "direct", message: "Direct editing mode writes directly to disk. No Apply step is needed." });
-            return true;
-          }
-          if (action === "undo" && req.method === "POST") {
-            json(res, 200, { mode: "direct", message: "Direct editing mode does not track Realm undo receipts." });
-            return true;
-          }
-          if (action === "refresh" && req.method === "POST") {
-            json(res, 200, { mode: "direct", refreshed: true, message: "Direct editing reads directly from disk." });
-            return true;
-          }
-          if (!action && req.method === "DELETE") {
-            json(res, 200, { ok: true });
-            return true;
-          }
-        }
-
-        const resolveRealmId = (): string | undefined => {
-          if (binding.realmId) return binding.realmId;
-          if (binding.projectId && binding.shared) {
-            return workspaces.getProject(binding.projectId)?.sharedRealmId;
-          }
-          return undefined;
-        };
-
-        if (!action && req.method === "GET") {
-          const id = resolveRealmId();
-          if (!id) {
-            json(res, 200, { bound: false, message: "No Realm created yet for this session." });
-            return true;
-          }
-          const st = await realms.status(id);
-          json(res, 200, { bound: true, realmId: id, status: st });
-          return true;
-        }
-
-        if (action === "ensure" && req.method === "POST") {
-          let id = resolveRealmId();
-          if (!id) {
-            const created = await realms.create(binding.folder);
-            id = created.realm_id;
-            await workspaces.setRealmId(session, id);
-          }
-          const st = await realms.status(id);
-          json(res, 200, { realmId: id, status: st });
-          return true;
-        }
-
-        if (action === "review" && req.method === "GET") {
-          const id = resolveRealmId();
-          if (!id) {
-            json(res, 400, { error: "No Realm created yet for this session." });
-            return true;
-          }
-          const reqRealm = url.searchParams.get("realmId");
-          if (reqRealm) {
-            const access = workspaces.verifySessionRealmAccess(session, reqRealm);
-            if (!access.ok) {
-              json(res, 403, { error: `Cross-chat Realm access denied: ${access.error}` });
-              return true;
-            }
-          }
-          const offsetVal = Number(url.searchParams.get("offset") ?? 0);
-          const review = await realms.snapshot(id, offsetVal);
-          json(res, 200, review);
-          return true;
-        }
-
-        if (action === "apply" && req.method === "POST") {
-          const id = resolveRealmId();
-          if (!id) {
-            json(res, 400, { error: "No Realm created yet for this session." });
-            return true;
-          }
-          const body = (await readJson(req)) as { fingerprint?: string; paths?: string[]; realmId?: string };
-          if (body.realmId) {
-            const access = workspaces.verifySessionRealmAccess(session, body.realmId);
-            if (!access.ok) {
-              json(res, 403, { error: `Cross-chat Realm access denied: ${access.error}` });
-              return true;
-            }
-          }
-          const receipt = await realms.promote(id, String(body.fingerprint ?? ""), body.paths ?? []);
-          json(res, 200, receipt);
-          return true;
-        }
-
-        if (action === "undo" && req.method === "POST") {
-          const id = resolveRealmId();
-          if (!id) {
-            json(res, 400, { error: "No Realm created yet for this session." });
-            return true;
-          }
-          const body = (await readJson(req)) as { transactionId?: string; paths?: string[]; realmId?: string };
-          if (body.realmId) {
-            const access = workspaces.verifySessionRealmAccess(session, body.realmId);
-            if (!access.ok) {
-              json(res, 403, { error: `Cross-chat Realm access denied: ${access.error}` });
-              return true;
-            }
-          }
-          const result = await realms.rollback(id, String(body.transactionId ?? ""), body.paths ?? []);
-          json(res, 200, result);
-          return true;
-        }
-
-        if (action === "refresh" && req.method === "POST") {
-          const body = (await readJson(req).catch(() => ({}))) as { force?: boolean; realmId?: string };
-          const id = resolveRealmId();
-          if (body.realmId) {
-            const access = workspaces.verifySessionRealmAccess(session, body.realmId);
-            if (!access.ok) {
-              json(res, 403, { error: `Cross-chat Realm access denied: ${access.error}` });
-              return true;
-            }
-          }
-          if (!id) {
-            const created = await realms.create(binding.folder);
-            await workspaces.setRealmId(session, created.realm_id);
-            json(res, 200, { refreshed: true, realmId: created.realm_id });
-            return true;
-          }
-          const currentReview = await realms.snapshot(id, 0);
-          if (currentReview.total > 0 && !body.force) {
-            json(res, 409, {
-              error: `Realm has ${currentReview.total} uncommitted changes. Review and apply or pass force: true to discard.`,
-              total: currentReview.total,
-            });
-            return true;
-          }
-          if (binding.shared) {
-            json(res, 409, { error: "This Realm is shared by its project. Detach each chat, then discard the shared Realm explicitly from workspace management." });
-            return true;
-          }
-          await realms.destroy(id);
-          await workspaces.clearRealmId(session);
-          const fresh = await realms.create(binding.folder);
-          await workspaces.setRealmId(session, fresh.realm_id);
-          json(res, 200, { refreshed: true, realmId: fresh.realm_id });
-          return true;
-        }
-
-        if (!action && req.method === "DELETE") {
-          if (binding.shared) {
-            json(res, 409, { error: "This Realm is shared by its project. Remove its shared membership before discarding it." });
-            return true;
-          }
-          const id = resolveRealmId();
-          if (id) await realms.destroy(id);
-          await workspaces.clearRealmId(session);
-          json(res, 200, { ok: true });
-          return true;
-        }
-      }
-
-      const exportMatch = /^\/api\/workspaces\/bindings\/([^/]+)\/export-asset$/.exec(p);
-      if (exportMatch && req.method === "POST") {
-        const session = decodeURIComponent(exportMatch[1]!);
-        const binding = workspaces.getBinding(session);
-        if (!binding) {
-          json(res, 404, { error: `No workspace binding for session '${session}'` });
-          return true;
-        }
-        if (binding.accessState !== "admitted") {
-          json(res, 403, { error: `Workspace access is ${binding.accessState}` });
-          return true;
-        }
-        const body = (await readJson(req)) as { assetId?: string; targetPath?: string };
-        const assetId = String(body.assetId ?? "").trim();
-        const targetPath = String(body.targetPath ?? "").trim();
-        if (!assetId) {
-          json(res, 400, { error: "Asset ID is required" });
-          return true;
-        }
-        if (!targetPath || targetPath.startsWith("/") || targetPath.split(/[\\/]/).includes("..")) {
-          json(res, 400, { error: "Target path must be a relative path inside the workspace" });
-          return true;
-        }
-
-        let sourceFile: string | undefined;
-        const mediaAsset = media.getAsset(assetId);
-        if (mediaAsset) {
-          sourceFile = mediaAsset.filePath;
-        } else {
-          const attachFile = path.join(dataDir, "attachments", session, assetId);
-          if (existsSync(attachFile)) {
-            sourceFile = attachFile;
-          }
-        }
-        if (!sourceFile || !existsSync(sourceFile)) {
-          json(res, 404, { error: `Asset '${assetId}' not found` });
-          return true;
-        }
-
-        let destRoot: string;
-        let id: string | undefined;
-        if (binding.mode === "direct") {
-          destRoot = binding.folder;
-        } else {
-          id = binding.realmId ?? (binding.projectId && binding.shared ? workspaces.getProject(binding.projectId)?.sharedRealmId : undefined);
-          if (!id) {
-            const created = await realms.create(binding.folder);
-            id = created.realm_id;
-            await workspaces.setRealmId(session, id);
-          }
-          destRoot = path.join(dataDir, "sandbox", "realms", id, "workspace");
-        }
-        const destFile = path.join(destRoot, targetPath);
-        const normalizedDest = path.resolve(destFile);
-        if (!normalizedDest.startsWith(destRoot + path.sep) && normalizedDest !== destRoot) {
-          json(res, 400, { error: "Target path escapes workspace boundary" });
-          return true;
-        }
-
-        mkdirSync(path.dirname(destFile), { recursive: true, mode: 0o700 });
-        const bytes = readFileSync(sourceFile);
-        writeFileSync(destFile, bytes, { mode: 0o644 });
-
-        const hash = createHash("sha256").update(bytes).digest("hex");
-        json(res, 200, {
-          ok: true,
-          path: targetPath,
-          bytes: bytes.length,
-          sha256: hash,
-          realmId: id,
-          mode: binding.mode,
-        });
-        return true;
-      }
-
-      const importMatch = /^\/api\/workspaces\/bindings\/([^/]+)\/import-file$/.exec(p);
-      if (importMatch && req.method === "POST") {
-        const session = decodeURIComponent(importMatch[1]!);
-        const binding = workspaces.getBinding(session);
-        if (!binding) {
-          json(res, 404, { error: `No workspace binding for session '${session}'` });
-          return true;
-        }
-        if (binding.accessState !== "admitted") {
-          json(res, 403, { error: `Workspace access is ${binding.accessState}` });
-          return true;
-        }
-        const body = (await readJson(req)) as { relativePath?: string; name?: string };
-        const relPath = String(body.relativePath ?? "").trim();
-        if (!relPath || relPath.startsWith("/") || relPath.split(/[\\/]/).includes("..")) {
-          json(res, 400, { error: "Relative path inside workspace is required" });
-          return true;
-        }
-
-        let sourceRoot = binding.folder;
-        if (binding.mode !== "direct") {
-          const id = binding.realmId ?? (binding.projectId && binding.shared ? workspaces.getProject(binding.projectId)?.sharedRealmId : undefined);
-          if (id) {
-            const realmDir = path.join(dataDir, "sandbox", "realms", id, "workspace");
-            if (existsSync(realmDir)) sourceRoot = realmDir;
-          }
-        }
-
-        const sourceFile = path.join(sourceRoot, relPath);
-        const resolved = path.resolve(sourceFile);
-        if (!resolved.startsWith(sourceRoot + path.sep) && resolved !== sourceRoot) {
-          json(res, 400, { error: "Path escapes workspace boundary" });
-          return true;
-        }
-        if (!existsSync(sourceFile)) {
-          json(res, 404, { error: `File '${relPath}' not found` });
-          return true;
-        }
-
-        const st = statSync(sourceFile);
-        if (!st.isFile()) {
-          json(res, 400, { error: `Path '${relPath}' is not a regular file` });
-          return true;
-        }
-        if (st.size > 20_000_000) {
-          json(res, 413, { error: "File exceeds the 20 MB media import limit" });
-          return true;
-        }
-
-        const bytes = readFileSync(sourceFile);
-        const hash = createHash("sha256").update(bytes).digest("hex");
-
-        let detectedType: string;
-        try {
-          detectedType = mediaType(bytes);
-        } catch {
-          if (bytes.subarray(0, 5).toString("latin1") === "%PDF-") {
-            detectedType = "application/pdf";
-          } else if (/\.(csv|tsv)$/i.test(relPath)) {
-            detectedType = "text/csv";
-          } else if (/\.json$/i.test(relPath)) {
-            detectedType = "application/json";
-          } else if (/\.md$/i.test(relPath)) {
-            detectedType = "text/markdown";
-          } else if (/\.txt$/i.test(relPath)) {
-            detectedType = "text/plain";
-          } else {
-            json(res, 415, { error: "Unsupported file format. Supported: PNG, JPEG, WebP, WAV, MP3, MP4, WebM, PDF, CSV, JSON, Markdown, Text." });
-            return true;
-          }
-        }
-
-        let asset: MediaAsset | undefined;
-        if (/^(image|audio|video)\//.test(detectedType)) {
-          asset = media.saveAssetBytes(bytes, body.name ?? path.basename(relPath));
-        } else {
-          const attachFolder = path.join(dataDir, "attachments", session);
-          mkdirSync(attachFolder, { recursive: true, mode: 0o700 });
-          const attachFile = path.join(attachFolder, `${randomUUID()}${path.extname(relPath) || ".txt"}`);
-          writeFileSync(attachFile, bytes, { mode: 0o600 });
-          asset = {
-            id: path.basename(attachFile),
-            type: detectedType,
-            name: body.name ?? path.basename(relPath),
-            bytes: bytes.length,
-            created: new Date().toISOString(),
-          };
-        }
-
-        json(res, 200, {
-          ok: true,
-          asset,
-          format: detectedType,
-          bytes: bytes.length,
-          sha256: hash,
-        });
-        return true;
-      }
-
-      const bindingMatch = /^\/api\/workspaces\/bindings\/([^/]+)$/.exec(p);
-      if (bindingMatch) {
-        const session = decodeURIComponent(bindingMatch[1]!);
-        if (req.method === "GET") {
-          const binding = workspaces.getBinding(session);
-          if (!binding) json(res, 404, { error: `No workspace binding for session '${session}'` });
-          else json(res, 200, binding);
-          return true;
-        }
-        if (req.method === "POST") {
-          const body = (await readJson(req)) as Record<string, unknown>;
-          const binding = await workspaces.bindSession(session, {
-            folder: String(body.folder ?? ""),
-            projectId: typeof body.projectId === "string" ? body.projectId : undefined,
-            mode: body.mode as any,
-            shareProjectRealm: typeof body.shareProjectRealm === "boolean" ? body.shareProjectRealm : undefined,
-          });
-          json(res, 200, binding);
-          return true;
-        }
-        if (req.method === "DELETE") {
-          // Detach authority while preserving any retained working copy.
-          const ok = await workspaces.unbindSession(session);
-          json(res, 200, { ok });
-          return true;
-        }
-      }
-
-      if (p === "/api/workspaces/validate-folder" && req.method === "POST") {
-        const body = (await readJson(req)) as Record<string, unknown>;
-        const result = validateWorkspaceFolder(String(body.folder ?? ""), dataDir);
-        json(res, 200, { ok: true, ...result });
-        return true;
-      }
-
-      if (p === "/api/workspaces/pick-folder" && req.method === "POST") {
-        if (process.platform === "darwin") {
-          try {
-            const { execFile } = await import("node:child_process");
-            const { promisify } = await import("node:util");
-            const run = promisify(execFile);
-            const { stdout } = await run("osascript", ["-e", 'POSIX path of (choose folder with prompt "Select Project Folder")']);
-            const folder = stdout.trim().replace(/\/+$/, "");
-            json(res, 200, { ok: true, folder: folder || null });
-            return true;
-          } catch {
-            json(res, 200, { ok: true, folder: null });
-            return true;
-          }
-        }
-        json(res, 200, { ok: true, folder: null });
-        return true;
-      }
-
-      json(res, 404, { error: "Unknown workspace route" });
-      return true;
+        json(res, 200, { refreshed: true, ...((await opts.sandbox!({ session, op: "realm_create", args: [] })) as object) });
+      } else json(res, 405, { error: "Unsupported Realm review action" });
     } catch (err) {
       json(res, 400, { error: (err as Error).message });
-      return true;
     }
+    return true;
   }
 
   const handle = async (req: HostRequest, res: HostResponse) => {
@@ -1422,8 +961,6 @@ ${skills.index()}`;
     url: server ? `http://127.0.0.1:${port}` : "vak://localhost",
     pool,
     apps,
-    workspaces,
-    realms,
     async shutdown() {
       server?.close();
       await pool.shutdown(2000);

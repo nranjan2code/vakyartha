@@ -10,7 +10,6 @@ import { PROVIDER_SETTINGS, type ProviderSetting } from "@vak/providers";
 import { CHANNELS } from "./channels.ts";
 import { VOICE_KEYS } from "./voice/index.ts";
 import { MEDIA_KEYS } from "./media/catalog.ts";
-import { validateSandboxWorkspace } from "./sandbox-status.ts";
 
 export interface Setting extends Omit<ProviderSetting, "group" | "provider"> {
   group: ProviderSetting["group"] | "channel" | "voice" | "media" | "app";
@@ -20,8 +19,6 @@ export interface Setting extends Omit<ProviderSetting, "group" | "provider"> {
 
 /** The registry declares every provider variable, each channel and voice provider its secrets; the screen lists exactly those. */
 export const SETTINGS: Setting[] = [
-  { name: "VAK_SANDBOX_ENABLED", label: "OS-level process isolation", secret: false, group: "app", owner: "sandbox", placeholder: "true or false" },
-  { name: "VAK_SANDBOX_WORKSPACE", label: "Sandbox execution project folder", secret: false, group: "app", owner: "sandbox", placeholder: "/Users/you/Projects/example" },
   { name: "TYPESAFE_API_KEY", label: "TypeSafe AI API key", secret: true, group: "main", owner: "typesafe" },
   { name: "TYPESAFE_BASE_URL", label: "TypeSafe AI endpoint", secret: false, group: "more", owner: "typesafe", placeholder: "https://api.typesafe.ai/v1" },
   ...PROVIDER_SETTINGS.map(({ provider, ...s }) => ({ ...s, owner: provider })),
@@ -204,10 +201,6 @@ export class Settings {
       // A newline would start another variable in the file; quotes and spaces
       // never occur in API keys and would break the Keychain command line.
       if (/[\r\n]/.test(v) || (s.secret && /[\s"\\]/.test(v))) throw new SettingsError(`${s.label} contains characters a key never has`);
-      if (name === "VAK_SANDBOX_ENABLED" && v !== "true" && v !== "false") throw new SettingsError("Process isolation must be true or false.");
-      if (name === "VAK_SANDBOX_WORKSPACE" && v) {
-        try { validateSandboxWorkspace(v); } catch (error) { throw new SettingsError((error as Error).message); }
-      }
       changes.push([s, v]);
     }
     const file = readEnvFile(this.file);

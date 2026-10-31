@@ -8,6 +8,7 @@ import { Skills } from "../sidecar/skills.ts";
 import { generateSkillPackage, suggestSkillElement } from "../sidecar/skills-copilot.ts";
 import { evaluateSkillPrompts } from "../sidecar/skills-eval.ts";
 import { runSkillScript } from "../sidecar/skills-sandbox.ts";
+import { helperSandbox } from "./support/sandbox-run.ts";
 
 test("Skill Studio: savePackage and getPackage persist full multi-file packages", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "vak-studio-test-"));
@@ -177,7 +178,8 @@ test("Skill Studio: rehearsal fails closed without authorized OS containment", a
     skills.savePackage("test-runner-skill", { text, files: [{ path: "scripts/hello.sh", text: script }] });
     const refused = await runSkillScript(skills, "test-runner-skill", "scripts/hello.sh");
     assert.notEqual(refused.exitCode, 0); assert.match(refused.error!, /Enable sandbox/);
-    const options = { binaryPath: path.join(dir, "missing-helper"), enabled: () => true, authorized: () => true, scriptSha256: createHash("sha256").update(script).digest("hex") };
+    process.env.VAK_DATA_DIR = tmpdir();
+    const options = { sandbox: helperSandbox(path.join(dir, "missing-helper")), authorized: () => true, scriptSha256: createHash("sha256").update(script).digest("hex") };
     const missing = await runSkillScript(skills, "test-runner-skill", "scripts/hello.sh", [], options);
     assert.notEqual(missing.exitCode, 0); assert.match(missing.error!, /helper|macOS/);
     const changed = await runSkillScript(skills, "test-runner-skill", "scripts/hello.sh", [], { ...options, scriptSha256: "0".repeat(64) });
@@ -192,6 +194,7 @@ test("Skill Studio: saved drafts run only through the real sandbox and cannot re
   try {
     const skills = new Skills(dir);
     const binaryPath = path.resolve("../sandbox/target/debug/vaksb");
+    process.env.VAK_DATA_DIR = tmpdir();
     assert.ok(existsSync(binaryPath), "Build the sandbox helper before this integration test");
     const text = "---\nname: test-runner-skill\ndescription: Test scripts\n---\nInstructions";
     const outside = path.join(dir, "outside"); writeFileSync(outside, "outside-canary");
@@ -199,7 +202,7 @@ test("Skill Studio: saved drafts run only through the real sandbox and cannot re
     skills.savePackage("test-runner-skill", { text, files: [{ path: "scripts/hello.sh", text: "echo published" }] });
     skills.saveDraft("test-runner-skill", { text, files: [{ path: "scripts/hello.sh", text: script }, { path: "references/value.txt", text: "supporting-file" }] });
     const result = await runSkillScript(skills, "test-runner-skill", "scripts/hello.sh", [], {
-      binaryPath, enabled: () => true, authorized: () => true, scriptSha256: createHash("sha256").update(script).digest("hex"),
+      sandbox: helperSandbox(binaryPath), authorized: () => true, scriptSha256: createHash("sha256").update(script).digest("hex"),
     });
     assert.equal(result.exitCode, 0, result.stderr);
     assert.equal(result.source, "saved-draft"); assert.match(result.stdout, /draft-receipt/); assert.match(result.stdout, /supporting-file/);

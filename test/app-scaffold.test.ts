@@ -9,6 +9,7 @@ import { parseAppManifest } from '../shared/app-manifest.ts';
 import { Skills } from '../sidecar/skills.ts';
 import { SandboxPoolManager } from '../sidecar/sandbox-pool/pool-manager.ts';
 import { AppRegistry } from '../sidecar/sandbox-pool/app-registry.ts';
+import { helperRun } from "./support/sandbox-run.ts";
 
 test('Studio starter includes coherent in-package docs and an honest executable surface',()=>{
   const {manifest,files}=createAppScaffold('My New App');assert.equal(parseAppManifest(manifest).id,'my-new-app');
@@ -32,7 +33,7 @@ test('app authoring/maintenance templates load through the real enabled skill me
   }finally{rmSync(dir,{recursive:true,force:true});}
 });
 test('documented Studio starter publishes and persists actual sandbox counter behavior', {skip:process.platform!=='darwin'},async()=>{
-  const dir=mkdtempSync(path.join(tmpdir(),'vak-starter-')),pool=new SandboxPoolManager({sandboxBin:path.resolve('../sandbox/target/debug/vaksb')}),apps=new AppRegistry({dataDir:dir,pool});
+  const dir=mkdtempSync(path.join(tmpdir(),'vak-starter-')),pool=new SandboxPoolManager({run:helperRun(path.resolve('../sandbox/target/debug/vaksb'))}),apps=new AppRegistry({dataDir:dir,pool});
   try{await apps.init();const {manifest,files}=createAppScaffold('method-check');await apps.installApp(manifest,files);
     for(const value of [1,2]){const result=await apps.dispatchAction(manifest.id,'increment',null,'increment',apps.getApp(manifest.id)!.revision);assert.equal(result.surfaces['method-check-main'].data.count,value);}
     apps.reloadApps();assert.equal(apps.getApp(manifest.id)!.state.count,2);

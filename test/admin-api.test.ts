@@ -4,10 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { startAppServer } from "../sidecar/server.ts";
+import { helperSandbox } from "./support/sandbox-run.ts";
 
 test("app API stages, publishes and executes real code; invalid targets and stale updates fail", { skip: process.platform !== "darwin" }, async () => {
   const tmp = mkdtempSync(path.join(tmpdir(), "vak-app-api-"));
-  const app = await startAppServer({ dataDir: tmp, access: "open", transport: "stdio", sandboxBin: process.env.VAK_TEST_SANDBOX_BIN ?? path.resolve("../sandbox/target/debug/vaksb"), keychainService: "com.nranjan2code.vakyartha.admin-api-test" });
+  process.env.VAK_DATA_DIR = tmpdir();
+  const app = await startAppServer({ dataDir: tmp, access: "open", transport: "stdio", sandbox: helperSandbox(process.env.VAK_TEST_SANDBOX_BIN ?? path.resolve("../sandbox/target/debug/vaksb")), keychainService: "com.nranjan2code.vakyartha.admin-api-test" });
   const request = (route: string, method = "GET", body?: unknown) => app.request(new Request(`http://localhost${route}`, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }));
   try {
     const manifest = { id: "api-app", name: "API app", version: "1.0.0", entrypoints: { backend: "worker.ts" } };
