@@ -2,9 +2,9 @@
 // Applies decision-scoring outcomes to dynamically optimize chat payloads:
 // eliminates context bloating, prunes unused tool schemas, and bounds step limits.
 
-import { prefs } from "../core.ts";
+import { api, prefs } from "../core.ts";
 import { HeuristicDecisionProvider } from "./heuristic.ts";
-import { DEFAULT_DECISION_TIMEOUT_MS, DEFAULT_OLLAMA_DECISION_MODEL, OllamaDecisionProvider } from "./providers/ollama.ts";
+import { DEFAULT_DECISION_TIMEOUT_MS, DEFAULT_OLLAMA_DECISION_MODEL, OllamaDecisionProvider, type SystemOneResponse } from "./providers/ollama.ts";
 import { DEFAULT_OPENROUTER_MODEL, OpenRouterDecisionProvider } from "./providers/openrouter.ts";
 import { DEFAULT_OPENAI_MODEL, OpenAIDecisionProvider } from "./providers/openai.ts";
 import { DEFAULT_TYPESAFE_MODEL, TypeSafeDecisionProvider } from "./providers/typesafe.ts";
@@ -74,6 +74,8 @@ export function saveDecisionConfig(cfg: Partial<DecisionConfig>): void {
 export function getActiveDecisionProvider(config: DecisionConfig = getDecisionConfig()): DecisionProvider {
   if (config.providerId === "ollama") {
     ollamaProvider.model = config.modelId || DEFAULT_OLLAMA_DECISION_MODEL;
+    // The app window cannot reach Ollama directly; the engine makes the call on the approved path.
+    if (typeof window !== "undefined") ollamaProvider.post = (body, signal) => api<SystemOneResponse>("/api/decision/systemone", { method: "POST", body: JSON.stringify(body), signal });
     return ollamaProvider;
   }
   if (config.providerId === "typesafe") {
@@ -129,6 +131,7 @@ export async function shapeTurn(
   const provider = getActiveDecisionProvider(config);
   const state: DecisionState = {
     message: payload.message,
+    ...(typeof payload.session === "string" ? { sessionId: payload.session } : {}),
     activeSurfaceKind: payload.surfaceKind ?? payload.surfaces?.[0]?.componentTypes?.[0],
     activeSurfaces: payload.surfaces,
     activeSkills: payload.skills,

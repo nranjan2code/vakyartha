@@ -131,6 +131,8 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
         operation = "ollama_show";
       } else if (method === "POST" && url.pathname === "/api/chat") {
         operation = "ollama_chat";
+      } else if (method === "POST" && url.pathname === "/v1/systemone") {
+        operation = "ollama_systemone";
       } else {
         return Promise.reject(new Error("Unsupported local model operation"));
       }

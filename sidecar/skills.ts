@@ -671,7 +671,7 @@ export class Skills {
 
   /** One selection generation inside the existing counted tool loop. Answer
    * tools are withheld until selection; no keyword routing or hidden request. */
-  provider(provider: Provider): Provider {
+  provider(provider: Provider, greeting?: (session?: string) => boolean): Provider {
     let selected = false;
     const skills = this;
     return { ...provider, async *stream(request) {
@@ -685,7 +685,9 @@ export class Skills {
       const userMsgs = request.messages.filter((m) => m.role === "user" && !m.content.startsWith("[engine]"));
       const lastUserMsg = userMsgs[userMsgs.length - 1]?.content.trim() ?? "";
 
-      if (!request.responseSchema && isSalutationMessage(lastUserMsg)) {
+      // The turn's decision model recognises greetings in any language; the
+      // pattern check still covers turns that had no decision step.
+      if (!request.responseSchema && (isSalutationMessage(lastUserMsg) || greeting?.(request.execution?.sessionId))) {
         selected = true;
         // No tools are offered, so the surface grammar and surface-design body
         // describe calls the model cannot make; only the caller's own instructions apply.

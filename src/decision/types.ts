@@ -82,6 +82,9 @@ export interface DecisionState {
   /** The current user message */
   readonly message: string;
 
+  /** The chat session, for hosts that route the decision call per session */
+  readonly sessionId?: string;
+
   /** Summary or content of the previous turn, if any */
   readonly lastTurnSummary?: string;
 

@@ -19,7 +19,7 @@ interface SystemOneQuestion {
   criteria: Record<string, string>;
 }
 
-interface SystemOneResponse {
+export interface SystemOneResponse {
   model: string;
   answers: Record<
     string,
@@ -42,6 +42,8 @@ export class OllamaDecisionProvider implements DecisionProvider {
   readonly label = "Ollama SystemOne: d1-omni / laya";
   readonly host: string;
   model: string;
+  /** Replaces the direct HTTP call where the caller cannot reach Ollama itself. */
+  post?: (body: { model: string; state: string; questions: Record<string, SystemOneQuestion>; session?: string }, signal: AbortSignal) => Promise<SystemOneResponse>;
 
   constructor(host: string = DEFAULT_OLLAMA_HOST, model: string = DEFAULT_OLLAMA_DECISION_MODEL) {
     this.host = host;
@@ -53,16 +55,29 @@ export class OllamaDecisionProvider implements DecisionProvider {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    // 1. General-purpose, domain-agnostic intent question
+    const hasActiveSurface = Boolean(state.activeSurfaceKind || (state.activeSurfaces && state.activeSurfaces.length > 0));
+    // 1. General-purpose, domain-agnostic intent question. Canvas refinement is
+    // offered only with a surface on screen: otherwise the small model files
+    // unfamiliar scripts under it (a Devanagari greeting was "canvas").
     const questions: Record<string, SystemOneQuestion> = {
       intent: {
         type: "choice",
         instructions: "Classify the primary intent of the user message",
         criteria: {
-          salutation: "Simple casual greeting, gratitude, or chit-chat (e.g. hi, thanks, ok, bye)",
-          canvas_refinement: "Visual styling, changing chart kind, sorting table, or UI layout tweak on an existing active canvas surface",
+          salutation: "Only a greeting, thanks, farewell, acknowledgement or small talk, in any language or script, with no request",
+          ...(hasActiveSurface ? { canvas_refinement: "Visual styling, changing chart kind, sorting table, or UI layout tweak on an existing active canvas surface" } : {}),
           scoped_tool_task: "A concrete, bounded request requiring external tool execution, reading files, data retrieval, or API action",
           complex_reasoning: "Open-ended analysis, synthesis, deep planning, drafting, multi-step problem solving, or creative reasoning",
+        },
+      },
+      // Independent of intent: a greeting that also asks something ("hi, what's
+      // the weather?") must keep its tools, whatever language it is in.
+      asks: {
+        type: "choice",
+        instructions: "Does the message ask for information, an action, or content, beyond social pleasantries? Judge meaning in any language.",
+        criteria: {
+          yes: "It asks a question or requests information, an action, or content",
+          no: "It is only a greeting, thanks, farewell or pleasantry",
         },
       },
     };
@@ -91,22 +106,22 @@ export class OllamaDecisionProvider implements DecisionProvider {
         ? `Active surface on canvas: ${state.activeSurfaceKind}.\nUser request: ${state.message}`
         : state.message;
 
-      const response = await fetch(`${this.host}/v1/systemone`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model: this.model,
-          state: contextText,
-          questions,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Ollama /v1/systemone responded with HTTP ${response.status}`);
+      const request = { model: this.model, state: contextText, questions };
+      let data: SystemOneResponse;
+      if (this.post) {
+        data = await this.post({ ...request, ...(state.sessionId ? { session: state.sessionId } : {}) }, controller.signal);
+      } else {
+        const response = await fetch(`${this.host}/v1/systemone`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify(request),
+        });
+        if (!response.ok) {
+          throw new Error(`Ollama /v1/systemone responded with HTTP ${response.status}`);
+        }
+        data = (await response.json()) as SystemOneResponse;
       }
-
-      const data = (await response.json()) as SystemOneResponse;
       if (data.error) throw new Error(data.error);
 
       const intentAnswer = data.answers?.intent;
@@ -116,7 +131,6 @@ export class OllamaDecisionProvider implements DecisionProvider {
       const confidence = typeof intentAnswer.confidence === "number" ? intentAnswer.confidence : 0.85;
 
       // Guard against Ghost Canvas Refinement: UI refinement requires an active surface snapshot on screen
-      const hasActiveSurface = Boolean(state.activeSurfaceKind || (state.activeSurfaces && state.activeSurfaces.length > 0));
       if (intent === "canvas_refinement" && !hasActiveSurface) {
         intent = state.availableTools.length > 0 ? "scoped_tool_task" : "complex_reasoning";
       }
@@ -125,7 +139,7 @@ export class OllamaDecisionProvider implements DecisionProvider {
       // A pure salutation cannot contain matched tool stems or substantive instructions
       if (intent === "salutation") {
         const matched = matchDynamicTools(state.message, state.availableTools);
-        if (matched.length > 0 || state.message.trim().length > 60) {
+        if (matched.length > 0 || state.message.trim().length > 60 || data.answers?.asks?.choice !== "no") {
           intent = matched.length > 0 ? "scoped_tool_task" : "complex_reasoning";
         }
       }
@@ -170,6 +184,8 @@ export class OllamaDecisionProvider implements DecisionProvider {
         stepLimit: intent === "salutation" ? 4 : intent === "canvas_refinement" ? 8 : intent === "scoped_tool_task" ? 12 : 24,
         toolBudget: intent === "salutation" || intent === "canvas_refinement" ? 0 : intent === "scoped_tool_task" ? 4 : 8,
         suggestedTier: intent === "salutation" || intent === "canvas_refinement" ? "local_fast" : "primary",
+        reasoningEffort: intent === "salutation" || intent === "canvas_refinement" ? "low" : intent === "scoped_tool_task" ? "medium" : "high",
+        think: intent === "complex_reasoning",
         reason: `Evaluated by local decision model ${data.model ?? this.model} (Single-pass probability: ${Math.round(confidence * 100)}%).`,
         latencyMs: elapsed,
         decisionUsage: data.usage

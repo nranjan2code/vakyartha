@@ -872,6 +872,7 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
 
         const shaped = await shapeTurn({
           message: req.message,
+          session: turnSession,
           history: priorHistory,
           surfaceKind: liveSurfaces[0]?.componentTypes[0] ?? liveSurfaces[0]?.id,
           surfaces: liveSurfaces,

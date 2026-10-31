@@ -664,3 +664,13 @@ test("skill selection never inherits a deep-reasoning turn's thinking", async ()
   assert.deepEqual(selection?.extra, { options: { num_ctx: 8192 }, think: false });
   assert.ok(events.some(e => e.type === "tool_start" && e.name === "use_skill"));
 });
+
+test("skills.provider: the turn's greeting verdict takes the fast path for words no pattern knows", async () => {
+  const manager = new Skills(dir());
+  let calls = 0, tools: unknown;
+  const provider: Provider = { id: "mock", async *stream(req) { calls++; tools = req.tools; yield { type: "text", delta: "Namaste!" }; yield { type: "done", stop: "end" }; } };
+  const wrapped = manager.provider(provider, (session) => session === "greeting-chat");
+  for await (const _ of wrapped.stream({ model: "test", system: manager.index(), execution: { sessionId: "greeting-chat", runId: "run-1" }, messages: [{ role: "user", content: "नमस्ते" }] })) { /* drain */ }
+  assert.equal(calls, 1, "no selection round for a greeting");
+  assert.equal(tools, undefined);
+});

@@ -641,3 +641,29 @@ test("shapeTurn: deterministically sorts tools and preserves toolset for prefix-
   assert.equal(ollamaResult.payload.tools?.length, 1);
   assert.equal(ollamaResult.payload.tools?.[0]?.name, "filesystem_read");
 });
+
+test("OllamaDecisionProvider: a greeting needs both the intent and no request, in any script", async () => {
+  const provider = new OllamaDecisionProvider(DEFAULT_OLLAMA_HOST, "d1-omni:latest");
+  const sent: Array<{ questions: Record<string, { criteria: Record<string, string> }>; session?: string }> = [];
+  const answer = (intent: string, asks: string) => async (body: (typeof sent)[number]) => {
+    sent.push(body);
+    return { model: "d1-omni:latest", answers: { intent: { type: "choice" as const, choice: intent, confidence: 0.9, probabilities: {} }, asks: { type: "choice" as const, choice: asks, confidence: 0.9, probabilities: {} } }, usage: { input_tokens: 40, output_tokens: 0 } };
+  };
+
+  provider.post = answer("salutation", "no");
+  const greeting = await provider.classifyTurn({ message: "नमस्ते", sessionId: "chat-1", availableTools: ["time__now"] });
+  assert.equal(greeting.intent, "salutation");
+  assert.equal(greeting.think, false);
+  assert.equal(greeting.reasoningEffort, "low");
+  assert.deepEqual(greeting.allowedToolNamespaces, []);
+  assert.equal(sent[0]?.session, "chat-1", "the engine route gets the chat for its execution identity");
+  assert.ok(!("canvas_refinement" in sent[0]!.questions.intent!.criteria), "no surface on screen, so no canvas choice to misfile into");
+
+  provider.post = answer("salutation", "yes");
+  const compound = await provider.classifyTurn({ message: "hi, what's the weather in Paris?", availableTools: ["time__now"] });
+  assert.notEqual(compound.intent, "salutation", "a greeting that also asks keeps its tools");
+
+  provider.post = answer("canvas_refinement", "yes");
+  await provider.classifyTurn({ message: "make it blue", activeSurfaceKind: "chart", availableTools: [] });
+  assert.ok("canvas_refinement" in sent.at(-1)!.questions.intent!.criteria);
+});

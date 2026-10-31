@@ -87,7 +87,7 @@ impl ProviderRequest {
             "ollama" => {
                 matches!(
                     self.operation.as_str(),
-                    "ollama_chat" | "ollama_tags" | "ollama_show"
+                    "ollama_chat" | "ollama_tags" | "ollama_show" | "ollama_systemone"
                 ) && self.route_model.is_none()
             }
             "lmstudio" => {
@@ -340,6 +340,11 @@ async fn resolve_provider_request(
             "ollama_chat" => (
                 reqwest::Method::POST,
                 "http://127.0.0.1:11434/api/chat".to_string(),
+                Some(request.body.clone()),
+            ),
+            "ollama_systemone" => (
+                reqwest::Method::POST,
+                "http://127.0.0.1:11434/v1/systemone".to_string(),
                 Some(request.body.clone()),
             ),
             _ => return Err("Unsupported local model operation".to_string()),
@@ -1090,6 +1095,10 @@ mod tests {
             r#"{"v":2,"id":"gen-show","type":"provider_request","provider":"ollama","operation":"ollama_show","body":"{\"model\":\"qwen3.5:4b-mlx\"}","operationId":"root-op-1","attempt":0}"#,
         ).unwrap();
         assert!(ollama_show.validate());
+        let ollama_systemone: ProviderRequest = serde_json::from_str(
+            r#"{"v":2,"id":"gen-decision","type":"provider_request","provider":"ollama","operation":"ollama_systemone","body":"{}","operationId":"root-op-1","attempt":0,"sessionId":"session-1","runId":"decision-1"}"#,
+        ).unwrap();
+        assert!(ollama_systemone.validate());
         let openai_models: ProviderRequest = serde_json::from_str(
             r#"{"v":2,"id":"gen-models","type":"provider_request","provider":"openai","operation":"models","body":"","operationId":"root-op-1","attempt":0}"#,
         ).unwrap();

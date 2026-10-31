@@ -236,6 +236,32 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
     return true;
   }
 
+  /**
+   * The turn's decision step on the local decision model. The window cannot
+   * reach Ollama itself, so the call takes the same approved path as chat.
+   */
+  async function decisionRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
+    if (url.pathname !== "/api/decision/systemone" || req.method !== "POST") return false;
+    const body = await readJson(req);
+    const id = /^[A-Za-z0-9_-]{1,128}$/;
+    const payload = JSON.stringify({ model: body.model, state: body.state, questions: body.questions });
+    if (typeof body.model !== "string" || !/^[\w.:/-]{1,128}$/.test(body.model) || body.model.includes("..") || typeof body.state !== "string" || body.state.length > 8000
+      || !body.questions || typeof body.questions !== "object" || payload.length > 32_000 || typeof body.session !== "string" || !id.test(body.session)) {
+      json(res, 400, { error: "Invalid decision request" });
+      return true;
+    }
+    const init = { method: "POST", headers: { "content-type": "application/json" }, body: payload, signal: AbortSignal.timeout(5000) };
+    try {
+      const out = opts.providerTransport
+        ? await opts.providerTransport("ollama", "http://127.0.0.1:11434/v1/systemone", init, { operationId: randomUUID(), attempt: 0, sessionId: body.session, runId: `decision-${randomUUID()}` })
+        : await fetch("http://127.0.0.1:11434/v1/systemone", init);
+      json(res, out.ok ? 200 : 502, out.ok ? await out.json() : { error: `Decision model responded with HTTP ${out.status}` });
+    } catch (err) {
+      json(res, 502, { error: (err as Error).message });
+    }
+    return true;
+  }
+
   const attachRoute = attachmentsRoute(path.join(dataDir, "attachments"));
   const voiceRoute = voiceRoutes(voiceDir, log, () => modelProviders());
 
@@ -344,6 +370,8 @@ ${skills.index()}`;
   const integrationRevisions = new Map<string, number>();
   /** Integration tools a chat turn's decision step kept, by session, for the length of that turn. */
   const turnToolScope = new Map<string, Set<string>>();
+  /** Sessions whose current turn the decision model judged a pure greeting. */
+  const greetingTurns = new Set<string>();
   /** Model providers for turns and voice answers alike: task spending checks and FinOps see every request. */
   function modelProviders(wrapSkills = true): ProviderEntry[] {
     // Bind admission checks and provider construction to the same configuration.
@@ -360,7 +388,7 @@ ${skills.index()}`;
         await tasks?.beforeModelRequest(entry.id, request.model);
         yield* provider.stream(tasks?.inTask() ? { ...request, maxTokens: Math.min(request.maxTokens ?? 4096, 4096) } : request);
       } };
-      return wrapSkills ? skills.provider(guarded) : guarded;
+      return wrapSkills ? skills.provider(guarded, (session) => Boolean(session && greetingTurns.has(session))) : guarded;
     } }));
   }
   const host = createHost({
@@ -387,7 +415,7 @@ ${skills.index()}`;
     origins: ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://localhost:1420", "http://127.0.0.1:1420"],
     // Outside agents get a link to watch what they projected (only when this server serves the UI).
     viewerUrl: opts.uiDir ? (session) => `http://127.0.0.1:${listening}/?session=${encodeURIComponent(session)}` : undefined,
-    routes: async (req, res, url) => (await attachRoute(req, res, url)) || (await media.route(req, res, url)) || (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await skillsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await voiceRoute(req, res, url)) || (await adminFleetRoute(req, res, url)) || (await appsRoute(req, res, url)) || (await realmReviewRoute(req, res, url)) || infoRoute(req, res, url),
+    routes: async (req, res, url) => (await attachRoute(req, res, url)) || (await media.route(req, res, url)) || (await tasksRoute(req, res, url)) || (await finopsRoute(req, res, url)) || (await skillsRoute(req, res, url)) || (await settingsRoute(req, res, url)) || (await channelsRoute(req, res, url)) || (await integrationsRoute(req, res, url)) || (await clientLogRoute(req, res, url)) || (await decisionRoute(req, res, url)) || (await voiceRoute(req, res, url)) || (await adminFleetRoute(req, res, url)) || (await appsRoute(req, res, url)) || (await realmReviewRoute(req, res, url)) || infoRoute(req, res, url),
     log,
   });
 
@@ -950,6 +978,11 @@ ${skills.index()}`;
           const body = JSON.parse(raw.toString("utf8"));
           if (body && typeof body === "object" && body.decisionUsage) {
             decisionUsage = body.decisionUsage;
+            // Only narrows the turn (no tools, no surface grammar); it never grants anything.
+            if (body.decisionUsage.intent === "salutation" && typeof body.session === "string") {
+              scopedSession = body.session;
+              greetingTurns.add(body.session);
+            }
           }
           // The turn shaper's pruned list can only narrow what Settings already allows, never add to it.
           if (body && typeof body.session === "string" && Array.isArray(body.integrationTools)) {
@@ -981,7 +1014,7 @@ ${skills.index()}`;
             await host.handle(streamedReq, observePlan(res));
           });
         } finally {
-          if (scopedSession) turnToolScope.delete(scopedSession);
+          if (scopedSession) { turnToolScope.delete(scopedSession); greetingTurns.delete(scopedSession); }
         }
         return;
       }
