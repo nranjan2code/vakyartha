@@ -1,5 +1,28 @@
 # Vakyartha handover — 2026-10-31
 
+## Area 7 child dispatch protocol, supervisor lifecycle transitions and Area 8 platform verification — 2026-10-31
+
+In `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` (branch `codex/agent-runtime-implementation`), completed Area 7 child dispatch protocol, supervisor lifecycle transitions, and Area 8 cross-platform verification across Linux and macOS.
+
+Key implementations and invariants:
+- **Child Dispatch Protocol (`src-tauri/src/control/task_protocol.rs`)**:
+  - Added `Frame::ChildDispatch { v, run_id, child_id }` and `Event::ChildDispatch { child_id }`.
+  - In `TaskChannel::receive`, strictly validates version (`v == 2`), phase (`Phase::Executing`), active provider call absence, matching `run_id`, and valid child identity format (`valid_identity(&child_id)`), failing closed on cross-run dispatch or malformed IDs.
+  - Added unit test `child_dispatch_frame_validates_cleanly` verifying cross-run refusal and invalid ID refusal.
+- **Reasoner Supervisor Child Lifecycle (`src-tauri/src/reasoner_supervisor.rs`)**:
+  - Handled `Event::ChildDispatch { child_id }` in the supervisor event loop.
+  - Validates root existence, child record presence, and revisions.
+  - Transitions lifecycle: atomically invokes `control.start_child_attempt` (trading `Resource::QueuedChild` for `Resource::ChildExecution`), confirms start via `control.confirm_child_started`, settles via `control.return_child_attempt` (releasing execution capacity), and delivers `child_attempt_returned` or `child_attempt_refused` frames to the worker over the private pipe.
+- **Task Worker Runtime (`sidecar/task-worker-runtime.ts`) & Unit Tests (`test/task-worker.test.ts`)**:
+  - Admitted `child_attempt_returned` and `child_attempt_refused` frames in `taskWorkerRuntime`.
+  - Added unit test in `test/task-worker.test.ts` verifying that `child_proposals_admitted`, `child_attempt_returned`, and `child_attempt_refused` frames are admitted during execution without protocol errors.
+  - Re-bundled sidecar (`src-tauri/resources/sidecar.mjs`).
+- **Platform Verification & Tests**:
+  - **Linux Container Verification (`scripts/linux-worker-check.sh`)**: Ran inside Linux Docker container (`vakyartha-linux-rust-check:1.99.1`); all 160 Rust tests passed (0 failed, 0 ignored).
+  - **macOS Native Rust Suite**: 151 Rust tests passed (0 failed, 7 ignored requiring manual worker parameters).
+  - **TypeScript App Suite**: All 326 tests passed (0 failed, 1 paid test skipped).
+  - **Typecheck & Cleanliness**: `npm run typecheck` passed with 0 errors.
+
 ## Desktop smoke verification, Ollama loopback admittance and release bundle packaging — 2026-10-31
 
 In `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` (branch `codex/agent-runtime-implementation`), resolved Ollama loopback host admittance, aligned native cancelled task status notes, verified desktop private IPC transport smoke, and confirmed release bundle generation.
