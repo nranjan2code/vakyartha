@@ -232,3 +232,45 @@ test("standard model rates resolve known presets with cached token discounts", a
   const unknownRate = findStandardRate("fixture", "custom-model");
   assert.equal(unknownRate, undefined);
 });
+
+test("a chat turn's decision-pruned integration list narrows the tools offered to the model", async (t) => {
+  const { createServer } = await import("node:http");
+  const { startAppServer } = await import("../sidecar/server.ts");
+  const { dir } = manager(t);
+  const offered: string[][] = [];
+  const fake = createServer((req, res) => {
+    let raw = ""; req.on("data", chunk => { raw += chunk; });
+    req.on("end", () => {
+      const body = JSON.parse(raw);
+      offered.push((body.tools ?? []).map((tool: { function?: { name?: string } }) => tool.function?.name ?? ""));
+      const selecting = body.tools?.length === 1 && body.tools[0]?.function?.name === "use_skill";
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(`data: ${JSON.stringify({ choices: [{ delta: selecting ? { tool_calls: [{ index: 0, id: "select", type: "function", function: { name: "use_skill", arguments: '{"names":[]}' } }] } : { content: "ok" }, finish_reason: selecting ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`);
+    });
+  });
+  await new Promise<void>((resolve) => fake.listen(0, "127.0.0.1", resolve));
+  const previous = process.env.OPENAI_COMPAT_BASE_URL;
+  process.env.OPENAI_COMPAT_BASE_URL = `http://127.0.0.1:${(fake.address() as { port: number }).port}/v1`;
+  t.after(() => {
+    if (previous === undefined) delete process.env.OPENAI_COMPAT_BASE_URL;
+    else process.env.OPENAI_COMPAT_BASE_URL = previous;
+    fake.closeAllConnections(); fake.close();
+  });
+  const app = await startAppServer({ dataDir: dir, access: "token", keychainService: "com.nranjan2code.vakyartha.finops-test" });
+  t.after(() => app.shutdown());
+  const headers = { "content-type": "application/json", authorization: `Bearer ${app.token}` };
+  const turn = async (extra: Record<string, unknown>) => {
+    offered.length = 0;
+    const response = await fetch(`${app.url}/api/chat`, { method: "POST", headers, body: JSON.stringify({ session: "scope-test", provider: "compatible", model: "fake", message: "what time is it", ...extra }) });
+    await response.text();
+    return offered.flat();
+  };
+  const all = await turn({});
+  assert.ok(all.some((name) => name.startsWith("time__")), "the time integration is offered without a decision scope");
+  const scoped = await turn({ integrationTools: [] });
+  assert.ok(!scoped.some((name) => name.startsWith("time__")), "an empty decision scope offers no integration tools");
+  const forged = await turn({ integrationTools: ["time__now", "not_installed__tool"] });
+  assert.ok(!forged.includes("not_installed__tool"), "a scope cannot add a tool Settings does not offer");
+  const after = await turn({});
+  assert.ok(after.some((name) => name.startsWith("time__")), "the scope ends with its turn");
+});

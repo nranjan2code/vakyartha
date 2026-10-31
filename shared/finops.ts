@@ -43,6 +43,11 @@ export interface Turn {
   errors: number;
   complete: boolean;
   decisionUsage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    intent?: string;
+    toolsKept?: number;
+    toolsOffered?: number;
     promptTokens?: number;
     completionTokens?: number;
     totalTokens?: number;

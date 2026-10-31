@@ -341,6 +341,8 @@ ${skills.index()}`;
     async projection(job) { return job.session && job.surface ? (await host.view(job.session)).surfaces.find((s) => s.id === job.surface) : undefined; },
   });
   const integrationRevisions = new Map<string, number>();
+  /** Integration tools a chat turn's decision step kept, by session, for the length of that turn. */
+  const turnToolScope = new Map<string, Set<string>>();
   /** Model providers for turns and voice answers alike: task spending checks and FinOps see every request. */
   function modelProviders(wrapSkills = true): ProviderEntry[] {
     // Bind admission checks and provider construction to the same configuration.
@@ -365,7 +367,9 @@ ${skills.index()}`;
       finops.session(session);
       activeTurnSession = session;
       await refreshBinding(session);
-      return withSkill([...appAuthoringTools(), ...(await integrations?.toolsFor(session) ?? [])].map((tool) => ({
+      const scope = turnToolScope.get(session);
+      const offered = (await integrations?.toolsFor(session) ?? []).filter((tool) => !scope || scope.has(tool.spec.name));
+      return withSkill([...appAuthoringTools(), ...offered].map((tool) => ({
         ...tool,
         execute: (args, ctx) => sandboxSession.run(session, () => media.withSession(session, () => tool.execute(args, ctx))),
       })), session);
@@ -923,10 +927,16 @@ ${skills.index()}`;
         for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         const raw = Buffer.concat(chunks);
         let decisionUsage: import("../shared/finops.ts").Turn["decisionUsage"] = undefined;
+        let scopedSession: string | undefined;
         try {
           const body = JSON.parse(raw.toString("utf8"));
           if (body && typeof body === "object" && body.decisionUsage) {
             decisionUsage = body.decisionUsage;
+          }
+          // The turn shaper's pruned list can only narrow what Settings already allows, never add to it.
+          if (body && typeof body.session === "string" && Array.isArray(body.integrationTools)) {
+            scopedSession = body.session;
+            turnToolScope.set(body.session, new Set(body.integrationTools.filter((n: unknown): n is string => typeof n === "string").slice(0, 500)));
           }
         } catch {}
         const { Readable } = await import("node:stream");
@@ -936,10 +946,14 @@ ${skills.index()}`;
           url: req.url,
           socket: (req as { socket?: unknown }).socket,
         }) as HostRequest;
-        await finops.chat(async () => {
-          if (decisionUsage) finops.recordDecisionUsage(decisionUsage);
-          await host.handle(streamedReq, res);
-        });
+        try {
+          await finops.chat(async () => {
+            if (decisionUsage) finops.recordDecisionUsage(decisionUsage);
+            await host.handle(streamedReq, res);
+          });
+        } finally {
+          if (scopedSession) turnToolScope.delete(scopedSession);
+        }
         return;
       }
       if (await host.handle(req, res)) return;

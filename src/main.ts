@@ -852,7 +852,8 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
   let toolRoundsLimit = rawToolRounds === "unlimited" ? 100 : (Number(rawToolRounds) || undefined);
   let effectiveThink = opt("think") === "true";
   let effectiveEffort = opt("effort") || undefined;
-  let decisionUsage: unknown = undefined;
+  let decisionUsage: Record<string, unknown> | undefined = undefined;
+  let integrationTools: string[] | undefined = undefined;
 
   if (req.message) {
     try {
@@ -882,7 +883,10 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
           model,
         }, decisionCfg);
 
-        decisionUsage = shaped.shape.decisionUsage;
+        const kept = shaped.payload.tools ?? runtimeTools;
+        decisionUsage = { ...shaped.shape.decisionUsage, intent: shaped.shape.intent, toolsKept: kept.length, toolsOffered: runtimeTools.length };
+        // The sidecar can only narrow the integration tools it offers, so a shorter list is the whole signal.
+        if (kept.length < runtimeTools.length) integrationTools = kept.map((t) => t.name);
 
         // Host history option specifies the total turns to inspect:
         // history = 1 means only the current turn (0 prior history).
@@ -930,6 +934,7 @@ async function runTurn(req: { message?: string; continue?: boolean; action?: Vak
         toolRounds: toolRoundsLimit,
         ...req,
         ...(decisionUsage ? { decisionUsage } : {}),
+        ...(integrationTools ? { integrationTools } : {}),
       },
       onEvent,
       ctrl.signal,
