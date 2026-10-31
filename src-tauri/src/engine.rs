@@ -204,7 +204,7 @@ async fn relay_response(mut response: reqwest::Response, id: &str, sender: &Inpu
     send_frame(sender, queued, serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "provider_end" }));
 }
 
-async fn dispatch_egress_request(request: crate::egress::EgressRequest, sender: Input, queued: Arc<AtomicUsize>, data_dir: PathBuf) {
+async fn dispatch_egress_request(request: crate::egress::EgressRequest, sender: Input, queued: Arc<AtomicUsize>, service: String, data_dir: PathBuf) {
     let admitted = match request.admit(PROTOCOL_VERSION) {
         Ok(admitted) => admitted,
         Err(message) => return send_provider_error(&sender, &queued, &request.id, message),
@@ -219,6 +219,13 @@ async fn dispatch_egress_request(request: crate::egress::EgressRequest, sender: 
     };
     let mut builder = client.request(admitted.method, admitted.url);
     for (name, value) in admitted.headers { builder = builder.header(name, value); }
+    if let Some(credential) = crate::egress::credential(&admitted.host) {
+        match cached_vault_get(&service, &credential.account, &data_dir) {
+            Ok(Some(value)) if !value.is_empty() => builder = builder.header(credential.header.as_str(), credential.format.replace("{value}", &value)),
+            Ok(_) => {}
+            Err(message) => return send_provider_error(&sender, &queued, &request.id, &message),
+        }
+    }
     if let Some(body) = admitted.body { builder = builder.body(body); }
     match builder.send().await {
         Ok(response) => relay_response(response, &request.id, &sender, &queued, crate::egress::RESPONSE_HEADERS).await,
@@ -841,14 +848,14 @@ pub fn start_with_dispatch(
             }
             if value.get("type").and_then(serde_json::Value::as_str) == Some("egress_request") {
                 let Some(id) = value.get("id").and_then(serde_json::Value::as_str).filter(|id| id.starts_with("egr-") && valid_id(id)).map(str::to_owned) else { continue; };
-                let Some((_, data_dir)) = dispatch_context.clone() else {
+                let Some((service, data_dir)) = dispatch_context.clone() else {
                     send_provider_error(&connection, &response_queue, &id, "Native egress is not enabled");
                     continue;
                 };
                 match serde_json::from_value::<crate::egress::EgressRequest>(value) {
                     Ok(request) => {
                         let (sender, queued) = (connection.clone(), response_queue.clone());
-                        tauri::async_runtime::spawn(dispatch_egress_request(request, sender, queued, data_dir));
+                        tauri::async_runtime::spawn(dispatch_egress_request(request, sender, queued, service, data_dir));
                     }
                     Err(_) => send_provider_error(&connection, &response_queue, &id, "Malformed egress request"),
                 }
@@ -944,7 +951,7 @@ mod tests {
             "v": PROTOCOL_VERSION, "id": "egr-live", "type": "egress_request", "url": "https://mcp.nseindia.in/bhavcopy/cm/mcp", "method": "POST",
             "headers": { "content-type": "application/json", "accept": "application/json, text/event-stream" }, "body": body,
         })).unwrap();
-        tauri::async_runtime::block_on(dispatch_egress_request(request, sender.clone(), Arc::new(AtomicUsize::new(0)), data.to_path_buf()));
+        tauri::async_runtime::block_on(dispatch_egress_request(request, sender.clone(), Arc::new(AtomicUsize::new(0)), "vak-test".into(), data.to_path_buf()));
         sender.lock().unwrap().take();
         rx.iter().map(|bytes| serde_json::from_slice(&bytes).unwrap()).collect()
     }

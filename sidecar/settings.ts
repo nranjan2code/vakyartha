@@ -46,13 +46,19 @@ export interface SecretStore {
   get(name: string): string | undefined;
   set(name: string, value: string): void;
   delete(name: string): void;
+  /** Native vault only: record that a key exists, never its value. */
+  present?(name: string, present: boolean): void;
 }
 
-export function nativeSecrets(): SecretStore {
+/** The worker never holds a vault value; a present key reads as a marker Rust replaces on egress. */
+export function nativeSecrets(accounts = process.env.VAK_VAULT_ACCOUNTS ?? ""): SecretStore {
+  const present = new Set(accounts.split(",").map((a) => a.trim()).filter(Boolean));
   return {
-    kind: "native", get: () => undefined,
+    kind: "native",
+    get: (name) => (present.has(name) ? "native-vault" : undefined),
     set() { throw new SettingsError("Save credentials through the native vault"); },
     delete() { throw new SettingsError("Remove credentials through the native vault"); },
+    present: (name, on) => void (on ? present.add(name) : present.delete(name)),
   };
 }
 
@@ -162,21 +168,15 @@ export class Settings {
       const v = s.secret ? this.secrets.get(s.name) : file.get(s.name);
       if (v) this.env[s.name] = v;
     }
-    if (process.env.VAK_VAULT_ACCOUNTS) {
-      for (const account of process.env.VAK_VAULT_ACCOUNTS.split(",")) {
-        const trimmed = account.trim();
-        if (trimmed) this.env[trimmed] = "native-vault";
-      }
-    }
   }
 
   updatePresence(presence: Record<string, boolean>): void {
-    for (const [name, isPresent] of Object.entries(presence)) {
-      if (isPresent) {
-        this.env[name] = "native-vault";
-      } else {
-        delete this.env[name];
-      }
+    for (const [name, on] of Object.entries(presence)) {
+      if (!/^[A-Z][A-Z0-9_]{0,127}$/.test(name) || typeof on !== "boolean") throw new SettingsError("Invalid credential presence");
+      this.secrets.present?.(name, on);
+      if (!SETTINGS.some((s) => s.secret && s.name === name)) continue;
+      if (on) this.env[name] = "native-vault";
+      else delete this.env[name];
     }
   }
 

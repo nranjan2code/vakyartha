@@ -38,7 +38,8 @@ Not confirmed: `ollama/lfm3` errors (two in the log). Could be the model, or a r
 ## Done
 
 - 2026-10-31, step 1 (native egress), first consumer remote MCP: worker sends `egress_request` frames; Rust ([egress.rs](../../src-tauri/src/egress.rs)) admits plain HTTPS to `INTEGRATION_HOSTS` only after the user allows that host on the integration page (`egress_set_approval`, stored in the native root), strips all but MCP protocol headers, refuses redirects, and relays the response on the provider frame family. On desktop `globalThis.fetch` is this channel, so Telegram, catalog and voice calls now fail with a clear approval or HTTPS message instead of `fetch failed`. Removed: `sidecar/egress.ts`, `check_egress_endpoint`, `VAK_EXTRA_EGRESS_HOSTS` and the Sandbox page allowlist/tester. Closes #13, #14 for hosts; #5 for credential-free servers.
-- Still open from step 1: Rust-attached credentials (keyed servers, Telegram, voice), `pinnedFetch` callers (#10), loopback Ollama operations, catalog-derived hosts instead of the static `INTEGRATION_HOSTS`.
+- 2026-10-31, step 1 credentials: `shared/integration-egress.json` (compiled into Rust) binds each approvable host to at most one vault key and header. Integration keys are saved with `vault_set` from the integration page; the worker's `nativeSecrets` knows presence only and reads a present key as a marker; Rust attaches the real key for that host. Covers Tavily, GitHub MCP and ElevenLabs. `policy.rs` keeps only `MODEL_API_HOSTS`. Closes #11 for header keys.
+- Still open from step 1: Telegram (token in the URL path), Databricks (per-workspace hosts), `pinnedFetch` callers (#10), loopback Ollama operations. Local servers with env keys (Brave, Notion, Context7) receive the marker until step 2 launches them from Rust.
 
 ## Suggested order
 

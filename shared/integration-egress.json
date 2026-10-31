@@ -1,0 +1,10 @@
+[
+  { "host": "api.elevenlabs.io", "credential": { "account": "ELEVENLABS_API_KEY", "header": "xi-api-key", "format": "{value}" } },
+  { "host": "api.githubcopilot.com", "credential": { "account": "INTEGRATION_GITHUB_TOKEN", "header": "authorization", "format": "Bearer {value}" } },
+  { "host": "api.telegram.org" },
+  { "host": "huggingface.co" },
+  { "host": "mcp.kite.trade" },
+  { "host": "mcp.nseindia.in" },
+  { "host": "mcp.tavily.com", "credential": { "account": "INTEGRATION_TAVILY_APIKEY", "header": "authorization", "format": "Bearer {value}" } },
+  { "host": "registry.npmjs.org" }
+]

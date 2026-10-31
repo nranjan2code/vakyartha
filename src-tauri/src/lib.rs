@@ -134,7 +134,7 @@ async fn vault_presence(window: tauri::WebviewWindow, accounts: Vec<String>) -> 
 fn egress_approvals(window: tauri::WebviewWindow) -> Result<serde_json::Value, String> {
     engine::main_window(&window)?;
     let approved = egress::approved(&app_data_dir(window.app_handle()));
-    let hosts: Vec<_> = policy::INTEGRATION_HOSTS.iter()
+    let hosts: Vec<_> = egress::hosts()
         .map(|h| serde_json::json!({ "host": h, "approved": approved.iter().any(|a| a == h) })).collect();
     Ok(serde_json::Value::Array(hosts))
 }
@@ -846,6 +846,7 @@ fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
     let present: Vec<&str> = known_accounts
         .iter()
         .copied()
+        .chain(egress::credential_accounts())
         .filter(|name| crate::vault::get(&service, name, &data).is_ok_and(|v| v.is_some()))
         .collect();
     let accounts_csv = present.join(",");

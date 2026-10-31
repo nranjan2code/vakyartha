@@ -1,8 +1,11 @@
 //! Integration egress for the contained worker. The worker names a URL; Rust
 //! admits it only for an allowlisted integration host the user approved from
 //! the main window, then carries the bytes. Model hosts keep their own route.
+//! Credentials stay in the vault: Rust attaches a host's own key, so the worker
+//! can neither read a key nor send it anywhere else.
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use serde::Deserialize;
 
 const MAX_BODY: usize = 8 * 1024 * 1024;
@@ -25,6 +28,40 @@ pub(crate) struct EgressRequest {
     pub body: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Credential {
+    pub account: String,
+    pub header: String,
+    pub format: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Host {
+    host: String,
+    #[serde(default)]
+    credential: Option<Credential>,
+}
+
+/// Compiled in, so the worker cannot change which host receives which key.
+static HOSTS: LazyLock<Vec<Host>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../shared/integration-egress.json")).expect("integration egress catalog")
+});
+
+pub(crate) fn hosts() -> impl Iterator<Item = &'static str> { HOSTS.iter().map(|h| h.host.as_str()) }
+
+pub(crate) fn approvable(host: &str) -> bool { HOSTS.iter().any(|h| h.host == host) }
+
+pub(crate) fn credential(host: &str) -> Option<&'static Credential> {
+    HOSTS.iter().find(|h| h.host == host).and_then(|h| h.credential.as_ref())
+}
+
+/// Vault accounts whose presence the worker may know (never their values).
+pub(crate) fn credential_accounts() -> impl Iterator<Item = &'static str> {
+    HOSTS.iter().filter_map(|h| h.credential.as_ref()).map(|c| c.account.as_str())
+}
+
 pub(crate) struct Admitted {
     pub host: String,
     pub url: reqwest::Url,
@@ -32,8 +69,6 @@ pub(crate) struct Admitted {
     pub headers: Vec<(String, String)>,
     pub body: Option<String>,
 }
-
-pub(crate) fn approvable(host: &str) -> bool { crate::policy::INTEGRATION_HOSTS.contains(&host) }
 
 impl EgressRequest {
     pub fn admit(&self, protocol: u8) -> Result<Admitted, &'static str> {
@@ -127,6 +162,17 @@ mod tests {
         ] {
             assert!(bad.admit(2).is_err(), "{} {}", bad.method, bad.url);
         }
+    }
+
+    #[test]
+    fn catalog_hosts_are_disjoint_from_models_and_credentials_are_well_formed() {
+        assert!(hosts().all(|h| !crate::policy::MODEL_API_HOSTS.contains(&h)));
+        for c in HOSTS.iter().filter_map(|h| h.credential.as_ref()) {
+            assert!(c.format.contains("{value}") && !REQUEST_HEADERS.contains(&c.header.as_str()));
+            assert!(!c.account.is_empty() && c.account.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_'));
+        }
+        assert_eq!(credential("mcp.tavily.com").unwrap().account, "INTEGRATION_TAVILY_APIKEY");
+        assert!(credential("mcp.nseindia.in").is_none());
     }
 
     #[test]

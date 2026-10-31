@@ -8,8 +8,9 @@ import { externalCatalogs } from "./marketplaces-page.ts";
 import { api, ask, el } from "./core.ts";
 import { icon, tile } from "./icons.ts";
 import { group, pill, row, segmented, title, toggle } from "./ui.ts";
-import { egressApprovals, pickFolder, setEgressApproval } from "./backend.ts";
+import { egressApprovals, inTauri, pickFolder, setEgressApproval, vaultDelete, vaultSet } from "./backend.ts";
 import { isMediaKind } from "../shared/media.ts";
+import { integrationSecretName } from "../shared/integration-egress.ts";
 import { mediaResults, mediaSetup } from "./media-page.ts";
 
 type Trust = "built-in" | "official" | "vendor" | "custom";
@@ -161,6 +162,15 @@ export async function integrationPage(id: string, back: () => void, reload: () =
     }
   };
   const put = (body: unknown) => api(`/api/integrations/${id}`, { method: "PUT", body: JSON.stringify(body) });
+  // Desktop keys go to the native vault; the worker learns only that one exists and Rust attaches it on egress.
+  const saveSecret = async (key: string, value: string | null) => {
+    if (!inTauri) return put({ secrets: { [key]: value } });
+    const account = integrationSecretName(id, key);
+    if (value) await vaultSet(account, value);
+    else await vaultDelete(account);
+    await api("/api/settings", { method: "PUT", body: JSON.stringify({ presence: { [account]: Boolean(value) } }) });
+    if (i.installed && i.enabled) await api(`/api/integrations/${id}/refresh`, { method: "POST" });
+  };
 
   const backLink = el("button", { type: "button", className: "link", textContent: "‹ All integrations" });
   backLink.addEventListener("click", back);
@@ -216,9 +226,9 @@ export async function integrationPage(id: string, back: () => void, reload: () =
             const save = el("button", { type: "button", className: "primary small", textContent: "Save", hidden: true });
             const remove = el("button", { type: "button", className: "ghost small", textContent: "Remove", hidden: !i.secretsSet[f.key] });
             input.addEventListener("input", () => (save.hidden = !input.value.trim()));
-            save.addEventListener("click", () => void act(() => put({ secrets: { [f.key]: input.value.trim() } }), save));
+            save.addEventListener("click", () => void act(() => saveSecret(f.key, input.value.trim()), save));
             remove.addEventListener("click", async () => {
-              if (await ask(`Remove the saved ${f.label}?`, "Remove")) void act(() => put({ secrets: { [f.key]: null } }));
+              if (await ask(`Remove the saved ${f.label}?`, "Remove")) void act(() => saveSecret(f.key, null));
             });
             return el("div", { className: "row stack" }, el("div", { className: "field-label", textContent: f.label }), el("div", { className: "field-line" }, input, save, remove), f.help ? el("p", { className: "row-hint", textContent: f.help }) : null);
           }

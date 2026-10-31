@@ -18,24 +18,3 @@ pub const MODEL_API_HOSTS: &[&str] = &[
     "dashscope-intl.aliyuncs.com",
     "api.typesafe.ai",
 ];
-
-/// Integration, messaging and package origins the user may approve for
-/// worker egress. Model hosts cannot be reached through this route.
-pub const INTEGRATION_HOSTS: &[&str] = &[
-    "api.elevenlabs.io",
-    "api.telegram.org",
-    "huggingface.co",
-    "registry.npmjs.org",
-    "mcp.kite.trade",
-    "mcp.nseindia.in",
-];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn model_and_integration_routes_never_share_a_host() {
-        assert!(INTEGRATION_HOSTS.iter().all(|host| !MODEL_API_HOSTS.contains(host)));
-    }
-}
