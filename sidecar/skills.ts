@@ -752,6 +752,10 @@ export class Skills {
           conversation: request.messages.filter(m => (m.role === "user" && !m.content.startsWith("[engine]")) || (m.role === "assistant" && m.content.trim())).slice(-5).map((m, i, all) => ({ role: m.role, content: m.content.slice(0, i === all.length - 1 ? 8000 : 2000) })),
         }) }],
         tools: [tool.spec], maxTokens: Math.min(request.maxTokens ?? 512, 512),
+        // Selection is a bounded classification: a turn that asked for deep
+        // reasoning spent the 512 tokens thinking and returned no names.
+        ...(request.effort ? { effort: "low" as const } : {}),
+        ...(provider.id === "ollama" ? { extra: { ...request.extra, think: false } } : {}),
       };
       // Transactional authoring already wraps tools in a provider schema. Keep
       // that wire protocol, but offer only selection on its first generation.
@@ -780,8 +784,8 @@ export class Skills {
           else if (event.type === "done") done = event;
           else throw new Error("Skill selection returned an unexpected native tool event");
         }
+        if (!done || done.stop !== "end" || !raw.trim()) throw new Error("Skill selection did not complete with valid names");
         const args: unknown = JSON.parse(raw);
-        if (!done || done.stop !== "end") throw new Error("Skill selection did not complete with valid names");
         checked(args);
         request.signal?.throwIfAborted(); selected = true;
         const id = "skills-" + randomUUID();

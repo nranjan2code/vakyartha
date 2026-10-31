@@ -6,7 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { parseSkill, Skills } from "../sidecar/skills.ts";
 import { basicCatalog, SurfaceStore } from "@vak/core";
-import { runAgent, ToolGenerationError, type Provider, type ProviderEvent } from "@vak/providers";
+import { runAgent, ToolGenerationError, type ChatRequest, type Provider, type ProviderEvent } from "@vak/providers";
 
 const SKILL = "---\nname: weekly-report\ndescription: Use when the user asks for a weekly report.\n---\n\nSummarise the week, then load skill chart-style.\n";
 const dir = () => mkdtempSync(path.join(tmpdir(), "vak-skills-"));
@@ -647,4 +647,20 @@ test("diagrams built-in skill loads templates and canonical diagram specificatio
     assert.ok(diagramNode, `Surface ${name} must contain a diagram node`);
     assert.equal(diagramNode.type, "diagram");
   }
+});
+
+test("skill selection never inherits a deep-reasoning turn's thinking", async () => {
+  const skills = new Skills(dir());
+  let selection: ChatRequest | undefined;
+  // Thinking spends the selection's whole token budget and leaves no names.
+  const provider: Provider = { id: "ollama", capabilities: { constrainedOutput: true }, async *stream(req) {
+    selection = req;
+    if (req.extra?.think !== false) { yield { type: "done", stop: "end" }; return; }
+    yield { type: "text", delta: '{"names":[]}' }; yield { type: "done", stop: "end" };
+  } };
+  const events: ProviderEvent[] = [];
+  for await (const e of skills.provider(provider).stream({ model: "test", system: skills.index(), effort: "high", extra: { options: { num_ctx: 8192 } }, messages: [{ role: "user", content: "compare these two plans in depth" }] })) events.push(e);
+  assert.equal(selection?.effort, "low");
+  assert.deepEqual(selection?.extra, { options: { num_ctx: 8192 }, think: false });
+  assert.ok(events.some(e => e.type === "tool_start" && e.name === "use_skill"));
 });
