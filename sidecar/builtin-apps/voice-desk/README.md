@@ -1,17 +1,21 @@
 # Voice Desk & Note Taker
 
-Voice Desk is an interactive local workbench and cognitive note-taking workspace built for the Vakyartha platform. It turns unstructured spoken thoughts, meeting discussions, and brainstorming sessions into clean, structured notes, formal decision records, and actionable checklists.
+Speak or type notes, keep their action items as a checklist, and hear any note or your open items read back. Everything stays on this computer.
 
-## Core Features
+## Use it
 
-- **Smart Speech Dictation**: Works seamlessly with Vakyartha's in-composer dictation and local voice engine. Natural speech disfluencies, stuttered repetitions, hesitation markers ("um", "ah", "humm"), and mid-sentence backtrackings are automatically normalized without altering first-person intent.
-- **Dual Visual and Spoken Projections**: Built on Projection's liquid layout framework (`<vak-surface>`). Every note and decision can be viewed on the dynamic Canvas or read aloud through local voice synthesis (`readAloud`).
-- **Interactive Checklists**: Live action item management with clickable tasks, explicit owners, and statuses. Toggling tasks and updating records happens with zero model latency directly inside the sandboxed app worker.
-- **Hybrid Input**: Users can dictate via microphone (⌘D), edit notes directly in multi-line textareas, add tags, or create new action items manually.
-- **Privacy & Local Persistence**: All notes, transcripts, and actions persist locally in `<data>/app-state/voice-desk.json`. Network access is isolated and zero external requests are made during note editing.
+- **Notes view.** The capture box at the top takes speech or typing, or both. Press **Dictate** (or ⌘D with the box focused), speak, then **Save note**. The note opens below for editing; the box clears for the next one.
+- **Edit.** Title, text and tags save as you type. **Dictate more** appends speech to the open note. **Read aloud** reads the note and its open action items.
+- **Action items.** Add them under the note; tick them off or remove them. **Delete note** asks once before removing a note.
+- **Action items view.** Every open item across notes, ticked off in place, with a link back to its note and **Read aloud** for the whole list.
+- **Find.** The note list filters as you type in its search box.
 
-## Usage and Interface
+Dictation and reading aloud use Settings → Voice: free on this Mac with a local model, or a hosted provider you chose. Voice must be on.
 
-1. **Workbench Surface**: Provides a 4-column metric overview (Total Notes, Pending Actions, Decisions, Categorized Tags), a split note explorer and editor, interactive action tables, and an audio transcript drawer.
-2. **Action Register Surface**: Aggregates all open and completed deliverables across all notes into a searchable, sortable register.
-3. **Exporting**: Notes can be exported directly to standard Markdown and downloaded to the local filesystem using the native platform export command.
+## Data
+
+Notes (title, text, tags, action items, created and updated times) live in this app's private state. Nothing is sent anywhere by the app; it has no network or tools. Up to 500 notes of 20,000 characters each. Older note shapes from version 1 load automatically.
+
+## Not included
+
+No automatic summaries or cleanup of the text (the chat's `voice-notes` skill does that on request), no owners or due dates on items, no export yet.

@@ -117,3 +117,20 @@ test("app update review binds both snapshots without silent startup replacement"
     assert.equal(restarted.listApps()[0]!.updateAvailable, true);
   } finally { await restarted?.shutdown(); await s.close(); }
 });
+
+test("Voice Desk runs in the real sandbox: typed capture saves as a note and both views update", async () => {
+  const s = setup();
+  try {
+    let app = await s.registry.installBuiltin("voice-desk");
+    assert.deepEqual(Object.keys(app.surfaces ?? {}).sort(), ["actions", "desk"]);
+    let res = await s.registry.dispatchAction("voice-desk", "/capture", "Book flights for the offsite", undefined, app.revision);
+    res = await s.registry.dispatchAction("voice-desk", "save_capture", null, "save_capture", res.revision);
+    assert.equal(res.surfaces.desk.data.note.body, "Book flights for the offsite");
+    assert.equal(res.surfaces.desk.data.capture, "");
+    res = await s.registry.dispatchAction("voice-desk", "/newAction", "Ask finance for the budget", undefined, res.revision);
+    res = await s.registry.dispatchAction("voice-desk", "add_action", null, "add_action", res.revision);
+    assert.equal(res.surfaces.actions.data.open[0].text, "Ask finance for the budget");
+    app = s.registry.getApp("voice-desk")!;
+    assert.equal((app.state as { notes: unknown[] }).notes.length, 1);
+  } finally { await s.close(); }
+});

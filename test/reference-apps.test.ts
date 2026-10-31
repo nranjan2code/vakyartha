@@ -9,7 +9,7 @@ import { parseFeed, canonical } from '../sidecar/builtin-apps/news-desk/feed.ts'
 import { project as newsProject, handleAction as newsAction, refresh as newsRefresh } from '../sidecar/builtin-apps/news-desk/server.ts';
 import { items, commits, repository, handleAction as projectAction } from '../sidecar/builtin-apps/project-desk/server.ts';
 import { paise, records, handleAction as financeAction, project as financeProject } from '../sidecar/builtin-apps/finance-workbench/server.ts';
-import { project as voiceProject, handleAction as voiceAction } from '../sidecar/builtin-apps/voice-desk/server.ts';
+import { view as voiceView, handleAction as voiceAction, normalize as voiceNormalize } from '../sidecar/builtin-apps/voice-desk/server.ts';
 import { AppRegistry } from '../sidecar/sandbox-pool/app-registry.ts';
 import { SandboxPoolManager } from '../sidecar/sandbox-pool/pool-manager.ts';
 import { fingerprint } from '../sidecar/sandbox-pool/package.ts';
@@ -54,63 +54,62 @@ test('reference discovery follows bundled packages without a separate hard-coded
   const dir=mkdtempSync(path.join(tmpdir(),'vak-reference-list-')),pool=new SandboxPoolManager(),registry=new AppRegistry({dataDir:dir,pool});
   try{assert.deepEqual(registry.listBuiltins().map(m=>m.id).sort(),['finance-workbench','market-terminal','news-desk','project-desk','voice-desk']);}finally{await registry.shutdown();await pool.shutdown();rmSync(dir,{recursive:true,force:true});}
 });
-test('voice-desk initializes clean state, supports typing, notes lifecycle and action register',async()=>{
-  const c:any={state:{},surfaces:{workbench:{},actions:{}},async callTool(){throw Error('no external calls');}};
-  const initial=voiceProject(c);
-  assert.equal(initial.updates.length,2);
-  const wb=initial.updates.find(u=>u.surface==='workbench')!.data as any;
-  assert.equal(wb.noteCount,'1');
-  assert.equal(wb.actionCount,'1');
-  assert.equal(wb.decisionCount,'1');
-  assert.equal(wb.activeTitle,'Welcome to Voice Desk');
-
-  // Bound field updates
-  await voiceAction('/newNoteTitle','Architecture Strategy',c);
-  assert.equal(c.state.newNoteTitle,'Architecture Strategy');
-  await voiceAction('create_note',null,c,'create_note');
-  assert.equal(c.state.notes.length,2);
-  assert.equal(c.state.activeTitle,'Architecture Strategy');
-
-  // Edit active note content
-  await voiceAction('/activeContent','New architecture plan details',c);
-  await voiceAction('save_note',null,c,'save_note');
-  assert.equal(c.state.notes.find((n:any)=>n.id===c.state.activeId).content,'New architecture plan details');
-
-  // Add action item
-  await voiceAction('/newActionText','Benchmark latency with local 4B',c);
-  await voiceAction('/newActionOwner','Nisheeth',c);
-  await voiceAction('add_action',null,c,'add_action');
-  const activeNote=c.state.notes.find((n:any)=>n.id===c.state.activeId);
-  assert.equal(activeNote.actions.length,1);
-  assert.equal(activeNote.actions[0].task,'Benchmark latency with local 4B');
-  assert.equal(activeNote.actions[0].owner,'Nisheeth');
-
-  // Toggle action item completion
-  await voiceAction('toggle_action',{id:activeNote.actions[0].id},c,'toggle_action');
-  assert.equal(activeNote.actions[0].status,'Done');
-
-  // Note switching via select_note
-  await voiceAction('select_note',{id:'note-1'},c,'select_note');
-  assert.equal(c.state.activeId,'note-1');
-  assert.equal(c.state.activeTitle,'Welcome to Voice Desk');
-
-  // Voice dock polish & read
-  const cleanRes=await voiceAction('clean_note',null,c,'clean_note');
-  assert.match((cleanRes.updates[0]!.data as any).statusMessage,/applied/);
-  const readRes=await voiceAction('read_note',null,c,'read_note');
-  assert.match((readRes.updates[0]!.data as any).statusMessage,/Reading aloud/);
-
-  // Switch back and export
-  await voiceAction('/selectedNoteId',c.state.notes[0].id,c);
-  const exportRes=await voiceAction('export_markdown',null,c,'export_markdown');
-  assert.match((exportRes.updates[0]!.data as any).statusMessage,/ready for export/);
-
-  // Delete note
+test('voice-desk captures spoken or typed notes, keeps a checklist and speaks from the same data',async()=>{
+  const lint=(updates:any[])=>{for(const u of updates){const st=new SurfaceStore(basicCatalog);const d=st.render({surface:u.surface,title:u.surface,data:u.data[0].value,nodes:u.nodes});assert.deepEqual([...d,...st.lint(st.get(u.surface)!)].filter((x:any)=>x.severity!=='info'),[],u.surface);}};
+  lint(voiceView({}));
+  const c:any={state:{},now:()=>new Date('2026-10-31T10:00:00Z')};
+  await assert.rejects(voiceAction('save_capture',null,c,'save_capture'),/Speak or type/);
+  await voiceAction('/capture','Call the bank about the loan.\nDraft the Q3 plan',c);
+  let r:any=await voiceAction('save_capture',null,c,'save_capture');
+  assert.equal(c.state.notes.length,1);
+  assert.equal(c.state.capture,'');
+  assert.equal(r.focusSurface,'desk');
+  const desk=()=>r.updates.find((u:any)=>u.surface==='desk').data[0].value;
+  const tasks=()=>r.updates.find((u:any)=>u.surface==='actions').data[0].value;
+  assert.equal(desk().note.body,'Call the bank about the loan.\nDraft the Q3 plan');
+  // Fields save as they change; tags are cleaned; the title falls back to the first line.
+  await voiceAction('/note/tags','#Work, ideas work',c);
+  assert.deepEqual(c.state.notes[0].tags,['work','ideas']);
+  await voiceAction('/newAction','Call the bank',c);
+  r=await voiceAction('add_action',null,c,'add_action');
+  lint(r.updates);
+  assert.equal(tasks().open.length,1);
+  assert.match(tasks().spoken.actions,/1 open action item\. Call the bank about the loan: Call the bank\./);
+  assert.match(desk().spoken.note,/Open action items: Call the bank\./);
+  // Ticking an item in the action list ticks it in its note.
+  r=await voiceAction('/open/0/done',true,c);
+  assert.equal(c.state.notes[0].actions[0].done,true);
+  assert.equal(tasks().open.length,0);
+  // A second note, switching, and a two-step delete.
+  await voiceAction('/capture','Second thought',c);
+  await voiceAction('save_capture',null,c,'save_capture');
+  assert.equal(c.state.openId,c.state.notes[0].id);
+  await voiceAction('open_note',{id:c.state.notes[1].id},c,'open_note');
+  r=await voiceAction('ask_delete',null,c,'ask_delete');
+  lint(r.updates);
+  assert.ok(r.updates[0].nodes.some((n:any)=>n.id==='delete-yes'));
   await voiceAction('delete_note',null,c,'delete_note');
   assert.equal(c.state.notes.length,1);
-
-  // Unknown action throws
+  // Voice is declared, never performed here: buttons name host voice actions.
+  const nodes=voiceView(c.state)[0]!.nodes;
+  assert.ok(nodes.some((n:any)=>n.props?.action==='voice.dictate'&&n.props.payload.into==='capture-text'));
+  assert.ok(nodes.some((n:any)=>n.props?.action==='voice.read'&&n.props.payload.text==='/spoken/note'));
+  // Untrusted input stays inert text; unknown inputs fail.
+  await voiceAction('/capture','$(rm -rf /) ; ../../etc/passwd',c);
+  await voiceAction('save_capture',null,c,'save_capture');
+  assert.equal(c.state.notes[0].body,'$(rm -rf /) ; ../../etc/passwd');
   await assert.rejects(voiceAction('bad_action',null,c,'bad_action'),/Unknown Voice Desk action/);
+  await assert.rejects(voiceAction('/state/notes',[],c),/Unknown Voice Desk field/);
+  await assert.rejects(voiceAction('open_note',{id:'missing'},c,'open_note'),/no longer exists/);
+});
+
+test('voice-desk surface.json is the empty view, and older note shapes load',()=>{
+  const shipped=JSON.parse(readFileSync('sidecar/builtin-apps/voice-desk/surface.json','utf8'));
+  assert.deepEqual(shipped.map((s:any)=>({id:s.id,data:s.data,nodes:s.nodes})),voiceView({}).map(u=>({id:u.surface,data:u.data[0]!.value,nodes:u.nodes})));
+  const s=voiceNormalize({notes:[{id:'n1',title:'Old',content:'Body',tags:'#a #b',actions:[{id:'a1',task:'Do it',status:'Done'}]}] as any});
+  assert.deepEqual(s.notes![0]!.actions,[{id:'a1',text:'Do it',done:true}]);
+  assert.equal(s.notes![0]!.body,'Body');
+  assert.deepEqual(s.notes![0]!.tags,['a','b']);
 });
 
 test('app registry detects updates and updates built-in app while preserving durable state', async () => {
@@ -132,7 +131,7 @@ test('app registry detects updates and updates built-in app while preserving dur
     const record = JSON.parse(readFileSync(recordFile, 'utf8'));
     record.published.manifest.version = '0.0.1';
     record.fingerprint = fingerprint(record.published);
-    record.state = { notes: [{ id: 'custom-note', title: 'My Custom Note', tags: '#personal', content: 'Important ideas', rawTranscript: '', updatedAt: '2026-10-30', actions: [], decisions: [] }] };
+    record.state = { notes: [{ id: 'custom-note', title: 'My Custom Note', tags: ['personal'], body: 'Important ideas', actions: [], created: '2026-10-30T00:00:00Z', updated: '2026-10-30T00:00:00Z' }] };
     writeFileSync(recordFile, JSON.stringify(record));
 
     registry.reloadApps();

@@ -1,17 +1,15 @@
 # Working on Voice Desk
 
-Read the repository root AGENTS.md, docs/SKILL-AUTHORING.md, and docs/sandboxed-apps/RUNTIME-CONTRACT.md before making modifications to this app package.
+Read [Building a Vakyartha app](../../../docs/BUILDING-APPS.md) first; this app is its worked example. Then README.md, SKILLS.md and ARCHITECTURE.md here.
 
-## Invariants and Ownership
+## Invariants
 
-1. **State Ownership**: `context.state.notes` owns all canonical note entities. Each note uniquely owns its respective action items (`actions`) and formal decisions (`decisions`).
-2. **Persistence Boundary**: State mutations occur solely within `server.ts` and commit atomically through Vakyartha's sandboxed app supervisor. No parallel database writer, ambient filesystem mutation, or unvetted storage path is allowed.
-3. **Deterministic Actions**: App actions (`create_note`, `save_note`, `delete_note`, `add_action`, `export_markdown`) execute deterministic TypeScript inside the supervised worker. They do not dispatch hidden LLM requests on basic UI interactions.
-4. **Isolated Network Boundary**: Voice Desk runs with network isolation enabled. External integrations, web fetching, or remote sync require user-approved MCP tools outside this package boundary.
-5. **Form & Data Binding**: Form inputs strictly bind to designated canonical paths (`/activeTitle`, `/activeTags`, `/activeContent`, `/newNoteTitle`, `/newActionText`, `/newActionOwner`). Never use presentation labels as canonical data keys.
+1. `context.state.notes` is the only data owner. Every run starts with `normalize()`, which accepts untrusted or older state and keeps only well-formed notes.
+2. `view(state)` derives both surfaces (`desk`, `actions`) and their spoken text from the notes. Records go in surface data and render through repeaters (`children: {each, template}`); nodes are templates, and a region is emitted only when it applies (the editor only with an open note, the checklist only with items, the confirmation only while asked).
+3. Fields autosave: `/note/title`, `/note/body`, `/note/tags`, `/note/actions/<i>/done`, `/open/<i>/done`, `/capture`, `/newAction`. Anything else throws.
+4. Voice is the host's. Buttons declare `voice.dictate` `{into: <input node id>}` and `voice.read` `{text: "/spoken/..."}`; this code never records, transcribes or speaks.
+5. No network, tools or model calls. Text is stored as inert strings.
 
-## Change Method
+## Change method
 
-- Whenever modifying `server.ts` or `surface.json`, ensure both `workbench` and `actions` surfaces remain valid against `SurfaceStore(basicCatalog).render()`.
-- Update all four package documents (`README.md`, `AGENTS.md`, `SKILLS.md`, `ARCHITECTURE.md`) in lockstep.
-- Verify that changes pass `npm test`, typechecking, and the WebKit apps checker (`scripts/apps-check.ts`).
+Change `server.ts`, then regenerate `surface.json` as `view({})` (the test fails otherwise), bump `version` in app.json, update these four documents, and run `node --test test/reference-apps.test.ts test/app-registry.test.ts` (the second runs it in the real sandbox).

@@ -1,34 +1,24 @@
-# Voice Desk Architecture
+# Voice Desk architecture
 
-Voice Desk operates within Vakyartha's sandboxed executable app runtime. It bridges local voice transcription, reactive surface projection, and deterministic state persistence.
+## Files
 
-## Architecture and Data Flow
+- `app.json`: manifest; no network, tools, storage database or schedules.
+- `server.ts`: `normalize`, `handleAction`, and `view` with `deskSurface`, `editorNodes`, `actionsSurface`.
+- `surface.json`: `view({})`, the empty state shown before the first action.
 
-```mermaid
-flowchart TD
-  Voice[Microphone Audio 16kHz] --> STT[STT Adapter: Whistle/Ollama/Hosted]
-  STT --> Clean[Speech Normalizer: Local/Active Model]
-  Clean --> Composer[In-Chat Dictation or Note Intake]
-  Composer --> Action[App Dispatch / handleAction]
-  Action --> Sandbox[vaksb Supervised Worker]
-  Sandbox --> State[(app-state/voice-desk.json)]
-  State --> Project[project Context]
-  Project --> Surface[Projection Engine: <vak-surface>]
-  Surface --> Canvas[Desktop Canvas Viewport]
-  Surface --> Audio[Spoken Voice Read-Aloud]
+## Flow
+
+```text
+type or dictate (host voice.dictate) → field edit, batched by the host → handleAction(bindPath, value)
+button → handleAction(action, payload) → normalize(state) → change notes → view(state)
+view → updates for desk and actions (nodes + whole data) → registry validates and commits atomically → surfaces
+voice.read button → payload pointer resolved by Projection → host reads the text aloud
 ```
 
-## Component Boundaries
+## Data
 
-1. **Presentation (`surface.json`)**:
-   - Implements container-query responsive surfaces (`workbench` and `actions`) using Projection's basic catalog.
-   - Enforces clamped measures on desktop viewports to prevent distortion of text and action grids.
-2. **Execution Worker (`server.ts`)**:
-   - Runs in an isolated `vaksb` sandbox process with strict resource limits (256 MB RAM, 30s CPU).
-   - Validates incoming form field updates, executes note lifecycle operations, and returns atomic surface snapshots.
-3. **Data Persistence**:
-   - Atomic serialized JSON storage under `<data>/app-state/voice-desk.json`.
-   - Notes, actions, decisions, and raw transcripts survive UI navigation, application restarts, and system power cycles.
-4. **Safety & Containment**:
-   - Network egress is explicitly denied inside the sandbox worker.
-   - File exports are routed strictly through the host's vetted Downloads path.
+State: `notes[]` (`id`, `title`, `body`, `tags[]`, `actions[]` of `{id, text, done}`, `created`, `updated`), `openId`, `seq`, `capture`, `newAction`, `confirmDelete`. Surface data is derived: `/notes` records for the list, `/note` for the editor, `/open` for open items, `/spoken/*` for read-aloud text. Visual and spoken views come from the same notes.
+
+## Boundaries
+
+Each action runs in a fresh sandbox (30 s); state is saved only on success, and errors show in the app header's status chip. Voice input and output stay with the host's voice settings and providers. Limits: 500 notes, 20,000 characters per note, 300 per line field, 12 tags.

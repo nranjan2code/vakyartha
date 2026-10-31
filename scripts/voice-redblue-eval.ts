@@ -103,26 +103,29 @@ async function run() {
     await registry.init();
     let app = await registry.installBuiltin("voice-desk");
 
-    // Test 4.1: Traversal injection in note title
+    // Test 4.1: Traversal text captured as a note stays inert data
     const traversalTitle = "../../../../../etc/passwd";
-    let res = await registry.dispatchAction("voice-desk", "/newNoteTitle", traversalTitle, undefined, app.revision);
-    res = await registry.dispatchAction("voice-desk", "create_note", null, "create_note", res.revision);
-    const pass41 = res.surfaces.workbench.data.activeTitle === traversalTitle;
-    record("Sandbox 1: Directory traversal title injection", "sandbox", pass41, `Handled as inert string data: "${res.surfaces.workbench.data.activeTitle}"`);
+    let res = await registry.dispatchAction("voice-desk", "/capture", traversalTitle, undefined, app.revision);
+    res = await registry.dispatchAction("voice-desk", "save_capture", null, "save_capture", res.revision);
+    const pass41 = res.surfaces.desk.data.note.body === traversalTitle;
+    record("Sandbox 1: Directory traversal text in a note", "sandbox", pass41, `Handled as inert string data: "${res.surfaces.desk.data.note.body}"`);
 
-    // Test 4.2: Delete note floor (Cannot delete the only note)
+    // Test 4.2: Deleting needs a confirmation step, and the last note can go
+    res = await registry.dispatchAction("voice-desk", "ask_delete", null, "ask_delete", res.revision);
+    const asked = res.surfaces.desk.nodes.some((n: { id: string }) => n.id === "delete-yes");
     res = await registry.dispatchAction("voice-desk", "delete_note", null, "delete_note", res.revision);
-    res = await registry.dispatchAction("voice-desk", "delete_note", null, "delete_note", res.revision);
-    const pass42 = Number(res.surfaces.workbench.data.noteCount) >= 1 && res.surfaces.workbench.data.statusMessage.includes("Cannot delete the only");
-    record("Sandbox 2: Exhaustion - deleting down to 0 notes", "sandbox", pass42, `Protected state floor: ${res.surfaces.workbench.data.statusMessage}`);
+    const pass42 = asked && !res.surfaces.desk.data.note;
+    record("Sandbox 2: Two-step delete down to zero notes", "sandbox", pass42, "Confirmation shown, then an empty desk with capture still available");
 
-    // Test 4.3: Action injection with shell metacharacters
+    // Test 4.3: Shell metacharacters in an action item stay inert text
     const shellInj = "Task $(rm -rf /) ; `killall node`";
-    res = await registry.dispatchAction("voice-desk", "/newActionText", shellInj, undefined, res.revision);
+    res = await registry.dispatchAction("voice-desk", "/capture", "Injection check", undefined, res.revision);
+    res = await registry.dispatchAction("voice-desk", "save_capture", null, "save_capture", res.revision);
+    res = await registry.dispatchAction("voice-desk", "/newAction", shellInj, undefined, res.revision);
     res = await registry.dispatchAction("voice-desk", "add_action", null, "add_action", res.revision);
-    const lastAction = res.surfaces.workbench.data.actions.at(-1);
-    const pass43 = lastAction && lastAction.task === shellInj;
-    record("Sandbox 3: Shell metacharacter injection in task", "sandbox", Boolean(pass43), `Treated as inert text: "${lastAction?.task}"`);
+    const lastAction = res.surfaces.desk.data.note.actions.at(-1);
+    const pass43 = lastAction && lastAction.text === shellInj;
+    record("Sandbox 3: Shell metacharacter injection in an action item", "sandbox", Boolean(pass43), `Treated as inert text: "${lastAction?.text}"`);
 
   } finally {
     await registry.shutdown();

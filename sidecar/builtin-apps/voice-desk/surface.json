@@ -1,538 +1,137 @@
 [
   {
-    "id": "workbench",
-    "title": "Voice Notes Desk",
-    "version": 1,
+    "id": "desk",
+    "title": "Notes",
     "data": {
-      "noteCount": "1",
-      "actionCount": "1",
-      "decisionCount": "1",
-      "tagCount": "2",
-      "statusMessage": "Ready to capture. Speak with ⌘D or edit below.",
-      "selectedNoteId": "note-1",
-      "noteOptions": [
-        {
-          "label": "📄 Welcome to Voice Desk",
-          "value": "note-1"
-        }
-      ],
-      "noteDate": "2026-10-30",
-      "activeExcerpt": "Welcome to Voice Desk. Speak naturally via dictation (⌘D) or type your thoughts directly...",
-      "notes": [
-        {
-          "id": "note-1",
-          "title": "Welcome to Voice Desk",
-          "tags": "#voice #notes",
-          "updatedAt": "2026-10-30"
-        }
-      ],
-      "activeTitle": "Welcome to Voice Desk",
-      "activeTags": "#voice #notes",
-      "activeContent": "Welcome to Voice Desk.\n\nSpeak naturally via dictation (⌘D) or type your thoughts directly. Verbal fillers ('um', 'ah') and self-corrections are cleaned up using the active model.",
-      "activeRaw": "Uh, hello and welcome to Voice Desk. You can, um, speak your thoughts or type them.",
-      "newNoteTitle": "",
-      "newActionText": "",
-      "newActionOwner": "",
-      "actions": [
-        {
-          "id": "act-1",
-          "task": "Try dictating a note with ⌘D",
-          "owner": "You",
-          "status": "To Do"
-        },
-        {
-          "id": "act-2",
-          "task": "Type edits in the note content editor",
-          "owner": "You",
-          "status": "Done"
-        }
-      ],
-      "decisions": [
-        {
-          "id": "dec-1",
-          "decision": "Voice Desk stores notes locally with zero network leakage",
-          "date": "2026-10-30"
-        }
-      ]
+      "capture": "",
+      "listTitle": "0 notes",
+      "notes": []
     },
     "nodes": [
       {
         "id": "root",
         "type": "stack",
         "props": {
-          "direction": "vertical",
-          "gap": "md"
+          "gap": "lg"
         },
         "children": [
-          "voice-studio-dock",
-          "editor-split"
+          "capture",
+          "no-notes"
         ]
       },
       {
-        "id": "voice-studio-dock",
-        "type": "card",
+        "id": "capture",
+        "type": "section",
         "props": {
-          "title": "🎙️ Voice Studio Dock",
-          "subtitle": "{/statusMessage}",
-          "tone": "info"
+          "title": "New note",
+          "description": "Dictate (⌘D) or type, or both, then save. It opens below for editing."
         },
         "children": [
-          "voice-actions-row"
+          "capture-text",
+          "capture-bar"
         ]
       },
       {
-        "id": "voice-actions-row",
+        "id": "capture-text",
+        "type": "textarea",
+        "props": {
+          "label": "What is on your mind?",
+          "bind": "/capture",
+          "placeholder": "Speak or type…"
+        }
+      },
+      {
+        "id": "capture-bar",
         "type": "stack",
         "props": {
           "direction": "horizontal",
+          "wrap": true,
           "gap": "sm"
         },
         "children": [
-          "btn-dictate",
-          "btn-save",
-          "btn-clean",
-          "btn-read",
-          "btn-export"
+          "capture-dictate",
+          "capture-save"
         ]
       },
       {
-        "id": "btn-dictate",
+        "id": "capture-dictate",
         "type": "button",
         "props": {
-          "label": "🎙️ Dictate Note (⌘D)",
-          "action": "dictate_note",
+          "label": "Dictate",
+          "action": "voice.dictate",
+          "payload": {
+            "into": "capture-text"
+          },
+          "style": "secondary"
+        }
+      },
+      {
+        "id": "capture-save",
+        "type": "button",
+        "props": {
+          "label": "Save note",
+          "action": "save_capture",
           "style": "primary"
         }
       },
       {
-        "id": "btn-save",
-        "type": "button",
-        "props": {
-          "label": "💾 Save Changes",
-          "action": "save_note",
-          "style": "primary"
-        }
-      },
-      {
-        "id": "btn-clean",
-        "type": "button",
-        "props": {
-          "label": "✨ Polish Content",
-          "action": "clean_note",
-          "style": "secondary"
-        }
-      },
-      {
-        "id": "btn-read",
-        "type": "button",
-        "props": {
-          "label": "🔊 Read Aloud",
-          "action": "read_note",
-          "style": "secondary"
-        }
-      },
-      {
-        "id": "btn-export",
-        "type": "button",
-        "props": {
-          "label": "📥 Export Markdown",
-          "action": "export_markdown",
-          "style": "secondary"
-        }
-      },
-      {
-        "id": "editor-split",
-        "type": "split",
-        "props": {
-          "ratio": "1:2",
-          "gap": "md"
-        },
-        "children": [
-          "pane-notes-sidebar",
-          "pane-editor"
-        ]
-      },
-      {
-        "id": "pane-notes-sidebar",
-        "type": "stack",
-        "props": {
-          "direction": "vertical",
-          "gap": "sm"
-        },
-        "children": [
-          "heading-library",
-          "select-active-note",
-          "new-note-form",
-          "active-note-card",
-          "notes-summary-stats"
-        ]
-      },
-      {
-        "id": "heading-library",
+        "id": "no-notes",
         "type": "text",
         "props": {
-          "content": "### 📚 Notes Library",
-          "variant": "subheading"
-        }
-      },
-      {
-        "id": "select-active-note",
-        "type": "select",
-        "props": {
-          "label": "Open Note",
-          "bind": "/selectedNoteId",
-          "options": "{/noteOptions}"
-        }
-      },
-      {
-        "id": "new-note-form",
-        "type": "form",
-        "props": {
-          "submit": "create_note",
-          "submitLabel": "+ Create Note"
-        },
-        "children": [
-          "input-new-title"
-        ]
-      },
-      {
-        "id": "input-new-title",
-        "type": "input",
-        "props": {
-          "label": "New Note Title",
-          "bind": "/newNoteTitle",
-          "placeholder": "e.g. Brainstorm, Meeting..."
-        }
-      },
-      {
-        "id": "active-note-card",
-        "type": "card",
-        "props": {
-          "title": "{/activeTitle}",
-          "subtitle": "Last edited: {/noteDate} · {/activeTags}",
-          "body": "{/activeExcerpt}"
-        },
-        "children": [
-          "btn-delete-active"
-        ]
-      },
-      {
-        "id": "btn-delete-active",
-        "type": "button",
-        "props": {
-          "label": "🗑️ Delete Note",
-          "action": "delete_note",
-          "style": "danger"
-        }
-      },
-      {
-        "id": "notes-summary-stats",
-        "type": "grid",
-        "props": {
-          "columns": 2,
-          "minItemWidth": "sm",
-          "gap": "sm"
-        },
-        "children": [
-          "stat-notes",
-          "stat-actions"
-        ]
-      },
-      {
-        "id": "stat-notes",
-        "type": "stat",
-        "props": {
-          "label": "Notes in Library",
-          "value": "{/noteCount}"
-        }
-      },
-      {
-        "id": "stat-actions",
-        "type": "stat",
-        "props": {
-          "label": "Pending Tasks",
-          "value": "{/actionCount}"
-        }
-      },
-      {
-        "id": "pane-editor",
-        "type": "stack",
-        "props": {
-          "direction": "vertical",
-          "gap": "md"
-        },
-        "children": [
-          "heading-editor",
-          "active-form",
-          "card-deliverables",
-          "card-raw-audio"
-        ]
-      },
-      {
-        "id": "heading-editor",
-        "type": "text",
-        "props": {
-          "content": "### ✍️ Note Document",
-          "variant": "subheading"
-        }
-      },
-      {
-        "id": "active-form",
-        "type": "form",
-        "props": {
-          "submit": "save_note",
-          "submitLabel": "💾 Save Changes"
-        },
-        "children": [
-          "editor-meta-grid",
-          "textarea-active-content"
-        ]
-      },
-      {
-        "id": "editor-meta-grid",
-        "type": "grid",
-        "props": {
-          "columns": 2,
-          "minItemWidth": "sm",
-          "gap": "md"
-        },
-        "children": [
-          "input-active-title",
-          "input-active-tags"
-        ]
-      },
-      {
-        "id": "input-active-title",
-        "type": "input",
-        "props": {
-          "label": "Note Title",
-          "bind": "/activeTitle",
-          "placeholder": "Document title..."
-        }
-      },
-      {
-        "id": "input-active-tags",
-        "type": "input",
-        "props": {
-          "label": "Topic Tags",
-          "bind": "/activeTags",
-          "placeholder": "#voice #strategy..."
-        }
-      },
-      {
-        "id": "textarea-active-content",
-        "type": "textarea",
-        "props": {
-          "label": "Note Body (Markdown formatting, bullets and paragraphs supported)",
-          "bind": "/activeContent",
-          "placeholder": "Speak with ⌘D or start typing your thoughts here..."
-        }
-      },
-      {
-        "id": "card-deliverables",
-        "type": "card",
-        "props": {
-          "title": "✅ Action Items & Deliverables",
-          "subtitle": "Tasks extracted from speech or added manually"
-        },
-        "children": [
-          "actions-table",
-          "action-add-form"
-        ]
-      },
-      {
-        "id": "actions-table",
-        "type": "table",
-        "props": {
-          "columns": [
-            {
-              "key": "task",
-              "label": "Task Description"
-            },
-            {
-              "key": "owner",
-              "label": "Assignee"
-            },
-            {
-              "key": "status",
-              "label": "Status"
-            }
-          ],
-          "rows": "{/actions}",
-          "sortable": true,
-          "searchable": true,
-          "pageSize": 5
-        }
-      },
-      {
-        "id": "action-add-form",
-        "type": "form",
-        "props": {
-          "submit": "add_action",
-          "submitLabel": "+ Add Action"
-        },
-        "children": [
-          "action-add-grid"
-        ]
-      },
-      {
-        "id": "action-add-grid",
-        "type": "grid",
-        "props": {
-          "columns": 2,
-          "minItemWidth": "sm",
-          "gap": "sm"
-        },
-        "children": [
-          "input-new-action-task",
-          "input-new-action-owner"
-        ]
-      },
-      {
-        "id": "input-new-action-task",
-        "type": "input",
-        "props": {
-          "label": "New Action Task",
-          "bind": "/newActionText",
-          "placeholder": "e.g. Schedule review meeting..."
-        }
-      },
-      {
-        "id": "input-new-action-owner",
-        "type": "input",
-        "props": {
-          "label": "Assignee",
-          "bind": "/newActionOwner",
-          "placeholder": "e.g. You, Alex..."
-        }
-      },
-      {
-        "id": "card-raw-audio",
-        "type": "card",
-        "props": {
-          "title": "🎙️ Original Audio Transcript (Verbatim Memory)",
-          "subtitle": "Raw speech captured before speech-to-text normalizer",
-          "body": "{/activeRaw}",
-          "tone": "neutral"
+          "content": "Saved notes appear here, with their action items as a checklist.",
+          "variant": "caption"
         }
       }
     ]
   },
   {
     "id": "actions",
-    "title": "Action Register",
-    "version": 1,
+    "title": "Action items",
     "data": {
-      "totalCount": "2",
-      "openCount": "1",
-      "doneCount": "1",
-      "allActions": [
-        {
-          "id": "act-1",
-          "noteTitle": "Welcome to Voice Desk",
-          "task": "Try dictating a note with ⌘D",
-          "owner": "You",
-          "status": "To Do"
-        },
-        {
-          "id": "act-2",
-          "noteTitle": "Welcome to Voice Desk",
-          "task": "Type edits in the note content editor",
-          "owner": "You",
-          "status": "Done"
-        }
-      ],
-      "coverage": "Central register of 2 action items across 1 Voice Desk notes."
+      "summary": "Nothing open.",
+      "open": [],
+      "spoken": {
+        "actions": "Nothing is open."
+      }
     },
     "nodes": [
       {
         "id": "root",
         "type": "stack",
         "props": {
-          "direction": "vertical",
           "gap": "md"
         },
         "children": [
-          "card-register-header",
-          "actions-summary",
-          "all-actions-table"
+          "tasks-bar",
+          "tasks-empty"
         ]
       },
       {
-        "id": "card-register-header",
-        "type": "card",
+        "id": "tasks-bar",
+        "type": "stack",
         "props": {
-          "title": "📋 Central Action Register",
-          "subtitle": "{/coverage}",
-          "tone": "info"
-        }
-      },
-      {
-        "id": "actions-summary",
-        "type": "grid",
-        "props": {
-          "columns": 3,
-          "minItemWidth": "sm",
-          "gap": "md"
+          "direction": "horizontal",
+          "wrap": true,
+          "gap": "sm",
+          "align": "center"
         },
         "children": [
-          "stat-total",
-          "stat-open",
-          "stat-done"
+          "tasks-count"
         ]
       },
       {
-        "id": "stat-total",
-        "type": "stat",
+        "id": "tasks-count",
+        "type": "text",
         "props": {
-          "label": "Total Tasks",
-          "value": "{/totalCount}"
+          "content": "{/summary}"
         }
       },
       {
-        "id": "stat-open",
-        "type": "stat",
+        "id": "tasks-empty",
+        "type": "text",
         "props": {
-          "label": "Pending Tasks",
-          "value": "{/openCount}",
-          "tone": "warning"
-        }
-      },
-      {
-        "id": "stat-done",
-        "type": "stat",
-        "props": {
-          "label": "Completed Tasks",
-          "value": "{/doneCount}",
-          "tone": "success"
-        }
-      },
-      {
-        "id": "all-actions-table",
-        "type": "table",
-        "props": {
-          "columns": [
-            {
-              "key": "noteTitle",
-              "label": "Note Document"
-            },
-            {
-              "key": "task",
-              "label": "Deliverable"
-            },
-            {
-              "key": "owner",
-              "label": "Assignee"
-            },
-            {
-              "key": "status",
-              "label": "Status"
-            }
-          ],
-          "rows": "{/allActions}",
-          "sortable": true,
-          "searchable": true,
-          "pageSize": 10
+          "content": "Action items you add to notes appear here until they are done.",
+          "variant": "caption"
         }
       }
     ]
