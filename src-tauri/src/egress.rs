@@ -9,9 +9,10 @@ use std::sync::LazyLock;
 use serde::Deserialize;
 
 const MAX_BODY: usize = 8 * 1024 * 1024;
-const REQUEST_HEADERS: &[&str] = &["content-type", "accept", "mcp-protocol-version", "mcp-session-id", "last-event-id"];
+const REQUEST_HEADERS: &[&str] = &["content-type", "accept", "mcp-protocol-version", "mcp-session-id", "last-event-id", "user-agent"];
 pub(crate) const RESPONSE_HEADERS: &[&str] = &["content-type", "retry-after", "mcp-session-id"];
 const STORE: &str = "egress-approvals.json";
+const CUSTOM_STORE: &str = "custom-egress-hosts.json";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -91,34 +92,137 @@ pub(crate) struct Admitted {
 }
 
 impl EgressRequest {
-    pub fn admit(&self, protocol: u8) -> Result<Admitted, &'static str> {
+    pub fn admit(&self, protocol: u8, data_dir: &Path) -> Result<Admitted, String> {
         let valid_id = self.id.starts_with("egr-") && self.id.len() <= 64 && self.id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
-        if self.v != protocol || self.kind != "egress_request" || !valid_id { return Err("Invalid egress request"); }
+        if self.v != protocol || self.kind != "egress_request" || !valid_id { return Err("Invalid egress request".into()); }
         let method = match self.method.as_str() {
             "GET" => reqwest::Method::GET,
             "POST" => reqwest::Method::POST,
             "DELETE" => reqwest::Method::DELETE,
-            _ => return Err("Unsupported egress method"),
+            _ => return Err("Unsupported egress method".into()),
         };
-        if self.body.len() > MAX_BODY || (method != reqwest::Method::POST && !self.body.is_empty()) { return Err("Unsupported egress body"); }
-        if self.url.len() > 4096 { return Err("Egress URL is too long"); }
-        let url = reqwest::Url::parse(&self.url).map_err(|_| "Invalid egress URL")?;
+        if self.body.len() > MAX_BODY || (method != reqwest::Method::POST && !self.body.is_empty()) { return Err("Unsupported egress body".into()); }
+        if self.url.len() > 4096 { return Err("Egress URL is too long".into()); }
+        let url = reqwest::Url::parse(&self.url).map_err(|_| "Invalid egress URL".to_string())?;
         if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() || url.port().is_some_and(|p| p != 443) {
-            return Err("Integration egress must be plain HTTPS on port 443");
+            return Err("Integration egress must be plain HTTPS on port 443".into());
         }
-        let host = url.host_str().ok_or("Invalid egress URL")?.to_ascii_lowercase();
-        if !approvable(&host) { return Err("Destination is not an approved integration host"); }
+        let host = url.host_str().ok_or_else(|| "Invalid egress URL".to_string())?.to_ascii_lowercase();
+        if !is_permitted(data_dir, &host) {
+            return Err(format!("Network access to {host} needs your approval: open Settings and choose Allow or add it under Sandbox Allowed URLs"));
+        }
         let mut headers = Vec::with_capacity(self.headers.len());
         for (name, value) in &self.headers {
             let name = name.to_ascii_lowercase();
             if !REQUEST_HEADERS.contains(&name.as_str()) || value.len() > 512 || !value.bytes().all(|b| (0x20..0x7f).contains(&b)) {
-                return Err("Unsupported egress header");
+                return Err("Unsupported egress header".into());
             }
             headers.push((name, value.clone()));
         }
         let body = (method == reqwest::Method::POST).then(|| self.body.clone());
         Ok(Admitted { host, url, method, headers, body })
     }
+}
+
+pub(crate) fn normalize_host_pattern(input: &str) -> Result<String, &'static str> {
+    let mut s = input.trim();
+    if s.is_empty() { return Err("Host cannot be empty"); }
+    if let Some(rest) = s.strip_prefix("https://").or_else(|| s.strip_prefix("http://")) {
+        s = rest;
+    }
+    if let Some((clean, _)) = s.split_once('/') { s = clean; }
+    if let Some((clean, _)) = s.split_once('?') { s = clean; }
+    if let Some((clean, _)) = s.split_once('#') { s = clean; }
+    if let Some((clean, port)) = s.split_once(':') {
+        if port != "443" { return Err("Only HTTPS port 443 is permitted for network egress"); }
+        s = clean;
+    }
+    let host = s.to_ascii_lowercase();
+    if host.len() > 253 { return Err("Host is too long"); }
+    if host == "localhost" || host == "127.0.0.1" || host == "::1" || host.starts_with("10.") || host.starts_with("192.168.") || host.starts_with("169.254.") {
+        return Err("Loopback and private IP addresses are not permitted");
+    }
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return Err("IP address literals are not permitted; use hostnames");
+    }
+    let check = host.strip_prefix('.').unwrap_or(&host);
+    if check.is_empty() || !check.contains('.') {
+        return Err("Please provide a valid fully qualified domain name (e.g. api.example.com or .example.com)");
+    }
+    for part in check.split('.') {
+        if part.is_empty() || part.len() > 63 || !part.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || part.starts_with('-') || part.ends_with('-') {
+            return Err("Invalid domain name format");
+        }
+    }
+    if crate::policy::MODEL_API_HOSTS.contains(&host.as_str()) {
+        return Err("Model API hosts are handled by Providers, not custom egress");
+    }
+    Ok(host)
+}
+
+fn custom_store(data_dir: &Path) -> PathBuf { crate::private_store::root(data_dir).join(CUSTOM_STORE) }
+
+pub(crate) fn custom_hosts(data_dir: &Path) -> Vec<String> {
+    std::fs::read(custom_store(data_dir)).ok()
+        .and_then(|bytes| serde_json::from_slice::<Vec<String>>(&bytes).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|h| normalize_host_pattern(&h).ok())
+        .collect()
+}
+
+pub(crate) fn add_custom_host(data_dir: &Path, raw: &str) -> Result<Vec<String>, String> {
+    let host = normalize_host_pattern(raw).map_err(|e| e.to_string())?;
+    let mut hosts = custom_hosts(data_dir);
+    if !hosts.contains(&host) {
+        hosts.push(host);
+        hosts.sort();
+        save_custom_hosts(data_dir, &hosts)?;
+    }
+    Ok(hosts)
+}
+
+pub(crate) fn remove_custom_host(data_dir: &Path, raw: &str) -> Result<Vec<String>, String> {
+    let host = normalize_host_pattern(raw).unwrap_or_else(|_| raw.trim().to_ascii_lowercase());
+    let mut hosts = custom_hosts(data_dir);
+    hosts.retain(|h| h != &host);
+    save_custom_hosts(data_dir, &hosts)?;
+    Ok(hosts)
+}
+
+fn save_custom_hosts(data_dir: &Path, hosts: &[String]) -> Result<(), String> {
+    let root = crate::private_store::root(data_dir);
+    crate::private_store::ensure_root(&root).map_err(|_| "Custom egress store is unavailable".to_owned())?;
+    let temp = root.join(format!("{CUSTOM_STORE}.tmp"));
+    {
+        use std::io::Write;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let mut file = options.open(&temp).map_err(|_| "Custom egress store is unavailable".to_owned())?;
+        file.write_all(&serde_json::to_vec(hosts).unwrap()).and_then(|_| file.sync_all()).map_err(|_| "Custom host could not be saved".to_owned())?;
+    }
+    std::fs::rename(&temp, custom_store(data_dir)).map_err(|_| "Custom host could not be saved".to_owned())?;
+    Ok(())
+}
+
+pub(crate) fn is_permitted(data_dir: &Path, host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    if crate::policy::MODEL_API_HOSTS.contains(&host.as_str()) {
+        return false;
+    }
+    if approvable(&host) && approved(data_dir).iter().any(|h| h == &host) {
+        return true;
+    }
+    custom_hosts(data_dir).iter().any(|pattern| {
+        let pattern = pattern.to_ascii_lowercase();
+        if pattern.starts_with('.') {
+            host.ends_with(&pattern) && host.len() > pattern.len()
+        } else {
+            pattern == host
+        }
+    })
 }
 
 fn store(data_dir: &Path) -> PathBuf { crate::private_store::root(data_dir).join(STORE) }
@@ -167,8 +271,13 @@ mod tests {
 
     #[test]
     fn admits_only_plain_https_integration_hosts_with_bounded_headers() {
-        let ok = request("https://mcp.nseindia.in/bhavcopy/cm/mcp", "POST", &[("Content-Type", "application/json"), ("mcp-session-id", "abc")], "{}");
-        assert_eq!(ok.admit(2).unwrap().host, "mcp.nseindia.in");
+        let base = std::env::temp_dir().join(format!("vak-egress-admit-{}", std::process::id()));
+        let data = base.join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        set_approval(&data, "mcp.nseindia.in", true).unwrap();
+
+        let ok = request("https://mcp.nseindia.in/bhavcopy/cm/mcp", "POST", &[("Content-Type", "application/json"), ("mcp-session-id", "abc"), ("user-agent", "custom-agent/1.0")], "{}");
+        assert_eq!(ok.admit(2, &data).unwrap().host, "mcp.nseindia.in");
         for bad in [
             request("http://mcp.nseindia.in/mcp", "POST", &[], "{}"),
             request("https://mcp.nseindia.in:8443/mcp", "POST", &[], "{}"),
@@ -180,8 +289,52 @@ mod tests {
             request("https://mcp.nseindia.in/mcp", "PUT", &[], ""),
             request("https://mcp.nseindia.in/mcp", "POST", &[("accept", "a\r\nx: y")], ""),
         ] {
-            assert!(bad.admit(2).is_err(), "{} {}", bad.method, bad.url);
+            assert!(bad.admit(2, &data).is_err(), "{} {}", bad.method, bad.url);
         }
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn custom_hosts_persist_normalize_and_admit_exact_and_wildcard() {
+        let base = std::env::temp_dir().join(format!("vak-egress-custom-{}", std::process::id()));
+        let data = base.join("data");
+        std::fs::create_dir_all(&data).unwrap();
+
+        assert!(custom_hosts(&data).is_empty());
+        assert_eq!(add_custom_host(&data, "https://api.example.com/v1/test").unwrap(), vec!["api.example.com"]);
+        assert_eq!(add_custom_host(&data, ".corp.internal").unwrap(), vec![".corp.internal", "api.example.com"]);
+        assert_eq!(custom_hosts(&data), vec![".corp.internal", "api.example.com"]);
+
+        // Exact match
+        assert!(is_permitted(&data, "api.example.com"));
+        assert!(!is_permitted(&data, "other.example.com"));
+
+        // Wildcard match
+        assert!(is_permitted(&data, "service.corp.internal"));
+        assert!(is_permitted(&data, "deep.service.corp.internal"));
+        assert!(!is_permitted(&data, "corp.internal")); // domain itself does not match .corp.internal
+        assert!(!is_permitted(&data, "evil-corp.internal"));
+
+        // Egress request admittance
+        let ok_custom = request("https://api.example.com/data", "GET", &[("accept", "application/json")], "");
+        assert_eq!(ok_custom.admit(2, &data).unwrap().host, "api.example.com");
+
+        let ok_wildcard = request("https://node1.corp.internal/ping", "GET", &[], "");
+        assert_eq!(ok_wildcard.admit(2, &data).unwrap().host, "node1.corp.internal");
+
+        // Normalization rejects bad inputs
+        assert!(add_custom_host(&data, "").is_err());
+        assert!(add_custom_host(&data, "127.0.0.1").is_err());
+        assert!(add_custom_host(&data, "localhost").is_err());
+        assert!(add_custom_host(&data, "192.168.1.1").is_err());
+        assert!(add_custom_host(&data, "api.openai.com").is_err()); // model host
+        assert!(add_custom_host(&data, "https://api.example.com:8443").is_err()); // non-443 port
+
+        // Removal
+        assert_eq!(remove_custom_host(&data, "api.example.com").unwrap(), vec![".corp.internal"]);
+        assert!(!is_permitted(&data, "api.example.com"));
+
+        std::fs::remove_dir_all(base).unwrap();
     }
 
     #[test]

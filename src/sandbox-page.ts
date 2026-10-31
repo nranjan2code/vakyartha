@@ -3,7 +3,7 @@ import { api, el } from "./core.ts";
 import { icon } from "./icons.ts";
 import { group, pill, row, title } from "./ui.ts";
 import { realmSettings } from "./sandbox-realms-page.ts";
-import { pickFolder, sandboxFolder, setSandboxFolder } from "./backend.ts";
+import { addCustomEgressHost, customEgressHosts, pickFolder, removeCustomEgressHost, sandboxFolder, setSandboxFolder } from "./backend.ts";
 import type { SandboxStatus } from "../shared/sandbox.ts";
 
 export async function sandboxPage(openIntegration: () => void, openSkill: () => void): Promise<HTMLElement[]> {
@@ -75,13 +75,131 @@ export async function sandboxPage(openIntegration: () => void, openSkill: () => 
   }
 
   const realms = realmSettings(() => status);
-  async function refresh(): Promise<void> { status = await load(); paint(); realms.dispatchEvent(new Event("sandbox:refresh")); }
+
+  // Allowed URLs & Network Egress section
+  let customList: string[] = [];
+  try {
+    customList = await customEgressHosts();
+  } catch {
+    customList = [];
+  }
+  const customListEl = el("div", { className: "egress-custom-list" });
+  const addInput = el("input", {
+    type: "text",
+    placeholder: "e.g. api.example.com, https://api.mycorp.com, or .corp.internal",
+    spellcheck: false,
+    autocomplete: "off",
+    className: "flex-1",
+  });
+  const addBtn = button("Add URL", () => void handleAdd());
+  addBtn.disabled = true;
+
+  const updateAddState = () => {
+    addBtn.disabled = !addInput.value.trim();
+  };
+  addInput.addEventListener("input", updateAddState);
+
+  const renderCustomList = () => {
+    if (customList.length === 0) {
+      customListEl.replaceChildren(
+        el("p", { className: "egress-empty", textContent: "No custom URLs allowed. Contained workers and tools reach only approved integration hosts." })
+      );
+      return;
+    }
+    customListEl.replaceChildren(
+      ...customList.map(h => {
+        const isWildcard = h.startsWith(".");
+        const removeBtn = button("Remove", async () => {
+          removeBtn.disabled = true;
+          try {
+            customList = await removeCustomEgressHost(h);
+            renderCustomList();
+            report(`Removed ${h} from allowed destinations.`);
+          } catch (err) {
+            report((err as Error).message, true);
+          } finally {
+            removeBtn.disabled = false;
+          }
+        });
+
+        return el("div", { className: "egress-custom-item" },
+          el("div", { className: "egress-item-main" },
+            icon("globe", 16),
+            el("span", { className: "egress-item-host", textContent: h }),
+            el("span", { className: "egress-item-type", textContent: isWildcard ? "Domain wildcard" : "Exact host" })
+          ),
+          el("div", { className: "egress-item-actions" }, removeBtn)
+        );
+      })
+    );
+  };
+
+  const handleAdd = async () => {
+    const val = addInput.value.trim();
+    if (!val) return;
+    addBtn.disabled = true;
+    addInput.disabled = true;
+    try {
+      customList = await addCustomEgressHost(val);
+      addInput.value = "";
+      updateAddState();
+      renderCustomList();
+      report(`Added ${val} to allowed destinations.`);
+    } catch (err) {
+      report((err as Error).message, true);
+    } finally {
+      addInput.disabled = false;
+      updateAddState();
+    }
+  };
+
+  addInput.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void handleAdd();
+    }
+  });
+  renderCustomList();
+
+  const allowedUrlsGroup = group(
+    "Allowed URLs & Network Egress",
+    row(
+      "Outbound network policy",
+      "Contained workers and sandbox tools have no direct internet access. All network egress is routed through Rust and permitted only for approved integration hosts and your custom allowed URLs.",
+      pill("Public HTTPS only", "ok")
+    ),
+    el("div", { className: "egress-policy-box" },
+      el("div", { className: "egress-custom-section" },
+        el("div", {},
+          el("strong", { textContent: "Allowed URLs & hosts" }),
+          el("p", { className: "row-hint", textContent: "Specify hostnames, URLs (e.g. https://api.mycorp.com), or domain wildcards (e.g. .internal.corp) that workers and tools are permitted to reach." })
+        ),
+        customListEl,
+        el("div", { className: "egress-add-box" },
+          el("div", { className: "egress-add-line" }, addInput, addBtn)
+        )
+      )
+    )
+  );
+
+  async function refresh(): Promise<void> {
+    status = await load();
+    try {
+      customList = await customEgressHosts();
+      renderCustomList();
+    } catch {
+      // Keep existing list on refresh failure
+    }
+    paint();
+    realms.dispatchEvent(new Event("sandbox:refresh"));
+  }
   root.append(...title("Sandbox", "Control where local commands run and inspect the protection available on this computer."), health,
     group("Execution settings", form), notice,
     group("Connected capabilities", execution, el("div", { className: "row stack" }, el("p", { className: "row-hint", textContent: "Run a fixed printf command to check the full execution path. This copies the configured project and records the result in the integration log." }), el("div", { className: "row-actions" }, test), testOutput)),
     realms,
+    allowedUrlsGroup,
     group("Command boundaries", el("div", { className: "sandbox-boundaries" },
-      ...[["globe", "Network denied", "Commands cannot connect to the internet."], ["folder", "Isolated files", "Commands write to copies. Only reviewed promotion changes the project. Check for sensitive files beyond the common credential exclusions."], ["key", "Minimal environment", "No provider keys or app environment are passed to commands."], ["clock", "Bounded runs", "30 seconds · 32 KiB output · 512 MiB / 50,000 files per snapshot."]].map(([glyph, label, hint]) => el("div", { className: "sandbox-boundary" }, icon(glyph!, 18), el("div", {}, el("strong", { textContent: label }), el("p", { className: "row-hint", textContent: hint })))))),
+      ...[["globe", "Governed network", "Commands and workers reach only approved integration hosts and allowed URLs over plain HTTPS."], ["folder", "Isolated files", "Commands write to copies. Only reviewed promotion changes the project. Check for sensitive files beyond the common credential exclusions."], ["key", "Minimal environment", "No provider keys or app environment are passed to commands."], ["clock", "Bounded runs", "30 seconds · 32 KiB output · 512 MiB / 50,000 files per snapshot."]].map(([glyph, label, hint]) => el("div", { className: "sandbox-boundary" }, icon(glyph!, 18), el("div", {}, el("strong", { textContent: label }), el("p", { className: "row-hint", textContent: hint })))))),
     el("details", { className: "sandbox-diagnostics" }, el("summary", { textContent: "Runtime details" }), helperDetails, el("div", { className: "row-actions" }, check, el("a", { href: "https://github.com/nranjan2code/sandbox", target: "_blank", rel: "noreferrer", textContent: "Sandbox documentation ↗" }))));
   paint();
   return [root];

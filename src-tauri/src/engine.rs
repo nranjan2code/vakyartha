@@ -205,14 +205,10 @@ async fn relay_response(mut response: reqwest::Response, id: &str, sender: &Inpu
 }
 
 async fn dispatch_egress_request(request: crate::egress::EgressRequest, sender: Input, queued: Arc<AtomicUsize>, service: String, data_dir: PathBuf) {
-    let admitted = match request.admit(PROTOCOL_VERSION) {
+    let admitted = match request.admit(PROTOCOL_VERSION, &data_dir) {
         Ok(admitted) => admitted,
-        Err(message) => return send_provider_error(&sender, &queued, &request.id, message),
+        Err(message) => return send_provider_error(&sender, &queued, &request.id, &message),
     };
-    if !crate::egress::approved(&data_dir).contains(&admitted.host) {
-        let message = format!("Network access to {} needs your approval: open this integration in Settings and choose Allow", admitted.host);
-        return send_provider_error(&sender, &queued, &request.id, &message);
-    }
     let client = match cached_resolve_public_addresses(&admitted.host).and_then(|addrs| get_or_create_client(Some(&admitted.host), Some(&addrs))) {
         Ok(client) => client,
         Err(message) => return send_provider_error(&sender, &queued, &request.id, &message),

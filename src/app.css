@@ -1574,6 +1574,20 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 .sandbox-diagnostics { margin-top: 24px; font-size: var(--text-sm); border-top: 1px solid var(--border); padding-top: 16px; }
 .sandbox-diagnostics summary { cursor: pointer; color: var(--muted); padding: 4px 0 12px; }
 .sandbox-diagnostics > .row-actions { padding: 12px 16px; flex-wrap: wrap; }
+/* Sandbox Allowed URLs / Egress Policy */
+.egress-policy-box { display: grid; gap: 16px; padding: 18px 16px; border-top: 1px solid var(--border); }
+.egress-custom-section { display: grid; gap: 12px; }
+.egress-custom-list { display: grid; gap: 8px; }
+.egress-custom-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.egress-item-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.egress-item-main > svg { color: var(--muted); flex: none; }
+.egress-item-host { font: var(--weight-semibold) var(--text-sm) var(--font-mono); color: var(--fg); word-break: break-all; }
+.egress-item-type { font-size: var(--text-2xs); padding: 1px 6px; border-radius: var(--radius-xs); background: color-mix(in srgb, var(--muted) 15%, transparent); color: var(--muted); white-space: nowrap; }
+.egress-item-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.egress-empty { font-size: var(--text-sm); color: var(--muted); font-style: italic; padding: 8px 0; }
+.egress-add-box { display: grid; gap: 8px; margin-top: 4px; }
+.egress-add-line { display: flex; gap: 8px; align-items: center; }
+.egress-add-line input { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--text-sm); }
 .settings-content > .skill-detail-layout { max-width: 760px; }
 .skills-summary { font-size: var(--text-xs); color: var(--muted); margin: 4px 0 18px; }
 .skill-detail-layout > .badges { margin: 16px 0; }

@@ -154,6 +154,27 @@ fn egress_set_approval(window: tauri::WebviewWindow, host: String, allow: bool) 
     egress::set_approval(&app_data_dir(window.app_handle()), &host, allow)
 }
 
+/// List custom allowed egress hosts configured by the user. Main window only.
+#[tauri::command]
+fn custom_egress_hosts(window: tauri::WebviewWindow) -> Result<Vec<String>, String> {
+    engine::main_window(&window)?;
+    Ok(egress::custom_hosts(&app_data_dir(window.app_handle())))
+}
+
+/// Add a custom allowed egress host. Main window only.
+#[tauri::command]
+fn add_custom_egress_host(window: tauri::WebviewWindow, host: String) -> Result<Vec<String>, String> {
+    engine::main_window(&window)?;
+    egress::add_custom_host(&app_data_dir(window.app_handle()), &host)
+}
+
+/// Remove a custom allowed egress host. Main window only.
+#[tauri::command]
+fn remove_custom_egress_host(window: tauri::WebviewWindow, host: String) -> Result<Vec<String>, String> {
+    engine::main_window(&window)?;
+    egress::remove_custom_host(&app_data_dir(window.app_handle()), &host)
+}
+
 /// Native folder picker dialog.
 #[tauri::command]
 fn pick_folder(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
@@ -966,6 +987,9 @@ pub fn run() {
             vault_delete,
             egress_approvals,
             egress_set_approval,
+            custom_egress_hosts,
+            add_custom_egress_host,
+            remove_custom_egress_host,
             sandbox_folder,
             sandbox_set_folder,
             pick_folder

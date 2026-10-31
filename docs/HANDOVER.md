@@ -1,5 +1,21 @@
 # Vakyartha handover — 2026-10-31
 
+## Sandbox Allowed URLs restored and wired through Rust egress and web fetch — 2026-10-31
+
+- Restored custom allowed egress endpoints in the desktop architecture: user-configured hosts/wildcards are stored exclusively in the private native store (`custom-egress-hosts.json`, permissions `0o600`) outside worker write grants.
+- Rust egress gate (`src-tauri/src/egress.rs`):
+  - Normalizes and validates candidate endpoints (accepts `https://` URLs, bare FQDNs like `api.example.com`, and domain wildcards like `.internal.corp`; strips trailing paths/queries/ports; rejects raw IP literals, loopback addresses, non-443 ports, and model provider endpoints handled by Providers).
+  - Extended `admit(PROTOCOL_VERSION, &data_dir)` and `is_permitted(&data_dir, &host)` to admit both user-approved catalog integrations and custom user-allowed URLs.
+  - Added `user-agent` to `REQUEST_HEADERS`.
+  - Added IPC commands `custom_egress_hosts`, `add_custom_egress_host`, and `remove_custom_egress_host` registered for main-window invocation only.
+- Contained worker transport (`sidecar/provider-channel.ts`):
+  - Added `user-agent` to `EGRESS_HEADERS` so standard fetch/HTTP clients work reliably.
+  - Any worker, tool, or skill calling `globalThis.fetch()` now transparently reaches user-allowed endpoints over public-pinned HTTPS without ambient worker network grants.
+- Sandbox settings UI (`src/sandbox-page.ts` & `src/app.css`):
+  - Re-added the "Allowed URLs & Network Egress" section in Sandbox settings with live list display, domain wildcard badges, input normalization, and one-click removal.
+  - Updated Command Boundaries summary text to accurately reflect governed network access.
+- Evidence: 161 Rust tests pass (including new unit test `custom_hosts_persist_normalize_and_admit_exact_and_wildcard`), 326 app tests pass, `npm run typecheck` passes with 0 errors.
+
 ## Market, News, Project and Finance apps rebuilt on the app method — 2026-10-31
 
 - NSE Market Terminal, News Desk, Project Activity Desk and Personal Finance Workbench 2.0 follow [BUILDING-APPS.md](BUILDING-APPS.md): one normalized owner (state, plus DuckDB for market history and the finance ledger), a pure `view()` per surface, repeaters and record-bound charts, regions only when they apply, drafts that save as typed and apply on the button. Real sources, parsers, validation and receipts are kept; empty, offline and partial-failure states say what to do instead of showing "Unavailable".

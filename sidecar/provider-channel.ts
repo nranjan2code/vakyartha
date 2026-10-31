@@ -6,7 +6,7 @@ import { DESKTOP_PROTOCOL } from "../shared/desktop-protocol.ts";
 import { MAX_RECORDING_BYTES, type VoiceTransport } from "./voice/transport.ts";
 const MAX_PROVIDER_BODY = 8 * 1024 * 1024;
 const NULL_BODY = [204, 205, 304];
-const EGRESS_HEADERS = new Set(["content-type", "accept", "mcp-protocol-version", "mcp-session-id", "last-event-id"]);
+const EGRESS_HEADERS = new Set(["content-type", "accept", "mcp-protocol-version", "mcp-session-id", "last-event-id", "user-agent"]);
 const PROVIDER_OPERATIONS: Record<string, Map<string, string>> = {
   openai: new Map([
     ["api.openai.com|/v1/responses", "responses"],

@@ -1,5 +1,12 @@
 # Implementation status and acceptance gates
 
+## Sandbox Allowed URLs & Rust Egress Gate Integration — 2026-10-31
+
+- Restored custom egress endpoint management to Sandbox settings, fully wired through Rust native storage, admission policy, and worker fetch.
+- Native Invariant: Endpoints are stored in the private native store (`custom-egress-hosts.json`, mode `0o600`), modifiable only via main-window IPC commands (`custom_egress_hosts`, `add_custom_egress_host`, `remove_custom_egress_host`). The contained worker has zero authority to widen its own egress.
+- Admission & Fetch: `egress.rs` validates FQDNs and domain wildcards (`.domain.com`), enforces public address resolution, and admits traffic alongside approved catalog hosts. `provider-channel.ts` admits `user-agent` header. `globalThis.fetch` in worker reaches allowed destinations over the private descriptor 3 pipe.
+- All 161 Rust tests and 326 TypeScript tests pass cleanly. Typecheck passes.
+
 Latest integrated source checkpoint (2026-10-31): Completed Areas 1 through 8 of the native agent runtime on `codex/agent-runtime-implementation`, preserving native authority invariants (Indestructible Rust Engine root of trust, zero ambient authority in workers, one persistence writer per entity) and all product features from `main` through commit `d8a2955`. All 160 Linux container Rust tests, 151 macOS Rust tests, 326 application tests, desktop private IPC smoke check, and production macOS release bundling passed cleanly. Production startup maintains `CapacityProfile::unconfigured()`.
 
 ## Native Agent Runtime Areas 1–8 Implementation & Verification — 2026-10-31

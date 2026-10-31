@@ -151,6 +151,21 @@ export async function setEgressApproval(host: string, allow: boolean): Promise<v
   await invoke("egress_set_approval", { host, allow });
 }
 
+/** Custom egress hosts configured by the user in Sandbox settings. */
+export async function customEgressHosts(): Promise<string[]> {
+  return inTauri ? await invoke<string[]>("custom_egress_hosts") : [];
+}
+
+export async function addCustomEgressHost(host: string): Promise<string[]> {
+  if (!inTauri) throw new Error("Custom allowed URLs need the desktop app.");
+  return await invoke<string[]>("add_custom_egress_host", { host });
+}
+
+export async function removeCustomEgressHost(host: string): Promise<string[]> {
+  if (!inTauri) throw new Error("Custom allowed URLs need the desktop app.");
+  return await invoke<string[]>("remove_custom_egress_host", { host });
+}
+
 /** The Sandbox page's project folder, stored by Rust. */
 export async function sandboxFolder(): Promise<string | null> {
   return inTauri ? await invoke<string | null>("sandbox_folder") : null;
