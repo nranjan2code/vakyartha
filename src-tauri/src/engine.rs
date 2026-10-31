@@ -866,11 +866,11 @@ pub fn start_with_dispatch(
                     let prefix = if kind == "server_start" { "srv-" } else { "npm-" };
                     let Some(id) = value.get("id").and_then(serde_json::Value::as_str).filter(|id| id.starts_with(prefix) && valid_id(id)).map(str::to_owned) else { continue; };
                     let (sender, queued, servers, control) = (connection.clone(), response_queue.clone(), servers.clone(), sandbox_control.clone());
-                    let native = dispatch_context.as_ref().map(|(_, d)| d.clone()).zip(runtime.clone());
+                    let native = dispatch_context.clone().zip(runtime.clone());
                     let kind = kind.to_owned();
                     tauri::async_runtime::spawn_blocking(move || {
                         let reply = |frame: serde_json::Value| send_frame(&sender, &queued, frame);
-                        let Some((data_dir, runtime)) = native else {
+                        let Some(((service, data_dir), runtime)) = native else {
                             return reply(serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": if kind == "npm_install" { "npm_result" } else { "server_error" }, "message": "Native servers are not enabled" }));
                         };
                         if kind == "npm_install" {
@@ -885,11 +885,11 @@ pub fn start_with_dispatch(
                             return reply(serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "server_error", "message": "Too many local servers are running" }));
                         }
                         let started = serde_json::from_value::<crate::servers::Start>(value).map_err(|_| "Malformed server request".to_owned())
-                            .and_then(|request| crate::servers::start(&runtime, &data_dir, control.as_ref(), &request, PROTOCOL_VERSION));
+                            .and_then(|request| crate::servers::start(&runtime, &service, &data_dir, control.as_ref(), &request, PROTOCOL_VERSION));
                         match started {
-                            Ok((mut child, stdin)) => {
-                                let (out, err) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
-                                servers.lock().unwrap().insert(id.clone(), (child, stdin));
+                            Ok(mut hosted) => {
+                                let (out, err) = (hosted.child.stdout.take().unwrap(), hosted.child.stderr.take().unwrap());
+                                servers.lock().unwrap().insert(id.clone(), hosted);
                                 reply(serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "server_started" }));
                                 crate::servers::relay(servers, id, out, err, move |frame| send_frame(&sender, &queued, frame), PROTOCOL_VERSION);
                             }

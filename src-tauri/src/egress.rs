@@ -44,10 +44,30 @@ struct Host {
     credential: Option<Credential>,
 }
 
+/// A local server that needs the network: the only hosts its broker tunnels to,
+/// and which vault account fills each declared key variable.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NetworkServer {
+    pub hosts: Vec<String>,
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Catalog {
+    hosts: Vec<Host>,
+    servers: BTreeMap<String, NetworkServer>,
+}
+
 /// Compiled in, so the worker cannot change which host receives which key.
-static HOSTS: LazyLock<Vec<Host>> = LazyLock::new(|| {
+static CATALOG: LazyLock<Catalog> = LazyLock::new(|| {
     serde_json::from_str(include_str!("../../shared/integration-egress.json")).expect("integration egress catalog")
 });
+static HOSTS: LazyLock<&'static [Host]> = LazyLock::new(|| CATALOG.hosts.as_slice());
+
+pub(crate) fn network_server(integration: &str) -> Option<&'static NetworkServer> { CATALOG.servers.get(integration) }
 
 pub(crate) fn hosts() -> impl Iterator<Item = &'static str> { HOSTS.iter().map(|h| h.host.as_str()) }
 
@@ -173,6 +193,10 @@ mod tests {
         }
         assert_eq!(credential("mcp.tavily.com").unwrap().account, "INTEGRATION_TAVILY_APIKEY");
         assert!(credential("mcp.nseindia.in").is_none());
+        for server in CATALOG.servers.values() {
+            assert!(server.hosts.iter().all(|h| approvable(h)), "server hosts must be approvable");
+            assert!(server.env.values().all(|a| a.starts_with("INTEGRATION_")));
+        }
     }
 
     #[test]

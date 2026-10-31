@@ -6,7 +6,10 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use serde::Deserialize;
 use crate::control::ControlHandle;
 
@@ -23,7 +26,97 @@ pub(crate) struct Runtime {
     pub resources: PathBuf,
 }
 
-pub(crate) type Servers = Arc<Mutex<HashMap<String, (Child, ChildStdin)>>>;
+pub(crate) type Servers = Arc<Mutex<HashMap<String, Hosted>>>;
+
+/// A running server, its input, and the broker that lives exactly as long as it.
+pub(crate) struct Hosted {
+    pub child: Child,
+    pub stdin: ChildStdin,
+    pub _broker: Option<Broker>,
+}
+
+/// An HTTPS CONNECT broker on a loopback port for one server. The sandbox lets
+/// the server reach only this port; the broker tunnels only to that server's
+/// approved hosts at public addresses, and only for the bearer of its token.
+pub(crate) struct Broker {
+    pub port: u16,
+    pub token: String,
+    stop: Arc<AtomicBool>,
+}
+
+impl Drop for Broker {
+    fn drop(&mut self) { self.stop.store(true, Ordering::Relaxed); }
+}
+
+fn random_token() -> Result<String, String> {
+    let mut bytes = [0u8; 24];
+    std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut bytes)).map_err(|_| "No secure randomness for the broker".to_owned())?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+fn broker(data_dir: PathBuf, hosts: &'static [String]) -> Result<Broker, String> {
+    let listener = TcpListener::bind("127.0.0.1:0").and_then(|l| l.set_nonblocking(true).map(|_| l)).map_err(|_| "The server's network broker could not start".to_owned())?;
+    let port = listener.local_addr().map_err(|_| "The server's network broker could not start".to_owned())?.port();
+    let token = random_token()?;
+    let expected = crate::reasoner_supervisor::base64(format!("vak:{token}").as_bytes());
+    let stop = Arc::new(AtomicBool::new(false));
+    let running = stop.clone();
+    std::thread::spawn(move || {
+        while !running.load(Ordering::Relaxed) {
+            match listener.accept() {
+                Ok((client, _)) => {
+                    let (expected, data_dir) = (expected.clone(), data_dir.clone());
+                    std::thread::spawn(move || { let _ = tunnel(client, &expected, hosts, &data_dir); });
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => std::thread::sleep(Duration::from_millis(40)),
+                Err(_) => break,
+            }
+        }
+    });
+    Ok(Broker { port, token, stop })
+}
+
+/// The CONNECT request's host when it names an allowed host on port 443 with the
+/// broker's Basic credential (the scheme is case-insensitive, the credential exact).
+fn connect_target(head: &str, expected_credential: &str, hosts: &[String]) -> Result<String, &'static str> {
+    let mut lines = head.split("\r\n");
+    let mut request = lines.next().unwrap_or_default().split(' ');
+    let (method, target) = (request.next().unwrap_or_default(), request.next().unwrap_or_default());
+    let authorized = lines.filter_map(|l| l.split_once(':')).any(|(name, value)| name.trim().eq_ignore_ascii_case("proxy-authorization")
+        && value.trim().split_once(' ').is_some_and(|(scheme, credential)| scheme.eq_ignore_ascii_case("basic") && credential.trim() == expected_credential));
+    if !authorized { return Err("407 Proxy Authentication Required"); }
+    let host = target.strip_suffix(":443").map(str::to_ascii_lowercase).ok_or("403 Forbidden")?;
+    if method != "CONNECT" || !hosts.contains(&host) { return Err("403 Forbidden"); }
+    Ok(host)
+}
+
+fn tunnel(mut client: TcpStream, expected: &str, hosts: &[String], data_dir: &Path) -> std::io::Result<()> {
+    client.set_nonblocking(false)?;
+    client.set_read_timeout(Some(Duration::from_secs(10)))?;
+    let mut head = Vec::new();
+    let mut byte = [0u8; 1];
+    while !head.ends_with(b"\r\n\r\n") {
+        if head.len() > 8192 || client.read(&mut byte)? == 0 { return Ok(()); }
+        head.push(byte[0]);
+    }
+    let refuse = |client: &mut TcpStream, status: &str| client.write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\n\r\n").as_bytes());
+    let host = match connect_target(&String::from_utf8_lossy(&head), expected, hosts) {
+        Ok(host) => host,
+        Err(status) => return refuse(&mut client, status),
+    };
+    if !crate::egress::approved(data_dir).contains(&host) { return refuse(&mut client, "403 Forbidden"); }
+    let Ok(addrs) = crate::control::broker::resolve_public_addresses(&host) else { return refuse(&mut client, "502 Bad Gateway") };
+    let Some(upstream) = addrs.iter().find_map(|a| TcpStream::connect_timeout(a, Duration::from_secs(10)).ok()) else { return refuse(&mut client, "502 Bad Gateway") };
+    client.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")?;
+    client.set_read_timeout(None)?;
+    let (mut client_read, mut upstream_write) = (client.try_clone()?, upstream.try_clone()?);
+    let forward = std::thread::spawn(move || { let _ = std::io::copy(&mut client_read, &mut upstream_write); let _ = upstream_write.shutdown(std::net::Shutdown::Write); });
+    let (mut upstream_read, mut client_write) = (upstream, client);
+    let _ = std::io::copy(&mut upstream_read, &mut client_write);
+    let _ = client_write.shutdown(std::net::Shutdown::Write);
+    let _ = forward.join();
+    Ok(())
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -138,7 +231,7 @@ pub(crate) fn install(runtime: &Runtime, data_dir: &Path, request: &Install, pro
 }
 
 /// Starts one server under `vaksb worker`; returns its stdin and the child.
-pub(crate) fn start(runtime: &Runtime, data_dir: &Path, control: Option<&ControlHandle>, request: &Start, protocol: u8) -> Result<(Child, ChildStdin), String> {
+pub(crate) fn start(runtime: &Runtime, service: &str, data_dir: &Path, control: Option<&ControlHandle>, request: &Start, protocol: u8) -> Result<Hosted, String> {
     if request.v != protocol || request.kind != "server_start" || !valid_frame_id(&request.id, "srv-") { return Err("Invalid server request".into()); }
     if request.args.len() > 64 || request.env.len() > 32 || request.args.iter().chain(request.env.values()).any(|a| a.len() > 4096 || a.contains('\0')) {
         return Err("Server arguments are too large".into());
@@ -160,10 +253,28 @@ pub(crate) fn start(runtime: &Runtime, data_dir: &Path, control: Option<&Control
         folders.push(folder);
     }
     for (name, value) in &request.env {
-        if name.is_empty() || !name.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_') || ["PATH", "HOME", "TMPDIR", "NODE_OPTIONS"].contains(&name.as_str()) {
+        if name.is_empty() || !name.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_') || name.ends_with("_PROXY") || ["PATH", "HOME", "TMPDIR", "NODE_OPTIONS", "NODE_USE_ENV_PROXY"].contains(&name.as_str()) {
             return Err(format!("{name}: servers cannot set this variable"));
         }
         if value.starts_with('/') && !Path::new(value).starts_with(&dir) { return Err(format!("{name}: paths must stay in the server's own folder")); }
+    }
+    let integration = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    let network = crate::egress::network_server(integration);
+    // Declared key variables arrive as the presence marker; only this server's own vault keys replace them.
+    let mut env = BTreeMap::new();
+    for (name, value) in &request.env {
+        if value != "native-vault" { env.insert(name.clone(), value.clone()); continue; }
+        if let Some(account) = network.and_then(|n| n.env.get(name))
+            && let Some(secret) = crate::vault::get(service, account, data_dir).map_err(|_| "The credential vault is unavailable".to_owned())?.filter(|v| !v.is_empty()) {
+            env.insert(name.clone(), secret);
+        }
+    }
+    let broker = network.map(|n| broker(data_dir.to_path_buf(), &n.hosts)).transpose()?;
+    if let Some(broker) = &broker {
+        let proxy = format!("http://vak:{}@127.0.0.1:{}", broker.token, broker.port);
+        env.insert("HTTPS_PROXY".into(), proxy.clone());
+        env.insert("HTTP_PROXY".into(), proxy);
+        env.insert("NODE_USE_ENV_PROXY".into(), "1".into());
     }
     let mut cmd = Command::new(&runtime.helper);
     cmd.env_clear().env("PATH", "/usr/bin:/bin").arg("worker")
@@ -171,16 +282,17 @@ pub(crate) fn start(runtime: &Runtime, data_dir: &Path, control: Option<&Control
         .arg("--read").arg(&runtime.resources)
         .arg("--write").arg(&dir);
     for folder in &folders { cmd.arg("--write").arg(folder); }
+    if let Some(broker) = &broker { cmd.arg("--allow-localhost-port").arg(broker.port.to_string()); }
     for (name, value) in [("PATH", "/usr/bin:/bin".to_owned()), ("HOME", home.to_string_lossy().into_owned()), ("TMPDIR", home.to_string_lossy().into_owned()), ("OPENSSL_CONF", "/dev/null".to_owned())] {
         cmd.arg("--env").arg(format!("{name}={value}"));
     }
-    for (name, value) in &request.env { cmd.arg("--env").arg(format!("{name}={value}")); }
+    for (name, value) in &env { cmd.arg("--env").arg(format!("{name}={value}")); }
     cmd.arg("--command").arg(&runtime.node).arg("--")
         .arg("--disable-warning=ExperimentalWarning").arg(runtime.resources.join("mcp-bridge.mjs")).arg(&script).args(&request.args);
     let mut child = cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
         .map_err(|_| "Sandbox helper could not be started. Rebuild or reinstall the app.".to_owned())?;
     let stdin = child.stdin.take().ok_or("Server input is unavailable")?;
-    Ok((child, stdin))
+    Ok(Hosted { child, stdin, _broker: broker })
 }
 
 /// Relays a started server's output as frames until it exits.
@@ -206,9 +318,9 @@ pub(crate) fn relay(servers: Servers, id: String, mut child_out: impl Read + Sen
                 }
             }
         }
-        let code = servers.lock().unwrap().remove(&id).and_then(|(mut child, _)| {
-            let _ = child.kill();
-            child.wait().ok().and_then(|s| s.code())
+        let code = servers.lock().unwrap().remove(&id).and_then(|mut hosted| {
+            let _ = hosted.child.kill();
+            hosted.child.wait().ok().and_then(|s| s.code())
         });
         send(serde_json::json!({ "v": protocol, "id": id, "type": "server_exit", "code": code }));
     });
@@ -217,15 +329,15 @@ pub(crate) fn relay(servers: Servers, id: String, mut child_out: impl Read + Sen
 pub(crate) fn input(servers: &Servers, id: &str, line: &str) -> Result<(), String> {
     if line.len() > MAX_LINE || line.contains('\n') { return Err("Server input line is invalid".into()); }
     let mut map = servers.lock().unwrap();
-    let (_, stdin) = map.get_mut(id).ok_or("The server is not running")?;
+    let stdin = &mut map.get_mut(id).ok_or("The server is not running")?.stdin;
     stdin.write_all(line.as_bytes()).and_then(|_| stdin.write_all(b"\n")).map_err(|_| "The server stopped".to_owned())
 }
 
 pub(crate) fn stop(servers: &Servers, id: &str) {
     // Dropping stdin ends the helper's owner connection; kill makes it immediate.
-    if let Some((mut child, _)) = servers.lock().unwrap().remove(id) {
-        let _ = child.kill();
-        std::thread::spawn(move || { let _ = child.wait(); });
+    if let Some(mut hosted) = servers.lock().unwrap().remove(id) {
+        let _ = hosted.child.kill();
+        std::thread::spawn(move || { let _ = hosted.child.wait(); });
     }
 }
 
@@ -248,6 +360,18 @@ mod tests {
         // 2026-10-25T12:00:00Z, as in the framework's own pin test.
         assert_eq!(before_date(1_792_929_600), "2026-10-11");
         assert_eq!(before_date(951_782_400 + 14 * 86_400), "2000-02-29");
+    }
+
+    #[test]
+    fn broker_tunnels_only_authorized_connects_to_listed_hosts() {
+        let hosts = vec!["api.notion.com".to_owned()];
+        let auth = "dmFrOnRvaw==";
+        assert_eq!(connect_target("CONNECT api.notion.com:443 HTTP/1.1\r\nProxy-Authorization: basic dmFrOnRvaw==\r\n\r\n", auth, &hosts), Ok("api.notion.com".into()));
+        assert!(connect_target("CONNECT api.notion.com:443 HTTP/1.1\r\n\r\n", auth, &hosts).unwrap_err().starts_with("407"));
+        assert!(connect_target("CONNECT api.notion.com:443 HTTP/1.1\r\nProxy-Authorization: Basic DMFRONRVAW==\r\n\r\n", auth, &hosts).unwrap_err().starts_with("407"));
+        assert!(connect_target("CONNECT evil.example:443 HTTP/1.1\r\nProxy-Authorization: basic dmFrOnRvaw==\r\n\r\n", auth, &hosts).unwrap_err().starts_with("403"));
+        assert!(connect_target("CONNECT api.notion.com:80 HTTP/1.1\r\nProxy-Authorization: basic dmFrOnRvaw==\r\n\r\n", auth, &hosts).is_err());
+        assert!(connect_target("GET http://api.notion.com/ HTTP/1.1\r\nProxy-Authorization: basic dmFrOnRvaw==\r\n\r\n", auth, &hosts).is_err());
     }
 
     #[test]
@@ -282,7 +406,7 @@ mod tests {
             v: 2, id: "srv-live".into(), kind: "server_start".into(), sandbox_dir: dir.join("home").to_string_lossy().into(),
             script: dir.join("pkg/server.mjs").to_string_lossy().into(), args: vec![], env: BTreeMap::from([("ECHO_TOKEN".into(), "t".into())]),
         };
-        let (mut child, mut stdin) = start(&runtime, &data, None, &request, 2).unwrap();
+        let (mut child, mut stdin) = start(&runtime, "vak-test", &data, None, &request, 2).map(|h| (h.child, h.stdin)).unwrap();
         let mut out = BufReader::new(child.stdout.take().unwrap());
         let mut ask = |msg: &str| { writeln!(stdin, "{msg}").unwrap(); let mut line = String::new(); out.read_line(&mut line).unwrap(); line };
         assert!(ask(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#).contains("\"env\""));
@@ -292,7 +416,41 @@ mod tests {
         let _ = child.wait();
         let mut bad = request;
         bad.args = vec![base.join("outside").to_string_lossy().into()];
-        assert!(start(&runtime, &data, None, &bad, 2).unwrap_err().contains("Work in folder"));
+        assert!(start(&runtime, "vak-test", &data, None, &bad, 2).err().unwrap().contains("Work in folder"));
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    /// Live: `VAK_TEST_HELPER=../sandbox/target/debug/vaksb cargo test --lib network_server_reaches_only_its_host -- --ignored`.
+    #[test]
+    #[ignore = "contacts api.notion.com through the sandbox and broker"]
+    fn network_server_reaches_only_its_host_through_the_broker() {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let base = std::env::temp_dir().join(format!("vak-net-live-{}", std::process::id()));
+        let (data, resources) = (base.join("data"), base.join("resources"));
+        let dir = data.join("worker/integrations/notion");
+        std::fs::create_dir_all(dir.join("pkg")).unwrap();
+        std::fs::create_dir_all(&resources).unwrap();
+        std::fs::copy(manifest.join("../sidecar/mcp-bridge.ts"), resources.join("mcp-bridge.mjs")).unwrap();
+        std::fs::write(dir.join("pkg/server.mjs"), r#"
+const probe = async (url) => { try { return (await fetch(url)).status; } catch (e) { return String(e.cause ?? e); } };
+process.stdout.write(JSON.stringify({ notion: await probe("https://api.notion.com/v1/users/me"), other: await probe("https://example.com/") }) + "\n");
+setInterval(() => {}, 1000);
+"#).unwrap();
+        crate::egress::set_approval(&data, "api.notion.com", true).unwrap();
+        let triple = env!("VAK_TARGET_TRIPLE");
+        let helper = std::env::var_os("VAK_TEST_HELPER").map(PathBuf::from).unwrap_or_else(|| manifest.join(format!("binaries/vaksb-{triple}")));
+        let runtime = Runtime { helper, node: manifest.join(format!("binaries/node-{triple}")), resources };
+        let request = Start {
+            v: 2, id: "srv-net".into(), kind: "server_start".into(), sandbox_dir: dir.join("home").to_string_lossy().into(),
+            script: dir.join("pkg/server.mjs").to_string_lossy().into(), args: vec![], env: BTreeMap::new(),
+        };
+        let mut hosted = start(&runtime, "vak-test", &data, None, &request, 2).unwrap();
+        let mut line = String::new();
+        BufReader::new(hosted.child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+        let result: serde_json::Value = serde_json::from_str(&line).unwrap_or_default();
+        assert_eq!(result["notion"], 401, "{line}");
+        assert_ne!(result["other"], 200, "{line}");
+        let _ = hosted.child.kill();
         std::fs::remove_dir_all(base).unwrap();
     }
 }

@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { Integrations } from "@vak/mcp/client";
 import { CATALOG } from "../sidecar/integrations.ts";
 import { nativeSecrets } from "../sidecar/settings.ts";
-import { EGRESS_HOSTS, integrationSecretName } from "../shared/integration-egress.ts";
+import { EGRESS_HOSTS, integrationSecretName, NETWORK_SERVERS } from "../shared/integration-egress.ts";
 
 test("every fixed remote catalog host is approvable and its header key is bound to that host only", () => {
   for (const entry of CATALOG) {
@@ -17,6 +17,19 @@ test("every fixed remote catalog host is approvable and its header key is bound 
     const keyed = entry.config.filter((f) => f.kind === "secret" && f.header);
     assert.ok(keyed.length <= 1, entry.id);
     for (const f of keyed) assert.deepEqual(host.credential, { account: integrationSecretName(entry.id, f.key), header: f.header!.name, format: f.header!.format }, entry.id);
+  }
+});
+
+test("network servers' key variables map to the vault accounts the page saves to", () => {
+  for (const [id, server] of Object.entries(NETWORK_SERVERS)) {
+    const entry = CATALOG.find((e) => e.id === id);
+    assert.ok(entry && entry.source.kind === "npm", `${id} is a local npm server`);
+    for (const [name, account] of Object.entries(server.env)) {
+      const key: string | undefined = entry.config.find((f) => f.kind === "secret" && f.env === name)?.key;
+      assert.ok(key, `${id} declares ${name}`);
+      assert.equal(account, integrationSecretName(id, key));
+    }
+    for (const host of server.hosts) assert.ok(EGRESS_HOSTS.some((h) => h.host === host), host);
   }
 });
 
