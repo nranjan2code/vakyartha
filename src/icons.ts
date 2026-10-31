@@ -47,6 +47,10 @@ const GLYPHS: Record<string, string> = {
   palette: '<path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.8 1.8-1.7 0-1.2-1-1.6-1-2.6 0-.9.7-1.5 1.7-1.5h2.2a3.8 3.8 0 0 0 3.8-3.8c0-4.2-3.8-7.4-8.5-7.4z"/><circle cx="7.8" cy="11" r="1"/><circle cx="10.5" cy="7.3" r="1"/><circle cx="15" cy="7.8" r="1"/>',
   sliders: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
   info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.6v.4"/>',
+  tip: '<path d="M9 18h6M10 21h4M12 2a7 7 0 0 0-4.5 12.3c.9.8 1.5 2 1.5 3.2h6c0-1.2.6-2.4 1.5-3.2A7 7 0 0 0 12 2z"/>',
+  warning: '<path d="m10.3 3.2-8.5 14.7c-.8 1.4.2 3.1 1.7 3.1h17c1.5 0 2.5-1.7 1.7-3.1L13.7 3.2a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/>',
+  important: '<circle cx="12" cy="12" r="8.5"/><path d="M12 8v5M12 16h.01"/>',
+  caution: '<path d="M12 2.5 4.5 5.5v5.5c0 4.6 3.2 8.9 7.5 10 4.3-1.1 7.5-5.4 7.5-10V5.5zM12 8v5M12 16h.01"/>',
   rocket: '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09zM12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6.05 11a22.35 22.35 0 0 1-3.95 2zM9 9l3 3M15 9l-3-3"/>',
 };
 
@@ -65,8 +69,8 @@ const TINT: Record<string, [string, string]> = {
   rocket: ["#6366f1", "#818cf8"],
 };
 
-export function icon(name: string, size = 18): SVGSVGElement {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+export function icon(name: string, size = 18, doc: Document = typeof document !== "undefined" ? document : (globalThis as unknown as { document: Document }).document): SVGSVGElement {
+  const svg = doc.createElementNS("http://www.w3.org/2000/svg", "svg") as SVGSVGElement;
   svg.setAttribute("viewBox", "0 0 24 24");
   svg.setAttribute("width", String(size));
   svg.setAttribute("height", String(size));

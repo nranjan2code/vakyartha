@@ -9,7 +9,7 @@ import { skillPublisherIcon } from "./catalog-icons.ts";
 import { icon, tile } from "./icons.ts";
 import { group, pill, row, segmented, title, toggle } from "./ui.ts";
 import { SKILL_SOURCES, type SkillListing, type SkillReview, type SkillView } from "../shared/skills.ts";
-import { renderMarkdown } from "@vak/web";
+import { renderMarkdown } from "./markdown.ts";
 import { openSkillStudio } from "./skills-studio.ts";
 
 const TEMPLATE = `---

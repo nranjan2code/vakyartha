@@ -9,7 +9,8 @@ import { engineFetch } from "./backend.ts";
 import { modelMenu } from "./model-menu.ts";
 import { type AgentEvent, getAt, projectText, readSse, type SurfaceSnapshot, titleRepeated } from "@vak/core";
 import type { SessionSummary, SessionView } from "@vak/host";
-import { defineVakElements, renderMarkdown, type VakActionDetail, VakClient, type VakSurfaceElement } from "@vak/web";
+import { defineVakElements, type VakActionDetail, VakClient, type VakSurfaceElement } from "@vak/web";
+import { renderMarkdown } from "./markdown.ts";
 import { ArtifactsPage } from "./artifacts-page.ts";
 import { AppsPage } from "./apps-page.ts";
 import { Canvas } from "./canvas.ts";
@@ -1017,6 +1018,25 @@ document.addEventListener("click", (e) => {
   if (!a || !/^(https:|mailto:)/.test(a.href)) return;
   e.preventDefault();
   void openExternal(a.href);
+});
+
+// Copy button in code blocks
+document.addEventListener("click", (e) => {
+  const btn = (e.target as Element | null)?.closest<HTMLButtonElement>(".code-copy-btn");
+  if (!btn) return;
+  e.preventDefault();
+  const pre = btn.closest(".code-block")?.querySelector("pre code");
+  if (!pre) return;
+  const text = pre.textContent ?? "";
+  void copy(text).then(() => {
+    btn.classList.add("copied");
+    const label = btn.querySelector(".copy-label");
+    if (label) label.textContent = "Copied!";
+    setTimeout(() => {
+      btn.classList.remove("copied");
+      if (label) label.textContent = "Copy";
+    }, 1800);
+  });
 });
 
 // --- composer and shortcuts ---------------------------------------------------------
