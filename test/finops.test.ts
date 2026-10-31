@@ -273,4 +273,8 @@ test("a chat turn's decision-pruned integration list narrows the tools offered t
   assert.ok(!forged.includes("not_installed__tool"), "a scope cannot add a tool Settings does not offer");
   const after = await turn({});
   assert.ok(after.some((name) => name.startsWith("time__")), "the scope ends with its turn");
+  const view = await (await fetch(`${app.url}/api/finops`, { headers })).json() as { turns: Turn[] };
+  const last = view.turns.at(-1)!;
+  assert.equal(last.controls?.think, false);
+  assert.ok(last.controls?.plan?.generation, "the engine's per-model plan is recorded with the turn");
 });

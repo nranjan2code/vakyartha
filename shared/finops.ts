@@ -42,6 +42,15 @@ export interface Turn {
   externalCalls: number;
   errors: number;
   complete: boolean;
+  /** What the turn actually ran with, after fitting to the model, and the engine's plan for it. */
+  controls?: {
+    think?: boolean;
+    effort?: string;
+    history?: number;
+    maxSteps?: number;
+    toolRounds?: number;
+    plan?: { generation: string; tier: string; authoring?: string; maxSteps: number };
+  };
   decisionUsage?: {
     inputTokens?: number;
     outputTokens?: number;

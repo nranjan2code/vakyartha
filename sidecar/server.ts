@@ -40,6 +40,7 @@ import { runScratch, sandboxSession } from "./sandbox-execution.ts";
 import type { SandboxCall } from "./desktop-transport.ts";
 import type { StdioProcess, StdioTransport } from "@vak/mcp/client";
 import { withProviderTransport } from "./provider-transport.ts";
+import { fitTurnControls } from "./turn-controls.ts";
 
 export interface AppServerOptions {
   /** Conversations, settings, channels, logs (and profiles/transcripts unless given). */
@@ -920,12 +921,29 @@ ${skills.index()}`;
     return true;
   }
 
+  /** Records the engine's per-model plan from the turn's own event stream; the bytes pass through unchanged. */
+  const observePlan = (res: HostResponse): HostResponse => {
+    const write = res.write.bind(res) as (...args: unknown[]) => boolean;
+    res.write = ((chunk: unknown, ...rest: unknown[]) => {
+      const text = typeof chunk === "string" ? chunk : Buffer.isBuffer(chunk) ? chunk.toString("utf8") : "";
+      if (text.startsWith("event: plan\n")) {
+        try {
+          const e = JSON.parse(text.slice(text.indexOf("data: ") + 6)) as { generation: string; tier: string; authoring?: string; maxSteps: number };
+          finops.recordControls({ plan: { generation: e.generation, tier: e.tier, ...(e.authoring ? { authoring: e.authoring } : {}), maxSteps: e.maxSteps } });
+        } catch { /* Telemetry only. */ }
+      }
+      return write(chunk, ...rest);
+    }) as HostResponse["write"];
+    return res;
+  };
+
   const handle = async (req: HostRequest, res: HostResponse) => {
     try {
       if (req.method === "POST" && new URL(req.url ?? "/", "http://localhost").pathname === "/api/chat") {
         const chunks: Buffer[] = [];
         for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        const raw = Buffer.concat(chunks);
+        let raw = Buffer.concat(chunks);
+        let controls: NonNullable<import("../shared/finops.ts").Turn["controls"]> | undefined;
         let decisionUsage: import("../shared/finops.ts").Turn["decisionUsage"] = undefined;
         let scopedSession: string | undefined;
         try {
@@ -938,6 +956,16 @@ ${skills.index()}`;
             scopedSession = body.session;
             turnToolScope.set(body.session, new Set(body.integrationTools.filter((n: unknown): n is string => typeof n === "string").slice(0, 500)));
           }
+          if (body && typeof body.provider === "string" && typeof body.model === "string") {
+            const fitted = fitTurnControls(body, profiles.get(body.provider, body.model)?.facts);
+            if (body.think !== fitted.think || body.effort !== fitted.effort) {
+              body.think = fitted.think;
+              if (fitted.effort) body.effort = fitted.effort; else delete body.effort;
+              raw = Buffer.from(JSON.stringify(body));
+            }
+            const count = (v: unknown) => typeof v === "number" && v > 0 ? v : undefined;
+            controls = { ...fitted, history: count(body.history), maxSteps: count(body.maxSteps), toolRounds: count(body.toolRounds) };
+          }
         } catch {}
         const { Readable } = await import("node:stream");
         const streamedReq = Object.assign(Readable.from(raw), {
@@ -949,7 +977,8 @@ ${skills.index()}`;
         try {
           await finops.chat(async () => {
             if (decisionUsage) finops.recordDecisionUsage(decisionUsage);
-            await host.handle(streamedReq, res);
+            if (controls) finops.recordControls(controls);
+            await host.handle(streamedReq, observePlan(res));
           });
         } finally {
           if (scopedSession) turnToolScope.delete(scopedSession);

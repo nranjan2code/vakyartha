@@ -7,7 +7,7 @@ import type { HostSessionSnapshot, HostSessionStore } from "@vak/host";
 import type { TaskRunIdentity } from "../shared/task-contract.ts";
 import { emptyShape, type FinopsView, type Rate, type Shape, type Step, type Turn } from "../shared/finops.ts";
 
-type Context = { task?: TaskRunIdentity; turn?: Turn; session?: string; at: string; started: number; decisionUsage?: Turn["decisionUsage"] };
+type Context = { task?: TaskRunIdentity; turn?: Turn; session?: string; at: string; started: number; decisionUsage?: Turn["decisionUsage"]; controls?: Turn["controls"] };
 export function messageShape(messages: Message[]): Shape {
   const s = emptyShape();
   for (const m of messages) {
@@ -51,6 +51,11 @@ export class Finops {
     }
   }
 
+  recordControls(patch: NonNullable<Turn["controls"]>): void {
+    const c = this.scope.getStore();
+    if (c) c.controls = { ...c.controls, ...patch };
+  }
+
   async chat(work: () => Promise<void>, task?: TaskRunIdentity): Promise<void> {
     const c: Context = { ...(task ? { task: { ...task } } : {}), at: new Date().toISOString(), started: performance.now() };
     await this.scope.run(c, async () => {
@@ -58,6 +63,7 @@ export class Finops {
       finally {
         if (c.turn) {
           if (c.decisionUsage && !c.turn.decisionUsage) c.turn.decisionUsage = c.decisionUsage;
+          if (c.controls) c.turn.controls = c.controls;
           c.turn.ms = performance.now() - c.started;
           try {
             const filename = c.turn.session.replace(/[^\w-]/g, "_").slice(0, 120) || "default";
