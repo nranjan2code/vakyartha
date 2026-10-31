@@ -1,5 +1,12 @@
 # Vakyartha handover — 2026-10-31
 
+## Market, News, Project and Finance apps rebuilt on the app method — 2026-10-31
+
+- NSE Market Terminal, News Desk, Project Activity Desk and Personal Finance Workbench 2.0 follow [BUILDING-APPS.md](BUILDING-APPS.md): one normalized owner (state, plus DuckDB for market history and the finance ledger), a pure `view()` per surface, repeaters and record-bound charts, regions only when they apply, drafts that save as typed and apply on the button. Real sources, parsers, validation and receipts are kept; empty, offline and partial-failure states say what to do instead of showing "Unavailable".
+- More charts and layout: watchlist cards beside a signed change chart, candles beside analytics stats, daily returns; news coverage panel (category pie, publication day, feed); issue state/label/update charts and commits per day; finance share pie, cumulative net flow and monthly in/out trend. Finance imports CSV or JSON and has a two-step Delete all. Views are now Market/Instrument/Sources, Headlines/Reading list/Sources, Triage/Activity/Sources, Overview/Ledger/Import.
+- `node scripts/app-surfaces.ts` regenerates every built-in `surface.json` from `surfaceFile()`; a test fails on drift. Fixtures in documented source shapes: `test/support/app-fixtures.ts`. Each app runs in the real sandbox in `test/app-registry.test.ts`.
+- Evidence: `npm test` (326), typecheck, `cargo test --lib`; `scripts/reference-apps-check.ts --live` and `scripts/market-terminal-check.ts --live` pass at every width with live BBC, GitHub and NSE data and independent value checks (both scripts now use the test sandbox helper and a worker-local TMPDIR; they had stopped at "Sandboxed runs need the desktop app"). Not yet clicked through in the installed desktop app: it needs a rebuild, after which each card shows Update.
+
 ## Voice Desk rewritten; app host voice, batched edits and status; app-building guide — 2026-10-31
 
 - App host (`src/apps-page.ts`): `voice.dictate` {into: input node id} and `voice.read` {text: data pointer} buttons are handled by the host for every app; bound-field edits are batched (0.7 s after typing, always before the next action); run status is a header chip with details on hover/focus; clicking an app card opens it. The old `dictate_note` special case is gone.

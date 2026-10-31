@@ -69,7 +69,8 @@ This is the method that keeps apps correct and simple:
 4. Emit only the nodes that apply now: if nothing is open, do not emit the editor. Avoid hiding whole regions with `visibleIf` flags; replacing a container's children removes nodes that are no longer listed.
 5. Keep node ids stable so updates patch rather than rebuild.
 6. Derive spoken text (for `voice.read`) from the same records as the visual view, into the data (for example `/spoken/summary`).
-7. Generate `surface.json` from `view(emptyState)` and keep a test asserting they are equal.
+7. Generate `surface.json` from `view(emptyState)` and keep a test asserting they are equal. Built-ins export `surfaceFile()` and `node scripts/app-surfaces.ts` writes every `surface.json`.
+8. When a view depends on SQL, read it first and pass it in: `view(state, await load(db))` stays pure (Finance Workbench, Market Terminal).
 
 ## 6. Building surfaces
 
@@ -123,8 +124,11 @@ README.md (what it does and how to use it), AGENTS.md (invariants and change met
 | App | Shows |
 | --- | --- |
 | [Voice Desk](../sidecar/builtin-apps/voice-desk/server.ts) | The full method in one file: normalized state, `view()` per surface, autosaving fields, checklists, two-step delete, host voice actions |
-| [News Desk](../sidecar/builtin-apps/news-desk/README.md) | Integration tool refresh, parsing and source receipts |
-| [Project Activity Desk](../sidecar/builtin-apps/project-desk/README.md) | Boards and local triage over fetched records |
-| [Finance Workbench](../sidecar/builtin-apps/finance-workbench/README.md), [Market Terminal](../sidecar/builtin-apps/market-terminal/README.md) | DuckDB records, exact arithmetic and charts |
+| [News Desk](../sidecar/builtin-apps/news-desk/server.ts) | Integration tool refresh, parsing, partial-failure warnings and receipts; editable records (feeds); coverage charts beside a card grid |
+| [Project Activity Desk](../sidecar/builtin-apps/project-desk/server.ts) | Drafts applied by a button (repository), a bound board for local triage, tallies as charts |
+| [Finance Workbench](../sidecar/builtin-apps/finance-workbench/server.ts) | DuckDB as owner, `view(state, ledger)`, exact arithmetic, CSV import, budget progress, many chart kinds |
+| [Market Terminal](../sidecar/builtin-apps/market-terminal/server.ts) | Several governed tools, validated sources, DuckDB SQL analytics, schedules, splits of cards and charts |
+
+Test fixtures in the documented source shapes live in `test/support/app-fixtures.ts`; the real-sandbox tests pass them as the registry's `callTool`.
 
 Where the runtime lives, if you must change it: `sidecar/sandbox-pool/` (registry, packages, pool), `src/apps-page.ts` (app host UI, voice actions, status), `shared/app-manifest.ts` (manifest). A rendering or catalog gap belongs in Projection, not in an app.
