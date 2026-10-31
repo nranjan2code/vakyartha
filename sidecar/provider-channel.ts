@@ -272,7 +272,11 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
       }
       const stream = new ReadableStream<Uint8Array>({
         start(controller) { pending.controller = controller; },
-        pull() {
+        async pull() {
+          // A pull that resolves without enqueuing is not repeated for a read already
+          // waiting, so a pull that has to wait delivers the frame itself once it arrives.
+          if (pending.queue.length === 0 && !pending.ended) await new Promise<void>((resolve) => { pending.waitingPull = resolve; });
+          if (pending.settled) return;
           if (pending.queue.length > 0) {
             const { seq, bytes } = pending.queue.shift()!;
             pending.lastDelivered = seq;
@@ -287,9 +291,7 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
           if (pending.ended) {
             pending.controller?.close();
             finishProvider(id, pending);
-            return;
           }
-          return new Promise<void>((resolve) => { pending.waitingPull = resolve; });
         },
         cancel() {
           if (!pending.settled) {

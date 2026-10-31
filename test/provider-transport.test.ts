@@ -54,3 +54,21 @@ test("new app provider routes both metadata and generation through native transp
     { provider: "typesafe", url: "https://api.typesafe.ai/v1/chat/completions", method: "POST" },
   ]);
 });
+
+test("native provider responses deliver data frames that arrive after the reader is waiting", async () => {
+  const { providerChannel } = await import("../sidecar/provider-channel.ts");
+  const parts = ['{"data":[{"id":"b"},', '{"id":"a"}]}'];
+  const channel = providerChannel(async (message) => {
+    if (message.type !== "provider_request") return;
+    const id = message.id as string;
+    const frames: Record<string, unknown>[] = [
+      { v: 2, id, type: "provider_headers", status: 200, headers: { "content-type": "application/json" } },
+      ...parts.map((part, seq) => ({ v: 2, id, type: "provider_data", seq, data: Buffer.from(part).toString("base64") })),
+      { v: 2, id, type: "provider_end" },
+    ];
+    // Each frame is its own macrotask, as frames read from the parent pipe are.
+    frames.forEach((frame, index) => setTimeout(() => channel.receive(frame), index * 5));
+  });
+  const res = await channel.fetch("openai", "https://api.openai.com/v1/models", { signal: AbortSignal.timeout(2000) }, { operationId: "op-1", attempt: 0 });
+  assert.deepEqual(await res.json(), { data: [{ id: "b" }, { id: "a" }] });
+});
