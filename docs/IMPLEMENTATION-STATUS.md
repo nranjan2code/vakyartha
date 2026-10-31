@@ -479,7 +479,8 @@ Imported product checkpoint: checked entries below record their original compone
 - [x] Dynamic model discovery: no hardcoded models; detects models directly from API key via `GET /v1/models` in both sidecar server (`sidecar/server.ts`) and decision provider (`TypeSafeDecisionProvider.listModels()`).
 - [x] Preserved unique `provider + model` combination throughout the app, Settings UI, and preference store (`choose("typesafe", model)`).
 - [x] Retained `OpenRouter (Microsoft-Decision-1)` and `microsoft/decision-1` intact in settings.
-- [x] Rust Root of Trust and sidecar network egress gating: allowlisted `api.typesafe.ai` over HTTPS in `src-tauri/src/policy.rs` and `sidecar/egress.ts`.
+- [x] Rust Root of Trust and sidecar network egress gating: allowlisted `api.typesafe.ai` over HTTPS as a model host in `src-tauri/src/policy.rs` (the TS mirror was removed 2026-10-31).
+- [x] Native integration egress (2026-10-31): desktop worker `fetch` routes through `src-tauri/src/egress.rs`; per-host user approval on the integration page; remote MCP is the first consumer.
 - [x] Stored secrets: `TYPESAFE_API_KEY` registered in `sidecar/settings.ts` with macOS Keychain / cross-platform vault storage.
 - [x] Official Skill Pack support: `typesafe-ai/skills` added to `SKILL_SOURCES` in `shared/skills.ts` with official 200×200 brand mark in `public/brand/integrations/typesafe-ai.png` and `src/catalog-icons.ts` (`skillPublisherIcon`), cleanly separated from built-in skills.
 - [x] Verification: TypeScript typecheck passes with 0 errors; all 287 Node tests pass; all 11 Rust cargo tests pass.

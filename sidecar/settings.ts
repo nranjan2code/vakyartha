@@ -22,7 +22,6 @@ export interface Setting extends Omit<ProviderSetting, "group" | "provider"> {
 export const SETTINGS: Setting[] = [
   { name: "VAK_SANDBOX_ENABLED", label: "OS-level process isolation", secret: false, group: "app", owner: "sandbox", placeholder: "true or false" },
   { name: "VAK_SANDBOX_WORKSPACE", label: "Sandbox execution project folder", secret: false, group: "app", owner: "sandbox", placeholder: "/Users/you/Projects/example" },
-  { name: "VAK_EXTRA_EGRESS_HOSTS", label: "Custom allowed network egress hosts", secret: false, group: "app", owner: "sandbox", placeholder: "my-azure.openai.azure.com, 192.168.1.50:8000" },
   { name: "TYPESAFE_API_KEY", label: "TypeSafe AI API key", secret: true, group: "main", owner: "typesafe" },
   { name: "TYPESAFE_BASE_URL", label: "TypeSafe AI endpoint", secret: false, group: "more", owner: "typesafe", placeholder: "https://api.typesafe.ai/v1" },
   ...PROVIDER_SETTINGS.map(({ provider, ...s }) => ({ ...s, owner: provider })),
@@ -206,9 +205,6 @@ export class Settings {
       // never occur in API keys and would break the Keychain command line.
       if (/[\r\n]/.test(v) || (s.secret && /[\s"\\]/.test(v))) throw new SettingsError(`${s.label} contains characters a key never has`);
       if (name === "VAK_SANDBOX_ENABLED" && v !== "true" && v !== "false") throw new SettingsError("Process isolation must be true or false.");
-      if (name === "VAK_EXTRA_EGRESS_HOSTS" && v) {
-        if (/[\r\n"'\\]/.test(v)) throw new SettingsError("Custom egress hosts cannot contain quotes, backslashes, or newlines.");
-      }
       if (name === "VAK_SANDBOX_WORKSPACE" && v) {
         try { validateSandboxWorkspace(v); } catch (error) { throw new SettingsError((error as Error).message); }
       }

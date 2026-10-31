@@ -17,7 +17,7 @@ type ControlResult = ControlHealth | { status: "committed"; receipt: HostCandida
 type CandidateIdentity = { commitId: string; session: string; rootId: string; rootRevision: number; contractRevision: number; cancellationEpoch: number; expectedCanonicalRevision: number };
 type ControlPending = { kind: "health" | "candidate" | "session" | "capacity"; candidate?: CandidateIdentity; accept?: (frame: Record<string, unknown>) => ControlResult; resolve(value: ControlResult): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 
-export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth>; commitCandidate(candidate: HostCandidateCommitRequest): Promise<HostCandidateCommitReceipt>; hostSessionStore: HostSessionStore; providerFetch: ProviderTransport; reserveCapacity(requestId: string, rootId: string, amounts: Record<string, number>): Promise<Lease>; releaseCapacity(lease: Lease): Promise<void> } {
+export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth>; commitCandidate(candidate: HostCandidateCommitRequest): Promise<HostCandidateCommitReceipt>; hostSessionStore: HostSessionStore; providerFetch: ProviderTransport; egressFetch: typeof fetch; reserveCapacity(requestId: string, rootId: string, amounts: Record<string, number>): Promise<Lease>; releaseCapacity(lease: Lease): Promise<void> } {
   const active = new Map<string, Pending>();
   const controlPending = new Map<string, ControlPending>();
   let closed = false;
@@ -338,5 +338,5 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
   input.on("end", close);
   input.on("error", (error) => { close(); failed(error); });
   output.on("error", (error) => { close(); failed(error); });
-  return { close, pingControl, commitCandidate, hostSessionStore, providerFetch: providers.fetch, reserveCapacity, releaseCapacity };
+  return { close, pingControl, commitCandidate, hostSessionStore, providerFetch: providers.fetch, egressFetch: providers.egressFetch, reserveCapacity, releaseCapacity };
 }

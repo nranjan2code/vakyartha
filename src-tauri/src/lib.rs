@@ -29,6 +29,7 @@ mod canonical_supervisor;
 #[allow(dead_code, reason = "product dispatch remains gated on the context and lifecycle adapters")]
 mod reasoner_supervisor;
 mod policy;
+mod egress;
 mod private_store;
 mod vault;
 // The native control actor and store start with an empty execution profile.
@@ -128,15 +129,22 @@ async fn vault_presence(window: tauri::WebviewWindow, accounts: Vec<String>) -> 
     }).await.map_err(|_| "Credential presence is unavailable".to_owned())?
 }
 
-/// Egress validation gate: checks whether a destination URL is permitted by broker policy.
+/// Integration hosts the user may approve, and which are approved.
 #[tauri::command]
-fn check_egress_endpoint(window: tauri::WebviewWindow, scheme: String, host: String, port: Option<u16>, custom_hosts: Option<Vec<String>>) -> Result<bool, String> {
+fn egress_approvals(window: tauri::WebviewWindow) -> Result<serde_json::Value, String> {
     engine::main_window(&window)?;
-    let extra = custom_hosts.unwrap_or_default();
-    match policy::evaluate_egress_with_custom(&scheme, &host, port, &extra) {
-        policy::EgressDecision::Allowed => Ok(true),
-        policy::EgressDecision::Denied(reason) => Err(reason.into()),
-    }
+    let approved = egress::approved(&app_data_dir(window.app_handle()));
+    let hosts: Vec<_> = policy::INTEGRATION_HOSTS.iter()
+        .map(|h| serde_json::json!({ "host": h, "approved": approved.iter().any(|a| a == h) })).collect();
+    Ok(serde_json::Value::Array(hosts))
+}
+
+/// Allow or revoke worker egress to one integration host. Main window only.
+#[tauri::command]
+fn egress_set_approval(window: tauri::WebviewWindow, host: String, allow: bool) -> Result<Vec<String>, String> {
+    engine::main_window(&window)?;
+    if host.len() > 253 { return Err("Invalid host".into()); }
+    egress::set_approval(&app_data_dir(window.app_handle()), &host, allow)
 }
 
 /// Native folder picker dialog.
@@ -940,7 +948,8 @@ pub fn run() {
             vault_presence,
             vault_set,
             vault_delete,
-            check_egress_endpoint,
+            egress_approvals,
+            egress_set_approval,
             pick_folder
         ])
         .on_window_event(|window, event| {

@@ -20,6 +20,7 @@ if (!process.env.VAK_DATA_DIR) throw new Error("Native worker data directory is 
 let nativeCommit: (candidate: HostCandidateCommitRequest) => Promise<HostCandidateCommitReceipt> = async () => { throw new Error("Native control transport is not ready"); };
 let nativeTransport: ReturnType<typeof desktopTransport> | undefined;
 let nativeProviderFetch: ProviderTransport = async () => { throw new Error("Native provider transport is not ready"); };
+let nativeEgressFetch: typeof fetch = async () => { throw new Error("Native egress is not ready"); };
 const nativeSessionStore: HostSessionStore = {
   load: async (id) => { if (!nativeTransport) throw new Error("Native session transport is not ready"); return nativeTransport.hostSessionStore.load(id); },
   save: async (snapshot, revision) => { if (!nativeTransport) throw new Error("Native session transport is not ready"); return nativeTransport.hostSessionStore.save(snapshot, revision); },
@@ -48,11 +49,13 @@ const app = await startAppServer({
   nativeSessionStore,
   capacityLease,
   providerTransport: (...args) => nativeProviderFetch(...args),
+  egressTransport: (...args) => nativeEgressFetch(...args),
 });
 const transport = desktopTransport(app.request, app.token!, channel, channel, (error) => { console.error(error.message); void shutdown(); });
 nativeCommit = transport.commitCandidate;
 nativeTransport = transport;
 nativeProviderFetch = transport.providerFetch;
+nativeEgressFetch = transport.egressFetch;
 channel.write(`VAK_READY ${JSON.stringify({ transport: "stdio", version: DESKTOP_PROTOCOL })}\n`);
 
 // The shell holds our stdin open; when it goes away (quit or crash), so do

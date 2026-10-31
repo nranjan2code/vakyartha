@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import type { ProviderTransport, ProviderTransportContext } from "@vak/providers";
 import { DESKTOP_PROTOCOL } from "../shared/desktop-protocol.ts";
 const MAX_PROVIDER_BODY = 8 * 1024 * 1024;
+const NULL_BODY = [204, 205, 304];
+const EGRESS_HEADERS = new Set(["content-type", "accept", "mcp-protocol-version", "mcp-session-id", "last-event-id"]);
 const PROVIDER_OPERATIONS: Record<string, Map<string, string>> = {
   openai: new Map([
     ["api.openai.com|/v1/responses", "responses"],
@@ -78,7 +80,7 @@ type ProviderPending = {
   abort?: () => void;
 };
 
-export function providerChannel(send: (message: Record<string, unknown>) => Promise<void>, maxCalls = 16, consentWaitMs = 0): { fetch: ProviderTransport; receive(frame: Record<string, unknown>): boolean; close(): void } {
+export function providerChannel(send: (message: Record<string, unknown>) => Promise<void>, maxCalls = 16, consentWaitMs = 0): { fetch: ProviderTransport; egressFetch: typeof fetch; receive(frame: Record<string, unknown>): boolean; close(): void } {
   if (!Number.isInteger(consentWaitMs) || consentWaitMs < 0 || consentWaitMs > 300_000) throw new Error("Invalid provider consent allowance");
   if (!Number.isInteger(maxCalls) || maxCalls < 1 || maxCalls > 32) throw new Error("Invalid provider channel capacity");
   const providerPending = new Map<string, ProviderPending>();
@@ -206,6 +208,43 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
     const operationId = context.operationId;
     const attempt = context.attempt;
     if (!Number.isSafeInteger(attempt) || attempt < 0 || attempt > 16) return Promise.reject(new Error("Invalid provider attempt identity"));
+    return dispatch(id, signal, {
+      v: DESKTOP_PROTOCOL,
+      id,
+      type: "provider_request",
+      provider,
+      operation,
+      ...(routeModel === undefined ? {} : { routeModel }),
+      body: typeof body === "string" ? body : "",
+      operationId,
+      attempt,
+      ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
+      ...(context?.runId ? { runId: context.runId } : {}),
+    });
+  };
+  /** Integration HTTPS through the native egress gate; Rust decides the host. */
+  const egressFetch: typeof fetch = async (input, init = {}) => {
+    if (closed) throw new Error("Native egress is unavailable");
+    if (providerPending.size >= maxCalls) throw new Error("Native egress queue is full");
+    const request = input instanceof Request ? input : undefined;
+    const url = new URL(request ? request.url : String(input));
+    if (url.protocol !== "https:") throw new Error(`Network access to ${url.host} is not permitted: integrations must use HTTPS`);
+    const method = String(init.method ?? request?.method ?? "GET").toUpperCase();
+    const headers: Record<string, string> = {};
+    new Headers(init.headers ?? request?.headers).forEach((value, name) => { if (EGRESS_HEADERS.has(name)) headers[name] = value; });
+    const raw = init.body ?? (request?.body ? await request.text() : undefined);
+    if (raw !== undefined && raw !== null && typeof raw !== "string") throw new Error("Native egress requires a text body");
+    const body = raw ?? "";
+    if (Buffer.byteLength(body) > MAX_PROVIDER_BODY) throw new Error("Egress request is too large");
+    const signal = init.signal ?? request?.signal ?? undefined;
+    signal?.throwIfAborted();
+    const id = `egr-${randomUUID()}`;
+    const response = await dispatch(id, signal, { v: DESKTOP_PROTOCOL, id, type: "egress_request", url: url.href, method, headers, body });
+    // Redirects are not followed natively; refusing them keeps the approved host the only destination.
+    if (response.status >= 300 && response.status < 400) { await response.body?.cancel(); throw new Error(`${url.host} redirected the request; redirects are not followed`); }
+    return response;
+  };
+  function dispatch(id: string, signal: AbortSignal | undefined, message: Record<string, unknown>): Promise<Response> {
     return new Promise<Response>((resolve, reject) => {
       let abort: (() => void) | undefined;
       const timer = setTimeout(() => {
@@ -234,19 +273,6 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
       };
       pending.abort = abort;
       signal?.addEventListener("abort", abort, { once: true });
-      const message = {
-        v: DESKTOP_PROTOCOL,
-        id,
-        type: "provider_request",
-        provider,
-        operation,
-        ...(routeModel === undefined ? {} : { routeModel }),
-        body: typeof body === "string" ? body : "",
-        operationId,
-        attempt,
-        ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
-        ...(context?.runId ? { runId: context.runId } : {}),
-      };
       void send(message).catch((error: unknown) => {
         if (providerPending.delete(id)) {
           clearTimeout(timer);
@@ -255,19 +281,19 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
         }
       });
     });
-  };
+  }
   function receive(f: Record<string, unknown>): boolean {
     if (typeof f.type !== "string" || !f.type.startsWith("provider_")) return false;
     if (f.v !== DESKTOP_PROTOCOL || typeof f.id !== "string" || !/^[A-Za-z0-9-]{1,64}$/.test(f.id)) throw new Error("Invalid provider response identity");
     const id = f.id;
     if (f.type === "provider_headers") {
-      if (Object.keys(f).some((key) => !["v", "id", "type", "status", "headers"].includes(key)) || !id.startsWith("gen-") || !Number.isInteger(f.status) || Number(f.status) < 100 || Number(f.status) > 599 || [204, 205, 304].includes(Number(f.status)) || !f.headers || typeof f.headers !== "object" || Array.isArray(f.headers)) throw new Error("Invalid provider response headers");
+      if (Object.keys(f).some((key) => !["v", "id", "type", "status", "headers"].includes(key)) || !/^(gen|egr)-/.test(id) || !Number.isInteger(f.status) || Number(f.status) < 100 || Number(f.status) > 599 || (id.startsWith("gen-") && NULL_BODY.includes(Number(f.status))) || !f.headers || typeof f.headers !== "object" || Array.isArray(f.headers)) throw new Error("Invalid provider response headers");
       if (lateProviderFrame(id)) return true;
       const pending = providerPending.get(id);
       if (!pending || pending.settled || pending.controller) throw new Error("Unexpected provider response headers");
       const headers = new Headers();
       for (const [name, value] of Object.entries(f.headers as Record<string, unknown>)) {
-        if (!/^(content-type|retry-after)$/.test(name.toLowerCase()) || typeof value !== "string" || value.length > 256 || /[\r\n]/.test(value)) throw new Error("Invalid provider response header");
+        if (!(id.startsWith("egr-") ? /^(content-type|retry-after|mcp-session-id)$/ : /^(content-type|retry-after)$/).test(name.toLowerCase()) || typeof value !== "string" || value.length > 256 || /[\r\n]/.test(value)) throw new Error("Invalid provider response header");
         headers.set(name, value);
       }
       const stream = new ReadableStream<Uint8Array>({
@@ -304,11 +330,11 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
           }
         },
       });
-      pending.resolve(new Response(stream, { status: Number(f.status), headers }));
+      pending.resolve(new Response(NULL_BODY.includes(Number(f.status)) ? null : stream, { status: Number(f.status), headers }));
       return true;
     }
     if (f.type === "provider_data") {
-      if (Object.keys(f).some((key) => !["v", "id", "type", "seq", "data"].includes(key)) || !id.startsWith("gen-") || !Number.isSafeInteger(f.seq) || typeof f.data !== "string" || f.data.length > 88_000) throw new Error("Invalid provider response data");
+      if (Object.keys(f).some((key) => !["v", "id", "type", "seq", "data"].includes(key)) || !/^(gen|egr)-/.test(id) || !Number.isSafeInteger(f.seq) || typeof f.data !== "string" || f.data.length > 88_000) throw new Error("Invalid provider response data");
       if (lateProviderFrame(id)) return true;
       const pending = providerPending.get(id);
       if (!pending?.controller || pending.settled || Number(f.seq) !== pending.nextExpectedSeq) throw new Error("Unexpected provider response data");
@@ -321,7 +347,7 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
       return true;
     }
     if (f.type === "provider_end") {
-      if (Object.keys(f).some((key) => !["v", "id", "type"].includes(key)) || !id.startsWith("gen-")) throw new Error("Invalid provider response end");
+      if (Object.keys(f).some((key) => !["v", "id", "type"].includes(key)) || !/^(gen|egr)-/.test(id)) throw new Error("Invalid provider response end");
       if (lateProviderFrame(id)) return true;
       const pending = providerPending.get(id);
       if (!pending?.controller || pending.settled || pending.ended) throw new Error("Unexpected provider response end");
@@ -335,7 +361,7 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
       return true;
     }
     if (f.type === "provider_error") {
-      if (Object.keys(f).some((key) => !["v", "id", "type", "message"].includes(key)) || !id.startsWith("gen-") || typeof f.message !== "string" || f.message.length > 512) throw new Error("Invalid provider response error");
+      if (Object.keys(f).some((key) => !["v", "id", "type", "message"].includes(key)) || !/^(gen|egr)-/.test(id) || typeof f.message !== "string" || f.message.length > 512) throw new Error("Invalid provider response error");
       if (lateProviderFrame(id)) return true;
       const pending = providerPending.get(id);
       if (!pending || pending.settled) throw new Error("Unexpected provider response error");
@@ -350,5 +376,5 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
     }
     throw new Error("Unexpected provider response family");
   }
-  return { fetch: providerFetch, receive, close };
+  return { fetch: providerFetch, egressFetch, receive, close };
 }

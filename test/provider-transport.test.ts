@@ -72,3 +72,36 @@ test("native provider responses deliver data frames that arrive after the reader
   const res = await channel.fetch("openai", "https://api.openai.com/v1/models", { signal: AbortSignal.timeout(2000) }, { operationId: "op-1", attempt: 0 });
   assert.deepEqual(await res.json(), { data: [{ id: "b" }, { id: "a" }] });
 });
+
+test("native egress forwards only protocol headers and returns the MCP session header", async () => {
+  const { providerChannel } = await import("../sidecar/provider-channel.ts");
+  const sent: Record<string, unknown>[] = [];
+  const channel = providerChannel(async (message) => {
+    if (message.type !== "egress_request") return;
+    sent.push(message);
+    const id = message.id as string;
+    const status = message.method === "DELETE" ? 204 : 200;
+    setTimeout(() => {
+      channel.receive({ v: 2, id, type: "provider_headers", status, headers: { "content-type": "application/json", "mcp-session-id": "s-1" } });
+      if (status === 200) channel.receive({ v: 2, id, type: "provider_data", seq: 0, data: Buffer.from('{"ok":true}').toString("base64") });
+      channel.receive({ v: 2, id, type: "provider_end" });
+    }, 1);
+  });
+  const res = await channel.egressFetch("https://mcp.nseindia.in/bhavcopy/cm/mcp", { method: "POST", headers: { "content-type": "application/json", accept: "application/json", cookie: "a=b", authorization: "Bearer x" }, body: "{}" });
+  assert.equal(res.headers.get("mcp-session-id"), "s-1");
+  assert.deepEqual(await res.json(), { ok: true });
+  assert.deepEqual(sent[0]!.headers, { "content-type": "application/json", accept: "application/json" });
+  assert.match(String(sent[0]!.id), /^egr-/);
+  assert.equal((await channel.egressFetch("https://mcp.nseindia.in/x", { method: "DELETE" })).status, 204);
+  await assert.rejects(channel.egressFetch("http://127.0.0.1:11434/api/tags"), /HTTPS/);
+});
+
+test("native egress refuses redirects instead of following them", async () => {
+  const { providerChannel } = await import("../sidecar/provider-channel.ts");
+  const channel = providerChannel(async (message) => {
+    const id = message.id as string;
+    if (message.type !== "egress_request") return;
+    setTimeout(() => { channel.receive({ v: 2, id, type: "provider_headers", status: 302, headers: {} }); channel.receive({ v: 2, id, type: "provider_end" }); }, 1);
+  });
+  await assert.rejects(channel.egressFetch("https://mcp.nseindia.in/mcp", { method: "POST", body: "{}" }), /redirect/);
+});

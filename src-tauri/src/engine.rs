@@ -164,7 +164,7 @@ async fn dispatch_provider_request(
             .body(body);
     }
 
-    let mut response = match builder.send().await {
+    let response = match builder.send().await {
         Ok(res) => res,
         Err(err) => {
             send_provider_error(&sender, &queued, &request.id, &format!("Provider HTTP request failed: {err}"));
@@ -172,55 +172,58 @@ async fn dispatch_provider_request(
         }
     };
 
+    relay_response(response, &request.id, &sender, &queued, &["content-type", "retry-after"]).await;
+}
+
+/// Streams one upstream response over the shared provider frame family.
+async fn relay_response(mut response: reqwest::Response, id: &str, sender: &Input, queued: &Arc<AtomicUsize>, forwarded: &[&str]) {
     let status = response.status().as_u16();
     let mut headers_map = serde_json::Map::new();
-    if let Some(ct) = response.headers().get("content-type").and_then(|v| v.to_str().ok()) {
-        headers_map.insert("content-type".to_string(), serde_json::Value::String(ct.to_string()));
+    for name in forwarded {
+        if let Some(value) = response.headers().get(*name).and_then(|v| v.to_str().ok()).filter(|v| v.len() <= 256) {
+            headers_map.insert((*name).to_string(), serde_json::Value::String(value.to_string()));
+        }
     }
-    if let Some(ra) = response.headers().get("retry-after").and_then(|v| v.to_str().ok()) {
-        headers_map.insert("retry-after".to_string(), serde_json::Value::String(ra.to_string()));
-    }
-
-    let headers_frame = serde_json::json!({
-        "v": PROTOCOL_VERSION,
-        "id": &request.id,
-        "type": "provider_headers",
-        "status": status,
-        "headers": headers_map,
-    });
-    send_frame(&sender, &queued, headers_frame);
-
+    send_frame(sender, queued, serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "provider_headers", "status": status, "headers": headers_map }));
     let mut seq: u32 = 0;
     loop {
         match response.chunk().await {
             Ok(Some(chunk)) => {
                 for slice in chunk.chunks(64 * 1024) {
-                    let b64 = base64(slice);
-                    let data_frame = serde_json::json!({
-                        "v": PROTOCOL_VERSION,
-                        "id": &request.id,
-                        "type": "provider_data",
-                        "seq": seq,
-                        "data": b64,
-                    });
+                    send_frame(sender, queued, serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "provider_data", "seq": seq, "data": base64(slice) }));
                     seq += 1;
-                    send_frame(&sender, &queued, data_frame);
                 }
             }
             Ok(None) => break,
             Err(err) => {
-                send_provider_error(&sender, &queued, &request.id, &format!("Provider streaming error: {err}"));
+                send_provider_error(sender, queued, id, &format!("Streaming error: {err}"));
                 return;
             }
         }
     }
+    send_frame(sender, queued, serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "provider_end" }));
+}
 
-    let end_frame = serde_json::json!({
-        "v": PROTOCOL_VERSION,
-        "id": &request.id,
-        "type": "provider_end",
-    });
-    send_frame(&sender, &queued, end_frame);
+async fn dispatch_egress_request(request: crate::egress::EgressRequest, sender: Input, queued: Arc<AtomicUsize>, data_dir: PathBuf) {
+    let admitted = match request.admit(PROTOCOL_VERSION) {
+        Ok(admitted) => admitted,
+        Err(message) => return send_provider_error(&sender, &queued, &request.id, message),
+    };
+    if !crate::egress::approved(&data_dir).contains(&admitted.host) {
+        let message = format!("Network access to {} needs your approval: open this integration in Settings and choose Allow", admitted.host);
+        return send_provider_error(&sender, &queued, &request.id, &message);
+    }
+    let client = match cached_resolve_public_addresses(&admitted.host).and_then(|addrs| get_or_create_client(Some(&admitted.host), Some(&addrs))) {
+        Ok(client) => client,
+        Err(message) => return send_provider_error(&sender, &queued, &request.id, &message),
+    };
+    let mut builder = client.request(admitted.method, admitted.url);
+    for (name, value) in admitted.headers { builder = builder.header(name, value); }
+    if let Some(body) = admitted.body { builder = builder.body(body); }
+    match builder.send().await {
+        Ok(response) => relay_response(response, &request.id, &sender, &queued, crate::egress::RESPONSE_HEADERS).await,
+        Err(err) => send_provider_error(&sender, &queued, &request.id, &format!("{} could not be reached: {err}", admitted.host)),
+    }
 }
 
 static DNS_CACHE: LazyLock<Mutex<HashMap<String, (Vec<SocketAddr>, Instant)>>> =
@@ -836,6 +839,21 @@ pub fn start_with_dispatch(
                     continue;
                 }
             }
+            if value.get("type").and_then(serde_json::Value::as_str) == Some("egress_request") {
+                let Some(id) = value.get("id").and_then(serde_json::Value::as_str).filter(|id| id.starts_with("egr-") && valid_id(id)).map(str::to_owned) else { continue; };
+                let Some((_, data_dir)) = dispatch_context.clone() else {
+                    send_provider_error(&connection, &response_queue, &id, "Native egress is not enabled");
+                    continue;
+                };
+                match serde_json::from_value::<crate::egress::EgressRequest>(value) {
+                    Ok(request) => {
+                        let (sender, queued) = (connection.clone(), response_queue.clone());
+                        tauri::async_runtime::spawn(dispatch_egress_request(request, sender, queued, data_dir));
+                    }
+                    Err(_) => send_provider_error(&connection, &response_queue, &id, "Malformed egress request"),
+                }
+                continue;
+            }
             if value.get("type").and_then(serde_json::Value::as_str) == Some("provider_request") {
                 let request = match serde_json::from_value::<ProviderRequest>(value.clone()) {
                     Ok(request) if request.validate() => request,
@@ -919,6 +937,48 @@ pub fn engine_cancel(window: tauri::WebviewWindow, state: tauri::State<'_, Engin
 
 #[cfg(test)]
 mod tests {
+    fn egress_frames(data: &std::path::Path, body: &str) -> Vec<serde_json::Value> {
+        let (tx, rx) = sync_channel::<Vec<u8>>(512);
+        let sender: Input = Arc::new(Mutex::new(Some(tx)));
+        let request: crate::egress::EgressRequest = serde_json::from_value(serde_json::json!({
+            "v": PROTOCOL_VERSION, "id": "egr-live", "type": "egress_request", "url": "https://mcp.nseindia.in/bhavcopy/cm/mcp", "method": "POST",
+            "headers": { "content-type": "application/json", "accept": "application/json, text/event-stream" }, "body": body,
+        })).unwrap();
+        tauri::async_runtime::block_on(dispatch_egress_request(request, sender.clone(), Arc::new(AtomicUsize::new(0)), data.to_path_buf()));
+        sender.lock().unwrap().take();
+        rx.iter().map(|bytes| serde_json::from_slice(&bytes).unwrap()).collect()
+    }
+
+    /// Live: `cargo test --lib egress_reaches_nse_only_after_approval -- --ignored`.
+    #[test]
+    #[ignore = "contacts mcp.nseindia.in"]
+    fn egress_reaches_nse_only_after_approval() {
+        let base = std::env::temp_dir().join(format!("vak-egress-live-{}", std::process::id()));
+        let data = base.join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        let init = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"vak-check","version":"0"}}}"#;
+        let refused = egress_frames(&data, init);
+        assert_eq!(refused.len(), 1);
+        assert!(refused[0]["message"].as_str().unwrap().contains("needs your approval"), "{refused:?}");
+        crate::egress::set_approval(&data, "mcp.nseindia.in", true).unwrap();
+        let frames = egress_frames(&data, init);
+        assert_eq!(frames[0]["type"], "provider_headers", "{frames:?}");
+        assert_eq!(frames[0]["status"], 200);
+        assert!(frames[0]["headers"]["mcp-session-id"].is_string());
+        assert_eq!(frames.last().unwrap()["type"], "provider_end");
+        let body: String = frames.iter().filter(|f| f["type"] == "provider_data").map(|f| {
+            let mut bits = 0u32; let mut n = 0; let mut out = Vec::new();
+            for c in f["data"].as_str().unwrap().bytes().filter(|c| *c != b'=') {
+                let v = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".iter().position(|x| *x == c).unwrap() as u32;
+                bits = (bits << 6) | v; n += 6;
+                if n >= 8 { n -= 8; out.push((bits >> n) as u8); }
+            }
+            String::from_utf8(out).unwrap()
+        }).collect();
+        assert!(body.contains("serverInfo"), "{body}");
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
     use super::*;
     use crate::control::{CapacityProfile, ControlActor};
 

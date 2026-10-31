@@ -8,7 +8,7 @@ import { externalCatalogs } from "./marketplaces-page.ts";
 import { api, ask, el } from "./core.ts";
 import { icon, tile } from "./icons.ts";
 import { group, pill, row, segmented, title, toggle } from "./ui.ts";
-import { pickFolder } from "./backend.ts";
+import { egressApprovals, pickFolder, setEgressApproval } from "./backend.ts";
 import { isMediaKind } from "../shared/media.ts";
 import { mediaResults, mediaSetup } from "./media-page.ts";
 
@@ -188,7 +188,22 @@ export async function integrationPage(id: string, back: () => void, reload: () =
     enabled.setAttribute("aria-label", `Use ${e.name}`);
     controls.push(el("div", { className: "row-actions" }, pill(...STATUS[i.status]), enabled));
   }
-  const access = group("What it can reach", ...e.access.map((a) => el("div", { className: "row" }, el("div", { className: "row-label", textContent: a }))), i.error ? el("div", { className: "row stack" }, el("p", { className: "row-hint bad", textContent: i.error })) : null);
+  // Desktop: the worker has no network of its own; Rust admits each host the user allows here.
+  const host = e.url ? new URL(e.url).hostname : undefined;
+  const approvals = host ? await egressApprovals().catch(() => undefined) : undefined;
+  const approval = approvals?.find((h) => h.host === host);
+  let network: HTMLElement | null = null;
+  if (host && approval) {
+    const button = el("button", { type: "button", className: approval.approved ? "ghost small" : "primary small", textContent: approval.approved ? "Revoke" : "Allow" });
+    button.addEventListener("click", () => void act(async () => {
+      await setEgressApproval(host, !approval.approved);
+      if (!approval.approved && i.installed && i.enabled) await api(`/api/integrations/${id}/refresh`, { method: "POST" });
+    }, button));
+    network = row(`Network access to ${host}`, approval.approved ? "Allowed. The app connects to this host only for its integrations." : "Not allowed yet. Nothing is sent until you allow it.", button);
+  } else if (host && approvals) {
+    network = el("div", { className: "row stack" }, el("p", { className: "row-hint bad", textContent: `${host} is not on the app's network allowlist, so the desktop app cannot reach it.` }));
+  }
+  const access = group("What it can reach", ...e.access.map((a) => el("div", { className: "row" }, el("div", { className: "row-label", textContent: a }))), network, i.error ? el("div", { className: "row stack" }, el("p", { className: "row-hint bad", textContent: i.error })) : null);
 
   // Setup fields.
   const mediaFields = mediaKind && isMediaKind(mediaKind) ? await mediaSetup(mediaKind, i.config, (config) => act(() => put({ config }))).catch((err: Error) => [group("Media setup", el("p", { className: "row-hint bad", textContent: err.message }))]) : [];

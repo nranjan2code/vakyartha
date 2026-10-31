@@ -38,7 +38,6 @@ import { SandboxPoolManager } from "./sandbox-pool/pool-manager.ts";
 import { AppRegistry } from "./sandbox-pool/app-registry.ts";
 import { WorkspaceRegistry, validateWorkspaceFolder } from "./workspace-registry.ts";
 import { SandboxRealms } from "./sandbox-realms.ts";
-import { createGuardedFetch } from "./egress.ts";
 import { withProviderTransport } from "./provider-transport.ts";
 
 export interface AppServerOptions {
@@ -67,6 +66,8 @@ export interface AppServerOptions {
   marketplaceImageFetch?: typeof pinnedFetch;
   /** Desktop may supply the supervised native broker transport for all model providers. */
   providerTransport?: ProviderTransport;
+  /** Desktop: the worker has no network; integration HTTPS goes through the native egress gate. */
+  egressTransport?: typeof fetch;
   /** Native sole-writer boundary for a completed candidate. */
   candidateCommit?: (request: HostCandidateCommitRequest) => Promise<HostCandidateCommitReceipt>;
   /** Native sole-writer boundary for desktop chat snapshots. */
@@ -186,9 +187,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   }
   for (const file of opts.envFiles ?? []) loadEnvFile(file);
   hardenNetwork();
-  if (opts.transport === "stdio" && process.env.NODE_ENV !== "test") {
-    globalThis.fetch = createGuardedFetch(globalThis.fetch, false);
-  }
+  if (opts.egressTransport) globalThis.fetch = opts.egressTransport;
 
   async function settingsRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
     if (url.pathname === "/api/sandbox" && req.method === "GET") {
