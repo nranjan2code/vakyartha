@@ -1,4 +1,4 @@
-.reference-app-dialog { width: min(540px, calc(100vw - 32px)); color: var(--fg); background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
-.reference-app-dialog::backdrop { background: #0008; }
+.reference-app-dialog { width: min(540px, calc(100vw - 32px)); color: var(--fg); background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; }
+.reference-app-dialog::backdrop { background: var(--scrim); }
 .reference-app-dialog select { width: 100%; min-height: 36px; margin: 12px 0; }
 .reference-app-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
