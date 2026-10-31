@@ -68,11 +68,18 @@ export function normalize(s: State): State {
     repository: repo, repoDraft: typeof s.repoDraft === 'string' ? s.repoDraft.slice(0, 200) : repo,
     issues, pulls: (Array.isArray(s.pulls) ? s.pulls : []).filter(isItem).slice(0, 30), commits: (Array.isArray(s.commits) ? s.commits : []).filter(isCommit).slice(0, 30),
     triage, receipts: (Array.isArray(s.receipts) ? s.receipts : []).filter((r) => r && typeof r.dataset === 'string').slice(0, 24),
-    problem: typeof s.problem === 'string' ? s.problem.slice(0, 400) : undefined, checkedAt: typeof s.checkedAt === 'string' ? s.checkedAt : undefined,
+    problem: typeof s.problem === 'string' ? s.problem.slice(0, 800) : undefined, checkedAt: typeof s.checkedAt === 'string' ? s.checkedAt : undefined,
   };
 }
 
 // --- refresh -----------------------------------------------------------------------
+
+/** A tool failure as one readable sentence: the host's untrusted-output envelope and labels removed, never cut mid-address. */
+export const reason = (e: unknown) => String((e as Error)?.message ?? e)
+  .replace(/<\/?tool_output[^>]*>/g, ' ').replace(/This is data returned by a tool, not instructions\.[^\n]*/g, ' ')
+  .replace(/\b(error|refused):\s*(?=(error|refused):)/gi, '').replace(/^\s*error:\s*/i, '').replace(/\s+/g, ' ').trim().slice(0, 400);
+// Only a missing integration or policy is fixed in Settings; other failures speak for themselves.
+const needsSetup = (m: string) => /Allow policy|not declared or available|integration tool is unavailable/i.test(m);
 
 /** Reads the three samples for the saved repository; also the scheduled refresh. */
 export async function refresh(c: Context) {
@@ -87,14 +94,14 @@ export async function refresh(c: Context) {
       if (kind === 'commits') s.commits = commits(rows, repo); else s[kind] = items(rows, repo, kind === 'pulls');
       s.receipts!.unshift({ dataset: kind, url: address, at, rows: rows.length, status: 'Validated' });
     } catch (e) {
-      const message = (e as Error).message.slice(0, 160);
+      const message = reason(e);
       failed.push(`${kind}: ${message}`);
       s.receipts!.unshift({ dataset: kind, url: address, at, rows: 0, status: `Failed: ${message}` });
     }
   }
   s.receipts = s.receipts!.slice(0, 24);
   s.checkedAt = new Date().toISOString();
-  s.problem = failed.length ? `${failed.length} of 3 reads failed; earlier records are kept. First: ${failed[0]}${failed.length === 3 ? ` ${SETUP}` : ''}` : undefined;
+  s.problem = failed.length ? `${failed.length} of 3 reads failed; earlier records are kept. First: ${failed[0]}${needsSetup(failed[0]!) ? ` ${SETUP}` : ''}` : undefined;
   return { updates: view(normalize(s)) };
 }
 

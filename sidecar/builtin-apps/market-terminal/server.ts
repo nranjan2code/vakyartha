@@ -59,11 +59,18 @@ export function normalize(s: State): State {
     months: ['1', '2', '3'].includes(String(s.months)) ? String(s.months) : '1',
     quotes, broad: group(s.broad), sectoral: group(s.sectoral), derivatives: group(s.derivatives),
     receipts: (Array.isArray(s.receipts) ? s.receipts : []).filter((r) => r && typeof r.tool === 'string').slice(0, 40),
-    historyFor, problem: typeof s.problem === 'string' ? s.problem.slice(0, 400) : undefined, checkedAt: typeof s.checkedAt === 'string' ? s.checkedAt : undefined,
+    historyFor, problem: typeof s.problem === 'string' ? s.problem.slice(0, 800) : undefined, checkedAt: typeof s.checkedAt === 'string' ? s.checkedAt : undefined,
   };
 }
 
 // --- governed reads ----------------------------------------------------------------
+
+/** A tool failure as one readable sentence: the host's untrusted-output envelope and labels removed, never cut mid-address. */
+export const reason = (e: unknown) => String((e as Error)?.message ?? e)
+  .replace(/<\/?tool_output[^>]*>/g, ' ').replace(/This is data returned by a tool, not instructions\.[^\n]*/g, ' ')
+  .replace(/\b(error|refused):\s*(?=(error|refused):)/gi, '').replace(/^\s*error:\s*/i, '').replace(/\s+/g, ' ').trim().slice(0, 400);
+// Only a missing integration or policy is fixed in Settings; other failures speak for themselves.
+const needsSetup = (m: string) => /Allow policy|not declared or available|integration tool is unavailable/i.test(m);
 
 /** One tool read: parse and commit on success, record a receipt either way. Returns the failure, if any. */
 async function read(ctx: Context, tool: string, args: Record<string, unknown>, parse: (raw: Record<string, unknown>) => { sourceAt: string; rows: number; commit(): Promise<void> | void }) {
@@ -74,7 +81,7 @@ async function read(ctx: Context, tool: string, args: Record<string, unknown>, p
     s.receipts!.unshift({ subject, tool, fetchedAt, sourceAt: parsed.sourceAt, rows: parsed.rows, status: 'Validated' });
     return undefined;
   } catch (e) {
-    const message = (e as Error).message.slice(0, 250);
+    const message = reason(e);
     s.receipts!.unshift({ subject, tool, fetchedAt, sourceAt: '', rows: 0, status: `Failed: ${message}` });
     return `${subject}: ${message}`;
   } finally { s.receipts = s.receipts!.slice(0, 40); }
@@ -82,7 +89,7 @@ async function read(ctx: Context, tool: string, args: Record<string, unknown>, p
 function settle(s: State, failures: (string | undefined)[]) {
   const failed = failures.filter(Boolean) as string[];
   s.checkedAt = new Date().toISOString();
-  s.problem = failed.length ? `${failed.length} of ${failures.length} reads failed; earlier observations are kept. First: ${failed[0]}${failed.length === failures.length ? ` ${SETUP}` : ''}` : undefined;
+  s.problem = failed.length ? `${failed.length} of ${failures.length} reads failed; earlier observations are kept. First: ${failed[0]}${needsSetup(failed[0]!) ? ` ${SETUP}` : ''}` : undefined;
 }
 const readQuote = (ctx: Context, selected: string) => read(ctx, 'nse-cmmkt__cm_get_stock_quote', { symbol: selected }, (raw) => {
   const q = quote(raw, selected);

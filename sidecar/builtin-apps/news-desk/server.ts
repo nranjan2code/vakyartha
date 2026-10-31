@@ -49,11 +49,18 @@ export function normalize(s: State): State {
     category: line(s.category, 40) || 'All',
     articles, saved: (Array.isArray(s.saved) ? s.saved : []).filter((id) => ids.has(id)).slice(0, MAX_SAVED),
     receipts: (Array.isArray(s.receipts) ? s.receipts : []).filter((r) => r && typeof r.source === 'string').slice(0, 24),
-    problem: typeof s.problem === 'string' ? s.problem.slice(0, 400) : undefined, checkedAt: typeof s.checkedAt === 'string' ? s.checkedAt : undefined,
+    problem: typeof s.problem === 'string' ? s.problem.slice(0, 800) : undefined, checkedAt: typeof s.checkedAt === 'string' ? s.checkedAt : undefined,
   };
 }
 
 // --- refresh -----------------------------------------------------------------------
+
+/** A tool failure as one readable sentence: the host's untrusted-output envelope and labels removed, never cut mid-address. */
+export const reason = (e: unknown) => String((e as Error)?.message ?? e)
+  .replace(/<\/?tool_output[^>]*>/g, ' ').replace(/This is data returned by a tool, not instructions\.[^\n]*/g, ' ')
+  .replace(/\b(error|refused):\s*(?=(error|refused):)/gi, '').replace(/^\s*error:\s*/i, '').replace(/\s+/g, ' ').trim().slice(0, 400);
+// Only a missing integration or policy is fixed in Settings; other failures speak for themselves.
+const needsSetup = (m: string) => /Allow policy|not declared or available|integration tool is unavailable/i.test(m);
 
 /** Reads every configured feed; also the scheduled refresh. */
 export async function refresh(c: Context) {
@@ -67,7 +74,7 @@ export async function refresh(c: Context) {
       incoming.push(...rows);
       s.receipts!.unshift({ source: f.name, url: f.url, at, rows: rows.length, status: 'Validated' });
     } catch (e) {
-      const message = (e as Error).message.slice(0, 180);
+      const message = reason(e);
       failed.push(`${f.name}: ${message}`);
       s.receipts!.unshift({ source: f.name, url: f.url, at, rows: 0, status: `Failed: ${message}` });
     }
@@ -80,7 +87,7 @@ export async function refresh(c: Context) {
   s.articles = [...new Map([...sorted.filter((a) => s.saved!.includes(a.id)), ...sorted.slice(0, RECENT)].map((a) => [a.id, a])).values()].slice(0, MAX_ARTICLES).sort(newest);
   s.receipts = s.receipts!.slice(0, 24);
   s.checkedAt = new Date().toISOString();
-  s.problem = failed.length ? `${failed.length} of ${s.feeds!.length} feeds failed; their earlier articles are kept. First: ${failed[0]}${failed.length === s.feeds!.length ? ` ${SETUP}` : ''}` : undefined;
+  s.problem = failed.length ? `${failed.length} of ${s.feeds!.length} feeds failed; their earlier articles are kept. First: ${failed[0]}${needsSetup(failed[0]!) ? ` ${SETUP}` : ''}` : undefined;
   return { updates: view(s) };
 }
 
