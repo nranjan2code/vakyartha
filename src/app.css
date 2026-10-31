@@ -2485,12 +2485,21 @@ body.collapsed .schedule-sidebar { display: grid; margin-left: 58px; }
 .app-runner-head-info { min-width: 0; flex: 1; }
 .app-runner-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-runner-actions { flex-wrap: wrap; max-width: 100%; }
-#app-run-status { padding: 0 24px; overflow-wrap: anywhere; }
-#app-run-status:empty { display: none; }
+.app-card { cursor: pointer; }
+/* Run status: a quiet chip in the app header; the full message on hover or focus. */
+.run-status { position: relative; display: inline-flex; align-items: center; gap: 6px; max-width: 200px; padding: 4px 8px; border-radius: 999px; font-size: var(--text-xs); color: var(--muted); white-space: nowrap; }
+.run-status > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.run-status:not([data-state]) { display: none; }
+.run-status[data-state="error"] { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.run-status[data-state="saved"] { color: var(--ok, var(--muted)); }
+.run-status:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.run-status:is(:hover, :focus-visible)::after { content: attr(data-detail); position: absolute; z-index: 5; top: calc(100% + 6px); right: 0; width: max-content; max-width: min(360px, 80vw); white-space: normal; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--fg); box-shadow: var(--shadow-lg); font-size: var(--text-sm); line-height: var(--lh-body); }
+.run-spinner { width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: run-spin 0.8s linear infinite; }
+@keyframes run-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .run-spinner { animation: none; } }
 @media (max-width: 620px) {
   .app-runner-top { padding: 10px 12px; gap: 8px; }
   .app-runner-actions { width: 100%; }
-  #app-run-status { padding: 0 12px; }
 }
 
 /* App views are first-class navigation; execution management stays on demand. */

@@ -1432,16 +1432,19 @@ function getDictationTarget(): HTMLTextAreaElement | HTMLInputElement {
   return input;
 }
 
-function toggleDictation(): void {
+/** Where an app or canvas wants dictated words: its field's current text and a writer. */
+interface DictationSink { base: string; write(text: string, final: boolean): void }
+
+function toggleDictation(sink?: DictationSink): void {
   const { state } = dictationState();
   if (state === "listening") return stopDictation();
   if (state === "transcribing" || !dictationPrefs.enabled) return;
   stopConversation();
   stopReading();
-  const target = getDictationTarget();
-  dictationBase = target.value;
+  const target = sink ? undefined : getDictationTarget();
+  dictationBase = sink ? sink.base : target!.value;
   composerHint("");
-  target.focus();
+  target?.focus();
   void startDictation({
     async onText(text, final) {
       if (final && dictationPrefs.clean && current.provider && current.model && text.trim()) {
@@ -1457,7 +1460,9 @@ function toggleDictation(): void {
         }
         composerHint("");
       }
-      target.value = dictationBase.trim() ? `${dictationBase.replace(/\s*$/, " ")}${text}` : text;
+      const joined = dictationBase.trim() ? `${dictationBase.replace(/\s*$/, " ")}${text}` : text;
+      if (sink || !target) return sink?.write(joined, final);
+      target.value = joined;
       target.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
       if (target === input) {
         autosize();
@@ -1475,10 +1480,10 @@ function toggleDictation(): void {
     },
   });
 }
-window.addEventListener("vak:start-dictation", () => {
-  toggleDictation();
+window.addEventListener("vak:start-dictation", (event) => {
+  toggleDictation((event as CustomEvent<DictationSink | undefined>).detail);
 });
-mic.addEventListener("click", toggleDictation);
+mic.addEventListener("click", () => toggleDictation());
 
 function paintMic(): void {
   const { state, startedAt } = dictationState();

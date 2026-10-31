@@ -8,10 +8,26 @@ import { icon } from "./icons.ts";
 import { chooseReferenceApp } from "./reference-apps.ts";
 import type { AppManifest } from "../shared/app-manifest.ts";
 import { openAdminConsole } from "./backend.ts";
-import { basicCatalog, type SurfaceSnapshot, SurfaceStore } from "@vak/core";
+import { basicCatalog, getAt, type SurfaceSnapshot, SurfaceStore } from "@vak/core";
 import type { VakActionDetail, VakSurfaceElement } from "@vak/web";
 import { surfaceMode } from "./theme.ts";
 import { resolveMedia } from "./media.ts";
+import { lastError, readAloud, voiceMaster } from "./voice/index.ts";
+
+type RunState = "running" | "saved" | "error";
+let savedTimer: ReturnType<typeof setTimeout> | undefined;
+/** The run status: a quiet chip in the app header; the full message shows on hover and focus. */
+function setRunStatus(state: RunState, label: string, detail = label): void {
+  const chip = document.getElementById("app-run-status");
+  if (!chip) return;
+  clearTimeout(savedTimer);
+  chip.dataset.state = state;
+  chip.dataset.detail = detail;
+  chip.setAttribute("aria-label", detail);
+  chip.replaceChildren(state === "running" ? el("span", { className: "run-spinner" }) : icon(state === "saved" ? "check" : "warning", 14), el("span", { textContent: label }));
+  // Saved is reassurance, not news: it fades; problems stay until the next run.
+  if (state === "saved") savedTimer = setTimeout(() => { delete chip.dataset.state; chip.replaceChildren(); }, 2500);
+}
 import type { AppSummary, AppDetails, AppUpdatePreview } from "../sidecar/sandbox-pool/app-registry.ts";
 
 function formatBytes(bytes: number): string {
@@ -37,6 +53,8 @@ export class AppsPage {
   #connections: AppConnection[] = [];
   #resumeSettings?: { appId: string; surface: string };
   #feedbackTimer?: ReturnType<typeof setTimeout>;
+  /** Sends the open surface's batched field edits now. */
+  #flushEdits?: () => void;
 
   constructor(
     toggleSidebar: () => void,
@@ -231,7 +249,10 @@ export class AppsPage {
       ...this.#paging.slice(filtered, this.#query).map((app) => {
         const isRunning = app.isRunning;
         const hasUpdate = Boolean(app.updateAvailable);
-        return el("div", { className: "artifact-card app-card" },
+        // The whole card opens the app; its own buttons (Update, Refresh, Delete) keep their action.
+        return el("div", { className: "artifact-card app-card", onclick: (e: MouseEvent) => {
+          if (!(e.target as Element).closest("button, a, input")) void this.runApp(app.id);
+        } },
           el("div", { className: "artifact-cover app-cover" },
             el("span", { className: "artifact-kind", textContent: app.category.toUpperCase() }),
             hasUpdate
@@ -365,13 +386,14 @@ export class AppsPage {
     } catch (err) {
       if (opening !== this.#opening) return;
       const message = `Could not launch app: ${(err as Error).message}`;
-      const status = document.getElementById("app-run-status");
-      if (status) status.textContent = message;
+      setRunStatus("error", "Could not open", message);
       this.#feedback(message, true);
     }
   }
 
   #closeActiveApp(): void {
+    this.#flushEdits?.();
+    this.#flushEdits = undefined;
     this.#opening++;
     clearInterval(this.#poll);
     this.#activeApp = null;
@@ -430,22 +452,21 @@ export class AppsPage {
 
     const surfaceMount = el("div", { className: "app-runner-content" });
     surfaceMount.addEventListener("input", () => { this.#dirty = true; });
-    const status = el("p", { id: "app-run-status", role: "status", "aria-live": "polite" });
     const actions = header.querySelector(".app-runner-actions")!;
-    if (app.run?.status === "failed" || app.run?.status === "uncertain") status.textContent = app.run.error || app.run.status;
+    actions.prepend(el("span", { id: "app-run-status", className: "run-status", role: "status", "aria-live": "polite", tabIndex: 0 }));
     if (app.run?.status === "uncertain") actions.append(el("button", { type: "button", className: "ghost small", textContent: "Review uncertain run", onclick: async () => {
       if (!await ask(`Run ${app.run!.id} has uncertain external effects. Inspect the integration call log and external target before continuing. Acknowledging will leave schedules paused and will not replay the operation.`, "Acknowledge reviewed effects")) return;
       try {
         const next = await api<AppDetails>(`/api/apps/${encodeURIComponent(app.manifest.id)}/recover`, { method: "POST", body: JSON.stringify({ runId: app.run!.id }) });
         this.#activeApp = next; this.#renderRunnerView(next);
-      } catch (error) { status.textContent = (error as Error).message; }
+      } catch (error) { setRunStatus("error", "Not acknowledged", (error as Error).message); }
     } }));
     const schedule = el("button", { type: "button", className: "ghost small", textContent: app.scheduling ? "Pause schedule" : "Enable schedule", onclick: async () => {
       try {
         if (!app.scheduling && !await ask("Enable this app's declared schedules? Runs use its declared tools only when their integration policy permits unattended access.", "Enable")) return;
         const updated = await api<AppDetails>(`/api/apps/${encodeURIComponent(app.manifest.id)}/schedule`, { method: "POST", body: JSON.stringify({ enabled: !app.scheduling }) });
         this.#activeApp = updated; this.#renderRunnerView(updated);
-      } catch (error) { status.textContent = (error as Error).message; }
+      } catch (error) { setRunStatus("error", "Schedule not changed", (error as Error).message); }
     } });
     const operations = el("details", { className: "app-runner-operations" },
       el("summary", { textContent: "Manage" }),
@@ -457,6 +478,7 @@ export class AppsPage {
         // The canonical owner can advance while a view is open; never rebuild from a stale closure.
         const current = this.#activeApp;
         if (!current || current.manifest.id !== app.manifest.id || !current.surfaces?.[id]) return;
+        this.#flushEdits?.();
         const previous = String(current.surface?.id ?? "");
         const cached = this.#viewCache.get(previous);
         if (cached) cached.scroll = surfaceMount.scrollTop;
@@ -470,7 +492,8 @@ export class AppsPage {
     }
 
     const connectionNotice = el("div", { id: "app-connection-notice", className: "app-connection-notice" });
-    this.#page.replaceChildren(header, navigation, connectionNotice, status, surfaceMount);
+    this.#page.replaceChildren(header, navigation, connectionNotice, surfaceMount);
+    if (app.run?.status === "failed" || app.run?.status === "uncertain") setRunStatus("error", app.run.status === "uncertain" ? "Needs review" : "Last run failed", app.run.error || app.run.status);
     this.#renderConnections();
 
     if (app.surface) {
@@ -497,8 +520,7 @@ export class AppsPage {
         this.#pending = this.#pending.then(async () => {
           this.#dirty = true;
           if (this.#activeApp?.manifest.id !== app.manifest.id) return;
-          const liveStatus = document.getElementById("app-run-status")!;
-          liveStatus.textContent = "Running…";
+          setRunStatus("running", "Saving…");
           try {
             if (app.manifest.triggers.some(t => t.action === body.action) && !await this.#dataReady(app.manifest.id)) return;
             const res = await api<{ revision: number; surfaces: Record<string, SurfaceSnapshot>; focusSurface?: string }>(`/api/apps/${encodeURIComponent(app.manifest.id)}/action`, {
@@ -514,28 +536,78 @@ export class AppsPage {
               const snap = res.surfaces[id];
               if (snap && id !== snapshot.id) { view.store.load(snap); view.element.refresh(); }
             }
-            this.#dirty = false; liveStatus.textContent = "Saved";
+            this.#dirty = false; setRunStatus("saved", "Saved");
             if (res.focusSurface && res.surfaces[res.focusSurface]) {
               this.#activeApp.surface = res.surfaces[res.focusSurface] as unknown as Record<string, unknown>;
               this.#renderRunnerView(this.#activeApp);
             }
-          } catch (error) { liveStatus.textContent = `${(error as Error).message}. Your local edits are retained; reopen to load saved state.`; }
+          } catch (error) { setRunStatus("error", "Not saved", `${(error as Error).message.replace(/\.+$/, "")}. Your local edits are kept; reopen the app to load its saved state.`); }
           finally { this.#dirty = false; surfaceEl.releaseAction(); }
         });
+      };
+      // Field edits are batched per path and sent shortly after typing stops, or
+      // before the next action, so an app never runs once per keystroke.
+      const edits = new Map<string, unknown>();
+      let editTimer: ReturnType<typeof setTimeout> | undefined;
+      const flush = () => {
+        clearTimeout(editTimer);
+        for (const [path, value] of edits) dispatch({ controlId: path, value });
+        edits.clear();
+      };
+      const edit = (path: string, value: unknown) => {
+        this.#dirty = true;
+        edits.set(path, value);
+        clearTimeout(editTimer);
+        editTimer = setTimeout(flush, 700);
+      };
+      this.#flushEdits = flush;
+      const valueAt = (path: string) => getAt(store.snapshot(snapshot.id)?.data ?? {}, path);
+      /** The bind path of the input node `id` in this surface as shown. */
+      const bindOf = (id: string) => {
+        let found: string | undefined;
+        const walk = (n: { id: string; bindPath?: string; children?: unknown[] }) => { if (n.id === id && n.bindPath) found = n.bindPath; (n.children as typeof n[] | undefined)?.forEach(walk); };
+        const root = store.resolve(snapshot.id)?.root;
+        if (root) walk(root as never);
+        return found;
+      };
+      /** Voice is the host's: an app declares `voice.dictate` {into: input node id} or `voice.read` {text}. */
+      const voice = (name: string, payload: Record<string, unknown>) => {
+        if (!voiceMaster.on) return setRunStatus("error", "Voice is off", "Turn on voice in Settings → Voice to dictate or hear this app.");
+        if (name === "voice.dictate") {
+          const into = typeof payload.into === "string" ? bindOf(payload.into) : undefined;
+          if (!into) return setRunStatus("error", "Cannot dictate", "This app's dictation button does not name a field on screen.");
+          window.dispatchEvent(new CustomEvent("vak:start-dictation", { detail: {
+            base: String(valueAt(into) ?? ""),
+            write: (text: string, final: boolean) => { store.setValue(snapshot.id, into, text); surfaceEl.refresh(); edit(into, text); if (final) flush(); },
+          } }));
+          return;
+        }
+        if (name === "voice.read") {
+          // A pointer in the payload arrives as the value it names (Projection resolves it).
+          const text = typeof payload.text === "string" ? payload.text : "";
+          if (!text.trim()) return setRunStatus("error", "Nothing to read", "There is no text to read aloud here yet.");
+          void readAloud(text, surfaceEl).then(() => { if (lastError) setRunStatus("error", "Not read aloud", lastError); });
+          return;
+        }
+        setRunStatus("error", "Unknown voice action", `${name} is not a voice action this app host provides.`);
       };
       if (!cached) surfaceEl.addEventListener("vak-change", (event: Event) => {
         event.stopPropagation();
         const detail = (event as CustomEvent<{ path: string; value: unknown }>).detail;
-        dispatch({ controlId: detail.path, value: detail.value });
+        edit(detail.path, detail.value);
       });
       if (!cached) surfaceEl.addEventListener("vak-action", (event: Event) => {
         event.stopPropagation();
         const detail = (event as CustomEvent<VakActionDetail>).detail;
-        if (detail.action.action === "dictate_note") {
-          window.dispatchEvent(new CustomEvent("vak:start-dictation"));
+        const name = detail.action.action;
+        if (name.startsWith("voice.")) {
+          const data = detail.action.data ?? detail.data;
+          voice(name, data && typeof data === "object" ? data as Record<string, unknown> : {});
+          surfaceEl.releaseAction();
           return;
         }
-        dispatch({ controlId: detail.action.source, value: detail.action.data ?? detail.data, action: detail.action.action });
+        flush();
+        dispatch({ controlId: detail.action.source, value: detail.action.data ?? detail.data, action: name });
       });
 
       this.#viewCache.set(snapshot.id, { store, element: surfaceEl, scroll: cached?.scroll ?? 0 });
@@ -564,8 +636,7 @@ export class AppsPage {
     if (rows.every(c => c.ready)) return true;
     if (this.#activeApp?.manifest.id !== id) await this.runApp(id);
     this.#connections = rows; this.#renderConnections();
-    const status = document.getElementById("app-run-status");
-    if (status) status.textContent = "Refresh needs connection setup. No data was fetched.";
+    setRunStatus("error", "Needs setup", "Refresh needs connection setup. No data was fetched.");
     await this.#openAppSettings();
     return false;
   }
@@ -612,8 +683,7 @@ export class AppsPage {
   }
 
   async #runTrigger(appId: string): Promise<void> {
-    const status = document.getElementById("app-run-status");
-    if (status) status.textContent = "Refreshing…";
+    setRunStatus("running", "Refreshing…");
     try {
       if (!await this.#dataReady(appId)) return;
       this.#feedback("Running background poll…");
@@ -624,7 +694,7 @@ export class AppsPage {
         { method: "POST" }
       );
       this.#feedback(`Trigger '${res.action}' executed in ${res.durationMs}ms`);
-      if (status) status.textContent = `Refreshed (${res.durationMs} ms)`;
+      setRunStatus("saved", "Refreshed", `Refreshed in ${res.durationMs} ms`);
       if (this.#activeApp && this.#activeApp.manifest.id === appId) {
         await this.#refreshActive();
       } else {
@@ -632,7 +702,7 @@ export class AppsPage {
       }
     } catch (err) {
       this.#feedback(`Trigger failed: ${(err as Error).message}`, true);
-      if (status) status.textContent = (err as Error).message;
+      setRunStatus("error", "Refresh failed", (err as Error).message);
     }
   }
 
