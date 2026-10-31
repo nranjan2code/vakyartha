@@ -30,6 +30,15 @@ Declare a stable lowercase ID, exact semantic version, name/description, Node 24
 6. Use `context.callTool` only for declared, actually permitted tools. Keys stay in the host. Rehearsal has no external-tool authority. Empty/offline/error results are explicit, not invented successful observations.
 7. For SQL use `context.database.run(sql, parameters?)` and `query(sql, parameters?)`; keep queries/snapshots within current limits and plan migrations explicitly. No direct driver imports, persistent local volumes or arbitrary dependencies.
 
+## Interface method
+
+1. One canonical owner (`context.state` or `context.database`); normalize state at the start of each run because it is untrusted and older versions may have written other shapes.
+2. Put records in surface data and repeat them with `children: {each: "/records", template: "row"}` (template binds `"{field}"`, `bind: "done"`, `payload: {id: "{id}"}`); never one node per record. A pure `view(state)` returns every surface's complete nodes and data; return them all in `updates`. Emit only the nodes that apply now (no editor without an open record); stable node ids from record ids.
+3. Interactions: buttons arrive as `(action, payload)`; bound fields as `(bindPath, value)`, batched after typing pauses and before the next action, so fields may autosave.
+4. Lint rules the host enforces: each bound input has a button or form in its enclosing container; each `{/path}` exists in the data. Keep alert/card bodies to plain sentences.
+5. Host capabilities: `voice.dictate` `{into: input node id}` and `voice.read` `{text: "/pointer"}` buttons (payload pointers arrive as their values); several surfaces become tabs; `focusSurface` switches after an action; errors you throw show in the header status chip.
+6. Ship surface.json as `view` of the empty state, and test that they match.
+
 ## README.md template
 
 - Purpose and actual implemented capabilities.

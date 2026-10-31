@@ -1,5 +1,12 @@
 # Vakyartha handover — 2026-10-31
 
+## Voice Desk rewritten; app host voice, batched edits and status; app-building guide — 2026-10-31
+
+- App host (`src/apps-page.ts`): `voice.dictate` {into: input node id} and `voice.read` {text: data pointer} buttons are handled by the host for every app; bound-field edits are batched (0.7 s after typing, always before the next action); run status is a header chip with details on hover/focus; clicking an app card opens it. The old `dictate_note` special case is gone.
+- Voice Desk 2.0: capture-first (speak or type, then save), autosaving editor, repeater-driven note list and checklist, action items view, two-step delete, spoken text from the same records. Runs in the real sandbox test.
+- [BUILDING-APPS.md](BUILDING-APPS.md) is the single how-to for any app; linked from AGENTS.md, the sandboxed-apps index, runtime contract and reference apps. `app-authoring` skill/template, `app-operator` and `voice-notes` updated.
+- Evidence: 320 app tests (including Voice Desk in the real sandbox), typecheck, Voice settings WebKit check. Retained: `scripts/apps-check.ts` steps 3-7 and `scripts/collection-ui-check.ts` step 7 fail identically on the previous commit (pre-existing). Not yet clicked through in the desktop window.
+
 ## Voice through the native runtime; Voice settings and provider pages rebuilt — 2026-10-31
 
 Root cause: after the protected-runtime merge the worker's `fetch` is the integration egress gate (HTTPS, approved integration hosts only), and voice still called Ollama, OpenAI, Gemini and ElevenLabs directly, so local voices read as "Ollama is not running" and hosted keys were stripped. Whistle lived in worker-writable data and was spawned from the contained worker.

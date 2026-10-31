@@ -4,7 +4,7 @@ description: Create a persistent executable local app package with backend handl
 license: MIT
 metadata:
   author: Vakyartha Team
-  version: "1.2"
+  version: "1.3"
 ---
 
 # Build executable local apps
@@ -24,5 +24,7 @@ Return `{data: {...}}` to update canonical data of the first surface, `{patches:
 For real data, declare exact offered integration tool names in `manifest.entitlements.mcpTools`, then await `context.callTool(name, args)`. Results remain tool-output text; parse the provider's actual documented output, never invent it. The host keeps credentials and enforces integration schemas and policies. Unattended calls require an enabled tool with Allow policy. Ask/off policies cannot be bypassed. A package declaration grants no permission.
 
 Refresh is ordinary code: fetch through permitted tools, validate source data, compute values, update context.state, and return the projection update. No model generation is needed unless that specific application operation requires it; model invocation is not currently offered to app code.
+
+Interface method (keeps any app, of any domain, correct): keep records only in `context.state`, normalize it at the start of each run, and write one pure `view(state)` that returns each surface's complete nodes and data (`data: [{op: "replace", path: "/", value}]`). Put records in the data and repeat them with `children: {each: "/records", template: "row"}` (templates bind item fields relatively); emit only nodes that apply now instead of hiding regions with flags. Field edits arrive as `handleAction(bindPath, value)` about 0.7 s after typing stops and always before the next button action, so fields can save themselves. Every bound input needs a button or form in its enclosing container, and every `{/path}` must exist in the data, or the update is refused. The host provides voice to every app: a button with action `voice.dictate` and payload `{into: "<input node id>"}` dictates into that input; `voice.read` with `{text: "/data/pointer"}` reads the pointed text aloud (a bare data pointer in a payload is sent as its value). Never record audio or call providers from app code. Generate surface.json from `view` of the empty state.
 
 Save a draft, rehearse it in Studio, independently check values and interactions, then let the user publish. Saving a draft never activates code or schedules. Schedules are off until explicitly enabled in Apps. Keep missing behavior and failed evidence explicit; do not claim installation from text or create a placeholder backend and describe it as complete.

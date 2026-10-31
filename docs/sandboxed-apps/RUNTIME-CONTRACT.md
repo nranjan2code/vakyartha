@@ -47,8 +47,10 @@ No direct HTTP/DNS/domain grant is supported. Raw network is denied by the exist
 
 CPU/RSS/process-count/disk-growth quotas, arbitrary persistent filesystem database volumes, file watchers, permanently running daemons, raw network/model brokers and hard spend ceilings are not implemented. Legacy manifest resource numbers do not enforce these quotas. The console reports RSS as unmeasured and does not claim static protection or spending measurements. Arbitrary self-modification is not allowed: code updates go through reviewed package publication; ordinary self-refresh updates data.
 
+## App host interactions
+
+Field edits reach the backend as `(controlId = bind path, value)`, batched about 0.7 s after typing stops and always before the next action. Buttons whose action starts with `voice.` are handled by the host, never sent to the backend: `voice.dictate` `{into: "<input node id>"}` dictates into that input (then delivered as an edit), and `voice.read` `{text: "/data/pointer"}` reads the resolved text aloud through the person's Voice settings. Run status and errors appear in the app header's status chip. See [Building a Vakyartha app](../BUILDING-APPS.md).
+
 ## Evidence
 
-The source checkpoint has 217 passing app tests, typecheck/build and real-helper/WebKit checks. The required primary-provider graph gate remains 2/3; no broader model app-authoring trial followed it. The installed app has not been replaced by this checkpoint.
-
-See the newest HANDOVER/EVALUATION checkpoint. A source build is not an installed-app update. Tool, renderer and calculation tests are separate from primary-provider app authoring outcomes. Preserve failed receipts; no passing mechanism test closes an earlier model/source/value/interpretation/interaction failure.
+Current verification and open gates are recorded in [Handover](../HANDOVER.md) and [Evaluation](../EVALUATION.md). A source build is not an installed-app update, and runtime tests do not certify model-authored apps.

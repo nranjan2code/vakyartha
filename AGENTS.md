@@ -1,6 +1,6 @@
 # AGENTS.md: working on Vakyartha
 
-Rules and commands for any coding agent (or person) changing this repo. Read [SPECS.md](docs/SPECS.md) for what the app is, [HANDOVER.md](docs/HANDOVER.md) for where work stands, and [RELEASING.md](docs/RELEASING.md) before a release or a framework update.
+Rules and commands for any coding agent (or person) changing this repo. Read [SPECS.md](docs/SPECS.md) for what the app is, [HANDOVER.md](docs/HANDOVER.md) for where work stands, [RELEASING.md](docs/RELEASING.md) before a release or a framework update, and [BUILDING-APPS.md](docs/BUILDING-APPS.md) before building or changing an app.
 
 Vakyartha is an app built on the [Projection framework](https://github.com/nranjan2code/Projection), which lives in `framework/` as a pinned git submodule. The framework has its own repository, rules (its AGENTS.md) and tests.
 
@@ -42,6 +42,10 @@ Vakyartha is an app built on the [Projection framework](https://github.com/nranj
 ## Outcome acceptance gate
 
 For model-output work, prove the smallest real primary-provider contract before expanding the workflow. Run the matching Projection gate in its owning repo (`node scripts/record-view-check.ts --run-local --table-only` for record mappings, `node scripts/provider-contract-check.ts --run-local` for free-form graph authoring; source-backed tasks also retain their original independent source/value/receipt checks), retaining failures in other capabilities as open, then independently check the original task’s sources, values, interpretation, interactions and output receipt. Native tool schemas are guidance unless actual schema decoding is used. Retain failed evidence and freeze outcome checks before evaluation; do not weaken requirements after failure. Passing tests, safe rejection, a committed change or an installed build never closes a failed user-outcome gate. Diagnose the earliest boundary offline instead of accumulating prompt/parser variants. Do not call the repair complete until the original outcome passes; record partial mechanism improvements separately. Apply this gate in handover and release notes as well as code review.
+
+## Apps
+
+Before building or changing an executable app (built-in or user), read [BUILDING-APPS.md](docs/BUILDING-APPS.md): package, backend contract, interaction flow, view-from-state method, host capabilities (voice, status, views), testing and shipping. Keep it, the `app-authoring` skill and its package template in step when the runtime changes.
 
 ## Skills, reports and dynamic surfaces
 

@@ -1,5 +1,7 @@
 # Executable reference applications
 
+To build your own, follow [Building a Vakyartha app](BUILDING-APPS.md); these packages are its worked examples.
+
 Current update contract (2026-10-30): existing app packages are never silently replaced at startup. Update controls show an inspectable manifest/source preview and require current package/revision plus the exact candidate fingerprint. Saved drafts take precedence over bundled replacements; stale or incomplete drafts require Studio review. Running/uncertain work blocks publication; pending UI edits must be saved/discarded first. Accepted updates retain saved app data, rebuild views and pause scheduling. No installed-app update or live voice outcome is implied by these source checks.
 
 
@@ -11,7 +13,7 @@ Five independent source packages exercise Vakyartha's supported app runtime and 
 | [News Desk](../sidecar/builtin-apps/news-desk/README.md) | Headlines, Reading list, Sources & refresh | Bounded publisher feed records and local bookmarks in app state | Responsive article cards, category/text controls, original links and source receipts |
 | [Project Activity Desk](../sidecar/builtin-apps/project-desk/README.md) | Triage, Activity, Source ledger | Bounded public repository issue/PR/commit samples; local lanes in app state | Keyboard/pointer board, timeline, exact tables and retrieval receipts |
 | [Personal Finance Workbench](../sidecar/builtin-apps/finance-workbench/README.md) | Overview, Ledger, Import & methods | User-imported INR records in bounded DuckDB; integer-paise arithmetic | Category expense bars, daily signed net-flow bars, budget progress, exact ledger and import form |
-| [Voice Desk](../sidecar/builtin-apps/voice-desk/README.md) | Workbench (Notes, Editor, Checklist), Actions register | Local user-created voice transcripts, notes, and task items in sandboxed app state | Multi-pane note list, Markdown note editor textarea, interactive task toggles, tag filters, audio drawer |
+| [Voice Desk](../sidecar/builtin-apps/voice-desk/README.md) | Notes (capture, list, editor), Action items | Notes and their action items in app state; dictation and read-aloud through host voice actions | Capture box, searchable note cards, autosaving editor, checklists, two-step delete |
 
 ## Install and operate
 

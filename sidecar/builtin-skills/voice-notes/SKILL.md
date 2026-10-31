@@ -2,7 +2,7 @@
 name: voice-notes
 description: Turn spoken audio transcripts, voice dictations, and brainstorming brain dumps into structured notes, executive summaries, decisions, and interactive action items.
 license: MIT
-compatibility: Universal voice note and dictation distillation across chat, Voice Desk app, and Canvas surfaces.
+compatibility: Voice note and dictation distillation in chat and Canvas surfaces.
 metadata:
   author: nranjan2code
   version: "1.0"
@@ -15,7 +15,7 @@ Framework for transforming raw, rambling voice dictations, audio transcripts, an
 
 ## Overview & Chaining
 
-- **Purpose**: Use this skill when the user dictates or provides a spoken brain dump, asks to organize meeting thoughts, requests a structured note from voice input, or interacts with the Voice Desk workbench.
+- **Purpose**: Use this skill when the user dictates or provides a spoken brain dump, asks to organize meeting thoughts, or requests a structured note from voice input. For notes they want to keep and revisit, point them to Apps → Voice Desk, which stores notes and action items locally; you do not operate that app.
 - **Skill chaining**:
   - Load `interactive-ui` when generating an interactive checklist with live checkboxes, owner filters, or note editing forms.
   - The required `surface-design` skill governs 3-tier liquid layouts, metric strips, container query clamping, and spoken audio summaries.
@@ -60,11 +60,11 @@ Structure voice notes into clean, distinct sections:
      - **Due Date**: Explicit target deadline, if mentioned.
 5. **Tags & Categorization**:
    - Relevant hashtags for organizing and filtering notes (e.g. `#architecture`, `#meetings`, `#strategy`).
-6. **Audio Transcript Archive**:
-   - Preserve the verbatim audio transcription in a collapsible drawer or code block for auditing and record integrity.
+6. **Verbatim transcript (only when asked)**:
+   - Keep it in a collapsed `accordion`, never as the main content.
 
 ## Dual Spoken & Visual Projection
 
-- **Visual Surface**: Render on the Canvas using liquid container layouts (Tier 1 KPI metric strip, Tier 2 split editor and action list, Tier 3 raw transcript).
+- **Visual Surface**: Lead with the synthesis, then takeaways, decisions and an action checklist. No metric strips or decorative cards for a short note; follow `surface-design` density rules.
 - **Spoken Summary**: Provide a concise 1-sentence audible briefing via TTS (*"Saved note on 'Q4 Strategy' with 2 action items assigned to you."*).
 - **Integrity Guarantee**: Never invent deadlines, assignees, or factual claims not present in the speaker's audio.

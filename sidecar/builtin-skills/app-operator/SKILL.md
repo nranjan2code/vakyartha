@@ -13,6 +13,8 @@ Apps run direct code without an LLM per interaction. Open Apps to use published 
 
 Use the published app's controls and its Apps details for revision, surfaces and run receipts. Private app HTTP/IPC routes are not model tools. If no offered tool performs an operation, hand off to the matching Apps control; do not invent a route-calling capability. Stale revisions fail. Retain local edits when background updates conflict. Multiple app surfaces share the same canonical app state.
 
+Open an app by clicking its card. Its run status (saving, saved, problems) is the small chip at the top right of the app header; hover or focus it for details. Dictate and Read aloud buttons in an app use the person's Settings → Voice choices and need voice turned on.
+
 Manual refresh uses the declared trigger control in Apps. Scheduling is explicitly enabled/paused in Apps. The app and computer must be running/awake; missed intervals are skipped, never burst-replayed. A failure is evidence to inspect, not a reason to add hidden model refresh calls.
 
 Real-data tools must be declared by the package and permitted through existing integrations. Credentials never go into app source or state. Ask/off tools do not run unattended. Inspect uncertain effects before acknowledging a run by its exact identity; acknowledgement never replays it.

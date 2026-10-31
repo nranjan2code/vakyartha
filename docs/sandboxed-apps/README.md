@@ -1,18 +1,17 @@
 # Executable local apps
 
-Vakyartha's mini-cloud builds, hosts and executes local applications. Chat and Studio author the package; ordinary code performs published actions and refreshes. A model is involved when building or changing behavior, not on every interaction.
+Vakyartha builds, hosts and runs local applications. Chat, Canvas and Studio author a package; ordinary code then runs each action and refresh in a sandbox, with no model request per interaction.
 
-Start with the [runtime contract](RUNTIME-CONTRACT.md), which defines the supported interface, persistence, permissions and limits.
+**To build or change an app, start with [Building a Vakyartha app](../BUILDING-APPS.md).**
 
 | Document | Purpose |
 | --- | --- |
-| [Reference applications](../REFERENCE-APPS.md) | Four executable packages, documentation method and verification |
-| [Architecture](ARCHITECTURE.md) | Intent, ownership, execution and data flow |
+| [Building a Vakyartha app](../BUILDING-APPS.md) | The method: package, backend, interactions, views, host capabilities, testing, shipping |
+| [Runtime contract](RUNTIME-CONTRACT.md) | Exact supported interface, persistence, permissions and limits |
+| [Reference applications](../REFERENCE-APPS.md) | The five shipped packages and how they are verified |
+| [Architecture](ARCHITECTURE.md) | Ownership, execution and data flow |
 | [Operations and lifecycle](OPERATIONS-AND-LIFECYCLE.md) | Create, rehearse, publish, run, schedule, recover and remove |
-| [Original review](REVIEW-2026-10-28.md) | Baseline defects and reproduced failures; historical evidence |
-| [Handover](../HANDOVER.md) / [Evaluation](../EVALUATION.md#executable-local-app-runtime--2026-10-28) | Current verification and open outcomes |
-| [ADR-048](../ADR.md#adr-048-bounded-executable-app-invocations-and-reviewed-publication-2026-10-28) | Accepted runtime boundary, superseding ADR-047 |
+| [Original review](REVIEW-2026-10-28.md) | Baseline defects found on 2026-10-28; historical evidence only |
+| [ADR-048](../ADR.md#adr-048-bounded-executable-app-invocations-and-reviewed-publication-2026-10-28), ADR-049 | Accepted runtime boundary and bounded DuckDB snapshots |
 
-The earlier warm-worker/daemon design is superseded. Persistent filesystem databases, file watchers, raw network/model brokers, strict CPU/RSS/disk quotas and latency guarantees are not current capabilities. The primary-provider authoring gate remains open; runtime checks do not certify model-generated applications. Source changes have not replaced the installed app.
-
-2026-10-28 capability update: opted-in bounded DuckDB snapshots now persist atomically with each app record, with sandbox-owned SQL and no new writer/IPC. General persistent filesystem volumes remain unsupported. See [current runtime contract](RUNTIME-CONTRACT.md) and ADR-049 for the superseding interface and limits.
+Not supported: warm workers or daemons, persistent filesystem databases (beyond the bounded DuckDB snapshot), file watchers, raw network or model access from app code, and CPU/RSS/disk quotas. Current verification is in [Handover](../HANDOVER.md) and [Evaluation](../EVALUATION.md).
