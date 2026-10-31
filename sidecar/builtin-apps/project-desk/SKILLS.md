@@ -1,13 +1,12 @@
-# Skills supporting Project Activity Desk
+# Skills for Project Activity Desk
 
-This file is app documentation, not a skill-loader manifest or authority grant.
+Skills guide procedures; they grant no tool or execution authority, and the app runs without a model.
 
-- app-authoring: construct the complete source/surface package and four documentation files using references/package-template.md.
-- app-maintainer: change code/contracts/docs together using references/change-checklist.md, preserving data and review fingerprints.
-- app-debugger plus debug-error: trace actual input/source/SQL/projection/commit failures from retained evidence before repair.
-- app-operator and app-admin: published actions, scheduling, source/run receipts and exact-run recovery.
-- Domain and surface procedures: task-tracker for explicit identities/status/owner semantics; code-review when code review is requested; interactive-ui and required surface-design for local boards, exact records and activity timelines.
+- `app-authoring` and its package template: the method this app follows.
+- `app-maintainer`: changes to this package, keeping old state loading through `normalize()`.
+- `app-debugger` with `debug-error`: a failed run. Start from the status chip, the Triage warning and the Sources ledger.
+- `app-operator` and `app-admin`: running actions, enabling the schedule, reading run receipts.
+- `task-tracker` and `operations-dashboard` (in chat): planning work and status dashboards; they do not operate this app or write to a repository.
+- `interactive-ui` and `surface-design`: board, timeline, charts and tables.
 
-Select only existing enabled skills relevant to the work. Load supporting text with read_skill_file after selection. No automatic chaining, new permissions or tool activation is implied. Ordinary app actions execute code without a model request. Keep this map aligned with actual source integrations, actions and maintenance responsibilities when updating the app.
-
-The exact tool is web__fetch_page through Web pages. Only credential-free public repository HTTPS API reads are made. Configure owner/repository; the default is nranjan2code/vakyartha. Enable Web pages and allow fetch_page. Private repositories/authentication are outside this reference; use an appropriate existing integration for a separately designed private workflow.
+The only tool is `web__fetch_page` through the Web pages integration. Update this list when a skill's role here changes.

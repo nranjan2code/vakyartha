@@ -6,16 +6,17 @@ import { test } from "node:test";
 import { AppRegistry, isCronMatch } from "../sidecar/sandbox-pool/app-registry.ts";
 import { SandboxPoolManager } from "../sidecar/sandbox-pool/pool-manager.ts";
 import { helperRun } from "./support/sandbox-run.ts";
+import { nseTool, feedTool, repoTool } from "./support/app-fixtures.ts";
 
 const helper = process.env.VAK_TEST_SANDBOX_BIN ?? path.resolve("../sandbox/target/debug/vaksb");
 const manifest = { id: "computed-app", name: "Computed app", version: "1.0.0", entrypoints: { backend: "main.ts", surface: "surface.json" }, triggers: [{ id: "refresh", kind: "cron", expression: "* * * * *", action: "refreshData", maxDurationSec: 10 }] };
 const surface = { id: "view", version: 1, data: { total: 0 }, nodes: [{ id: "root", type: "text", props: { content: "{/total}" } }] };
 const files = { "surface.json": JSON.stringify(surface), "main.ts": `export async function handleAction(id,value,ctx){ctx.state.total=Number(value)*2;return {data:{total:ctx.state.total}}}
 export async function refreshData(ctx){ctx.state.total=(ctx.state.total??0)+3;return {data:{total:ctx.state.total}}}` };
-function setup() {
+function setup(callTool?: (name: string, args: Record<string, unknown>) => Promise<unknown>) {
   const tmp = mkdtempSync(path.join(tmpdir(), "vak-app-registry-"));
   const pool = new SandboxPoolManager({ run: helperRun(helper) });
-  const registry = new AppRegistry({ dataDir: tmp, pool });
+  const registry = new AppRegistry({ dataDir: tmp, pool, ...(callTool ? { callTool: (_app, name, args) => callTool(name, args) } : {}) });
   return { tmp, pool, registry, async close() { await pool.shutdown(); await registry.shutdown(); rmSync(tmp, { recursive: true, force: true }); } };
 }
 test("cron supports exact, step and list matches", () => {
@@ -132,5 +133,65 @@ test("Voice Desk runs in the real sandbox: typed capture saves as a note and bot
     assert.equal(res.surfaces.actions.data.open[0].text, "Ask finance for the budget");
     app = s.registry.getApp("voice-desk")!;
     assert.equal((app.state as { notes: unknown[] }).notes.length, 1);
+  } finally { await s.close(); }
+});
+
+// The four data apps in the real sandbox: governed tool reads (fixture responses
+// through the registry's tool boundary), DuckDB snapshots, and each update
+// applied on top of the previous snapshot as the app host does.
+test("Market Terminal runs in the real sandbox: refresh, open an instrument, DuckDB analytics", async () => {
+  const s = setup(nseTool);
+  try {
+    let app = await s.registry.installBuiltin("market-terminal");
+    assert.deepEqual(Object.keys(app.surfaces ?? {}).sort(), ["instrument", "market", "sources"]);
+    let res = await s.registry.dispatchAction("market-terminal", "/watchDraft", "RELIANCE, TCS", undefined, app.revision);
+    res = await s.registry.dispatchAction("market-terminal", "refresh_market", null, "refresh_market", res.revision);
+    assert.equal(res.surfaces.market.data.watch.length, 2);
+    assert.equal(res.surfaces.market.data.headline[0].label, "NIFTY 50");
+    res = await s.registry.dispatchAction("market-terminal", "open_instrument", { symbol: "TCS" }, "open_instrument", res.revision);
+    assert.equal(res.focusSurface, "instrument");
+    assert.equal(res.surfaces.instrument.data.history.length, 22);
+    assert.match(res.surfaces.instrument.data.stats.priceReturn, /^\+\d+\.\d{2}%$/);
+    res = await s.registry.dispatchAction("market-terminal", "recalculate", null, "recalculate", res.revision);
+    assert.equal(res.surfaces.instrument.data.history.length, 22, "history persists in the DuckDB snapshot");
+  } finally { await s.close(); }
+});
+
+test("News Desk runs in the real sandbox: refresh feeds and save an article", async () => {
+  const s = setup(feedTool);
+  try {
+    const app = await s.registry.installBuiltin("news-desk");
+    let res = await s.registry.dispatchAction("news-desk", "refresh", null, "refresh", app.revision);
+    assert.equal(res.surfaces.headlines.data.articles.length, 4);
+    const id = res.surfaces.headlines.data.articles[0].id;
+    res = await s.registry.dispatchAction("news-desk", "save_article", { id }, "save_article", res.revision);
+    assert.equal(res.surfaces.saved.data.saved[0].id, id);
+  } finally { await s.close(); }
+});
+
+test("Project Desk runs in the real sandbox: refresh a repository and move a card", async () => {
+  const s = setup(repoTool);
+  try {
+    const app = await s.registry.installBuiltin("project-desk");
+    let res = await s.registry.dispatchAction("project-desk", "/repoDraft", "owner/repo", undefined, app.revision);
+    res = await s.registry.dispatchAction("project-desk", "refresh", null, "refresh", res.revision);
+    assert.equal(res.surfaces.triage.data.cards.length, 1);
+    res = await s.registry.dispatchAction("project-desk", "/cards", [{ ...res.surfaces.triage.data.cards[0], column: "Next" }], undefined, res.revision);
+    assert.equal(res.surfaces.triage.data.cards[0].column, "Next");
+  } finally { await s.close(); }
+});
+
+test("Finance Workbench runs in the real sandbox: CSV import into DuckDB and monthly totals", async () => {
+  const s = setup();
+  try {
+    const app = await s.registry.installBuiltin("finance-workbench");
+    assert.ok(app.surfaces!.overview!.nodes.some((n: { id: string }) => n.id === "fin-empty"));
+    let res = await s.registry.dispatchAction("finance-workbench", "/importText", "id,date,description,category,amount\npay,2026-10-01,Salary,Income,1000.00\nfood,2026-10-02,Groceries,Food,-250.50", undefined, app.revision);
+    res = await s.registry.dispatchAction("finance-workbench", "import_records", null, "import_records", res.revision);
+    assert.equal(res.focusSurface, "overview");
+    assert.deepEqual(res.surfaces.overview.data.totals.map((t: { value: string }) => t.value), ["₹1,000.00", "₹250.50", "₹749.50", "2"]);
+    res = await s.registry.dispatchAction("finance-workbench", "/budget", "500", undefined, res.revision);
+    assert.equal(res.surfaces.overview.data.budgetMax, 500);
+    assert.equal(res.surfaces.ledger.data.transactions.length, 2);
   } finally { await s.close(); }
 });

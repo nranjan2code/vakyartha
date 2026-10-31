@@ -1,6 +1,6 @@
 {
   "id": "project-desk",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "name": "Project Activity Desk",
   "description": "A public repository activity workbench with local triage, exact issue and pull-request records, commit history and source receipts.",
   "author": "Vakyartha",

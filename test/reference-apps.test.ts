@@ -4,11 +4,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { basicCatalog, SurfaceStore } from '@vak/core';
-import { DuckDBInstance } from '@duckdb/node-api';
 import { parseFeed, canonical } from '../sidecar/builtin-apps/news-desk/feed.ts';
-import { project as newsProject, handleAction as newsAction, refresh as newsRefresh } from '../sidecar/builtin-apps/news-desk/server.ts';
-import { items, commits, repository, handleAction as projectAction } from '../sidecar/builtin-apps/project-desk/server.ts';
-import { paise, records, handleAction as financeAction, project as financeProject } from '../sidecar/builtin-apps/finance-workbench/server.ts';
+import { handleAction as newsAction, refresh as newsRefresh, normalize as newsNormalize, surfaceFile as newsSurfaces } from '../sidecar/builtin-apps/news-desk/server.ts';
+import { items, commits, repository, handleAction as projectAction, surfaceFile as projectSurfaces } from '../sidecar/builtin-apps/project-desk/server.ts';
+import { paise, records, handleAction as financeAction, normalize as financeNormalize, surfaceFile as financeSurfaces } from '../sidecar/builtin-apps/finance-workbench/server.ts';
+import { handleAction as marketAction, surfaceFile as marketSurfaces } from '../sidecar/builtin-apps/market-terminal/server.ts';
+import { nseTool, nseHistory, feedTool, repoTool, memoryDatabase } from './support/app-fixtures.ts';
 import { view as voiceView, handleAction as voiceAction, normalize as voiceNormalize } from '../sidecar/builtin-apps/voice-desk/server.ts';
 import { AppRegistry } from '../sidecar/sandbox-pool/app-registry.ts';
 import { SandboxPoolManager } from '../sidecar/sandbox-pool/pool-manager.ts';
@@ -30,25 +31,73 @@ test('news parses bounded RSS/Atom/JSON Feed and rejects malformed/unsafe input'
   for(const bad of ['<!DOCTYPE rss>'+fixture,fixture.replace('</item>','</wrong>'),fixture.slice(0,-7),'<html>not a feed</html>'])assert.throws(()=>parseFeed(bad,feed,'now'));
   for(const url of ['http://example.org/a','https://user:secret@example.org/a','file:///tmp/a'])assert.throws(()=>canonical(url));
 });
-test('news bookmarks and source failures preserve identity, source times and local reading state',async()=>{
-  const c:any={state:{feeds:JSON.stringify([feed])},surfaces:{headlines:{},saved:{},sources:{}},async callTool(){return `URL: ${feed.url}\n\n${fixture}`;}};
-  await newsRefresh(c);const original=c.state.articles[0];await newsAction('save', {id:original.id},c,'save_article');assert.deepEqual(c.state.saved,[original.id]);
-  c.callTool=async()=>{throw Error('offline')};await newsRefresh(c);assert.equal(c.state.articles[0].publishedAt,original.publishedAt);assert.equal(c.state.articles[0].retrievedAt,original.retrievedAt);assert.match(c.state.message,/0\/1/);assert.equal(newsProject(c).updates[0]!.data.savedArticles.length,1);
+const lintUpdates=(updates:any[])=>{for(const u of updates){const st=new SurfaceStore(basicCatalog);const d=st.render({surface:u.surface,title:u.surface,data:u.data[0].value,nodes:u.nodes});assert.deepEqual([...d,...st.lint(st.get(u.surface)!)].filter((x:any)=>x.severity!=='info'),[],u.surface);}};
+const dataOf=(r:any,surface:string)=>r.updates.find((u:any)=>u.surface===surface).data[0].value;
+const offline=async()=>{throw Error('Tool is not declared or available for this app');};
+test('news refreshes feeds, keeps source times through failures and bookmarks from the same records',async()=>{
+  const c:any={state:{},callTool:offline};
+  let r:any=await newsAction('refresh',null,c,'refresh');lintUpdates(r.updates);
+  assert.match(c.state.problem,/4 of 4 feeds failed.*Settings → Integrations/);assert.ok(r.updates[0].nodes.some((n:any)=>n.id==='news-empty'));
+  c.state.feeds=[feed];c.callTool=feedTool;r=await newsAction('refresh',null,c,'refresh');lintUpdates(r.updates);
+  assert.equal(c.state.problem,undefined);const original=c.state.articles[0];assert.equal(original.url,'https://example.org/feed/story');
+  assert.deepEqual(dataOf(r,'headlines').byFeed,[{label:'Test feed',articles:1}]);
+  r=await newsAction('save_article',{id:original.id},c,'save_article');lintUpdates(r.updates);assert.equal(dataOf(r,'saved').saved.length,1);
+  c.callTool=offline;r=await newsRefresh(c);assert.equal(c.state.articles[0].retrievedAt,original.retrievedAt);assert.match(c.state.problem,/1 of 1/);assert.equal(dataOf(r,'saved').saved.length,1);
+  await newsAction('/newFeed/url','http://insecure.example/feed',c);await assert.rejects(newsAction('add_feed',null,c,'add_feed'),/name and a category/);
+  await newsAction('/newFeed/name','Ex',c);await newsAction('/newFeed/category','Tech',c);await assert.rejects(newsAction('add_feed',null,c,'add_feed'),/HTTPS/);
+  await assert.rejects(newsAction('remove_feed',{id:feed.url},c,'remove_feed'),/at least one/);
+  assert.equal(newsNormalize({feeds:JSON.stringify([feed]) as any}).feeds![0]!.url,feed.url);
 });
-test('repository records enforce source identity and local lanes never call a write tool',async()=>{
+test('repository records enforce source identity, charts come from the sample and lanes never write',async()=>{
   const row={number:1,title:'Review',state:'open',html_url:'https://github.com/owner/repo/issues/1',updated_at:'2026-10-28T10:00:00Z',labels:[],user:{login:'author'}};
   assert.equal(items([row,{...row,pull_request:{}}],'owner/repo').length,1);assert.throws(()=>items([row],'wrong/repo'));assert.throws(()=>repository('../repo'));assert.throws(()=>commits([{sha:'bad',html_url:'https://github.com/owner/repo/commit/bad'}],'owner/repo'));
-  const c:any={state:{repository:'owner/repo',issues:items([row],'owner/repo')},surfaces:{triage:{}},async callTool(){throw Error('No external operation allowed');}};
-  await projectAction('/cards',[{id:row.html_url,column:'Watch'}],c);assert.equal(c.state.triage[row.html_url],'Watch');await projectAction('/repository','another/repo',c);assert.deepEqual(c.state.issues,[]);assert.deepEqual(c.state.triage,{});
+  const c:any={state:{},callTool:repoTool};
+  await projectAction('/repoDraft','owner/repo',c);let r:any=await projectAction('refresh',null,c,'refresh');lintUpdates(r.updates);
+  assert.equal(c.state.issues.length,2);assert.deepEqual(dataOf(r,'triage').byState,[{label:'open',issues:1},{label:'closed',issues:1}]);assert.equal(dataOf(r,'activity').commitDays[0].commits,1);
+  c.callTool=async()=>{throw Error('No external operation allowed');};
+  r=await projectAction('/cards',[{id:row.html_url,column:'Watch'}],c);assert.equal(c.state.triage[row.html_url],'Watch');assert.equal(dataOf(r,'triage').cards[0].column,'Watch');
+  await assert.rejects(projectAction('/cards',[{id:'https://github.com/x/y/issues/9',column:'Watch'}],c),/Invalid triage/);
+  await projectAction('/repoDraft','another/repo',c);r=await projectAction('refresh',null,c,'refresh');lintUpdates(r.updates);assert.deepEqual(c.state.issues,[]);assert.deepEqual(c.state.triage,{});assert.match(c.state.problem,/3 of 3/);
+  await projectAction('/repoDraft','not a repo',c);await assert.rejects(projectAction('refresh',null,c,'refresh'),/owner\/repository/);
 });
-test('finance preserves exact paise, validates batches and rolls back duplicate imports atomically',async()=>{
+test('finance preserves exact paise, imports CSV or JSON atomically and charts the same ledger',async()=>{
   assert.equal(paise('-12.50'),-1250);assert.equal(paise('0.01'),1);for(const v of [12.5,'1e3','NaN','1.234',''])assert.throws(()=>paise(v));
-  const input=[{id:'income',date:'2026-10-01',description:'Synthetic inflow',category:'Income',amount:'100.01'},{id:'cost',date:'2026-10-02',description:'Synthetic expense',category:'Food',amount:'-12.50'},{id:'prior',date:'2026-09-30',description:'Prior window',category:'Other',amount:'-5.00'}];assert.equal(records(JSON.stringify(input)).length,3);assert.throws(()=>records(JSON.stringify([...input,input[0]])));
-  const instance=await DuckDBInstance.create(':memory:',{enable_external_access:'false'}),conn=await instance.connect();
-  const c:any={state:{month:'2026-10',importText:JSON.stringify(input),budget:'20.00'},surfaces:{overview:{},ledger:{},import:{}},database:{async run(sql:string,args:any[]){await conn.run(sql,args);},async query(sql:string,args:any[]){return (await conn.runAndReadAll(sql,args)).getRowObjectsJson();}}};
-  try{const result=await financeAction('import',null,c,'import_records');assert.ok('focusSurface' in result);assert.equal(result.focusSurface,'ledger');const data=result.updates[0]!.data;assert.equal(data.income,'₹100.01');assert.equal(data.spent,'₹12.50');assert.equal(data.net,'₹87.51');assert.equal(data.transactions.length,2);assert.equal(data.categories[0]!.amount,12.5);assert.equal(data.budgetUsed,12.5);assert.equal(data.budgetMax,20);
-    c.state.importText=JSON.stringify([{...input[1],id:'new'},input[0]]);await assert.rejects(financeAction('import',null,c,'import_records'),/atomically/);assert.equal((await financeProject(c)).updates[0]!.data.transactions.length,2);
-  }finally{conn.closeSync();instance.closeSync();}
+  const input=[{id:'income',date:'2026-10-01',description:'Synthetic inflow',category:'Income',amount:'100.01'},{id:'cost',date:'2026-10-02',description:'Synthetic expense',category:'Food',amount:'-12.50'},{id:'prior',date:'2026-09-30',description:'Prior window',category:'Other',amount:'-5.00'}];
+  assert.equal(records(JSON.stringify(input)).length,3);assert.throws(()=>records(JSON.stringify([...input,input[0]])),/unique/);
+  assert.deepEqual(records('id,date,description,category,amount\nx,2026-10-01,"Lunch, ""team""",Food,-1.5')[0],{id:'x',date:'2026-10-01',description:'Lunch, "team"',category:'Food',amount:'-1.5'});
+  assert.throws(()=>records('id,date,amount\nx,2026-10-01,1'),/header/);
+  const m=await memoryDatabase();const c:any={state:{importText:JSON.stringify(input),budget:'20.00'},database:m.database,now:()=>new Date('2026-10-31T10:00:00Z')};
+  try{
+    let r:any=await financeAction('import',null,c,'import_records');lintUpdates(r.updates);assert.equal(r.focusSurface,'overview');assert.equal(c.state.month,'2026-10');
+    const o=dataOf(r,'overview');assert.deepEqual(o.totals.map((t:any)=>t.value),['₹100.01','₹12.50','₹87.51','2']);assert.equal(o.categories[0].amount,12.5);assert.equal(o.budgetUsed,12.5);assert.equal(o.budgetMax,20);assert.equal(o.running.at(-1).cumulative,87.51);assert.equal(o.monthly.length,2);
+    assert.equal(dataOf(r,'ledger').transactions.length,2);
+    c.state.importText=JSON.stringify([{...input[1],id:'new'},input[0]]);await assert.rejects(financeAction('import',null,c,'import_records'),/Already imported: income/);
+    r=await financeAction('recalculate',null,c,'recalculate');assert.equal(dataOf(r,'ledger').transactions.length,2);
+    r=await financeAction('/budget','12.',c);lintUpdates(r.updates);assert.ok(r.updates[0].nodes.some((n:any)=>n.id==='budget-hint'));
+    r=await financeAction('/month','2026-09',c);lintUpdates(r.updates);assert.equal(dataOf(r,'ledger').transactions.length,1);
+    await financeAction('ask_clear',null,c,'ask_clear');r=await financeAction('clear_ledger',null,c,'clear_ledger');lintUpdates(r.updates);assert.ok(r.updates[0].nodes.some((n:any)=>n.id==='fin-empty'));
+    assert.deepEqual(financeNormalize({lastImport:'2026-10-01T00:00:00Z',lastCount:3} as any).lastImport,{at:'2026-10-01T00:00:00Z',count:3});
+  }finally{m.close();}
+});
+test('market terminal validates NSE reads, stores history in DuckDB and derives every view from it',async()=>{
+  const m=await memoryDatabase();const c:any={state:{watchlist:'RELIANCE,TCS'},database:m.database,callTool:offline};
+  try{
+    let r:any=await marketAction('refresh_market',null,c,'refresh_market');lintUpdates(r.updates);
+    assert.match(c.state.problem,/5 of 5 reads failed.*Settings → Integrations/);assert.ok(r.updates[0].nodes.some((n:any)=>n.id==='market-empty'));assert.equal(c.state.receipts.length,5);
+    c.callTool=nseTool;r=await marketAction('refresh_market',null,c,'refresh_market');lintUpdates(r.updates);assert.equal(c.state.problem,undefined);
+    const market=dataOf(r,'market');assert.deepEqual(market.headline.map((h:any)=>h.label),['NIFTY 50','NIFTY BANK']);assert.equal(market.watch.length,2);assert.equal(market.moves[0].changePct,1.01);assert.equal(market.sectors[0].label,'NIFTY IT');
+    r=await marketAction('open_instrument',{symbol:'TCS'},c,'open_instrument');lintUpdates(r.updates);assert.equal(r.focusSurface,'instrument');
+    const inst=dataOf(r,'instrument'),source=nseHistory('TCS');
+    assert.deepEqual(inst.history.map((x:any)=>[x.date,x.close]),source.data.map(x=>[x.date,x.close]));
+    assert.equal(inst.stats.priceReturn,`+${((source.data.at(-1)!.close/source.data[0]!.close-1)*100).toFixed(2)}%`);assert.equal(inst.sma.length,3);assert.equal(inst.returns.length,21);
+    c.state.watchDraft='RELIANCE, bad sym!';await assert.rejects(marketAction('refresh_market',null,c,'refresh_market'),/not an NSE equity symbol/);
+    await assert.rejects(marketAction('open_instrument',{symbol:'WIPRO'},c,'open_instrument'),/no longer on the watchlist/);
+    c.callTool=offline;r=await marketAction('fetch_instrument',null,c,'fetch_instrument');assert.equal(dataOf(r,'instrument').history.length,22,'a failed read keeps the saved history');
+  }finally{m.close();}
+});
+test('each modernized app ships its empty view as surface.json',()=>{
+  for(const [id,file] of [['market-terminal',marketSurfaces()],['news-desk',newsSurfaces()],['project-desk',projectSurfaces()],['finance-workbench',financeSurfaces()]] as const)
+    assert.deepEqual(JSON.parse(readFileSync(`sidecar/builtin-apps/${id}/surface.json`,'utf8')),file,`${id}: run node scripts/app-surfaces.ts`);
 });
 test('reference discovery follows bundled packages without a separate hard-coded registry',async()=>{
   const dir=mkdtempSync(path.join(tmpdir(),'vak-reference-list-')),pool=new SandboxPoolManager(),registry=new AppRegistry({dataDir:dir,pool});

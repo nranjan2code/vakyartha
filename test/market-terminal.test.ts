@@ -14,8 +14,8 @@ async function database() {
 }
 test('market package has three validated canonical surfaces without invented market values',()=>{
   const surfaces=JSON.parse(readFileSync('sidecar/builtin-apps/market-terminal/surface.json','utf8'));
-  assert.deepEqual(surfaces.map((s:any)=>s.id),['market','instrument','analytics']);
-  for(const s of surfaces){const store=new SurfaceStore(basicCatalog);assert.deepEqual(store.render({surface:s.id,title:s.title,data:s.data,nodes:s.nodes}),[]);assert.deepEqual(s.data.history,[]);assert.equal(s.data.quotePrice,'Unavailable');}
+  assert.deepEqual(surfaces.map((s:any)=>s.id),['market','instrument','sources']);
+  for(const s of surfaces){const store=new SurfaceStore(basicCatalog);assert.deepEqual(store.render({surface:s.id,title:s.title,data:s.data,nodes:s.nodes}),[]);assert.equal(s.data.history,undefined);assert.equal(s.data.quote,undefined);assert.doesNotMatch(JSON.stringify(s),/Unavailable/);}
 });
 test('DuckDB calculations preserve row identity, sample volatility, drawdown and SMA warm-up',async()=>{
   const {db,close}=await database();
@@ -43,9 +43,10 @@ test('failed refresh retains database observations and records failure without m
   const {db,close}=await database();
   try{
     await saveHistory(db,'RELIANCE',bars);
-    const ctx:Context={state:{},surfaces:{market:{},instrument:{},analytics:{}},database:db,async callTool(){throw Error('read policy denied');}};
-    const result=await handleAction('refresh-instrument',null,ctx,'refresh_instrument');
-    assert.equal(result.updates[0]!.data.history.length,4);assert.match(ctx.state.message!,/incomplete/);assert.equal(ctx.state.receipts!.length,2);assert.ok(ctx.state.receipts!.every(r=>r.status.startsWith('Failed:')));
-    const before=JSON.stringify(ctx.state);await assert.rejects(handleAction('/symbol','bad symbol',ctx),/exact/);assert.equal(JSON.stringify(ctx.state),before);
+    const ctx:Context={state:{},database:db,async callTool(){throw Error('read policy denied');}};
+    const result=await handleAction('fetch_instrument',null,ctx,'fetch_instrument');
+    const instrument=result.updates.find(u=>u.surface==='instrument')!.data[0]!.value as any;
+    assert.equal(instrument.history.length,4);assert.match(ctx.state.problem!,/2 of 2 reads failed/);assert.equal(ctx.state.receipts!.length,2);assert.ok(ctx.state.receipts!.every(r=>r.status.startsWith('Failed:')));
+    await handleAction('/symbolDraft','bad symbol',ctx);const before=JSON.stringify(ctx.state);await assert.rejects(handleAction('fetch_instrument',null,ctx,'fetch_instrument'),/one NSE symbol/);assert.equal(JSON.stringify(ctx.state.receipts),JSON.stringify(JSON.parse(before).receipts));
   }finally{close();}
 });

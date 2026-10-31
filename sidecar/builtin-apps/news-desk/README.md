@@ -1,31 +1,27 @@
 # News Desk
 
-Categorized publisher feeds and a persistent local reading list.
+Headlines from publisher feeds you choose, newest first, with links to the original reporting, a reading list, and charts of what the feeds are covering. Feeds are read through the governed Web pages integration; nothing is summarized, rewritten or invented, and actions make no model request.
 
-## Setup and data sources
-The exact tool is web__fetch_page through the Web pages integration. Configure 1–6 credential-free public HTTPS RSS, Atom or JSON Feed URLs with name and category. Default sources cover World, Business, Technology and Science. Enable Web pages and set fetch_page to Allow before refreshing; declarations never grant permission.
+## Connect
 
-## Views and actions
-Headlines: filter by category/text, refresh publisher feeds and save/remove articles. Reading list: inspect saved excerpts and remove bookmarks. Sources & refresh: edit feed JSON and inspect the latest 24 source attempts. Source links open the original publisher page. Publication time is distinct from retrieval time; missing publication time stays unknown.
+In **Settings → Integrations**, enable **Web pages** and set `fetch_page` to **Allow**. Then open **Apps → News Desk** and press **Refresh**. Until a read succeeds the Headlines view says exactly this, with a link to review the feeds.
 
-## Data contract, retention and calculations
-RSS/Atom support is a bounded syndication subset with balanced tags and no DTD/entity declarations. JSON Feed versions 1 and 1.1 are accepted. Article URLs are HTTPS and deduplicated by canonical URL with utm parameters/fragment removed. Different URLs about the same event are not semantically merged. Headline ≤240 characters and excerpt ≤200 characters. Up to 60 items/feed, 180 recent articles plus saved records within a 240-record bound and up to 60 bookmarks. Full articles and remote images are not copied. Configured category/source names are editorial labels, not model classification or a verified trust rating.
+## Views
 
-## Scheduling and persistence
-Optional 15-minute source polling, disabled after publication. It runs only while the app and computer are running/awake. Missed intervals are skipped. A source error records a failure and retains older articles with their original timestamps; partial success is reported. This is polling, not a streaming feed.
+| View | What it shows |
+| --- | --- |
+| **Headlines** | Category filter and **Refresh**; a searchable grid of article cards (headline, feed, category, publication time, excerpt, **Read original**, **Save for later**) beside a Coverage panel with articles by category (pie), by publication day and by feed. On a phone the panel moves below the cards. |
+| **Reading list** | Saved articles, searchable, each with **Remove**. Saved articles stay even after they leave the feed. |
+| **Sources** | Your feeds as cards with **Remove**; name, category and URL fields with **Add feed** (up to six); **Restore the default feeds**; the latest 24 reads with time, item count and status. |
 
-## Failure and recovery
-Inspect the current message and source/import/run receipts. Failed source reads never become fresh data; failed computation or invalid projection does not publish candidate state. Missing/disabled sandbox helpers fail closed. Inspect uncertain effects before any exact-run acknowledgement; never automatically replay them. Preserve original failures during diagnosis.
+A refresh in which some feeds fail shows a warning naming the first failure; their earlier articles keep their original publication and retrieval times.
 
-## Maintenance and verification
-Read AGENTS.md, SKILLS.md and ARCHITECTURE.md. Inspect actual package/review fingerprints, create an inert draft, update code and affected docs together, rehearse, independently verify and publish explicitly. Check schema compatibility; publication is not a migration service. Independently compare publisher headline, canonical URL, publication/retrieval time and category with source data. Verify sorting, duplicate retention, category/text filtering, bookmarks across refresh/reload, source failure and no claimed fresh data after failure. Test malformed/oversized XML, CDATA/entities, DTD rejection and unsafe URLs.
+## Sources and limits
 
-From repository root, run `node --test test/reference-apps.test.ts`, `npm run typecheck`, `npm run build` and `node scripts/reference-apps-check.ts --live`. The live checker uses isolated settings and real sandbox execution. Its finance data is explicitly synthetic. Current verification scope/results belong in docs/EVALUATION.md and HANDOVER.md; do not infer a pass from this procedure text.
+Default feeds are four BBC categories (World, Business, Technology, Science): one publisher, not a diversity claim. Any HTTPS RSS, Atom or JSON Feed (1.0/1.1) without credentials can be added. Up to 60 items per feed, 180 recent articles plus saved ones (240 in all) and 60 saved. Headlines up to 240 characters and excerpts up to 200; full articles and images are never copied. Exact URLs (without `utm_` parameters or fragments) are de-duplicated; the same event at different URLs is not merged. Category and feed names are your labels, not a classification or trust rating.
 
-## Limits
-No semantic event clustering, generated summaries, article-body scraping, image proxy, publisher trust ranking, streaming subscription or notifications. Source availability/terms remain publisher-owned. Initial views are empty until successful retrieval.
+A 15-minute refresh is declared but off until you enable it under **Manage**; it runs only while the app and computer are awake.
 
-Native projections use the ordinary Projection catalog and wide/narrow layouts. Source/record values and visible explanations also feed spoken projection; there is no separate narration store. No additional SDK, package or raw network path is introduced.
+## Data
 
-## App settings and action status
-Open Settings in the app header for connection readiness, integration setup links, schedules, last-run status and package/data details. Integration policy changes apply globally; this page grants no access. Source/criteria preferences stay in the app’s own views. Ordinary actions execute through this app’s sandbox owner and report in its top status area; local table search/sorting stays local and does not invoke a model.
+Feeds, articles, bookmarks and receipts live in app state and are saved only when a run succeeds. Version-1 state (feeds as a JSON string) loads automatically.

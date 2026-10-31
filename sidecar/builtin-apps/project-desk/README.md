@@ -1,31 +1,25 @@
 # Project Activity Desk
 
-Public repository activity and local issue triage with auditable source receipts.
+A working view of a public repository: recently updated issues, open pull requests and recent commits, charts of the sample, and local triage lanes for planning your attention. Records are read through the governed Web pages integration from the public repository API; triage never writes back, and actions make no model request.
 
-## Setup and data sources
-The exact tool is web__fetch_page through Web pages. Only credential-free public repository HTTPS API reads are made. Configure owner/repository; the default is nranjan2code/vakyartha. Enable Web pages and allow fetch_page. Private repositories/authentication are outside this reference; use an appropriate existing integration for a separately designed private workflow.
+## Connect
 
-## Views and actions
-Triage: refresh repository activity, inspect exact source rows and drag open-issue cards between Review, Next and Watch. These moves are local organization only. Activity: read recent commits and open pull requests. Source ledger: inspect retrieval attempts. Changing repositories clears the current sample and local lanes before fetching the new repository.
+In **Settings → Integrations**, enable **Web pages** and set `fetch_page` to **Allow**. Open **Apps → Project Activity Desk**, type a public `owner/repository` (a full repository URL also works) and press **Refresh**. Until a read succeeds the Triage view says exactly this.
 
-## Data contract, retention and calculations
-The source queries retrieve at most 20 recently updated issue endpoint records, 10 open pull requests and 10 commits. Pull-request records are excluded from the issue sample. Counts describe retrieved samples, not full backlog or throughput. IDs/URLs/state/timestamps are validated against the configured repository. Commit identity is the full SHA. Labels and authors remain source values. The latest 24 attempts are retained.
+## Views
 
-## Scheduling and persistence
-Optional 15-minute polling while the host/computer are running and awake; publication disables it. Missed minutes are skipped. Partial failures retain prior datasets for the same repository and report their failed receipts. No background mutation or notification is performed.
+| View | What it shows |
+| --- | --- |
+| **Triage** | Repository field and **Refresh**; counts for open and closed issues, open pull requests and commits in the sample; charts of issues by state (pie), by label and by last-update day; a board of open issues in Review, Next and Watch lanes (drag, or use the keyboard); the issue table with numbers, labels, authors and update times. |
+| **Activity** | Commits per day; recent commits as a timeline with author and short SHA links, beside the open pull requests table. |
+| **Sources** | The latest 24 reads with URL, retrieval time, rows and status. |
 
-## Failure and recovery
-Inspect the current message and source/import/run receipts. Failed source reads never become fresh data; failed computation or invalid projection does not publish candidate state. Missing/disabled sandbox helpers fail closed. Inspect uncertain effects before any exact-run acknowledgement; never automatically replay them. Preserve original failures during diagnosis.
+Moving a card saves immediately. Changing the repository takes effect when you press Refresh and starts a fresh sample and empty lanes. A refresh in which some reads fail shows a warning naming the first failure and keeps earlier records.
 
-## Maintenance and verification
-Read AGENTS.md, SKILLS.md and ARCHITECTURE.md. Inspect actual package/review fingerprints, create an inert draft, update code and affected docs together, rehearse, independently verify and publish explicitly. Check schema compatibility; publication is not a migration service. Independently check issue/PR distinction, configured repository identity, SHA, counts and timestamps against public source JSON. Verify local lane changes survive source refresh/reopen without any remote write call. Check repository changes clear old records, malformed/unsafe source identities fail, and empty arrays are valid zero-record samples.
+## Sample and limits
 
-From repository root, run `node --test test/reference-apps.test.ts`, `npm run typecheck`, `npm run build` and `node scripts/reference-apps-check.ts --live`. The live checker uses isolated settings and real sandbox execution. Its finance data is explicitly synthetic. Current verification scope/results belong in docs/EVALUATION.md and HANDOVER.md; do not infer a pass from this procedure text.
+Each refresh reads up to 20 recently updated issues (pull requests excluded), 10 open pull requests and 10 commits. Counts and charts describe this sample, not the whole backlog or throughput. Unauthenticated public API rate limits apply. A 15-minute refresh is declared but off until you enable it under **Manage**.
 
-## Limits
-No remote issue edits, assignment, delivery prediction, exhaustive pagination, CI-health claim, private token forwarding or full backlog/throughput analytics. Native board moves are local app state.
+## Data
 
-Native projections use the ordinary Projection catalog and wide/narrow layouts. Source/record values and visible explanations also feed spoken projection; there is no separate narration store. No additional SDK, package or raw network path is introduced.
-
-## App settings and action status
-Open Settings in the app header for connection readiness, integration setup links, schedules, last-run status and package/data details. Integration policy changes apply globally; this page grants no access. Source/criteria preferences stay in the app’s own views. Ordinary actions execute through this app’s sandbox owner and report in its top status area; local table search/sorting stays local and does not invoke a model.
+Records, lanes and receipts live in app state and are saved only when a run succeeds. Lanes are kept for issues that are still open in the sample.

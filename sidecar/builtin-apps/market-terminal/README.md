@@ -1,75 +1,38 @@
 # NSE Market Terminal
 
-A reference executable Vakyartha app: ordinary sandboxed TypeScript reads the official NSE MCP integrations, stores dated observations in DuckDB, calculates analytics with SQL and publishes three independent Projection surfaces. There are no fabricated prices, paid model calls or model requests on interaction.
+Delayed NSE market observations for India: index levels, sector moves, a watchlist of up to six stocks, and daily price history with analytics computed in DuckDB. Every value comes from a successful read of the NSE integrations; nothing is invented, and actions make no model request.
 
-## Open and connect
+## Connect
 
-1. Run the current Vakyartha source/build with the compatible `vaksb` helper. In **Apps**, open **NSE Market Terminal**. New source installations seed the package automatically; **Add Reference App** installs it through the existing app registry when it is absent. Existing published versions are not overwritten automatically.
-2. In **Settings → Integrations**, install/enable **NSE** and **NSE Market Live**. Both use official hosted HTTPS MCP endpoints with no credentials. Grant **Allow** only to the three read tools listed below. Package entitlements do not change your policies. Ask/Off remain enforced.
-3. Choose the **Market** view tab. Edit up to six comma-separated exact NSE equity symbols; click **Refresh market & watchlist**. Index levels, sector returns and watchlist quotes come from actual successful reads.
-4. Choose **Instrument**, or select a watchlist symbol and press **Open instrument**. Enter an exact EQ symbol and a 1–3 month history window, then **Fetch quote & history**. Changing a control saves it but does not fetch. Existing history names its actual coverage until a new fetch succeeds.
-5. Choose **Analytics**. Recalculate from the saved database with no internet/model request. Inspect observed return, sample volatility, closing drawdown, SMA warm-up and the source ledger.
+1. In **Settings → Integrations**, enable **NSE** and **NSE Market Live** (official HTTPS endpoints, no credentials). Set this app's three read tools to **Allow**: `nse-cmmkt__cm_get_live_indices`, `nse-cmmkt__cm_get_stock_quote`, `nse__get_stock_history`. Ask and Off stay enforced; the app never changes your policies.
+2. Open **Apps → NSE Market Terminal** and press **Refresh**.
 
-The feed is a delayed snapshot, not streaming tick data. NSE describes the market feed as roughly 1–3 minutes behind; source cache age and exchange timestamps can differ. Outside a session the last observations remain. The terminal shows exchange, cache and retrieval times separately and never infers current trading status from the clock. Read the source ledger before treating saved numbers as current. See [NSE's official service and usage terms](https://www.nseindia.com/nse-mcp): informational/educational use, with no order execution or investment recommendation in this package.
+Until a read succeeds the Market view says exactly this instead of showing empty numbers. A refresh in which some reads fail shows a warning with the first failure and keeps every earlier observation with its own source time.
 
-## Views and chart choices
+## Views
 
-| Surface | Question | Projection |
-| --- | --- | --- |
-| Market | Where did the session move? | Index metric strip, signed sector-return bars, searchable watchlist and exact index table |
-| Instrument | What happened to this security? | Delayed quote/range/volume, dated daily OHLC candles, separate volume bars, exact OHLCV table |
-| Analytics | What do the retrieved records imply? | Return/volatility/drawdown metrics, running drawdown line, close/SMA line after warm-up, source ledger |
+| View | What it shows |
+| --- | --- |
+| **Market** | Watchlist field and **Refresh**; headline index stats (NIFTY 50, NIFTY BANK and others when present); watchlist cards with price, change, range and volume beside a signed session-change chart; each card's **Open** fetches that stock and opens Instrument; a sector rotation chart (horizontal bars coloured by sign) and a searchable, sortable index table. |
+| **Instrument** | Symbol, history window (1–3 months) and **Fetch quote & history**; delayed quote stats; daily OHLC candles; analytics stats (price return, annualized volatility, maximum closing drawdown, sessions and average volume); charts for the 20-session average, daily returns, volume and drawdown; the exact OHLCV table. |
+| **Sources** | The latest 40 reads with tool, subject, source time, retrieval time, rows and status; the calculation methods. |
 
-Peer analytics occupy two columns when space permits and collapse on narrow containers. Instrument analysis uses a 2:1 primary chart/context split; daily OHLC candles use a large plot and volume a compact plot. Individual charts are clamped to `lg`; metric strips use four tracks and adapt to the available width. Dense tables keep their own search/sort/paging/scroll behavior. Layout uses semantic Projection components and the app theme, with no domain renderer or custom canvas implementation. Pointer/touch and left/right/Home/End chart inspection show exact observations without a model request. Screen and spoken projections resolve the same canonical facts; chart colour is never the sole explanation.
+The watchlist and symbol fields save as you type and are applied when you press Refresh or Fetch, so a half-typed symbol never fails a run. Layouts use adaptive grids and splits: two to four columns when wide, one column on a phone.
 
-Intraday history, order books, options chains, news, benchmark-relative returns and adjusted total returns are not supplied by this package. Daily history is never labelled intraday. Supported candle/line/bar charts and exact OHLCV values are deliberate choices rather than disguised specialist chart aliases. Sector-index up/down counts are not stock market breadth.
+## Calculations
 
-## Source contract
+- Price return: last close / first close − 1, unadjusted for dividends and corporate actions.
+- Daily return: close / previous close − 1; the first session has none.
+- Annualized volatility: sample standard deviation of daily returns × √252; shown from three sessions.
+- Drawdown: close / running maximum close − 1; the maximum drawdown is its minimum.
+- 20-session average: shown from the twentieth observed session, never zero-filled.
 
-| Integration | Declared tool | Arguments |
-| --- | --- | --- |
-| `nse-cmmkt` | `cm_get_live_indices` | `group: broad / sectoral / derivatives`, `nameFilter: ""` |
-| `nse-cmmkt` | `cm_get_stock_quote` | `symbol` |
-| `nse` | `get_stock_history` | `symbol`, `months: 1–3`, `endDate: today` |
+Charts space sessions evenly; they are trading days, not a continuous calendar. Sector up/down counts describe index coverage, not market breadth. The feed is a delayed snapshot (roughly 1–3 minutes), not streaming ticks.
 
-These arguments were discovered from the real servers on 2026-10-28. Historical references elsewhere are not authoritative schemas. Validation checks JSON shape, exact symbol/series, finite positive prices, OHLC consistency, nonnegative integral volume, real unique dates and index identity. Published session changes must overlap the interval implied by two-decimal price rounding; the published percentage is preserved. No LLM interprets source JSON.
+## Refresh and schedule
 
-One refresh reads at most nine tools (three index groups and up to six quotes); instrument refresh reads two. Reads are sequential through the existing bounded MCP mailbox. No raw HTTP/DNS grant, port listener, secret injection or separate web tunnel is needed: **sandbox → governed mailbox → existing integration → official HTTPS endpoint**. The host captures bounded original source text after the existing schema/policy/logging checks, avoiding model-facing truncation. Each attempt records tool, source time, retrieval time, validated row count and failure/success. Latest 40 receipts persist.
+**Refresh** reads three index groups and every watchlist quote (at most nine reads). **Fetch** and **Open** read one quote and one history. A five-minute market refresh is declared but off until you enable it under **Manage**; it runs only while the app and computer are awake and uses the saved watchlist.
 
-## Database and calculations
+## Data
 
-`app.json` opts into `entitlements.storage.duckdb`. Runtime-owned `context.database.run(sql, values?)` and `query(sql, values?)` execute in the disposable sandbox, using the pinned native DuckDB runtime. App code does not import a database driver or open an external data path. Parameters bind values; symbols are not interpolated into SQL.
-
-The sole historical table is `prices(symbol, date, open, high, low, close, volume)` with a `(symbol,date)` primary key. A validated history refresh transactionally replaces the selected symbol's retrieved window. SQL derives return, running peaks/drawdowns, twenty-session average and sample volatility. There is no second history copy in app state. Surface data is its derived projection, rather than an independent persistence owner.
-
-- Price return: `(last observed close / first observed close − 1) × 100`.
-- Daily simple return: `(close / previous observed close − 1)`; first row remains null.
-- Annualized volatility: sample standard deviation of daily simple returns × `sqrt(252) × 100`; unavailable with fewer than two returns. Short samples are indicative, not a forecast.
-- Closing drawdown: `(close / running maximum close − 1) × 100`; maximum drawdown is the minimum of those nonpositive percentages.
-- SMA: arithmetic average of twenty observed closing prices, omitted until twenty sessions exist.
-
-Raw historical prices exclude dividend reinvestment and have no independent corporate-action adjustment check. Splits/bonuses can distort returns and volatility. Time charts use equally spaced observed sessions, not a continuous time-axis guarantee. Price and volume never share an axis.
-
-The closed DuckDB file is checkpointed as a bounded base64 snapshot **inside the same host app record** as state, surfaces and revision. Each invocation stages its own copy. Successful validated output commits everything together. A failure, invalid surface, oversized database or interrupted execution retains the previous committed database. Reopening/restarting rehydrates it. This is bounded persistent analytics, not an unbounded filesystem database service: 2 MiB database snapshot, 10,000 query rows / 256 KiB query JSON, 4 MiB total invocation response and 8 MiB app record. Larger workloads require a separately designed storage contract. External database access and extension auto-install/load are disabled; raw network remains sandbox-denied. DuckDB's 128 MiB setting is not a hard whole-process RSS quota.
-
-## Operations and maintenance
-
-**Refresh:** run a view's button or the header **Refresh** control (market refresh only). Five-minute market scheduling is declared but off on publication. Enable it explicitly under **Manage → Enable schedule**. It runs while the app/computer are awake; missed intervals are skipped. Instrument history is fetched explicitly and is not silently refreshed every five minutes.
-
-**Failure:** inspect the visible message and ledger; prior observations remain labelled by their source timestamps. A stopped/missing helper fails closed. Inspect uncertain runtime receipts in the existing console before acknowledgement; do not automatically replay effects. A source or calculation failure never means a dataset became fresh.
-
-**Changes:** read [AGENTS.md](AGENTS.md), [SKILLS.md](SKILLS.md) and [ARCHITECTURE.md](ARCHITECTURE.md). Edit the package in Studio or in source, rehearse an offline recalculation, review/publish through the normal fingerprint workflow. Inert draft files grant no execution or integration authority. Package publication disables scheduling; review existing database schema compatibility before changing it. The current table schema is version 1; this package performs no automatic destructive migration. Delete/reinstall is a deliberate data-reset operation, not an update procedure.
-
-**Checks, from repository root:**
-
-```sh
-node --test test/market-terminal.test.ts test/app-database.test.ts
-npm run typecheck
-npm run build
-node scripts/market-terminal-check.ts --live
-```
-
-The live check uses isolated temporary settings, real official MCP tools and real `vaksb`. It independently fetches reference history/quotes, checks exact rows and independently computed metrics, reloads persistence, then checks all three views and a real SQL action in WebKit at 1440/1100/620/375 px. Evidence paths and failures are retained. Unit tests and source runs do not certify installed builds or primary-model app authoring. Current results belong in the repository's `docs/EVALUATION.md` and `docs/HANDOVER.md`.
-
-## App settings and action status
-Open Settings in the app header for connection readiness, integration setup links, schedules, last-run status and package/data details. Integration policy changes apply globally; this page grants no access. Source/criteria preferences stay in the app’s own views. Ordinary actions execute through this app’s sandbox owner and report in its top status area; local table search/sorting stays local and does not invoke a model.
+Daily OHLCV lives in the app's DuckDB table `prices`; quotes, index snapshots, settings and receipts live in app state. Both are saved together only when a run succeeds. State from version 1 (a comma-separated watchlist string) loads automatically.

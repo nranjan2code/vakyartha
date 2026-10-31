@@ -240,3 +240,7 @@ function actionsSurface(s: State): Update {
   };
   return { surface: "actions", nodes, data: replaceAll(data) };
 }
+
+const TITLES: Record<string, string> = { desk: "Notes", actions: "Action items" };
+/** The shipped surface.json: every view of a new, empty app. */
+export const surfaceFile = () => view({}).map((u) => ({ id: u.surface, title: TITLES[u.surface], data: u.data[0]!.value, nodes: u.nodes }));

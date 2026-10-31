@@ -1,6 +1,6 @@
 {
   "id": "market-terminal",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "name": "NSE Market Terminal",
   "description": "Reference market workbench: delayed NSE observations, dated price and volume charts, persistent DuckDB analytics and auditable source receipts.",
   "author": "Vakyartha",
