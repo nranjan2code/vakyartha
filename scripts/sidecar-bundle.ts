@@ -26,6 +26,7 @@ export async function buildSidecar(app: string, outDir: string): Promise<void> {
   await bundleRuntime(app, outDir, "sidecar/main.ts", "sidecar.mjs", true);
   await bundleRuntime(app, outDir, "sidecar/task-worker.ts", "task-worker.mjs", false);
   await bundleRuntime(app, outDir, "sidecar/canonical-worker.ts", "canonical-worker.mjs", false);
+  await bundleRuntime(app, outDir, "sidecar/mcp-bridge.ts", "mcp-bridge.mjs", false);
   const workerSrc = path.join(app, "sidecar/sandbox-pool/worker.ts");
   if (existsSync(workerSrc)) await bundleRuntime(app, outDir, "sidecar/sandbox-pool/worker.ts", "worker.mjs", false);
 

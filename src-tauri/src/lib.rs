@@ -31,6 +31,7 @@ mod reasoner_supervisor;
 mod policy;
 mod egress;
 mod sandbox;
+mod servers;
 mod private_store;
 mod vault;
 // The native control actor and store start with an empty execution profile.
@@ -857,40 +858,22 @@ fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
         Some(accounts_csv.as_str())
     };
 
+    let runtime = runtime_paths(app)?;
+    worker::command(&runtime.helper, &runtime.node, &runtime.resources, &data, vault_presence_param)
+}
+
+/// The bundled helper, Node and resources folder the worker and local servers run with.
+fn runtime_paths(app: &tauri::AppHandle) -> Result<servers::Runtime, String> {
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
     if cfg!(debug_assertions) {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let suffix = if cfg!(windows) { ".exe" } else { "" };
         let triple = env!("VAK_TARGET_TRIPLE");
-        worker::command(
-            &sandbox_helper(app)?,
-            &root.join(format!("binaries/node-{triple}{suffix}")),
-            &root.join("resources"),
-            &data,
-            vault_presence_param,
-        )
+        Ok(servers::Runtime { helper: root.join(format!("binaries/vaksb-{triple}{suffix}")), node: root.join(format!("binaries/node-{triple}{suffix}")), resources: root.join("resources") })
     } else {
         let exe = std::env::current_exe().map_err(|_| "Cannot resolve desktop executable")?;
         let dir = exe.parent().ok_or("Desktop executable has no directory")?;
         let resources = app.path().resource_dir().map_err(|_| "Cannot resolve desktop resources")?.join("resources");
-        worker::command(
-            &sandbox_helper(app)?,
-            &dir.join(if cfg!(windows) { "node.exe" } else { "node" }),
-            &resources,
-            &data,
-            vault_presence_param,
-        )
-    }
-}
-
-/// The pinned vak-sandbox helper bundled beside the app.
-fn sandbox_helper(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let name = if cfg!(windows) { "vaksb.exe" } else { "vaksb" };
-    if cfg!(debug_assertions) {
-        let suffix = if cfg!(windows) { ".exe" } else { "" };
-        Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("binaries/vaksb-{}{suffix}", env!("VAK_TARGET_TRIPLE"))))
-    } else {
-        let exe = std::env::current_exe().map_err(|_| "Cannot resolve desktop executable")?;
-        Ok(exe.parent().ok_or("Desktop executable has no directory")?.join(name))
+        Ok(servers::Runtime { helper: dir.join(format!("vaksb{suffix}")), node: dir.join(format!("node{suffix}")), resources })
     }
 }
 
@@ -916,7 +899,7 @@ fn start(app: &tauri::AppHandle) -> Sidecar {
     let service = default_service(app);
     let data_dir = app_data_dir(app);
     match sidecar_command(app) {
-        Ok(cmd) => engine::start_with_dispatch(cmd, control, Some((service, data_dir)), sandbox_helper(app).ok()),
+        Ok(cmd) => engine::start_with_dispatch(cmd, control, Some((service, data_dir)), runtime_paths(app).ok()),
         Err(error) => Sidecar::failed(error),
     }
 }

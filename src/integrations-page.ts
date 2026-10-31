@@ -199,7 +199,7 @@ export async function integrationPage(id: string, back: () => void, reload: () =
     controls.push(el("div", { className: "row-actions" }, pill(...STATUS[i.status]), enabled));
   }
   // Desktop: the worker has no network of its own; Rust admits each host the user allows here.
-  const host = e.url ? new URL(e.url).hostname : undefined;
+  const host = e.url ? new URL(e.url).hostname : e.sourceKind === "npm" ? "registry.npmjs.org" : undefined;
   const approvals = host ? await egressApprovals().catch(() => undefined) : undefined;
   const approval = approvals?.find((h) => h.host === host);
   let network: HTMLElement | null = null;
@@ -209,7 +209,7 @@ export async function integrationPage(id: string, back: () => void, reload: () =
       await setEgressApproval(host, !approval.approved);
       if (!approval.approved && i.installed && i.enabled) await api(`/api/integrations/${id}/refresh`, { method: "POST" });
     }, button));
-    network = row(`Network access to ${host}`, approval.approved ? "Allowed. The app connects to this host only for its integrations." : "Not allowed yet. Nothing is sent until you allow it.", button);
+    network = row(`Network access to ${host}`, approval.approved ? "Allowed. The app connects to this host only for its integrations." : e.sourceKind === "npm" ? "Needed to install this server's pinned package. Nothing is downloaded until you allow it." : "Not allowed yet. Nothing is sent until you allow it.", button);
   } else if (host && approvals) {
     network = el("div", { className: "row stack" }, el("p", { className: "row-hint bad", textContent: `${host} is not on the app's network allowlist, so the desktop app cannot reach it.` }));
   }

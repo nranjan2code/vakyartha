@@ -1,6 +1,8 @@
 // One private parent connection, multiplexed by request identity. No socket,
 // URL listener or independently reachable endpoint exists in desktop mode.
-import type { Readable, Writable } from "node:stream";
+import { EventEmitter } from "node:events";
+import { PassThrough, Writable, type Readable } from "node:stream";
+import type { StdioProcess, StdioTransport } from "@vak/mcp/client";
 import { randomUUID } from "node:crypto";
 import type { ProviderTransport } from "@vak/providers";
 import type { HostCandidateCommitRequest, HostCandidateCommitReceipt, HostSessionSnapshot, HostSessionStore, SessionSummary } from "@vak/host";
@@ -20,12 +22,52 @@ type ControlResult = ControlHealth | { status: "committed"; receipt: HostCandida
 type CandidateIdentity = { commitId: string; session: string; rootId: string; rootRevision: number; contractRevision: number; cancellationEpoch: number; expectedCanonicalRevision: number };
 type ControlPending = { kind: "health" | "candidate" | "session" | "capacity"; candidate?: CandidateIdentity; accept?: (frame: Record<string, unknown>) => ControlResult; resolve(value: ControlResult): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 
-export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth>; commitCandidate(candidate: HostCandidateCommitRequest): Promise<HostCandidateCommitReceipt>; hostSessionStore: HostSessionStore; providerFetch: ProviderTransport; egressFetch: typeof fetch; sandbox: SandboxCall; reserveCapacity(requestId: string, rootId: string, amounts: Record<string, number>): Promise<Lease>; releaseCapacity(lease: Lease): Promise<void> } {
+export function desktopTransport(request: (r: Request) => Promise<Response>, token: string, input: Readable, output: Writable, failed: (error: Error) => void): { close(): void; pingControl(): Promise<ControlHealth>; commitCandidate(candidate: HostCandidateCommitRequest): Promise<HostCandidateCommitReceipt>; hostSessionStore: HostSessionStore; providerFetch: ProviderTransport; egressFetch: typeof fetch; sandbox: SandboxCall; launchServer: (t: StdioTransport) => StdioProcess; installPackage: (npmArgs: string[], target: string) => Promise<void>; reserveCapacity(requestId: string, rootId: string, amounts: Record<string, number>): Promise<Lease>; releaseCapacity(lease: Lease): Promise<void> } {
   const active = new Map<string, Pending>();
   const controlPending = new Map<string, ControlPending>();
   let closed = false;
   const providers = providerChannel(send);
   const sandboxPending = new Map<string, { resolve(value: unknown): void; reject(error: Error): void }>();
+  type HostedServer = EventEmitter & StdioProcess & { stdout: PassThrough; stderr: PassThrough; started: boolean };
+  const servers = new Map<string, HostedServer>();
+  const installs = new Map<string, { resolve(): void; reject(error: Error): void }>();
+  // Rust hosts each local MCP server; this end only relays its JSON-RPC lines.
+  function launchServer(t: StdioTransport): StdioProcess {
+    const id = `srv-${randomUUID()}`;
+    let buffered = "";
+    const proc = Object.assign(new EventEmitter(), {
+      started: false,
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new Writable({
+        write(chunk: Buffer | string, _encoding, done) {
+          buffered += chunk.toString();
+          for (let end = buffered.indexOf("\n"); end >= 0; end = buffered.indexOf("\n")) {
+            const line = buffered.slice(0, end);
+            buffered = buffered.slice(end + 1);
+            void send({ id, type: "server_input", line }).catch(() => {});
+          }
+          done();
+        },
+      }),
+      kill: () => { if (servers.delete(id)) void send({ id, type: "server_stop" }).catch(() => {}); return true; },
+    }) as HostedServer;
+    const fail = (error: Error) => queueMicrotask(() => { servers.delete(id); proc.emit("error", error); });
+    if (t.command !== process.execPath || !t.args?.[0]) { fail(new Error("Only installed integration packages can run in the desktop app")); return proc; }
+    servers.set(id, proc);
+    void send({ id, type: "server_start", sandboxDir: t.sandboxDir, script: t.args[0], args: t.args.slice(1), env: t.env ?? {} }).catch((error: unknown) => fail(error instanceof Error ? error : new Error("Native server write failed")));
+    return proc;
+  }
+  function installPackage(npmArgs: string[], target: string): Promise<void> {
+    const spec = npmArgs[0] === "install" ? npmArgs[1] ?? "" : "";
+    const at = spec.lastIndexOf("@");
+    if (at <= 0) return Promise.reject(new Error("Unexpected install arguments"));
+    const id = `npm-${randomUUID()}`;
+    return new Promise((resolve, reject) => {
+      installs.set(id, { resolve, reject });
+      void send({ id, type: "npm_install", target, package: spec.slice(0, at), version: spec.slice(at + 1) }).catch((error: unknown) => { installs.delete(id); reject(error instanceof Error ? error : new Error("Native install write failed")); });
+    });
+  }
   const sandbox: SandboxCall = (request, signal) => {
     if (closed) return Promise.reject(new Error("Native sandbox is unavailable"));
     if (sandboxPending.size >= 8) return Promise.reject(new Error("Native sandbox queue is full"));
@@ -53,6 +95,10 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
     controlPending.clear();
     for (const p of sandboxPending.values()) p.reject(new Error("Parent connection closed"));
     sandboxPending.clear();
+    for (const p of installs.values()) p.reject(new Error("Parent connection closed"));
+    installs.clear();
+    for (const proc of servers.values()) { proc.stdout.end(); proc.emit("exit", null); }
+    servers.clear();
     providers.close();
   }
   function pingControl(): Promise<ControlHealth> {
@@ -342,6 +388,27 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
       else pending?.reject(new Error(String(f.message)));
       return;
     }
+    if (typeof f.type === "string" && f.type.startsWith("server_")) {
+      const proc = servers.get(id);
+      if (!id.startsWith("srv-")) throw new Error("Invalid native server frame");
+      if (!proc) return;
+      if (f.type === "server_started") { proc.started = true; proc.emit("spawn"); }
+      else if (f.type === "server_line" && typeof f.line === "string") proc.stdout.write(`${f.line}\n`);
+      else if (f.type === "server_log" && typeof f.line === "string") proc.stderr.write(`${f.line}\n`);
+      else if (f.type === "server_exit" || f.type === "server_error") {
+        servers.delete(id);
+        if (!proc.started) proc.emit("error", new Error(typeof f.message === "string" ? f.message : "The server could not start"));
+        else { if (typeof f.message === "string") proc.stderr.write(`${f.message}\n`); proc.stdout.end(); proc.emit("exit", typeof f.code === "number" ? f.code : null); }
+      } else throw new Error("Invalid native server frame");
+      return;
+    }
+    if (f.type === "npm_result") {
+      const pending = installs.get(id);
+      installs.delete(id);
+      if (typeof f.message === "string") pending?.reject(new Error(f.message));
+      else pending?.resolve();
+      return;
+    }
     if (providers.receive(f)) return;
     if (f.type === "ack") { active.get(id)?.ack?.(); return; }
     if (f.type === "cancel") { const p = active.get(id); p?.controller.abort(); p?.ack?.(); return; }
@@ -367,5 +434,5 @@ export function desktopTransport(request: (r: Request) => Promise<Response>, tok
   input.on("end", close);
   input.on("error", (error) => { close(); failed(error); });
   output.on("error", (error) => { close(); failed(error); });
-  return { close, pingControl, commitCandidate, hostSessionStore, providerFetch: providers.fetch, egressFetch: providers.egressFetch, sandbox, reserveCapacity, releaseCapacity };
+  return { close, pingControl, commitCandidate, hostSessionStore, providerFetch: providers.fetch, egressFetch: providers.egressFetch, sandbox, launchServer, installPackage, reserveCapacity, releaseCapacity };
 }

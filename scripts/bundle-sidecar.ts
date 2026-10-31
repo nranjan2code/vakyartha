@@ -99,6 +99,7 @@ const receipt = {
   sidecar: treeReceipt(path.join(resources, "sidecar.mjs")),
   taskWorker: treeReceipt(path.join(resources, "task-worker.mjs")),
   canonicalWorker: treeReceipt(path.join(resources, "canonical-worker.mjs")),
+  mcpBridge: treeReceipt(path.join(resources, "mcp-bridge.mjs")),
   skills: treeReceipt(path.join(resources, "builtin-skills")),
   apps: treeReceipt(path.join(resources, "builtin-apps")),
   duckdb: { version: "2.0.0-r.1", ...treeReceipt(path.join(resources, "duckdb-runtime")) },

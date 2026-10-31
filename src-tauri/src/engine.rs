@@ -667,7 +667,7 @@ pub fn start_with_dispatch(
     mut cmd: Command,
     control: Option<ControlHandle>,
     dispatch_context: Option<(String, PathBuf)>,
-    helper: Option<PathBuf>,
+    runtime: Option<crate::servers::Runtime>,
 ) -> Engine {
     let mut child = match cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn() {
         Ok(child) => child,
@@ -705,6 +705,7 @@ pub fn start_with_dispatch(
         // Dropping the only stdin writer terminates the child even after a crash.
     });
     let sandbox_control = control.clone();
+    let servers: crate::servers::Servers = Default::default();
     let (control_tx, control_rx) = sync_channel::<ControlRequest>(2);
     let control_writer = sender.clone();
     let control_queue_size = queued.clone();
@@ -849,11 +850,61 @@ pub fn start_with_dispatch(
                     continue;
                 }
             }
+            match value.get("type").and_then(serde_json::Value::as_str) {
+                Some("server_input") => {
+                    let (Some(id), Some(line)) = (value.get("id").and_then(serde_json::Value::as_str), value.get("line").and_then(serde_json::Value::as_str)) else { continue; };
+                    if let Err(message) = crate::servers::input(&servers, id, line) {
+                        send_frame(&connection, &response_queue, serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "server_error", "message": message }));
+                    }
+                    continue;
+                }
+                Some("server_stop") => {
+                    if let Some(id) = value.get("id").and_then(serde_json::Value::as_str) { crate::servers::stop(&servers, id); }
+                    continue;
+                }
+                Some(kind @ ("server_start" | "npm_install")) => {
+                    let prefix = if kind == "server_start" { "srv-" } else { "npm-" };
+                    let Some(id) = value.get("id").and_then(serde_json::Value::as_str).filter(|id| id.starts_with(prefix) && valid_id(id)).map(str::to_owned) else { continue; };
+                    let (sender, queued, servers, control) = (connection.clone(), response_queue.clone(), servers.clone(), sandbox_control.clone());
+                    let native = dispatch_context.as_ref().map(|(_, d)| d.clone()).zip(runtime.clone());
+                    let kind = kind.to_owned();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        let reply = |frame: serde_json::Value| send_frame(&sender, &queued, frame);
+                        let Some((data_dir, runtime)) = native else {
+                            return reply(serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": if kind == "npm_install" { "npm_result" } else { "server_error" }, "message": "Native servers are not enabled" }));
+                        };
+                        if kind == "npm_install" {
+                            let outcome = serde_json::from_value::<crate::servers::Install>(value).map_err(|_| "Malformed install request".to_owned())
+                                .and_then(|request| crate::servers::install(&runtime, &data_dir, &request, PROTOCOL_VERSION));
+                            return reply(match outcome {
+                                Ok(()) => serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "npm_result" }),
+                                Err(message) => serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "npm_result", "message": message }),
+                            });
+                        }
+                        if !crate::servers::capacity_left(&servers) {
+                            return reply(serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "server_error", "message": "Too many local servers are running" }));
+                        }
+                        let started = serde_json::from_value::<crate::servers::Start>(value).map_err(|_| "Malformed server request".to_owned())
+                            .and_then(|request| crate::servers::start(&runtime, &data_dir, control.as_ref(), &request, PROTOCOL_VERSION));
+                        match started {
+                            Ok((mut child, stdin)) => {
+                                let (out, err) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
+                                servers.lock().unwrap().insert(id.clone(), (child, stdin));
+                                reply(serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "server_started" }));
+                                crate::servers::relay(servers, id, out, err, move |frame| send_frame(&sender, &queued, frame), PROTOCOL_VERSION);
+                            }
+                            Err(message) => reply(serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "server_error", "message": message })),
+                        }
+                    });
+                    continue;
+                }
+                _ => {}
+            }
             if value.get("type").and_then(serde_json::Value::as_str) == Some("sandbox_request") {
                 let Some(id) = value.get("id").and_then(serde_json::Value::as_str).filter(|id| id.starts_with("sbx-") && valid_id(id)).map(str::to_owned) else { continue; };
                 let (sender, queued) = (connection.clone(), response_queue.clone());
-                let context = match (&dispatch_context, &helper) {
-                    (Some((_, data_dir)), Some(helper)) => Some(crate::sandbox::Context { helper: helper.clone(), data_dir: data_dir.clone(), control: sandbox_control.clone() }),
+                let context = match (&dispatch_context, &runtime) {
+                    (Some((_, data_dir)), Some(runtime)) => Some(crate::sandbox::Context { helper: runtime.helper.clone(), data_dir: data_dir.clone(), control: sandbox_control.clone() }),
                     _ => None,
                 };
                 tauri::async_runtime::spawn_blocking(move || {

@@ -38,6 +38,7 @@ test("sidecar bundles without frontend files or workspace dependencies and rejec
   writeFileSync(path.join(root, "sidecar/main.ts"), 'import { platform } from "node:os"; console.log(platform());');
   writeFileSync(path.join(root, "sidecar/task-worker.ts"), 'import { arch } from "node:os"; console.log(arch());');
   writeFileSync(path.join(root, "sidecar/canonical-worker.ts"), 'import { arch } from "node:os"; console.log(arch());');
+  writeFileSync(path.join(root, "sidecar/mcp-bridge.ts"), 'import { spawn } from "node:child_process"; console.log(typeof spawn);');
   const out = path.join(root, "out");
   await buildSidecar(root, out);
   assert.equal(existsSync(path.join(out, "unneeded.txt")), false);

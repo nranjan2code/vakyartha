@@ -4,7 +4,7 @@
 //   VAK_READY {"transport":"stdio","version":2}
 //
 // The shell sets VAK_DATA_DIR, VAK_APP_VERSION,
-// VAK_NPM_CLI and VAK_SANDBOX_BIN. The worker receives no environment files.
+// and VAK_SANDBOX_BIN. The worker receives no environment files.
 
 import { Socket } from "node:net";
 import { startAppServer } from "./server.ts";
@@ -22,6 +22,7 @@ let nativeTransport: ReturnType<typeof desktopTransport> | undefined;
 let nativeProviderFetch: ProviderTransport = async () => { throw new Error("Native provider transport is not ready"); };
 let nativeEgressFetch: typeof fetch = async () => { throw new Error("Native egress is not ready"); };
 let nativeSandbox: SandboxCall = async () => { throw new Error("Native sandbox is not ready"); };
+let nativeTransportReady: ReturnType<typeof desktopTransport> | undefined;
 const nativeSessionStore: HostSessionStore = {
   load: async (id) => { if (!nativeTransport) throw new Error("Native session transport is not ready"); return nativeTransport.hostSessionStore.load(id); },
   save: async (snapshot, revision) => { if (!nativeTransport) throw new Error("Native session transport is not ready"); return nativeTransport.hostSessionStore.save(snapshot, revision); },
@@ -44,7 +45,6 @@ const app = await startAppServer({
   access: "token",
   transport: "stdio",
   version: process.env.VAK_APP_VERSION,
-  npm: process.env.VAK_NPM_CLI,
   sandboxBin: process.env.VAK_SANDBOX_BIN,
   candidateCommit: (candidate) => nativeCommit(candidate),
   nativeSessionStore,
@@ -52,6 +52,8 @@ const app = await startAppServer({
   providerTransport: (...args) => nativeProviderFetch(...args),
   egressTransport: (...args) => nativeEgressFetch(...args),
   sandbox: (...args) => nativeSandbox(...args),
+  launchServer: (t) => { if (!nativeTransportReady) throw new Error("Native servers are not ready"); return nativeTransportReady.launchServer(t); },
+  installPackage: (args, target) => nativeTransportReady ? nativeTransportReady.installPackage(args, target) : Promise.reject(new Error("Native installs are not ready")),
 });
 const transport = desktopTransport(app.request, app.token!, channel, channel, (error) => { console.error(error.message); void shutdown(); });
 nativeCommit = transport.commitCandidate;
@@ -59,6 +61,7 @@ nativeTransport = transport;
 nativeProviderFetch = transport.providerFetch;
 nativeEgressFetch = transport.egressFetch;
 nativeSandbox = transport.sandbox;
+nativeTransportReady = transport;
 channel.write(`VAK_READY ${JSON.stringify({ transport: "stdio", version: DESKTOP_PROTOCOL })}\n`);
 
 // The shell holds our stdin open; when it goes away (quit or crash), so do

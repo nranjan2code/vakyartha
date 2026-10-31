@@ -38,6 +38,7 @@ import { SandboxPoolManager } from "./sandbox-pool/pool-manager.ts";
 import { AppRegistry } from "./sandbox-pool/app-registry.ts";
 import { runScratch, sandboxSession } from "./sandbox-execution.ts";
 import type { SandboxCall } from "./desktop-transport.ts";
+import type { StdioProcess, StdioTransport } from "@vak/mcp/client";
 import { withProviderTransport } from "./provider-transport.ts";
 
 export interface AppServerOptions {
@@ -70,6 +71,9 @@ export interface AppServerOptions {
   egressTransport?: typeof fetch;
   /** Desktop: command runs, Realms and folder bindings are native; absent in web mode. */
   sandbox?: SandboxCall;
+  /** Desktop: Rust hosts local MCP servers and runs their pinned installs. */
+  launchServer?: (t: StdioTransport) => StdioProcess;
+  installPackage?: (npmArgs: string[], target: string) => Promise<void>;
   /** Native sole-writer boundary for a completed candidate. */
   candidateCommit?: (request: HostCandidateCommitRequest) => Promise<HostCandidateCommitReceipt>;
   /** Native sole-writer boundary for desktop chat snapshots. */
@@ -403,7 +407,7 @@ ${skills.index()}`;
   } });
   await apps.init();
   marketplaces = new Marketplaces(dataDir, integrationCatalog(media, opts.sandbox), opts.marketplaceFetch, opts.marketplaceImageFetch);
-  integrations = createIntegrations({ dataDir, observe: (request, result) => { appToolResults.observe(request.session, result); tasks?.observeResult(request, result); }, secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: true, binaryPath: sandboxBin } }, media, marketplaces.catalog, opts.sandbox);
+  integrations = createIntegrations({ dataDir, observe: (request, result) => { appToolResults.observe(request.session, result); tasks?.observeResult(request, result); }, secrets: settings.secrets, log, approve: (req, emit, signal) => tasks?.inTask() ? tasks.approve(req, emit, signal) : host.approve(req, emit, signal), npm: opts.npm, vakSandbox: { enabled: true, binaryPath: sandboxBin }, launch: opts.launchServer, installer: opts.installPackage }, media, marketplaces.catalog, opts.sandbox);
   // Refresh app-owned tool schemas after an upgrade; the integration journal
   // may otherwise retain an older model's controls indefinitely.
   for (const entry of integrations.view().filter((i) => i.enabled && (i.entry.id.startsWith("media-") || i.entry.id === "sandbox-execution"))) {

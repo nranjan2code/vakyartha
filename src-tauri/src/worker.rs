@@ -180,16 +180,7 @@ fn command_inner(
     ];
     if invocation.is_none() {
         cmd.arg("--read").arg(&helper);
-        environment.extend([
-            (
-                "VAK_NPM_CLI",
-                resources
-                    .join("npm/bin/npm-cli.js")
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
-            ("VAK_SANDBOX_BIN", helper.to_string_lossy().into_owned()),
-        ]);
+        environment.push(("VAK_SANDBOX_BIN", helper.to_string_lossy().into_owned()));
     }
     if let Some(accounts) = vault_accounts {
         environment.push(("VAK_VAULT_ACCOUNTS", accounts.to_owned()));
@@ -334,7 +325,7 @@ mod tests {
         assert!(
             !args
                 .iter()
-                .any(|arg| arg.contains("VAK_NPM_CLI") || arg.contains("VAK_SANDBOX_BIN"))
+                .any(|arg| arg.contains("VAK_SANDBOX_BIN"))
         );
         assert!(!data.join("worker").exists());
         assert!(
