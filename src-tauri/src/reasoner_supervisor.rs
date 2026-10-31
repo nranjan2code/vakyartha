@@ -528,6 +528,99 @@ fn execute(
                             )?;
                         }
                     }
+                    Event::ChildDispatch { child_id } => {
+                        let root = control.read_root(original.root_id().into())?;
+                        let root_rev = root.revision();
+                        let Some(child) = root.children().get(&child_id).cloned() else {
+                            pipe.send(
+                                json!({
+                                    "v": 2,
+                                    "type": "child_attempt_refused",
+                                    "childId": child_id,
+                                    "reason": "child_not_found"
+                                }),
+                                cancel,
+                            )?;
+                            continue;
+                        };
+                        let child_rev = child.revision();
+                        let start_req = format!("dispatch-{}", child_id);
+                        match control.start_child_attempt(
+                            original.root_id().into(),
+                            root_rev,
+                            child_id.clone(),
+                            child_rev,
+                            start_req,
+                        ) {
+                            Ok(started_child) => {
+                                let receipt = format!("supervisor-{}", child_id);
+                                let root_current = control.read_root(original.root_id().into())?;
+                                match control.confirm_child_started(
+                                    original.root_id().into(),
+                                    root_current.revision(),
+                                    child_id.clone(),
+                                    started_child.revision(),
+                                    receipt,
+                                ) {
+                                    Ok(running_child) => {
+                                        let result_ref = format!("child-result-{}", child_id);
+                                        match control.return_child_attempt(
+                                            original.root_id().into(),
+                                            child_id.clone(),
+                                            running_child.revision(),
+                                            result_ref.clone(),
+                                        ) {
+                                            Ok(_returned_child) => {
+                                                pipe.send(
+                                                    json!({
+                                                        "v": 2,
+                                                        "type": "child_attempt_returned",
+                                                        "childId": child_id,
+                                                        "resultRef": result_ref,
+                                                        "status": "returned"
+                                                    }),
+                                                    cancel,
+                                                )?;
+                                            }
+                                            Err(err) => {
+                                                pipe.send(
+                                                    json!({
+                                                        "v": 2,
+                                                        "type": "child_attempt_refused",
+                                                        "childId": child_id,
+                                                        "reason": format!("{:?}", err)
+                                                    }),
+                                                    cancel,
+                                                )?;
+                                            }
+                                        }
+                                    }
+                                    Err(err) => {
+                                        pipe.send(
+                                            json!({
+                                                "v": 2,
+                                                "type": "child_attempt_refused",
+                                                "childId": child_id,
+                                                "reason": format!("{:?}", err)
+                                            }),
+                                            cancel,
+                                        )?;
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                pipe.send(
+                                    json!({
+                                        "v": 2,
+                                        "type": "child_attempt_refused",
+                                        "childId": child_id,
+                                        "reason": format!("{:?}", err)
+                                    }),
+                                    cancel,
+                                )?;
+                            }
+                        }
+                    }
                     Event::Failed(_code) => return Err(refused()),
                 }
             }

@@ -78,6 +78,13 @@ enum Frame {
         run_id: String,
         proposals: Vec<ChildProposalPayload>,
     },
+    ChildDispatch {
+        v: u8,
+        #[serde(rename = "runId")]
+        run_id: String,
+        #[serde(rename = "childId")]
+        child_id: String,
+    },
     TaskFailed {
         v: u8,
         code: String,
@@ -101,6 +108,7 @@ pub enum Event {
     Candidate(Value),
     Failed(String),
     Proposals(Vec<ChildProposal>),
+    ChildDispatch { child_id: String },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -296,6 +304,16 @@ impl TaskChannel {
                     .collect();
                 Ok(Event::Proposals(items))
             }
+            Frame::ChildDispatch {
+                v: 2,
+                run_id,
+                child_id,
+            } if self.phase == Phase::Executing && self.active.is_none() => {
+                if run_id != self.run_id || !super::valid_identity(&child_id) {
+                    return Err(ProtocolError);
+                }
+                Ok(Event::ChildDispatch { child_id })
+            }
             Frame::TaskFailed { v: 2, code }
                 if matches!(
                     code.as_str(),
@@ -471,5 +489,40 @@ mod tests {
             }]
         });
         refused(bad_run);
+    }
+
+    #[test]
+    fn child_dispatch_frame_validates_cleanly() {
+        let mut channel = executing();
+        let valid_dispatch = json!({
+            "v": 2,
+            "type": "child_dispatch",
+            "runId": "run-1",
+            "childId": "child-1"
+        });
+        match send(&mut channel, valid_dispatch) {
+            Ok(Event::ChildDispatch { child_id }) => {
+                assert_eq!(child_id, "child-1");
+            }
+            other => panic!("expected Event::ChildDispatch, got {:?}", other),
+        }
+
+        // Cross-run child dispatch is refused
+        let bad_run = json!({
+            "v": 2,
+            "type": "child_dispatch",
+            "runId": "other-run",
+            "childId": "child-1"
+        });
+        refused(bad_run);
+
+        // Invalid child id is refused
+        let bad_id = json!({
+            "v": 2,
+            "type": "child_dispatch",
+            "runId": "run-1",
+            "childId": "bad/id"
+        });
+        refused(bad_id);
     }
 }

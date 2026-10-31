@@ -130,3 +130,18 @@ test("consent phase cannot bootstrap a task or repeat a pause", async t => {
   await wait(() => duplicate.code() !== undefined);
   assert.equal(duplicate.frames.at(-1)?.code, "protocol_error");
 });
+
+test("child proposals and child attempt frames are admitted during execution without protocol error", async t => {
+  const h = harness(t);
+  h.send({ type: "task_start", job: job() });
+  await wait(() => h.frames.some(frame => frame.type === "provider_request"));
+  h.send({ type: "child_proposals_admitted", count: 1 });
+  h.send({ type: "child_attempt_returned", childId: "child-1", resultRef: "res-1", status: "returned" });
+  h.send({ type: "child_attempt_refused", childId: "child-2", reason: "capacity_exceeded" });
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(h.code(), undefined, "worker remains running without protocol error");
+  h.send({ type: "task_cancel" });
+  await wait(() => h.code() !== undefined);
+  assert.equal(h.code(), 1);
+});
+
