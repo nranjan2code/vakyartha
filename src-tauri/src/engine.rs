@@ -233,6 +233,60 @@ async fn dispatch_egress_request(request: crate::egress::EgressRequest, sender: 
     }
 }
 
+/// One voice operation: Rust picks the destination and key, or runs Whistle itself.
+async fn dispatch_voice_request(request: crate::voice::VoiceRequest, sender: Input, queued: Arc<AtomicUsize>, service: String, data_dir: PathBuf) {
+    use crate::voice::{Payload, Plan};
+    let id = request.id.clone();
+    let plan = match request.plan(PROTOCOL_VERSION) {
+        Ok(plan) => plan,
+        Err(message) => return send_provider_error(&sender, &queued, &id, message),
+    };
+    let remote = match plan {
+        Plan::Remote(remote) => remote,
+        local => {
+            let answer = tauri::async_runtime::spawn_blocking(move || match local {
+                Plan::WhistleStatus => crate::voice::whistle_status(&data_dir),
+                Plan::WhistleInstall => crate::voice::whistle_install(&data_dir),
+                Plan::WhistleTranscribe { audio, language } => crate::voice::whistle_transcribe(&data_dir, &audio, language.as_deref()),
+                Plan::Remote(_) => unreachable!(),
+            }).await;
+            let Ok((status, body)) = answer else { return send_provider_error(&sender, &queued, &id, "Whistle failed") };
+            send_frame(&sender, &queued, serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "provider_headers", "status": status, "headers": { "content-type": "application/json" } }));
+            send_frame(&sender, &queued, serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "provider_data", "seq": 0, "data": base64(body.to_string().as_bytes()) }));
+            return send_frame(&sender, &queued, serde_json::json!({ "v": PROTOCOL_VERSION, "id": id, "type": "provider_end" }));
+        }
+    };
+    let client = match remote.host {
+        None => get_or_create_client(None, None),
+        Some(host) => cached_resolve_public_addresses(host).and_then(|addrs| get_or_create_client(Some(host), Some(&addrs))),
+    };
+    let client = match client {
+        Ok(client) => client,
+        Err(message) => return send_provider_error(&sender, &queued, &id, &message),
+    };
+    let mut builder = client.request(remote.method, &remote.url).timeout(remote.timeout);
+    if let Some((account, header, prefix, label)) = remote.credential {
+        let key = match tauri::async_runtime::spawn_blocking({ let (service, data_dir) = (service.clone(), data_dir.clone()); move || cached_vault_get(&service, account, &data_dir) }).await {
+            Ok(Ok(Some(key))) if !key.is_empty() => key,
+            Ok(Err(message)) => return send_provider_error(&sender, &queued, &id, &message),
+            _ => return send_provider_error(&sender, &queued, &id, &format!("Add your {label} API key in Providers")),
+        };
+        builder = builder.header(header, format!("{prefix}{key}"));
+    }
+    builder = match remote.payload {
+        Payload::None => builder,
+        Payload::Json(body) => builder.header(reqwest::header::CONTENT_TYPE, "application/json").body(body),
+        Payload::Upload { fields, audio } => {
+            let (kind, body) = crate::voice::multipart(&fields, &audio);
+            builder.header(reqwest::header::CONTENT_TYPE, kind).body(body)
+        }
+    };
+    match builder.send().await {
+        Ok(response) => relay_response(response, &id, &sender, &queued, &["content-type", "retry-after"]).await,
+        Err(_) => send_provider_error(&sender, &queued, &id, if remote.host.is_none() { "Ollama is not running" } else { "The voice provider is not reachable" }),
+    }
+}
+
 static DNS_CACHE: LazyLock<Mutex<HashMap<String, (Vec<SocketAddr>, Instant)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -938,6 +992,21 @@ pub fn start_with_dispatch(
                         tauri::async_runtime::spawn(dispatch_egress_request(request, sender, queued, service, data_dir));
                     }
                     Err(_) => send_provider_error(&connection, &response_queue, &id, "Malformed egress request"),
+                }
+                continue;
+            }
+            if value.get("type").and_then(serde_json::Value::as_str) == Some("voice_request") {
+                let Some(id) = value.get("id").and_then(serde_json::Value::as_str).filter(|id| id.starts_with("voc-") && valid_id(id)).map(str::to_owned) else { continue; };
+                let Some((service, data_dir)) = dispatch_context.clone() else {
+                    send_provider_error(&connection, &response_queue, &id, "Native voice is not enabled");
+                    continue;
+                };
+                match serde_json::from_value::<crate::voice::VoiceRequest>(value) {
+                    Ok(request) if request.id == id => {
+                        let (sender, queued) = (connection.clone(), response_queue.clone());
+                        tauri::async_runtime::spawn(dispatch_voice_request(request, sender, queued, service, data_dir));
+                    }
+                    _ => send_provider_error(&connection, &response_queue, &id, "Malformed voice request"),
                 }
                 continue;
             }

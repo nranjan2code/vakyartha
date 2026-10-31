@@ -6,7 +6,7 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { timeServer } from "@vak/mcp/client";
-import { ollamaBase } from "./voice/speech.ts";
+import { ollamaBase } from "./voice/transport.ts";
 
 type BuiltinServer = ReturnType<typeof timeServer>;
 

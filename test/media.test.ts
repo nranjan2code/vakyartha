@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { directVoice } from "../sidecar/voice/transport.ts";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -26,7 +27,7 @@ function setup(options: { fetcher?: typeof fetch; download?: (url: string, signa
     calls.push({ url: String(url), init });
     return options.fetcher ? options.fetcher(url, init) : Response.json({ data: [{ b64_json: PNG.toString("base64") }], usage: { input_tokens: 12, output_tokens: 30 } });
   }) as typeof fetch;
-  const media = new Media({ dir: path.join(dir, "media"), attachmentsDir: path.join(dir, "attachments"), voiceDir: path.join(dir, "voice"), config: (kind) => configs.get(kind)!, env: options.env ?? { OPENAI_API_KEY: "test-key" }, fetcher: f, download: options.download, pollMs: 1 });
+  const media = new Media({ dir: path.join(dir, "media"), attachmentsDir: path.join(dir, "attachments"), voice: directVoice(options.env ?? { OPENAI_API_KEY: "test-key" }, f, path.join(dir, "voice")), config: (kind) => configs.get(kind)!, env: options.env ?? { OPENAI_API_KEY: "test-key" }, fetcher: f, download: options.download, pollMs: 1 });
   return { dir, media, calls, configs, f };
 }
 async function done(media: Media, kind: MediaKind, id: string) {
@@ -135,7 +136,7 @@ test("restart preserves uncertain jobs and resume only polls the original provid
   for (let i = 0; i < 100 && !s.media.job("video", j.id).remoteId; i++) await delay(2);
   await s.media.close();
   const requests: string[] = [];
-  const reloaded = new Media({ dir: path.join(s.dir, "media"), attachmentsDir: path.join(s.dir, "attachments"), voiceDir: "", config: (k) => s.configs.get(k)!, env: { FAL_KEY: "test" }, pollMs: 1, fetcher: (async (url) => { requests.push(String(url)); return Response.json(String(url).endsWith("/status") ? { status: "COMPLETED" } : { video: { url: "https://cdn.example/result" } }); }) as typeof fetch, download: async () => MP4 });
+  const reloaded = new Media({ dir: path.join(s.dir, "media"), attachmentsDir: path.join(s.dir, "attachments"), voice: directVoice({}), config: (k) => s.configs.get(k)!, env: { FAL_KEY: "test" }, pollMs: 1, fetcher: (async (url) => { requests.push(String(url)); return Response.json(String(url).endsWith("/status") ? { status: "COMPLETED" } : { video: { url: "https://cdn.example/result" } }); }) as typeof fetch, download: async () => MP4 });
   assert.equal(reloaded.job("video", j.id).state, "interrupted"); assert.equal(requests.length, 0);
   await reloaded.resume("video", j.id); assert.equal((await done(reloaded, "video", j.id)).state, "succeeded");
   assert.ok(requests.every((u) => u.includes("/requests/known-job")));

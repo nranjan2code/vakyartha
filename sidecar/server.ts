@@ -25,7 +25,7 @@ import { TaskFiles } from "./task-files.ts";
 import { fileSecrets, keychainStore, nativeSecrets, Settings, SettingsError } from "./settings.ts";
 import { checkTaskSpending } from "./task-policy.ts";
 import { Tasks } from "./tasks.ts";
-import { voiceRoutes } from "./voice/index.ts";
+import { directVoice, voiceRoutes, type VoiceTransport } from "./voice/index.ts";
 import { Media } from "./media/index.ts";
 import { mediaType } from "./media/io.ts";
 import { isMediaKind, type MediaAsset } from "../shared/media.ts";
@@ -70,6 +70,8 @@ export interface AppServerOptions {
   providerTransport?: ProviderTransport;
   /** Desktop: the worker has no network; integration HTTPS goes through the native egress gate. */
   egressTransport?: typeof fetch;
+  /** Voice's way out (src-tauri/src/voice.rs in the desktop app); without it, plain HTTP for development. */
+  voiceTransport?: VoiceTransport;
   /** Desktop: command runs, Realms and folder bindings are native; absent in web mode. */
   sandbox?: SandboxCall;
   /** Desktop: Rust hosts local MCP servers and runs their pinned installs. */
@@ -192,6 +194,8 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   }
   for (const file of opts.envFiles ?? []) loadEnvFile(file);
   hardenNetwork();
+  // Bound before the egress gate replaces fetch: development voice speaks plain HTTP to Ollama.
+  const voice = opts.voiceTransport ?? directVoice(process.env, fetch, voiceDir);
   if (opts.egressTransport) globalThis.fetch = opts.egressTransport;
 
   async function settingsRoute(req: HostRequest, res: HostResponse, url: URL): Promise<boolean> {
@@ -263,7 +267,7 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
   }
 
   const attachRoute = attachmentsRoute(path.join(dataDir, "attachments"));
-  const voiceRoute = voiceRoutes(voiceDir, log, () => modelProviders());
+  const voiceRoute = voiceRoutes(voice, log, () => modelProviders());
 
   /** For the About page: where things are kept. */
   function infoRoute(req: HostRequest, res: HostResponse, url: URL): boolean {
@@ -350,7 +354,7 @@ ${skills.index()}`;
   let integrations: Integrations | undefined;
   let marketplaces: Marketplaces;
   let tasks: Tasks | undefined;
-  const media = new Media({ dir: path.join(dataDir, "media"), attachmentsDir: path.join(dataDir, "attachments"), voiceDir,
+  const media = new Media({ dir: path.join(dataDir, "media"), attachmentsDir: path.join(dataDir, "attachments"), voice,
     config: (kind) => integrations?.configuration(`media-${kind}`) ?? { enabled: false, config: {} },
     async publish(job, assets, signal) {
       job.session ??= `media-${job.id}`;

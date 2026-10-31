@@ -1,5 +1,14 @@
 # Vakyartha handover — 2026-10-31
 
+## Voice through the native runtime; Voice settings and provider pages rebuilt — 2026-10-31
+
+Root cause: after the protected-runtime merge the worker's `fetch` is the integration egress gate (HTTPS, approved integration hosts only), and voice still called Ollama, OpenAI, Gemini and ElevenLabs directly, so local voices read as "Ollama is not running" and hosted keys were stripped. Whistle lived in worker-writable data and was spawned from the contained worker.
+
+- Rust owns voice (`src-tauri/src/voice.rs`, `voice_request` frames, `voc-` ids on the provider frame family): a fixed operation table decides every destination, attaches the vault key for hosted voices, builds recording uploads, restricts Ollama pulls to the listed packs, and installs/runs Whistle from Rust-owned `<data>/voice/whistle/<pins>` (hash-checked on each use; HF redirects followed only to HF hosts; engine under `sandbox-exec` with network denied and writes confined to its folder).
+- Worker: `sidecar/voice/transport.ts` is voice's only way out (`VoiceTransport`); desktop uses the native channel, `npm run web` uses `directVoice` with the same operation table. Media audio uses the same transport. No URL or key leaves the worker.
+- Settings → Voice: choices apply at once, models grouped by where they run, cost/privacy under each label, a Voice sources group says why a provider is not ready. Provider pages share one layout (status, key, downloads, models) from provider data; Back returns to where the page was opened.
+- Evidence: 318 app tests, 160 Rust tests plus the ignored live Whistle install/transcribe test (passed), typecheck; `npm run web`: Phonon speech 200, Whistle and LFM3 Omni transcription of the spoken sample exact; native dev window showed Phonon (38 voices) and LFM3 Omni listed through the Rust route. Not yet checked live in the native window: hosted read aloud/dictation with a vault key, and pack install from the window.
+
 ## Area 7 child dispatch protocol, supervisor lifecycle transitions and Area 8 platform verification — 2026-10-31
 
 In `/Users/nisheethranjan/Projects/vakyartha-agent-runtime` (branch `codex/agent-runtime-implementation`), completed Area 7 child dispatch protocol, supervisor lifecycle transitions, and Area 8 cross-platform verification across Linux and macOS.

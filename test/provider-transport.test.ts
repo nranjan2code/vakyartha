@@ -105,3 +105,27 @@ test("native egress refuses redirects instead of following them", async () => {
   });
   await assert.rejects(channel.egressFetch("https://mcp.nseindia.in/mcp", { method: "POST", body: "{}" }), /redirect/);
 });
+
+test("voice names an operation and Rust picks the destination; no URL or key leaves the worker", async () => {
+  const { providerChannel } = await import("../sidecar/provider-channel.ts");
+  const sent: Record<string, unknown>[] = [];
+  const channel = providerChannel(async (message) => {
+    if (message.type !== "voice_request") return;
+    sent.push(message);
+    const id = message.id as string;
+    setTimeout(() => {
+      channel.receive({ v: 2, id, type: "provider_headers", status: 200, headers: { "content-type": "audio/pcm" } });
+      channel.receive({ v: 2, id, type: "provider_data", seq: 0, data: Buffer.from([1, 0, 2, 0]).toString("base64") });
+      channel.receive({ v: 2, id, type: "provider_end" });
+    }, 1);
+  });
+  const pcm = await channel.voice({ operation: "ollama_speech", body: { model: "phonon:latest", input: "Hi." } });
+  assert.deepEqual([...new Uint8Array(await pcm.arrayBuffer())], [1, 0, 2, 0]);
+  const wav = new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0, 87, 65, 86, 69]);
+  await channel.voice({ operation: "whistle_transcribe", audio: wav, body: { language: "fr" } });
+  assert.match(String(sent[0]!.id), /^voc-/);
+  assert.deepEqual(Object.keys(sent[0]!).sort(), ["body", "id", "operation", "type", "v"]);
+  assert.equal(sent[0]!.body, JSON.stringify({ model: "phonon:latest", input: "Hi." }));
+  assert.equal(sent[1]!.audio, Buffer.from(wav).toString("base64"));
+  await assert.rejects(channel.voice({ operation: "openai_transcribe", audio: new Uint8Array(8_000_001) }), /too long/);
+});

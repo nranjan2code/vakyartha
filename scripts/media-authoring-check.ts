@@ -1,5 +1,6 @@
 // The local conversation model authors real plugin calls; all media provider
 // I/O is mocked. This checks tool use without a paid generation or user data.
+import { directVoice } from "../sidecar/voice/transport.ts";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,7 +15,7 @@ mkdirSync(path.join(dir, "logs"));
 let integrations: ReturnType<typeof createIntegrations>;
 let providerCalls = 0;
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
-const media = new Media({ dir: path.join(dir, "media"), attachmentsDir: path.join(dir, "attachments"), voiceDir: path.join(dir, "voice"), env: { OPENAI_API_KEY: "offline-fixture" }, config: (kind) => integrations.view().find((i) => i.entry.id === `media-${kind}`) ?? { enabled: false, config: {} }, fetcher: (async () => { providerCalls++; return Response.json({ data: [{ b64_json: png }] }); }) as typeof fetch });
+const media = new Media({ dir: path.join(dir, "media"), attachmentsDir: path.join(dir, "attachments"), voice: directVoice({}, fetch, path.join(dir, "voice")), env: { OPENAI_API_KEY: "offline-fixture" }, config: (kind) => integrations.view().find((i) => i.entry.id === `media-${kind}`) ?? { enabled: false, config: {} }, fetcher: (async () => { providerCalls++; return Response.json({ data: [{ b64_json: png }] }); }) as typeof fetch });
 integrations = createIntegrations({ dataDir: dir, secrets: fileSecrets(path.join(dir, "settings.env")), approve: async () => "allow" }, media);
 await integrations.configure("media-image", { enabled: true, config: { generate_image: "openai|gpt-image-2.5-flare" } });
 const events: AgentEvent[] = [];

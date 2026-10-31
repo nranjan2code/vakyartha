@@ -11,6 +11,7 @@ import { startAppServer } from "./server.ts";
 import { desktopTransport, DESKTOP_PROTOCOL, type SandboxCall } from "./desktop-transport.ts";
 import type { HostCandidateCommitRequest, HostCandidateCommitReceipt, HostSessionStore } from "@vak/host";
 import type { ProviderTransport } from "@vak/providers";
+import type { VoiceTransport } from "./voice/transport.ts";
 
 // Chats, transcripts and logs are private even when the launching shell uses 022.
 process.umask(0o077);
@@ -21,6 +22,7 @@ let nativeCommit: (candidate: HostCandidateCommitRequest) => Promise<HostCandida
 let nativeTransport: ReturnType<typeof desktopTransport> | undefined;
 let nativeProviderFetch: ProviderTransport = async () => { throw new Error("Native provider transport is not ready"); };
 let nativeEgressFetch: typeof fetch = async () => { throw new Error("Native egress is not ready"); };
+let nativeVoice: VoiceTransport = async () => { throw new Error("Native voice is not ready"); };
 let nativeSandbox: SandboxCall = async () => { throw new Error("Native sandbox is not ready"); };
 let nativeTransportReady: ReturnType<typeof desktopTransport> | undefined;
 const nativeSessionStore: HostSessionStore = {
@@ -51,6 +53,7 @@ const app = await startAppServer({
   capacityLease,
   providerTransport: (...args) => nativeProviderFetch(...args),
   egressTransport: (...args) => nativeEgressFetch(...args),
+  voiceTransport: (call) => nativeVoice(call),
   sandbox: (...args) => nativeSandbox(...args),
   launchServer: (t) => { if (!nativeTransportReady) throw new Error("Native servers are not ready"); return nativeTransportReady.launchServer(t); },
   installPackage: (args, target) => nativeTransportReady ? nativeTransportReady.installPackage(args, target) : Promise.reject(new Error("Native installs are not ready")),
@@ -60,6 +63,7 @@ nativeCommit = transport.commitCandidate;
 nativeTransport = transport;
 nativeProviderFetch = transport.providerFetch;
 nativeEgressFetch = transport.egressFetch;
+nativeVoice = transport.voice;
 nativeSandbox = transport.sandbox;
 nativeTransportReady = transport;
 channel.write(`VAK_READY ${JSON.stringify({ transport: "stdio", version: DESKTOP_PROTOCOL })}\n`);

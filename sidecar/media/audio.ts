@@ -1,14 +1,15 @@
 import { speak, transcribe } from "../voice/speech.ts";
+import type { VoiceTransport } from "../voice/transport.ts";
 import { binary, key, type Context, type MediaRequest, type MediaResult } from "./remote.ts";
 
-export async function audio(req: MediaRequest, ctx: Context, voiceDir: string): Promise<MediaResult> {
+export async function audio(req: MediaRequest, ctx: Context, voice: VoiceTransport): Promise<MediaResult> {
   if (req.operation === "create_speech") {
     ctx.guard();
-    return { files: [await speak({ provider: req.chosen.provider, model: req.chosen.model, voice: req.voice!, text: req.prompt, language: req.language }, ctx.env, ctx.f, ctx.signal)] };
+    return { files: [await speak({ provider: req.chosen.provider, model: req.chosen.model, voice: req.voice!, text: req.prompt, language: req.language }, voice, ctx.env, ctx.signal)] };
   }
   if (req.operation === "transcribe_audio") {
     ctx.guard();
-    return { files: [], text: await transcribe({ provider: req.chosen.provider, model: req.chosen.model, audio: req.input!.bytes.toString("base64"), language: req.language }, ctx.env, ctx.f, ctx.signal, voiceDir) };
+    return { files: [], text: await transcribe({ provider: req.chosen.provider, model: req.chosen.model, audio: req.input!.bytes.toString("base64"), language: req.language }, voice, ctx.env, ctx.signal) };
   }
   const headers = { "xi-api-key": key("elevenlabs", ctx) };
   if (req.operation === "isolate_audio") {

@@ -32,22 +32,22 @@ const COMING: Record<string, string> = {
   discord: "Discord answers in servers and DMs through the Gateway. The Components V2 projector and paged modal forms are built (@vak/discord); the listener is next.",
 };
 
-/** Section, label, icon, and the group a sub-item sits under. */
+/** Section, label, icon, and its group, in the order things are usually set up. */
 const NAV: [Section, string, string, string?][] = [
-  ["models", "Models", "cpu"],
-  ["providers", "Providers", "key"],
-  ["integrations", "MCP", "plug", "Integrations"],
-  ["skills", "Skills", "spark", "Integrations"],
-  ["sandbox", "Sandbox", "shield"],
+  ["models", "Models", "cpu", "Models"],
+  ["providers", "Providers", "key", "Models"],
+  ["integrations", "Integrations", "plug", "Capabilities"],
+  ["skills", "Skills", "spark", "Capabilities"],
+  ["sandbox", "Sandbox", "shield", "Capabilities"],
   ["channel:telegram", "Telegram", "send", "Channels"],
   ["channel:slack", "Slack", "bubble", "Channels"],
   ["channel:discord", "Discord", "bubble", "Channels"],
-  ["voice", "Voice", "voice"],
-  ["appearance", "Appearance", "palette"],
-  ["chats", "Chats", "bubble"],
-  ["tasks", "Work & schedule", "calendar"],
-  ["finops", "FinOps", "chart"],
-  ["general", "General", "sliders"],
+  ["tasks", "Work & schedule", "calendar", "Work"],
+  ["chats", "Chats", "bubble", "Work"],
+  ["finops", "FinOps", "chart", "Work"],
+  ["general", "General", "sliders", "App"],
+  ["appearance", "Appearance", "palette", "App"],
+  ["voice", "Voice", "voice", "App"],
   ["about", "About", "info"],
 ];
 
@@ -82,16 +82,19 @@ export function closeSettings(): void {
   window.dispatchEvent(new Event("vak:settings-closed"));
 }
 
+/** Where an opened provider page was reached from, so Back and the sidebar follow the person. */
+let providerOrigin: Section = "providers";
+
 function nav(): void {
   const list = $<HTMLElement>("settings-nav-list");
   list.replaceChildren();
   let heading: string | undefined;
   for (const [id, label, glyph, sub] of NAV) {
-    if (sub && sub !== heading) list.append(el("div", { className: "nav-group", textContent: sub }));
+    if (sub !== heading) list.append(sub ? el("div", { className: "nav-group", textContent: sub }) : el("div", { className: "nav-gap" }));
     heading = sub;
     const soon = id.startsWith("channel:") && COMING[id.slice(8)];
-    const current = id === section || (id === "integrations" && section.startsWith("integration")) || (id === "providers" && section.startsWith("voice:"));
-    const b = el("button", { type: "button", className: `nav-item${sub ? " sub" : ""}`, "aria-current": String(current) }, el("span", { className: "nav-label" }, icon(glyph, 16), label), soon ? el("span", { className: "soon", textContent: "soon" }) : null);
+    const current = id === section || (id === "integrations" && section.startsWith("integration")) || (id === providerOrigin && section.startsWith("voice:"));
+    const b = el("button", { type: "button", className: "nav-item", "aria-current": String(current) }, el("span", { className: "nav-label" }, icon(glyph, 16), label), soon ? el("span", { className: "soon", textContent: "soon" }) : null);
     b.addEventListener("click", () => void show(id));
     list.append(b);
   }
@@ -101,6 +104,8 @@ async function show(to: Section, arg?: string): Promise<void> {
   disposeMediaPage();
   disposeFinops();
   clearInterval(timer);
+  if (to.startsWith("voice:") && arg) providerOrigin = arg as Section;
+  else if (!to.startsWith("voice:")) providerOrigin = "providers";
   section = to;
   prefs.set("settings:section", to);
   nav();
@@ -117,7 +122,7 @@ async function show(to: Section, arg?: string): Promise<void> {
       integrations: async () => marketplace((id) => void show(`integration:${id}`), () => void show("integrations:add")),
       skills: () => skillsPage(arg, () => void show("sandbox")),
       sandbox: async () => sandboxPage(() => void show("integration:sandbox-execution"), () => void show("skills", "sandbox")),
-      voice: () => voiceSettingsPage((id) => void show(`voice:${id}`)),
+      voice: () => voiceSettingsPage((id) => void show(`voice:${id}`, "voice")),
       "integrations:add": async () => addOwnPage(() => void show("integrations"), (id) => void show(`integration:${id}`)),
       models: () => modelsPage(arg),
       providers: providersPage,
@@ -138,7 +143,7 @@ async function show(to: Section, arg?: string): Promise<void> {
       about: aboutPage,
     };
     const voiceId = to.startsWith("voice:") ? to.slice("voice:".length) : undefined;
-    const parts = voiceId ? await voicePage(voiceId, settings, () => void show("providers"), () => void show(to), () => void show("voice")) : integration ? await integrationPage(integration, () => void show("integrations"), () => void show(to)) : await (render[to] ?? render.models!)();
+    const parts = voiceId ? await voicePage(voiceId, settings, { label: providerOrigin === "voice" ? "Voice" : "All providers", go: () => void show(providerOrigin) }, () => void show(to, providerOrigin), () => void show("voice")) : integration ? await integrationPage(integration, () => void show("integrations"), () => void show(to)) : await (render[to] ?? render.models!)();
     if (section !== to) return;
     content().replaceChildren(...parts);
     content().scrollTop = 0;

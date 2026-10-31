@@ -34,6 +34,7 @@ mod sandbox;
 mod servers;
 mod private_store;
 mod vault;
+mod voice;
 // The native control actor and store start with an empty execution profile.
 // No workload class is routed through them until its measured profile and
 // mediated execution cutover are ready.

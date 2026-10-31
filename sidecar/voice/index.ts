@@ -7,13 +7,15 @@ import { json, readJson } from "@vak/host";
 import type { ProviderEntry } from "@vak/providers";
 import { cleanDictationByModel, resolveByModel } from "./resolve.ts";
 import { installVoicePack, MAX_RECORDING_BYTES, speak, SpeechError, transcribe, voiceProviders } from "./speech.ts";
+import type { VoiceTransport } from "./transport.ts";
 
 export { VOICE_KEYS } from "./speech.ts";
+export { directVoice, type VoiceTransport } from "./transport.ts";
 
 export type Route = (req: HostRequest, res: HostResponse, url: URL) => Promise<boolean>;
 
 /** Voice: the providers, installing a listed local voice pack, one sentence-sized piece of audio, and dictation. */
-export function voiceRoutes(voiceDir: string, log: (line: string) => void, providers: () => ProviderEntry[] = () => []): Route {
+export function voiceRoutes(voice: VoiceTransport, log: (line: string) => void, providers: () => ProviderEntry[] = () => []): Route {
   return async (req, res, url) => {
     if (url.pathname === "/api/voice/resolve" && req.method === "POST") {
       const abort = new AbortController();
@@ -47,13 +49,13 @@ export function voiceRoutes(voiceDir: string, log: (line: string) => void, provi
       return true;
     }
     if (url.pathname === "/api/voice" && req.method === "GET") {
-      json(res, 200, await voiceProviders(process.env, fetch, voiceDir));
+      json(res, 200, await voiceProviders(voice, process.env));
       return true;
     }
     if (url.pathname === "/api/voice/install" && req.method === "POST") {
       try {
         const body = await readJson(req);
-        await installVoicePack(String(body.provider ?? ""), String(body.pack ?? ""), process.env, voiceDir);
+        await installVoicePack(String(body.provider ?? ""), String(body.pack ?? ""), voice, process.env);
         json(res, 200, { ok: true });
       } catch (err) {
         json(res, err instanceof SpeechError ? err.status : 500, { error: (err as Error).message });
@@ -74,7 +76,7 @@ export function voiceRoutes(voiceDir: string, log: (line: string) => void, provi
       res.on("close", () => abort.abort());
       try {
         const body = JSON.parse(raw || "{}") as Record<string, unknown>;
-        const text = await transcribe({ provider: String(body.provider), model: String(body.model), language: typeof body.language === "string" ? body.language : undefined, audio: body.audio as string }, process.env, fetch, abort.signal, voiceDir);
+        const text = await transcribe({ provider: String(body.provider), model: String(body.model), language: typeof body.language === "string" ? body.language : undefined, audio: body.audio as string }, voice, process.env, abort.signal);
         json(res, 200, { text });
       } catch (err) {
         if (abort.signal.aborted) return true;
@@ -88,7 +90,7 @@ export function voiceRoutes(voiceDir: string, log: (line: string) => void, provi
     const abort = new AbortController();
     res.on("close", () => abort.abort());
     try {
-      const audio = await speak({ provider: body.provider, model: body.model, voice: body.voice, text: body.text, options: body.options, language: body.language }, process.env, fetch, abort.signal);
+      const audio = await speak({ provider: body.provider, model: body.model, voice: body.voice, text: body.text, options: body.options, language: body.language }, voice, process.env, abort.signal);
       res.writeHead(200, { "content-type": "audio/wav", "content-length": audio.length, "cache-control": "no-store" });
       res.end(audio);
     } catch (err) {

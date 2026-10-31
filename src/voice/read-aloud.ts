@@ -16,7 +16,7 @@ export interface SttModel { id: string; label: string; languages?: string[] }
 export interface VoicePack { id: string; label: string; size: string; license: string; installed: boolean; languages?: string[] }
 export interface VoiceProvider {
   id: string; label: string; publisher: string; summary: string; description: string; icon: string;
-  local: boolean; cost: string; keyVar?: string; available: boolean; reason?: string; models: VoiceModel[]; packs?: VoicePack[]; stt?: SttModel[]; transcribes: boolean;
+  local: boolean; cost: string; keyVar?: string; available: boolean; reason?: string; models: VoiceModel[]; packs?: VoicePack[]; stt?: SttModel[]; transcribes: boolean; getModel?: { catalog: string; example: string };
 }
 
 /** `options`: values for the model's declared options (style, stability…). */

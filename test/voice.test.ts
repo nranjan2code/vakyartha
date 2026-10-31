@@ -4,7 +4,8 @@ import { SETTINGS } from "../sidecar/settings.ts";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { installVoicePack, MAX_SPEECH_CHARS, pullOllamaPack, speak, SpeechError, transcribe, voiceProviders, wav } from "../sidecar/voice/speech.ts";
+import { installVoicePack, MAX_SPEECH_CHARS, speak, SpeechError, transcribe, voiceProviders, wav } from "../sidecar/voice/speech.ts";
+import { directVoice } from "../sidecar/voice/transport.ts";
 import { WHISTLE_PACK, whistleDir, whistleSupported } from "../sidecar/voice/whistle.ts";
 import { dictationLanguage, dictationPrefs, downsample, mergeResults, wav16k } from "../src/voice/dictation.ts";
 import { voiceMaster } from "../src/voice/master.ts";
@@ -127,29 +128,27 @@ test("Ollama lists installed speech models with their voices, default first", as
     "/api/tags": () => Response.json({ models: [{ name: "phonon:latest", capabilities: ["speech"] }, { name: "qwen3.5:4b-mlx", capabilities: ["completion"] }] }),
     "/api/show": () => Response.json({ voices: ["Zoey", "default", "Easton"] }),
   });
-  const [ollama, , openai, gemini, eleven] = await voiceProviders({}, f);
+  const [ollama, , openai, gemini, eleven] = await voiceProviders(directVoice({}, f), {});
   assert.equal(ollama!.available, true);
   assert.deepEqual(ollama!.models.map((m) => m.id), ["phonon:latest"]);
-  assert.deepEqual(ollama!.models[0]!.languages, ["en"]);
-  assert.deepEqual(ollama!.packs!.find((p) => p.id === "phonon:multilingual")!.languages, ["en", "fr", "de", "es", "pt"]);
   assert.deepEqual(ollama!.models[0]!.voices.map((v) => v.id), ["default", "Zoey", "Easton"]);
-  assert.equal(ollama!.packs!.find((p) => p.id === "phonon:latest")!.installed, true);
-  assert.equal(ollama!.packs!.find((p) => p.id === "phonon:fr")!.installed, false);
+  assert.equal(ollama!.packs, undefined);
+  assert.match(ollama!.getModel!.catalog, /^https:\/\//);
   for (const p of [openai, gemini, eleven]) assert.equal(p!.available, false);
   assert.match(openai!.reason!, /API key/);
 });
 
 test("Ollama without a speech model, or not running, says what to do", async () => {
-  const none = await voiceProviders({}, fake({ "/api/tags": () => Response.json({ models: [] }) }).f);
-  assert.match(none[0]!.reason!, /voice pack/);
-  const down = await voiceProviders({}, fake({}).f);
+  const none = await voiceProviders(directVoice({}, fake({ "/api/tags": () => Response.json({ models: [] }) }).f), {});
+  assert.match(none[0]!.reason!, /Get one below/);
+  const down = await voiceProviders(directVoice({}, fake({}).f), {});
   assert.match(down[0]!.reason!, /not running/);
   assert.equal(down[0]!.available, false);
 });
 
 test("hosted providers become available with a key; ElevenLabs lists the library's voices", async () => {
   const { f, calls } = fake({ "/api/tags": () => Response.json({ models: [] }), "api.elevenlabs.io/v1/voices": () => Response.json({ voices: [{ voice_id: "abc", name: "Rachel" }] }), "/v1beta/models?": () => Response.json({ models: [] }) });
-  const list = await voiceProviders({ OPENAI_API_KEY: "k", GEMINI_API_KEY: "k", ELEVENLABS_API_KEY: "e" }, f);
+  const list = await voiceProviders(directVoice({ OPENAI_API_KEY: "k", GEMINI_API_KEY: "k", ELEVENLABS_API_KEY: "e" }, f), { OPENAI_API_KEY: "k", GEMINI_API_KEY: "k", ELEVENLABS_API_KEY: "e" });
   assert.deepEqual(list.map((p) => p.available), [false, false, true, true, true]);
   assert.deepEqual(list[4]!.models[0]!.voices, [{ id: "abc", name: "Rachel" }]);
   assert.equal((calls.find((c) => c.url.includes("elevenlabs"))!.init!.headers as Record<string, string>)["xi-api-key"], "e");
@@ -163,16 +162,16 @@ test("each provider is asked for raw PCM and gets a WAV back", async () => {
     "generativelanguage.googleapis.com": () => Response.json({ candidates: [{ content: { parts: [{ inlineData: { data: Buffer.from([1, 0]).toString("base64") } }] } }] }),
   });
   const env = { OPENAI_API_KEY: "o", GEMINI_API_KEY: "g", ELEVENLABS_API_KEY: "e" };
-  const ollama = await speak({ provider: "ollama", model: "phonon:latest", voice: "Zoey", text: "Hi." }, env, f);
+  const ollama = await speak({ provider: "ollama", model: "phonon:latest", voice: "Zoey", text: "Hi." }, directVoice(env, f), env);
   assert.equal(ollama.length, 48);
   assert.deepEqual(body(calls[0]!), { model: "phonon:latest", input: "Hi.", voice: "Zoey", response_format: "pcm" });
-  await speak({ provider: "openai", model: "tts-1", voice: "nova", text: "Hi." }, env, f);
+  await speak({ provider: "openai", model: "tts-1", voice: "nova", text: "Hi." }, directVoice(env, f), env);
   assert.equal((calls[1]!.init!.headers as Record<string, string>).authorization, "Bearer o");
   assert.equal(body(calls[1]!).response_format, "pcm");
-  const g = await speak({ provider: "gemini", model: "gemini-2.5-flash-preview-tts", voice: "Kore", text: "Hi." }, env, f);
+  const g = await speak({ provider: "gemini", model: "gemini-2.5-flash-preview-tts", voice: "Kore", text: "Hi." }, directVoice(env, f), env);
   assert.equal(g.length, 46);
   assert.equal((calls[2]!.init!.headers as Record<string, string>)["x-goog-api-key"], "g");
-  await speak({ provider: "elevenlabs", model: "eleven_flash_v2_5", voice: "abc", text: "Hi." }, env, f);
+  await speak({ provider: "elevenlabs", model: "eleven_flash_v2_5", voice: "abc", text: "Hi." }, directVoice(env, f), env);
   assert.match(calls[3]!.url, /output_format=pcm_24000/);
 });
 
@@ -184,21 +183,25 @@ test("speech requests are validated before anything is sent", async () => {
     { provider: "ollama", model: "m", voice: "v", text: " " },
     { provider: "ollama", model: "m", voice: "v", text: "x".repeat(MAX_SPEECH_CHARS + 1) },
   ];
-  for (const r of bad) await assert.rejects(speak(r, {}, f), SpeechError);
-  await assert.rejects(speak({ provider: "openai", model: "tts-1", voice: "nova", text: "hi" }, {}, f), /API key/);
+  for (const r of bad) await assert.rejects(speak(r, directVoice({}, f), {}), SpeechError);
+  await assert.rejects(speak({ provider: "openai", model: "tts-1", voice: "nova", text: "hi" }, directVoice({}, f), {}), /API key/);
   assert.equal(calls.length, 0);
 });
 
 test("a provider's error message reaches the person", async () => {
   const { f } = fake({ "/v1/audio/speech": () => Response.json({ error: { message: 'voice "x" not found' } }, { status: 400 }) });
-  await assert.rejects(speak({ provider: "ollama", model: "phonon", voice: "x", text: "hi" }, {}, f), /Ollama: voice "x" not found/);
+  await assert.rejects(speak({ provider: "ollama", model: "phonon", voice: "x", text: "hi" }, directVoice({}, f), {}), /Ollama: voice "x" not found/);
 });
 
-test("only listed voice packs can be pulled", async () => {
-  const { f, calls } = fake({ "/api/pull": () => Response.json({ status: "success" }) });
-  await assert.rejects(pullOllamaPack("evil:latest", {}, f), /not a listed/);
-  await pullOllamaPack("phonon:fr", {}, f);
+test("Ollama models are pulled by catalog name, and kept for voice only with speech or audio", async () => {
+  const { f, calls } = fake({
+    "/api/pull": () => Response.json({ status: "success" }),
+    "/api/tags": () => Response.json({ models: [{ name: "phonon:fr", capabilities: ["speech"] }, { name: "lfm3:latest", capabilities: ["completion"] }] }),
+  });
+  for (const bad of ["https://evil.example/x", "a/b/c", "../x", ""]) await assert.rejects(installVoicePack("ollama", bad, directVoice({}, f), {}), /model name/);
+  await installVoicePack("ollama", " Phonon:fr ", directVoice({}, f), {});
   assert.deepEqual(body(calls[0]!), { model: "phonon:fr", stream: false });
+  await assert.rejects(installVoicePack("ollama", "lfm3", directVoice({}, f), {}), /no speech or audio/);
 });
 
 test("the ElevenLabs key is a stored secret", () => {
@@ -216,20 +219,20 @@ test("style and sound options reach each provider in its own form", async () => 
   });
   const env = { OPENAI_API_KEY: "o", GEMINI_API_KEY: "g", ELEVENLABS_API_KEY: "e" };
   const options = { style: "Calm narrator", stability: 0.3, bogus_key: "x", similarity: 7 };
-  await speak({ provider: "ollama", model: "phonon", voice: "Zoey", text: "Hi.", options }, env, f);
+  await speak({ provider: "ollama", model: "phonon", voice: "Zoey", text: "Hi.", options }, directVoice(env, f), env);
   assert.equal("instructions" in body(calls[0]!), false);
-  await speak({ provider: "openai", model: "gpt-4o-mini-tts", voice: "nova", text: "Hi.", options }, env, f);
+  await speak({ provider: "openai", model: "gpt-4o-mini-tts", voice: "nova", text: "Hi.", options }, directVoice(env, f), env);
   assert.equal(body(calls[1]!).instructions, "Calm narrator");
-  await speak({ provider: "gemini", model: "gemini-2.5-flash-preview-tts", voice: "Kore", text: "Hi.", options }, env, f);
+  await speak({ provider: "gemini", model: "gemini-2.5-flash-preview-tts", voice: "Kore", text: "Hi.", options }, directVoice(env, f), env);
   assert.equal((body(calls[2]!) as { contents: { parts: { text: string }[] }[] }).contents[0]!.parts[0]!.text, "Calm narrator: Hi.");
-  await speak({ provider: "elevenlabs", model: "eleven_flash_v2_5", voice: "abc", text: "Hi.", options }, env, f);
+  await speak({ provider: "elevenlabs", model: "eleven_flash_v2_5", voice: "abc", text: "Hi.", options }, directVoice(env, f), env);
   // A text style is not ElevenLabs' numeric style, and an out-of-range similarity is dropped.
   assert.deepEqual(body(calls[3]!).voice_settings, { stability: 0.3, similarity_boost: 0.75, style: 0 });
-  await assert.rejects(speak({ provider: "openai", model: "tts-1", voice: "nova", text: "Hi.", options: { style: "a\nb" } }, env, f), /one short line/);
+  await assert.rejects(speak({ provider: "openai", model: "tts-1", voice: "nova", text: "Hi.", options: { style: "a\nb" } }, directVoice(env, f), env), /one short line/);
 });
 
 test("models declare the controls they accept", async () => {
-  const list = await voiceProviders({ OPENAI_API_KEY: "o" }, fake({ "/api/tags": () => Response.json({ models: [] }) }).f);
+  const list = await voiceProviders(directVoice({ OPENAI_API_KEY: "o" }, fake({ "/api/tags": () => Response.json({ models: [] }) }).f), { OPENAI_API_KEY: "o" });
   const openai = list.find((p) => p.id === "openai")!;
   assert.deepEqual(openai.models.find((m) => m.id === "gpt-4o-mini-tts")!.options!.map((o) => o.id), ["style"]);
   assert.equal(openai.models.find((m) => m.id === "tts-1-hd")!.options, undefined);
@@ -251,12 +254,12 @@ const GEMINI_MODELS = {
 
 test("Gemini's speech and transcription models come from its API, newest first", async () => {
   const { f } = fake({ "/api/tags": () => Response.json({ models: [] }), "/v1beta/models?": () => Response.json(GEMINI_MODELS) });
-  const g = (await voiceProviders({ GEMINI_API_KEY: "g" }, f)).find((p) => p.id === "gemini")!;
+  const g = (await voiceProviders(directVoice({ GEMINI_API_KEY: "g" }, f), { GEMINI_API_KEY: "g" })).find((p) => p.id === "gemini")!;
   assert.deepEqual(g.models.map((m) => m.id), ["gemini-3.8-flash-tts", "gemini-2.5-flash-preview-tts"]);
   assert.deepEqual(g.stt!.map((m) => m.id), ["gemini-3.5-transcribe", "gemini-flash-latest"]);
-  const keyless = (await voiceProviders({}, f)).find((p) => p.id === "gemini")!;
+  const keyless = (await voiceProviders(directVoice({}, f), {})).find((p) => p.id === "gemini")!;
   assert.ok(keyless.stt!.length > 0);
-  assert.deepEqual((await voiceProviders({}, f)).find((p) => p.id === "ollama")!.stt, []);
+  assert.deepEqual((await voiceProviders(directVoice({}, f), {})).find((p) => p.id === "ollama")!.stt, []);
 });
 
 test("dictation reaches each provider in its own form", async () => {
@@ -268,21 +271,21 @@ test("dictation reaches each provider in its own form", async () => {
     "gemini-flash-latest:generateContent": () => Response.json({ candidates: [{ content: { parts: [{ text: "general" }] } }] }),
   });
   const env = { OPENAI_API_KEY: "o", GEMINI_API_KEY: "g", ELEVENLABS_API_KEY: "e" };
-  assert.equal(await transcribe({ provider: "openai", model: "gpt-4o-mini-transcribe", language: "en-US", audio: recording }, env, f), "book a table");
+  assert.equal(await transcribe({ provider: "openai", model: "gpt-4o-mini-transcribe", language: "en-US", audio: recording }, directVoice(env, f), env), "book a table");
   const form = calls[0]!.init!.body as FormData;
   assert.equal(form.get("model"), "gpt-4o-mini-transcribe");
   assert.equal(form.get("language"), "en");
   assert.equal(form.get("prompt"), "American English spelling.");
   assert.equal((form.get("file") as File).type, "audio/wav");
-  assert.equal(await transcribe({ provider: "elevenlabs", model: "scribe_v1", audio: recording }, env, f), "hello");
+  assert.equal(await transcribe({ provider: "elevenlabs", model: "scribe_v1", audio: recording }, directVoice(env, f), env), "hello");
   assert.equal((calls[1]!.init!.body as FormData).get("model_id"), "scribe_v1");
-  assert.equal(await transcribe({ provider: "gemini", model: "gemini-3.5-transcribe", audio: recording }, env, f), "dedicated");
+  assert.equal(await transcribe({ provider: "gemini", model: "gemini-3.5-transcribe", audio: recording }, directVoice(env, f), env), "dedicated");
   assert.equal((body(calls[2]!) as { contents: { parts: unknown[] }[] }).contents[0]!.parts.length, 1);
-  assert.equal(await transcribe({ provider: "gemini", model: "gemini-flash-latest", audio: recording }, env, f), "general");
+  assert.equal(await transcribe({ provider: "gemini", model: "gemini-flash-latest", audio: recording }, directVoice(env, f), env), "general");
   assert.equal((body(calls[3]!) as { contents: { parts: unknown[] }[] }).contents[0]!.parts.length, 2);
-  await transcribe({ provider: "gemini", model: "gemini-flash-latest", language: "en-GB", audio: recording }, env, f);
+  await transcribe({ provider: "gemini", model: "gemini-flash-latest", language: "en-GB", audio: recording }, directVoice(env, f), env);
   assert.match(JSON.stringify(body(calls[4]!)), /in British English spelling \(en-GB\)/);
-  await transcribe({ provider: "openai", model: "whisper-1", language: "zh-CN", audio: recording }, env, f);
+  await transcribe({ provider: "openai", model: "whisper-1", language: "zh-CN", audio: recording }, directVoice(env, f), env);
   assert.equal((calls[5]!.init!.body as FormData).get("language"), "zh");
   assert.equal((calls[5]!.init!.body as FormData).get("prompt"), "Simplified Chinese characters.");
 });
@@ -290,22 +293,22 @@ test("dictation reaches each provider in its own form", async () => {
 test("read aloud tells a voice the language where the model takes one", async () => {
   const { f, calls } = fake({ "/v1/audio/speech": pcm, ":generateContent": () => Response.json({ candidates: [{ content: { parts: [{ inlineData: { data: "AAA=" } }] } }] }), "api.elevenlabs.io": pcm });
   const env = { OPENAI_API_KEY: "o", GEMINI_API_KEY: "g", ELEVENLABS_API_KEY: "e" };
-  await speak({ provider: "openai", model: "gpt-4o-mini-tts", voice: "nova", text: "Watch it live", language: "en-GB", options: { style: "Calm" } }, env, f);
+  await speak({ provider: "openai", model: "gpt-4o-mini-tts", voice: "nova", text: "Watch it live", language: "en-GB", options: { style: "Calm" } }, directVoice(env, f), env);
   assert.equal(body(calls[0]!).instructions, "Calm Speak British English.");
-  await speak({ provider: "openai", model: "tts-1", voice: "nova", text: "hi", language: "en-GB" }, env, f);
+  await speak({ provider: "openai", model: "tts-1", voice: "nova", text: "hi", language: "en-GB" }, directVoice(env, f), env);
   assert.equal(body(calls[1]!).instructions, undefined);
-  await speak({ provider: "gemini", model: "gemini-2.5-flash-preview-tts", voice: "Kore", text: "hi", language: "en-IN" }, env, f);
+  await speak({ provider: "gemini", model: "gemini-2.5-flash-preview-tts", voice: "Kore", text: "hi", language: "en-IN" }, directVoice(env, f), env);
   assert.equal((body(calls[2]!) as { generationConfig: { speechConfig: { languageCode?: string } } }).generationConfig.speechConfig.languageCode, "en-IN");
-  await speak({ provider: "elevenlabs", model: "eleven_flash_v2_5", voice: "abc", text: "hi", language: "fr-FR" }, env, f);
+  await speak({ provider: "elevenlabs", model: "eleven_flash_v2_5", voice: "abc", text: "hi", language: "fr-FR" }, directVoice(env, f), env);
   assert.equal(body(calls[3]!).language_code, "fr");
-  await assert.rejects(speak({ provider: "openai", model: "tts-1", voice: "nova", text: "hi", language: "british!" }, env, f), /invalid language/);
+  await assert.rejects(speak({ provider: "openai", model: "tts-1", voice: "nova", text: "hi", language: "british!" }, directVoice(env, f), env), /invalid language/);
 });
 
 const appleSilicon = { skip: !whistleSupported() && "Whistle runs on Apple Silicon Macs" };
 
 test("Whistle only listens, and asks for its pack before dictation can use it", appleSilicon, async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "vak-voice-"));
-  const w = (await voiceProviders({}, fake({}).f, dir)).find((p) => p.id === "whistle")!;
+  const w = (await voiceProviders(directVoice({}, fake({}).f, dir), {})).find((p) => p.id === "whistle")!;
   assert.equal(w.local, true);
   assert.equal(w.transcribes, true);
   assert.equal(w.available, false);
@@ -313,15 +316,15 @@ test("Whistle only listens, and asks for its pack before dictation can use it", 
   assert.deepEqual(w.models, []);
   assert.deepEqual(w.packs!.map((p) => [p.id, p.installed]), [[WHISTLE_PACK.id, false]]);
   assert.match(w.reason!, /Install the Whistle pack/);
-  await assert.rejects(speak({ provider: "whistle", model: "whistle", voice: "x", text: "hi" }, {}), /does not read aloud/);
+  await assert.rejects(speak({ provider: "whistle", model: "whistle", voice: "x", text: "hi" }, directVoice({}), {}), /does not read aloud/);
 });
 
 test("the Whistle pack installs only its pinned files, checked by SHA-256", appleSilicon, async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "vak-voice-"));
   const { f, calls } = fake({ "huggingface.co": () => new Response(new Uint8Array(WHISTLE_PACK.files[0]!.bytes)) });
-  await assert.rejects(installVoicePack("whistle", "whistle@latest", {}, dir, f), /not a listed/);
-  await assert.rejects(installVoicePack("openai", "x", {}, dir, f), /no packs/);
-  await assert.rejects(installVoicePack("whistle", WHISTLE_PACK.id, {}, dir, f), /does not match its pinned checksum/);
+  await assert.rejects(installVoicePack("whistle", "whistle@latest", directVoice({}, f, dir), {}), /not a listed/);
+  await assert.rejects(installVoicePack("openai", "x", directVoice({}, f, dir), {}), /nothing to download/);
+  await assert.rejects(installVoicePack("whistle", WHISTLE_PACK.id, directVoice({}, f, dir), {}), /does not match its pinned checksum/);
   assert.ok(calls.every((c) => /^https:\/\/huggingface\.co\/Cactus-Compute\/[\w]+\/resolve\/[0-9a-f]{40}\//.test(c.url)));
   assert.equal(existsSync(whistleDir(dir)), false);
   assert.equal(existsSync(`${whistleDir(dir)}.part`), false);
@@ -330,17 +333,17 @@ test("the Whistle pack installs only its pinned files, checked by SHA-256", appl
 test("Whistle refuses a language it was not trained on, and a missing pack, before running", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "vak-voice-"));
   const ok = Buffer.from(wav16k(new Int16Array(10))).toString("base64");
-  await assert.rejects(transcribe({ provider: "whistle", model: "whistle", language: "hi-IN", audio: ok }, {}, fake({}).f, undefined, dir), /does not transcribe this language/);
-  await assert.rejects(transcribe({ provider: "whistle", model: "whistle", language: "en-IN", audio: ok }, {}, fake({}).f, undefined, dir), /Install the Whistle pack/);
+  await assert.rejects(transcribe({ provider: "whistle", model: "whistle", language: "hi-IN", audio: ok }, directVoice({}, fake({}).f, dir), {}), /does not transcribe this language/);
+  await assert.rejects(transcribe({ provider: "whistle", model: "whistle", language: "en-IN", audio: ok }, directVoice({}, fake({}).f, dir), {}), /Install the Whistle pack/);
 });
 
 test("dictation input is checked before anything is sent", async () => {
   const { f, calls } = fake({});
   const ok = Buffer.from(wav16k(new Int16Array(10))).toString("base64");
-  await assert.rejects(transcribe({ provider: "openai", model: "a b", audio: ok }, {}, f), /invalid transcription model/);
-  await assert.rejects(transcribe({ provider: "openai", model: "whisper-1", language: "english!", audio: ok }, {}, f), /invalid language/);
-  await assert.rejects(transcribe({ provider: "openai", model: "whisper-1", audio: Buffer.from("not audio at all, really").toString("base64") }, {}, f), /not a WAV/);
-  await assert.rejects(transcribe({ provider: "openai", model: "whisper-1", audio: ok }, {}, f), /API key/);
+  await assert.rejects(transcribe({ provider: "openai", model: "a b", audio: ok }, directVoice({}, f), {}), /invalid transcription model/);
+  await assert.rejects(transcribe({ provider: "openai", model: "whisper-1", language: "english!", audio: ok }, directVoice({}, f), {}), /invalid language/);
+  await assert.rejects(transcribe({ provider: "openai", model: "whisper-1", audio: Buffer.from("not audio at all, really").toString("base64") }, directVoice({}, f), {}), /not a WAV/);
+  await assert.rejects(transcribe({ provider: "openai", model: "whisper-1", audio: ok }, directVoice({}, f), {}), /API key/);
   assert.equal(calls.length, 0);
 });
 
@@ -353,7 +356,7 @@ test("Ollama discovers audio input independently of speech output and uses archi
     ] }),
     "/api/show": () => Response.json({ details: { family: "lfm3_omni" }, voices: ["default", "female-american-english"] }),
   });
-  const p = (await voiceProviders({}, f))[0]!;
+  const p = (await voiceProviders(directVoice({}, f), {}))[0]!;
   assert.equal(p.available, true);
   assert.equal(p.transcribes, true);
   assert.deepEqual(p.models.map((m) => m.id), ["my-omni:latest"]);
@@ -361,10 +364,10 @@ test("Ollama discovers audio input independently of speech output and uses archi
   assert.equal(p.stt![0]!.languages!.length, 18);
   assert.ok(!p.stt![0]!.languages!.includes("hi"));
   assert.deepEqual(p.models[0]!.voices.map((v) => v.id), ["default", "female-american-english"]);
-  const onlyListener = (await voiceProviders({}, fake({
+  const onlyListener = (await voiceProviders(directVoice({}, fake({
     "/api/tags": () => Response.json({ models: [{ name: "listener:latest", capabilities: ["audio"] }] }),
     "/api/show": () => Response.json({}),
-  }).f))[0]!;
+  }).f), {}))[0]!;
   assert.equal(onlyListener.available, true);
   assert.deepEqual(onlyListener.models, []);
   assert.deepEqual(onlyListener.stt, [{ id: "listener:latest", label: "listener", languages: undefined }]);
@@ -377,7 +380,7 @@ test("Ollama dictation uploads WAV to the selected installed audio model and pre
     "/v1/audio/transcriptions": () => Response.json({ text: " Do not delete any files. " }),
   });
   const audio = Buffer.from(wav16k(new Int16Array(16000))).toString("base64");
-  assert.equal(await transcribe({ provider: "ollama", model: "lfm3-omni", language: "en-GB", audio }, {}, f), "Do not delete any files.");
+  assert.equal(await transcribe({ provider: "ollama", model: "lfm3-omni", language: "en-GB", audio }, directVoice({}, f), {}), "Do not delete any files.");
   const call = calls.find((c) => c.url.endsWith("/v1/audio/transcriptions"))!;
   const form = call.init!.body as FormData;
   assert.equal(form.get("model"), "lfm3-omni:latest");
@@ -387,19 +390,19 @@ test("Ollama dictation uploads WAV to the selected installed audio model and pre
   assert.equal((call.init!.headers as Record<string, string>).authorization, undefined);
   const denied = fake({ "/api/tags": () => Response.json({ models: [{ name: "phonon:latest", capabilities: ["speech"] }] }) });
   for (const model of ["phonon", "missing:cloud"]) {
-    await assert.rejects(transcribe({ provider: "ollama", model, audio }, {}, denied.f), /installed Ollama model with audio input/);
+    await assert.rejects(transcribe({ provider: "ollama", model, audio }, directVoice({}, denied.f), {}), /installed Ollama model with audio input/);
   }
   assert.ok(denied.calls.every((c) => c.url.endsWith("/api/tags")));
   const remote = fake({
     "/api/tags": () => Response.json({ models: [{ name: "remote-alias:latest", capabilities: ["audio"] }] }),
     "/api/show": () => Response.json({ remote_host: "https://example.invalid", remote_model: "remote" }),
   });
-  await assert.rejects(transcribe({ provider: "ollama", model: "remote-alias", audio }, {}, remote.f), /cloud-proxied/);
+  await assert.rejects(transcribe({ provider: "ollama", model: "remote-alias", audio }, directVoice({}, remote.f), {}), /cloud-proxied/);
   assert.ok(!remote.calls.some((c) => c.url.endsWith("/v1/audio/transcriptions")));
   const controller = new AbortController(); controller.abort();
-  await assert.rejects(transcribe({ provider: "ollama", model: "lfm3-omni", audio }, {}, (async (_url, init) => {
+  await assert.rejects(transcribe({ provider: "ollama", model: "lfm3-omni", audio }, directVoice({}, (async (_url, init) => {
     init!.signal!.throwIfAborted(); throw new Error("unexpected request");
-  }) as typeof fetch, controller.signal), { name: "AbortError" });
+  }) as typeof fetch), {}, controller.signal), { name: "AbortError" });
 });
 
 test("recordings are downsampled to 16 kHz mono WAV", () => {

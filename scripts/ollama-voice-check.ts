@@ -3,7 +3,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { ollamaBase, speak, transcribe, voiceProviders } from "../sidecar/voice/speech.ts";
+import { speak, transcribe, voiceProviders } from "../sidecar/voice/speech.ts";
+import { directVoice, ollamaBase } from "../sidecar/voice/transport.ts";
 import { wav16k } from "../src/voice/dictation.ts";
 
 if (!process.argv.includes("--run-local")) throw new Error("Use --run-local to run free local inference.");
@@ -40,9 +41,9 @@ await check("metadata", async () => {
   const j = await r.json() as { capabilities?: string[]; voices?: string[]; details?: unknown; model_info?: unknown };
   return { status: r.status, capabilities: j.capabilities, voices: j.voices, details: j.details, model_info: j.model_info };
 });
-await check("app-discovery", async () => (await voiceProviders({}, localFetch)).find((p) => p.id === "ollama"));
+await check("app-discovery", async () => (await voiceProviders(directVoice({}, localFetch), {})).find((p) => p.id === "ollama"));
 await check("app-speech", async () => {
-  const audio = await speak({ provider: "ollama", model, voice: "default", text: cases[0]!.text }, {}, localFetch);
+  const audio = await speak({ provider: "ollama", model, voice: "default", text: cases[0]!.text }, directVoice({}, localFetch), {});
   writeFileSync(path.join(dir, "speech.wav"), audio);
   const v = new DataView(audio.buffer, audio.byteOffset, audio.byteLength);
   let peak = 0;
@@ -68,7 +69,7 @@ for (const c of [...cases, { id: "silence", text: "" }]) {
     return { status: r.status, body, pass: r.ok && typeof body.text === "string" && normal(body.text) === normal(c.text) };
   });
   await check(`app-transcription-${c.id}`, async () => {
-    const text = await transcribe({ provider: "ollama", model, language: "en", audio: audio.toString("base64") }, {}, localFetch);
+    const text = await transcribe({ provider: "ollama", model, language: "en", audio: audio.toString("base64") }, directVoice({}, localFetch), {});
     return { text, pass: normal(text) === normal(c.text) };
   });
 }

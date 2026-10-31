@@ -36,8 +36,12 @@ export function segmented<T extends string>(options: readonly (readonly [T, stri
   return box;
 }
 
-export function select(options: (readonly [string, string])[], value: string, onChange: (v: string) => void): HTMLSelectElement {
-  const s = el("select", {}, ...options.map(([v, t]) => el("option", { value: v, textContent: t })));
+/** An option, or a labelled group of options. */
+export type SelectOption = readonly [string, string] | { readonly label: string; readonly options: readonly (readonly [string, string])[] };
+
+export function select(options: readonly SelectOption[], value: string, onChange: (v: string) => void): HTMLSelectElement {
+  const option = ([v, t]: readonly [string, string]) => el("option", { value: v, textContent: t });
+  const s = el("select", {}, ...options.map((o) => "label" in o ? el("optgroup", { label: o.label }, ...o.options.map(option)) : option(o)));
   s.value = value;
   s.addEventListener("change", () => onChange(s.value));
   return s;

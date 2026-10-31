@@ -11,6 +11,7 @@ import type { BuiltinServer, CatalogEntry } from "@vak/mcp/client";
 import type { SurfaceSnapshot } from "@vak/core";
 import { MEDIA_KINDS, MEDIA_OPERATIONS, isMediaKind, mediaSelection, operationKind, type MediaAsset, type MediaJob, type MediaKind, type MediaModel, type MediaOperation, type MediaView } from "../../shared/media.ts";
 import { voiceProviders } from "../voice/speech.ts";
+import type { VoiceTransport } from "../voice/transport.ts";
 import { audio } from "./audio.ts";
 import { MEDIA_KEYS, MODELS, PROVIDERS, operations, providerViews } from "./catalog.ts";
 import { image } from "./image.ts";
@@ -27,7 +28,7 @@ const NO_PROMPT = new Set(["transcribe_audio", "isolate_audio", "reframe_video"]
 interface Snapshot { version: 1; assets: MediaAsset[]; jobs: MediaJob[] }
 type Config = { enabled: boolean; config: Record<string, unknown> };
 export interface MediaOptions {
-  dir: string; attachmentsDir: string; voiceDir: string;
+  dir: string; attachmentsDir: string; voice: VoiceTransport;
   config(kind: MediaKind): Config;
   env?: Record<string, string | undefined>; fetcher?: typeof fetch; download?: Download; pollMs?: number;
   publish?(job: MediaJob, assets: MediaAsset[], signal?: AbortSignal): Promise<string>;
@@ -87,7 +88,7 @@ export class Media {
     const staticModels = MODELS.filter((m) => m.operations.some((op) => operationKind(op) === kind));
     if (kind !== "audio") return staticModels;
     // Voice remains the canonical source for speech/transcription models and voices.
-    const voices = await voiceProviders(this.env(), this.opts.fetcher ?? fetch, this.opts.voiceDir);
+    const voices = await voiceProviders(this.opts.voice, this.env());
     const models = [...staticModels, ...voices.flatMap((p): MediaModel[] => [
       ...p.models.filter((m) => m.voices.length && !m.note?.startsWith("Deprecated")).map((m): MediaModel => ({ provider: p.id, model: m.id, label: m.label, operations: ["create_speech"], voices: m.voices, local: p.local })),
       ...(p.stt ?? []).filter((m) => (p.id !== "openai" || m.id === "gpt-transcribe") && (p.id !== "elevenlabs" || m.id === "scribe_v2")).map((m): MediaModel => ({ provider: p.id, model: m.id, label: m.label, operations: ["transcribe_audio"], local: p.local })),
@@ -256,7 +257,7 @@ export class Media {
     const job: MediaJob = { id: randomUUID(), kind, operation, selection: mediaSelection(req.chosen), created: new Date().toISOString(), state: "submitting", inputs: [args.input, args.mask, args.end_frame].filter((v): v is string => typeof v === "string"), assets: [], ...(this.sessions.getStore() ? { session: this.sessions.getStore() } : {}) };
     this.saved.jobs.push(job); this.persist();
     // This is bounded provider I/O, with no model loop or task dispatcher.
-    this.start(job, (ctx) => kind === "image" ? image(req, ctx) : kind === "audio" ? audio(req, ctx, this.opts.voiceDir) : video(req, ctx));
+    this.start(job, (ctx) => kind === "image" ? image(req, ctx) : kind === "audio" ? audio(req, ctx, this.opts.voice) : video(req, ctx));
     return structuredClone(job);
   }
   private start(job: MediaJob, run: (ctx: Context) => Promise<MediaResult>): void {
