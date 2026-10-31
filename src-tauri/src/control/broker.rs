@@ -28,6 +28,7 @@ pub(super) const MAX_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ModelApi {
     OllamaLocal,
+    LmStudio,
     OpenAi,
     Anthropic,
     Gemini,
@@ -41,6 +42,7 @@ pub(super) enum ModelApi {
     Fireworks,
     Moonshot,
     DashScope,
+    TypeSafe,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -53,7 +55,7 @@ pub(super) enum ModelOperation {
 }
 
 #[derive(Debug)]
-pub(super) enum BrokerError {
+pub(crate) enum BrokerError {
     InvalidEndpoint,
     UnsupportedOperation,
     UnapprovedDestination,
@@ -153,7 +155,7 @@ impl NativeHttpClient {
         if prepare_generation_body(permit, body)? != body {
             return Err(BrokerError::InvalidPayload);
         }
-        let client = if permit.provider == ModelApi::OllamaLocal {
+        let client = if permit.provider == ModelApi::OllamaLocal || permit.provider == ModelApi::LmStudio {
             async_client(None)?
         } else {
             let host = url.host_str().ok_or(BrokerError::InvalidEndpoint)?;
@@ -194,7 +196,7 @@ fn provider_post(
 
 fn credential_account(provider: ModelApi) -> Option<&'static str> {
     match provider {
-        ModelApi::OllamaLocal => None,
+        ModelApi::OllamaLocal | ModelApi::LmStudio => None,
         ModelApi::OpenAi => Some("OPENAI_API_KEY"),
         ModelApi::Anthropic => Some("ANTHROPIC_API_KEY"),
         ModelApi::Gemini => Some("GEMINI_API_KEY"),
@@ -208,6 +210,7 @@ fn credential_account(provider: ModelApi) -> Option<&'static str> {
         ModelApi::Fireworks => Some("FIREWORKS_API_KEY"),
         ModelApi::Moonshot => Some("MOONSHOT_API_KEY"),
         ModelApi::DashScope => Some("DASHSCOPE_API_KEY"),
+        ModelApi::TypeSafe => Some("TYPESAFE_API_KEY"),
     }
 }
 
@@ -217,7 +220,7 @@ fn provider_headers(
 ) -> Result<reqwest::header::HeaderMap, BrokerError> {
     use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
     let mut headers = HeaderMap::new();
-    if provider == ModelApi::OllamaLocal {
+    if provider == ModelApi::OllamaLocal || provider == ModelApi::LmStudio {
         return if credential.is_none() {
             Ok(headers)
         } else {
@@ -256,7 +259,7 @@ fn apply_provider_auth(
     Ok(request.headers(provider_headers(provider, Some(credential))?))
 }
 
-pub(super) fn async_client(
+pub(crate) fn async_client(
     resolution: Option<(&str, &[SocketAddr])>,
 ) -> Result<reqwest::Client, BrokerError> {
     let builder = reqwest::Client::builder()
@@ -294,7 +297,7 @@ fn build_client(resolution: Option<(&str, &[SocketAddr])>) -> Result<Client, Bro
     builder.build().map_err(|_| BrokerError::Transport)
 }
 
-fn resolve_public_addresses(host: &str) -> Result<Vec<SocketAddr>, BrokerError> {
+pub(crate) fn resolve_public_addresses(host: &str) -> Result<Vec<SocketAddr>, BrokerError> {
     let resolved = (host, 443)
         .to_socket_addrs()
         .map_err(|_| BrokerError::Transport)?;
@@ -716,6 +719,9 @@ pub(super) fn model_endpoint(provider: ModelApi, operation: ModelOperation) -> R
     if provider == ModelApi::OllamaLocal && operation == ModelOperation::OllamaChat {
         return validate_endpoint("http://127.0.0.1:11434/api/chat");
     }
+    if provider == ModelApi::LmStudio && operation == ModelOperation::ChatCompletions {
+        return validate_endpoint("http://127.0.0.1:1234/v1/chat/completions");
+    }
     let (host, path, allowed_query) = match (provider, operation) {
         (ModelApi::OpenAi, ModelOperation::Responses) => {
             ("api.openai.com", "/v1/responses".to_owned(), None)
@@ -769,6 +775,11 @@ pub(super) fn model_endpoint(provider: ModelApi, operation: ModelOperation) -> R
         (ModelApi::DashScope, ModelOperation::ChatCompletions) => (
             "dashscope-intl.aliyuncs.com",
             "/compatible-mode/v1/chat/completions".to_owned(),
+            None,
+        ),
+        (ModelApi::TypeSafe, ModelOperation::ChatCompletions) => (
+            "api.typesafe.ai",
+            "/v1/chat/completions".to_owned(),
             None,
         ),
         _ => return Err(BrokerError::UnsupportedOperation),
@@ -1020,10 +1031,12 @@ mod tests {
             (ModelApi::Fireworks, "FIREWORKS_API_KEY"),
             (ModelApi::Moonshot, "MOONSHOT_API_KEY"),
             (ModelApi::DashScope, "DASHSCOPE_API_KEY"),
+            (ModelApi::TypeSafe, "TYPESAFE_API_KEY"),
         ] {
             assert_eq!(credential_account(provider), Some(account));
         }
         assert_eq!(credential_account(ModelApi::OllamaLocal), None);
+        assert_eq!(credential_account(ModelApi::LmStudio), None);
 
         let client = Client::new();
         let request = apply_provider_auth(

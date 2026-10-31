@@ -8,8 +8,9 @@ pub(crate) fn command(
     node: &Path,
     resources: &Path,
     data: &Path,
+    vault_accounts: Option<&str>,
 ) -> Result<Command, String> {
-    command_inner(helper, node, resources, data, Role::App)
+    command_inner(helper, node, resources, data, Role::App, vault_accounts)
 }
 
 #[cfg_attr(
@@ -26,7 +27,7 @@ pub(crate) fn command_for_invocation(
     data: &Path,
     invocation: &crate::control::worker_completion::WorkerInvocation,
 ) -> Result<Command, String> {
-    command_inner(helper, node, resources, data, Role::Reasoner(invocation))
+    command_inner(helper, node, resources, data, Role::Reasoner(invocation), None)
 }
 
 pub(crate) fn command_for_canonical(
@@ -42,6 +43,7 @@ pub(crate) fn command_for_canonical(
         resources,
         data,
         Role::Canonical(&invocation.worker),
+        None,
     )
 }
 enum Role<'a> {
@@ -56,6 +58,7 @@ fn command_inner(
     resources: &Path,
     data: &Path,
     role: Role<'_>,
+    vault_accounts: Option<&str>,
 ) -> Result<Command, String> {
     if !cfg!(any(target_os = "macos", target_os = "linux")) {
         return Err("Contained desktop execution is unavailable on this platform".into());
@@ -188,6 +191,9 @@ fn command_inner(
             ("VAK_SANDBOX_BIN", helper.to_string_lossy().into_owned()),
         ]);
     }
+    if let Some(accounts) = vault_accounts {
+        environment.push(("VAK_VAULT_ACCOUNTS", accounts.to_owned()));
+    }
     for (name, value) in environment {
         cmd.arg("--env").arg(format!("{name}={value}"));
     }
@@ -239,6 +245,7 @@ mod tests {
             &runtime.join("node"),
             &runtime,
             &root.join("data"),
+            None,
         )
         .unwrap();
         let args: Vec<_> = cmd
@@ -279,7 +286,8 @@ mod tests {
                 &runtime.join("helper"),
                 &runtime.join("node"),
                 &runtime,
-                &root.join("data")
+                &root.join("data"),
+                None,
             )
             .is_err()
         );
@@ -354,7 +362,8 @@ mod tests {
                 &root.join("runtime/helper"),
                 &root.join("runtime/node"),
                 &native,
-                &root.join("data")
+                &root.join("data"),
+                None,
             )
             .is_err()
         );
@@ -397,6 +406,7 @@ fs.writeFileSync(3, 'CONTAINMENT_PASS\n');
             &PathBuf::from(std::env::var_os("VAK_TEST_WORKER_NODE").expect("Node path required")),
             &root.join("runtime"),
             &root.join("data"),
+            None,
         )
         .unwrap();
         cmd.env("VAK_CANARY_SECRET", "synthetic-helper-only")

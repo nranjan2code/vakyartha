@@ -2,12 +2,16 @@
 // network listeners; only the main webview may use the bounded IPC contract.
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
+use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}, mpsc::{SyncSender, TrySendError, sync_channel}};
+use std::sync::{Arc, LazyLock, Mutex, atomic::{AtomicUsize, Ordering}, mpsc::{SyncSender, TrySendError, sync_channel}};
+use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use super::Backend;
 use super::control::{AdmissionError, ControlError, ControlHandle, StoreError, bridge::{self, Operation as ControlOperation, Request as ControlRequest, Status as ControlStatus}, state::StateError};
+use crate::reasoner_supervisor::base64;
 
 const MAX_BODY: usize = 32 * 1024 * 1024;
 const MAX_QUEUE: usize = 48 * 1024 * 1024;
@@ -33,25 +37,31 @@ enum Output {
     Error { message: String },
 }
 
+fn default_protocol_version() -> u8 {
+    PROTOCOL_VERSION
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ProviderRequest {
+    #[serde(default = "default_protocol_version")]
     v: u8,
     id: String,
     #[serde(rename = "type")]
     kind: String,
     provider: String,
     operation: String,
-    #[serde(rename = "routeModel")]
+    #[serde(rename = "routeModel", default)]
     route_model: Option<String>,
+    #[serde(default)]
     body: String,
     #[serde(rename = "operationId")]
     operation_id: String,
     attempt: u32,
-    #[serde(rename = "sessionId")]
-    session_id: String,
-    #[serde(rename = "runId")]
-    run_id: String,
+    #[serde(rename = "sessionId", default)]
+    session_id: Option<String>,
+    #[serde(rename = "runId", default)]
+    run_id: Option<String>,
 }
 
 impl ProviderRequest {
@@ -62,12 +72,33 @@ impl ProviderRequest {
                 && model.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
         });
         let operation_matches_provider = match self.provider.as_str() {
-            "openai" => matches!(self.operation.as_str(), "responses" | "chat_completions") && self.route_model.is_none(),
-            "anthropic" => self.operation == "messages" && self.route_model.is_none(),
-            "gemini" => self.operation == "stream_generate_content" && valid_model,
-            "ollama" => self.operation == "ollama_chat" && self.route_model.is_none(),
+            "openai" => {
+                (matches!(self.operation.as_str(), "responses" | "chat_completions") && self.route_model.is_none())
+                    || (self.operation == "models" && (self.route_model.is_none() || valid_model))
+            }
+            "anthropic" => {
+                (self.operation == "messages" && self.route_model.is_none())
+                    || (self.operation == "models" && (self.route_model.is_none() || valid_model))
+            }
+            "gemini" => {
+                (self.operation == "stream_generate_content" && valid_model)
+                    || (self.operation == "models" && (self.route_model.is_none() || valid_model))
+            }
+            "ollama" => {
+                matches!(
+                    self.operation.as_str(),
+                    "ollama_chat" | "ollama_tags" | "ollama_show"
+                ) && self.route_model.is_none()
+            }
+            "lmstudio" => {
+                matches!(self.operation.as_str(), "models" | "chat_completions")
+                    && self.route_model.is_none()
+            }
             "mistral" | "xai" | "deepseek" | "groq" | "cerebras" | "openrouter"
-            | "together" | "fireworks" | "moonshot" | "dashscope" => self.operation == "chat_completions" && self.route_model.is_none(),
+            | "together" | "fireworks" | "moonshot" | "dashscope" | "qwen" | "typesafe" => {
+                matches!(self.operation.as_str(), "chat_completions" | "models")
+                    && self.route_model.is_none()
+            }
             _ => false,
         };
         self.v == PROTOCOL_VERSION
@@ -80,8 +111,8 @@ impl ProviderRequest {
             && !self.operation_id.is_empty()
             && self.operation_id.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
             && self.attempt <= 16
-            && valid_execution_id(&self.session_id)
-            && valid_execution_id(&self.run_id)
+            && self.session_id.as_deref().map_or(true, valid_execution_id)
+            && self.run_id.as_deref().map_or(true, valid_execution_id)
     }
 }
 
@@ -96,6 +127,431 @@ fn provider_refusal(id: &str) -> serde_json::Value {
         "type": "provider_error",
         "message": "Native provider dispatch is not enabled",
     })
+}
+
+async fn dispatch_provider_request(
+    request: ProviderRequest,
+    sender: Input,
+    queued: Arc<AtomicUsize>,
+    dispatch_context: Option<(String, PathBuf)>,
+) {
+    let (service, data_dir) = match dispatch_context {
+        Some(ctx) => ctx,
+        None => {
+            send_provider_error(&sender, &queued, &request.id, "Native provider dispatch is not enabled");
+            return;
+        }
+    };
+
+    let (client, method, url, auth_header, body_payload) = match resolve_provider_request(&request, &service, &data_dir).await {
+        Ok(resolved) => resolved,
+        Err(err_msg) => {
+            send_provider_error(&sender, &queued, &request.id, &err_msg);
+            return;
+        }
+    };
+
+    let mut builder = client.request(method, &url);
+    if let Some((header_name, header_val)) = auth_header {
+        builder = builder.header(header_name, header_val);
+        if request.provider == "anthropic" {
+            builder = builder.header("anthropic-version", "2023-06-01");
+        }
+    }
+    if let Some(body) = body_payload {
+        builder = builder
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body);
+    }
+
+    let mut response = match builder.send().await {
+        Ok(res) => res,
+        Err(err) => {
+            send_provider_error(&sender, &queued, &request.id, &format!("Provider HTTP request failed: {err}"));
+            return;
+        }
+    };
+
+    let status = response.status().as_u16();
+    let mut headers_map = serde_json::Map::new();
+    if let Some(ct) = response.headers().get("content-type").and_then(|v| v.to_str().ok()) {
+        headers_map.insert("content-type".to_string(), serde_json::Value::String(ct.to_string()));
+    }
+    if let Some(ra) = response.headers().get("retry-after").and_then(|v| v.to_str().ok()) {
+        headers_map.insert("retry-after".to_string(), serde_json::Value::String(ra.to_string()));
+    }
+
+    let headers_frame = serde_json::json!({
+        "v": PROTOCOL_VERSION,
+        "id": &request.id,
+        "type": "provider_headers",
+        "status": status,
+        "headers": headers_map,
+    });
+    send_frame(&sender, &queued, headers_frame);
+
+    let mut seq: u32 = 0;
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => {
+                for slice in chunk.chunks(64 * 1024) {
+                    let b64 = base64(slice);
+                    let data_frame = serde_json::json!({
+                        "v": PROTOCOL_VERSION,
+                        "id": &request.id,
+                        "type": "provider_data",
+                        "seq": seq,
+                        "data": b64,
+                    });
+                    seq += 1;
+                    send_frame(&sender, &queued, data_frame);
+                }
+            }
+            Ok(None) => break,
+            Err(err) => {
+                send_provider_error(&sender, &queued, &request.id, &format!("Provider streaming error: {err}"));
+                return;
+            }
+        }
+    }
+
+    let end_frame = serde_json::json!({
+        "v": PROTOCOL_VERSION,
+        "id": &request.id,
+        "type": "provider_end",
+    });
+    send_frame(&sender, &queued, end_frame);
+}
+
+static DNS_CACHE: LazyLock<Mutex<HashMap<String, (Vec<SocketAddr>, Instant)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+static CRED_CACHE: LazyLock<Mutex<HashMap<String, (String, Instant)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+static CLIENT_CACHE: LazyLock<Mutex<HashMap<String, reqwest::Client>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn cached_resolve_public_addresses(host: &str) -> Result<Vec<SocketAddr>, String> {
+    const TTL: Duration = Duration::from_secs(300);
+    let now = Instant::now();
+    if let Ok(cache) = DNS_CACHE.lock() {
+        if let Some((addrs, timestamp)) = cache.get(host) {
+            if now.duration_since(*timestamp) < TTL {
+                return Ok(addrs.clone());
+            }
+        }
+    }
+    let addrs = crate::control::broker::resolve_public_addresses(host)
+        .map_err(|e| format!("Failed to resolve provider addresses for {host}: {e:?}"))?;
+    if let Ok(mut cache) = DNS_CACHE.lock() {
+        cache.insert(host.to_string(), (addrs.clone(), now));
+    }
+    Ok(addrs)
+}
+
+fn cached_vault_get(service: &str, account: &str, data_dir: &std::path::Path) -> Result<Option<String>, String> {
+    const TTL: Duration = Duration::from_secs(30);
+    let cache_key = format!("{service}::{account}");
+    let now = Instant::now();
+    if let Ok(cache) = CRED_CACHE.lock() {
+        if let Some((cred, timestamp)) = cache.get(&cache_key) {
+            if now.duration_since(*timestamp) < TTL {
+                return Ok(Some(cred.clone()));
+            }
+        }
+    }
+    let cred = crate::vault::get(service, account, data_dir)
+        .map_err(|e| format!("Credential vault error: {e}"))?;
+    if let Some(ref val) = cred {
+        if !val.is_empty() {
+            if let Ok(mut cache) = CRED_CACHE.lock() {
+                cache.insert(cache_key, (val.clone(), now));
+            }
+        }
+    }
+    Ok(cred)
+}
+
+fn get_or_create_client(host: Option<&str>, addrs: Option<&[SocketAddr]>) -> Result<reqwest::Client, String> {
+    let key = host.unwrap_or("local").to_string();
+    if let Ok(cache) = CLIENT_CACHE.lock() {
+        if let Some(client) = cache.get(&key) {
+            return Ok(client.clone());
+        }
+    }
+    let mut builder = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .retry(reqwest::retry::never())
+        .pool_max_idle_per_host(4)
+        .pool_idle_timeout(Duration::from_secs(60))
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(120));
+    if let (Some(h), Some(a)) = (host, addrs) {
+        if a.is_empty() {
+            return Err("Unapproved destination address".to_string());
+        }
+        builder = builder.resolve_to_addrs(h, a);
+    }
+    let client = builder.build().map_err(|e| format!("Client build error: {e}"))?;
+    if let Ok(mut cache) = CLIENT_CACHE.lock() {
+        cache.insert(key, client.clone());
+    }
+    Ok(client)
+}
+
+async fn resolve_provider_request(
+    request: &ProviderRequest,
+    service: &str,
+    data_dir: &std::path::Path,
+) -> Result<
+    (
+        reqwest::Client,
+        reqwest::Method,
+        String,
+        Option<(&'static str, String)>,
+        Option<String>,
+    ),
+    String,
+> {
+    if request.provider == "ollama" {
+        let (method, url, body) = match request.operation.as_str() {
+            "ollama_tags" => (
+                reqwest::Method::GET,
+                "http://127.0.0.1:11434/api/tags".to_string(),
+                None,
+            ),
+            "ollama_show" => (
+                reqwest::Method::POST,
+                "http://127.0.0.1:11434/api/show".to_string(),
+                Some(request.body.clone()),
+            ),
+            "ollama_chat" => (
+                reqwest::Method::POST,
+                "http://127.0.0.1:11434/api/chat".to_string(),
+                Some(request.body.clone()),
+            ),
+            _ => return Err("Unsupported local model operation".to_string()),
+        };
+        let client = get_or_create_client(None, None)
+            .map_err(|e| format!("Failed to create local provider client: {e:?}"))?;
+        return Ok((client, method, url, None, body));
+    }
+
+    if request.provider == "lmstudio" {
+        let (method, url, body) = match request.operation.as_str() {
+            "models" => (
+                reqwest::Method::GET,
+                "http://127.0.0.1:1234/v1/models".to_string(),
+                None,
+            ),
+            "chat_completions" => (
+                reqwest::Method::POST,
+                "http://127.0.0.1:1234/v1/chat/completions".to_string(),
+                Some(request.body.clone()),
+            ),
+            _ => return Err("Unsupported local model operation".to_string()),
+        };
+        let client = get_or_create_client(None, None)
+            .map_err(|e| format!("Failed to create local provider client: {e:?}"))?;
+        return Ok((client, method, url, None, body));
+    }
+
+    let account = match request.provider.as_str() {
+        "openai" => "OPENAI_API_KEY",
+        "anthropic" => "ANTHROPIC_API_KEY",
+        "gemini" => "GEMINI_API_KEY",
+        "mistral" => "MISTRAL_API_KEY",
+        "xai" => "XAI_API_KEY",
+        "deepseek" => "DEEPSEEK_API_KEY",
+        "groq" => "GROQ_API_KEY",
+        "cerebras" => "CEREBRAS_API_KEY",
+        "openrouter" => "OPENROUTER_API_KEY",
+        "together" => "TOGETHER_API_KEY",
+        "fireworks" => "FIREWORKS_API_KEY",
+        "moonshot" => "MOONSHOT_API_KEY",
+        "dashscope" | "qwen" => "DASHSCOPE_API_KEY",
+        "typesafe" => "TYPESAFE_API_KEY",
+        _ => return Err("Unsupported native provider".to_string()),
+    };
+
+    let cred = cached_vault_get(service, account, data_dir)?
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("Credential unavailable for provider {}", request.provider))?;
+
+    let (host, method, url, body) = match request.provider.as_str() {
+        "openai" => {
+            let host = "api.openai.com";
+            match request.operation.as_str() {
+                "models" => {
+                    let url = if let Some(ref m) = request.route_model {
+                        format!("https://api.openai.com/v1/models/{m}")
+                    } else {
+                        "https://api.openai.com/v1/models".to_string()
+                    };
+                    (host, reqwest::Method::GET, url, None)
+                }
+                "chat_completions" => (host, reqwest::Method::POST, "https://api.openai.com/v1/chat/completions".to_string(), Some(request.body.clone())),
+                "responses" => (host, reqwest::Method::POST, "https://api.openai.com/v1/responses".to_string(), Some(request.body.clone())),
+                _ => return Err("Unsupported OpenAI operation".to_string()),
+            }
+        }
+        "anthropic" => {
+            let host = "api.anthropic.com";
+            match request.operation.as_str() {
+                "models" => {
+                    let url = if let Some(ref m) = request.route_model {
+                        format!("https://api.anthropic.com/v1/models/{m}")
+                    } else {
+                        "https://api.anthropic.com/v1/models?limit=100".to_string()
+                    };
+                    (host, reqwest::Method::GET, url, None)
+                }
+                "messages" => (host, reqwest::Method::POST, "https://api.anthropic.com/v1/messages".to_string(), Some(request.body.clone())),
+                _ => return Err("Unsupported Anthropic operation".to_string()),
+            }
+        }
+        "gemini" => {
+            let host = "generativelanguage.googleapis.com";
+            match request.operation.as_str() {
+                "models" => {
+                    let url = if let Some(ref m) = request.route_model {
+                        format!("https://generativelanguage.googleapis.com/v1beta/models/{m}")
+                    } else {
+                        "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200".to_string()
+                    };
+                    (host, reqwest::Method::GET, url, None)
+                }
+                "stream_generate_content" => {
+                    let m = request.route_model.as_ref().ok_or("Missing Gemini route model")?;
+                    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{m}:streamGenerateContent?alt=sse");
+                    (host, reqwest::Method::POST, url, Some(request.body.clone()))
+                }
+                _ => return Err("Unsupported Gemini operation".to_string()),
+            }
+        }
+        "mistral" => {
+            let host = "api.mistral.ai";
+            match request.operation.as_str() {
+                "models" => (host, reqwest::Method::GET, "https://api.mistral.ai/v1/models".to_string(), None),
+                "chat_completions" => (host, reqwest::Method::POST, "https://api.mistral.ai/v1/chat/completions".to_string(), Some(request.body.clone())),
+                _ => return Err("Unsupported operation".to_string()),
+            }
+        }
+        "xai" => {
+            let host = "api.x.ai";
+            match request.operation.as_str() {
+                "models" => (host, reqwest::Method::GET, "https://api.x.ai/v1/models".to_string(), None),
+                "chat_completions" => (host, reqwest::Method::POST, "https://api.x.ai/v1/chat/completions".to_string(), Some(request.body.clone())),
+                _ => return Err("Unsupported operation".to_string()),
+            }
+        }
+        "deepseek" => {
+            let host = "api.deepseek.com";
+            match request.operation.as_str() {
+                "models" => (host, reqwest::Method::GET, "https://api.deepseek.com/v1/models".to_string(), None),
+                "chat_completions" => (host, reqwest::Method::POST, "https://api.deepseek.com/v1/chat/completions".to_string(), Some(request.body.clone())),
+                _ => return Err("Unsupported operation".to_string()),
+            }
+        }
+        "groq" => {
+            let host = "api.groq.com";
+            match request.operation.as_str() {
+                "models" => (host, reqwest::Method::GET, "https://api.groq.com/openai/v1/models".to_string(), None),
+                "chat_completions" => (host, reqwest::Method::POST, "https://api.groq.com/openai/v1/chat/completions".to_string(), Some(request.body.clone())),
+                _ => return Err("Unsupported operation".to_string()),
+            }
+        }
+        "cerebras" => {
+            let host = "api.cerebras.ai";
+            match request.operation.as_str() {
+                "models" => (host, reqwest::Method::GET, "https://api.cerebras.ai/v1/models".to_string(), None),
+                "chat_completions" => (host, reqwest::Method::POST, "https://api.cerebras.ai/v1/chat/completions".to_string(), Some(request.body.clone())),
+                _ => return Err("Unsupported operation".to_string()),
+            }
+        }
+        "openrouter" => {
+            let host = "openrouter.ai";
+            match request.operation.as_str() {
+                "models" => (host, reqwest::Method::GET, "https://openrouter.ai/api/v1/models".to_string(), None),
+                "chat_completions" => (host, reqwest::Method::POST, "https://openrouter.ai/api/v1/chat/completions".to_string(), Some(request.body.clone())),
+                _ => return Err("Unsupported operation".to_string()),
+            }
+        }
+        "together" => {
+            let host = "api.together.xyz";
+            match request.operation.as_str() {
+                "models" => (host, reqwest::Method::GET, "https://api.together.xyz/v1/models".to_string(), None),
+                "chat_completions" => (host, reqwest::Method::POST, "https://api.together.xyz/v1/chat/completions".to_string(), Some(request.body.clone())),
+                _ => return Err("Unsupported operation".to_string()),
+            }
+        }
+        "fireworks" => {
+            let host = "api.fireworks.ai";
+            match request.operation.as_str() {
+                "models" => (host, reqwest::Method::GET, "https://api.fireworks.ai/inference/v1/models".to_string(), None),
+                "chat_completions" => (host, reqwest::Method::POST, "https://api.fireworks.ai/inference/v1/chat/completions".to_string(), Some(request.body.clone())),
+                _ => return Err("Unsupported operation".to_string()),
+            }
+        }
+        "moonshot" => {
+            let host = "api.moonshot.ai";
+            match request.operation.as_str() {
+                "models" => (host, reqwest::Method::GET, "https://api.moonshot.ai/v1/models".to_string(), None),
+                "chat_completions" => (host, reqwest::Method::POST, "https://api.moonshot.ai/v1/chat/completions".to_string(), Some(request.body.clone())),
+                _ => return Err("Unsupported operation".to_string()),
+            }
+        }
+        "dashscope" | "qwen" => {
+            let host = "dashscope-intl.aliyuncs.com";
+            match request.operation.as_str() {
+                "models" => (host, reqwest::Method::GET, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models".to_string(), None),
+                "chat_completions" => (host, reqwest::Method::POST, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions".to_string(), Some(request.body.clone())),
+                _ => return Err("Unsupported operation".to_string()),
+            }
+        }
+        "typesafe" => {
+            let host = "api.typesafe.ai";
+            match request.operation.as_str() {
+                "models" => (host, reqwest::Method::GET, "https://api.typesafe.ai/v1/models".to_string(), None),
+                "chat_completions" => (host, reqwest::Method::POST, "https://api.typesafe.ai/v1/chat/completions".to_string(), Some(request.body.clone())),
+                _ => return Err("Unsupported operation".to_string()),
+            }
+        }
+        _ => return Err("Unknown provider".to_string()),
+    };
+
+    if !crate::policy::MODEL_API_HOSTS.contains(&host) {
+        return Err(format!("Unapproved provider destination: {host}"));
+    }
+
+    let resolved = cached_resolve_public_addresses(host)?;
+    let client = get_or_create_client(Some(host), Some(&resolved))?;
+
+    let auth_header = match request.provider.as_str() {
+        "anthropic" => ("x-api-key", cred),
+        "gemini" => ("x-goog-api-key", cred),
+        _ => ("authorization", format!("Bearer {cred}")),
+    };
+
+    Ok((client, method, url, Some(auth_header), body))
+}
+
+fn send_provider_error(sender: &Input, queued: &Arc<AtomicUsize>, id: &str, message: &str) {
+    let error_frame = serde_json::json!({
+        "v": PROTOCOL_VERSION,
+        "id": id,
+        "type": "provider_error",
+        "message": if message.len() > 512 { &message[..512] } else { message },
+    });
+    send_frame(sender, queued, error_frame);
+}
+
+fn send_frame(sender: &Input, queued: &Arc<AtomicUsize>, message: serde_json::Value) {
+    if let Some(input) = sender.lock().unwrap().as_ref() {
+        let _ = queue_input(input, queued, message);
+    }
 }
 
 pub struct Engine {
@@ -192,7 +648,15 @@ fn fail_pending(pending: &Pending) {
     }
 }
 
-pub fn start(mut cmd: Command, control: Option<ControlHandle>) -> Engine {
+pub fn start(cmd: Command, control: Option<ControlHandle>) -> Engine {
+    start_with_dispatch(cmd, control, None)
+}
+
+pub fn start_with_dispatch(
+    mut cmd: Command,
+    control: Option<ControlHandle>,
+    dispatch_context: Option<(String, PathBuf)>,
+) -> Engine {
     let mut child = match cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn() {
         Ok(child) => child,
         Err(e) => return Engine::failed(format!("Could not start the engine: {e}")),
@@ -214,7 +678,7 @@ pub fn start(mut cmd: Command, control: Option<ControlHandle>) -> Engine {
         return Engine::failed("Engine did not complete the private protocol handshake".into());
         }
     };
-    let (tx, rx) = sync_channel::<Vec<u8>>(32);
+    let (tx, rx) = sync_channel::<Vec<u8>>(512);
     let sender = Arc::new(Mutex::new(Some(tx)));
     let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
     let queued = Arc::new(AtomicUsize::new(0));
@@ -367,14 +831,37 @@ pub fn start(mut cmd: Command, control: Option<ControlHandle>) -> Engine {
                     Err(TrySendError::Disconnected(_)) => break,
                 }
             }
+            if let Some(msg_type) = value.get("type").and_then(serde_json::Value::as_str) {
+                if msg_type == "provider_ack" || msg_type == "provider_cancel" {
+                    continue;
+                }
+            }
             if value.get("type").and_then(serde_json::Value::as_str) == Some("provider_request") {
-                let request = match serde_json::from_value::<ProviderRequest>(value) {
+                let request = match serde_json::from_value::<ProviderRequest>(value.clone()) {
                     Ok(request) if request.validate() => request,
-                    _ => break,
+                    Ok(request) => {
+                        send_provider_error(&connection, &response_queue, &request.id, "Invalid provider request");
+                        continue;
+                    }
+                    Err(err) => {
+                        if let Some(id) = value.get("id").and_then(serde_json::Value::as_str) {
+                            send_provider_error(&connection, &response_queue, id, &format!("Malformed provider request: {err}"));
+                        }
+                        continue;
+                    }
                 };
-                let input = connection.lock().unwrap().clone();
-                let Some(input) = input else { break; };
-                if queue_input(&input, &response_queue, provider_refusal(&request.id)).is_err() { break; }
+                if dispatch_context.is_none() {
+                    let input = connection.lock().unwrap().clone();
+                    let Some(input) = input else { break; };
+                    if queue_input(&input, &response_queue, provider_refusal(&request.id)).is_err() { break; }
+                    continue;
+                }
+                let sender = connection.clone();
+                let queued = response_queue.clone();
+                let d_ctx = dispatch_context.clone();
+                tauri::async_runtime::spawn(async move {
+                    dispatch_provider_request(request, sender, queued, d_ctx).await;
+                });
                 continue;
             }
             let frame = match serde_json::from_value::<Frame>(value) { Ok(frame) if frame.v == PROTOCOL_VERSION => frame, _ => break };
@@ -453,6 +940,18 @@ mod tests {
             r#"{"v":2,"id":"gen-124","type":"provider_request","provider":"gemini","operation":"stream_generate_content","routeModel":"gemini-2.5-flash","body":"{}","operationId":"root-op-1","attempt":0,"sessionId":"session-1","runId":"run-1"}"#,
         ).unwrap();
         assert!(gemini.validate());
+        let ollama_tags: ProviderRequest = serde_json::from_str(
+            r#"{"v":2,"id":"gen-tags","type":"provider_request","provider":"ollama","operation":"ollama_tags","body":"","operationId":"root-op-1","attempt":0}"#,
+        ).unwrap();
+        assert!(ollama_tags.validate());
+        let ollama_show: ProviderRequest = serde_json::from_str(
+            r#"{"v":2,"id":"gen-show","type":"provider_request","provider":"ollama","operation":"ollama_show","body":"{\"model\":\"qwen3.5:4b-mlx\"}","operationId":"root-op-1","attempt":0}"#,
+        ).unwrap();
+        assert!(ollama_show.validate());
+        let openai_models: ProviderRequest = serde_json::from_str(
+            r#"{"v":2,"id":"gen-models","type":"provider_request","provider":"openai","operation":"models","body":"","operationId":"root-op-1","attempt":0}"#,
+        ).unwrap();
+        assert!(openai_models.validate());
         let invalid_execution_identity: ProviderRequest = serde_json::from_str(
             r#"{"v":2,"id":"gen-invalid","type":"provider_request","provider":"openai","operation":"responses","body":"{}","operationId":"root-op-1","attempt":0,"sessionId":"../session","runId":"run-1"}"#,
         ).unwrap();
@@ -465,6 +964,9 @@ mod tests {
             r#"{"v":2,"id":"gen-126","type":"provider_request","provider":"openai","operation":"responses","url":"https://attacker.example","body":"{}","operationId":"root-op-1","attempt":0}"#,
         ).is_err());
     }
+
+
+
 
     #[cfg(unix)]
     #[test]

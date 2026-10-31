@@ -5,38 +5,82 @@ import type { ProviderTransport, ProviderTransportContext } from "@vak/providers
 import { DESKTOP_PROTOCOL } from "../shared/desktop-protocol.ts";
 const MAX_PROVIDER_BODY = 8 * 1024 * 1024;
 const PROVIDER_OPERATIONS: Record<string, Map<string, string>> = {
-  openai: new Map([[
-    "api.openai.com|/v1/responses", "responses",
-  ], ["api.openai.com|/v1/chat/completions", "chat_completions"]]),
-  anthropic: new Map([["api.anthropic.com|/v1/messages", "messages"]]),
-  mistral: new Map([["api.mistral.ai|/v1/chat/completions", "chat_completions"]]),
-  xai: new Map([["api.x.ai|/v1/chat/completions", "chat_completions"]]),
-  deepseek: new Map([["api.deepseek.com|/v1/chat/completions", "chat_completions"]]),
-  groq: new Map([["api.groq.com|/openai/v1/chat/completions", "chat_completions"]]),
-  cerebras: new Map([["api.cerebras.ai|/v1/chat/completions", "chat_completions"]]),
-  openrouter: new Map([["openrouter.ai|/api/v1/chat/completions", "chat_completions"]]),
-  together: new Map([["api.together.xyz|/v1/chat/completions", "chat_completions"]]),
-  fireworks: new Map([["api.fireworks.ai|/inference/v1/chat/completions", "chat_completions"]]),
-  moonshot: new Map([["api.moonshot.ai|/v1/chat/completions", "chat_completions"]]),
-  dashscope: new Map([["dashscope-intl.aliyuncs.com|/compatible-mode/v1/chat/completions", "chat_completions"]]),
+  openai: new Map([
+    ["api.openai.com|/v1/responses", "responses"],
+    ["api.openai.com|/v1/chat/completions", "chat_completions"],
+    ["api.openai.com|/v1/models", "models"],
+  ]),
+  anthropic: new Map([
+    ["api.anthropic.com|/v1/messages", "messages"],
+    ["api.anthropic.com|/v1/models", "models"],
+  ]),
+  mistral: new Map([
+    ["api.mistral.ai|/v1/chat/completions", "chat_completions"],
+    ["api.mistral.ai|/v1/models", "models"],
+  ]),
+  xai: new Map([
+    ["api.x.ai|/v1/chat/completions", "chat_completions"],
+    ["api.x.ai|/v1/models", "models"],
+  ]),
+  deepseek: new Map([
+    ["api.deepseek.com|/v1/chat/completions", "chat_completions"],
+    ["api.deepseek.com|/v1/models", "models"],
+  ]),
+  groq: new Map([
+    ["api.groq.com|/openai/v1/chat/completions", "chat_completions"],
+    ["api.groq.com|/openai/v1/models", "models"],
+  ]),
+  cerebras: new Map([
+    ["api.cerebras.ai|/v1/chat/completions", "chat_completions"],
+    ["api.cerebras.ai|/v1/models", "models"],
+  ]),
+  openrouter: new Map([
+    ["openrouter.ai|/api/v1/chat/completions", "chat_completions"],
+    ["openrouter.ai|/api/v1/models", "models"],
+  ]),
+  together: new Map([
+    ["api.together.xyz|/v1/chat/completions", "chat_completions"],
+    ["api.together.xyz|/v1/models", "models"],
+  ]),
+  fireworks: new Map([
+    ["api.fireworks.ai|/inference/v1/chat/completions", "chat_completions"],
+    ["api.fireworks.ai|/inference/v1/models", "models"],
+  ]),
+  moonshot: new Map([
+    ["api.moonshot.ai|/v1/chat/completions", "chat_completions"],
+    ["api.moonshot.ai|/v1/models", "models"],
+  ]),
+  dashscope: new Map([
+    ["dashscope-intl.aliyuncs.com|/compatible-mode/v1/chat/completions", "chat_completions"],
+    ["dashscope-intl.aliyuncs.com|/compatible-mode/v1/models", "models"],
+  ]),
+  qwen: new Map([
+    ["dashscope-intl.aliyuncs.com|/compatible-mode/v1/chat/completions", "chat_completions"],
+    ["dashscope-intl.aliyuncs.com|/compatible-mode/v1/models", "models"],
+  ]),
+  typesafe: new Map([
+    ["api.typesafe.ai|/v1/chat/completions", "chat_completions"],
+    ["api.typesafe.ai|/v1/models", "models"],
+  ]),
 };
 type ProviderPending = {
   resolve(response: Response): void;
   reject(error: Error): void;
   timer: ReturnType<typeof setTimeout>;
   controller?: ReadableStreamDefaultController<Uint8Array>;
-  queued?: { seq: number; bytes: Uint8Array };
+  queue: { seq: number; bytes: Uint8Array }[];
   waitingPull?: () => void;
-  lastDelivered?: number;
+  nextExpectedSeq: number;
+  lastDelivered: number;
   ended: boolean;
   settled: boolean;
   signal?: AbortSignal;
   abort?: () => void;
 };
 
-export function providerChannel(send: (message: Record<string, unknown>) => Promise<void>, maxCalls = 4, consentWaitMs = 0): { fetch: ProviderTransport; receive(frame: Record<string, unknown>): boolean; close(): void } {
+export function providerChannel(send: (message: Record<string, unknown>) => Promise<void>, maxCalls = 16, consentWaitMs = 0): { fetch: ProviderTransport; receive(frame: Record<string, unknown>): boolean; close(): void } {
   if (!Number.isInteger(consentWaitMs) || consentWaitMs < 0 || consentWaitMs > 300_000) throw new Error("Invalid provider consent allowance");
-  if (!Number.isInteger(maxCalls) || maxCalls < 1 || maxCalls > 4) throw new Error("Invalid provider channel capacity");
+  if (!Number.isInteger(maxCalls) || maxCalls < 1 || maxCalls > 32) throw new Error("Invalid provider channel capacity");
   const providerPending = new Map<string, ProviderPending>();
   const retiredProviderIds = new Set<string>();
   let closed = false;
@@ -66,7 +110,7 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
     if (closed) return Promise.reject(new Error("Native provider transport is unavailable"));
     if (providerPending.size >= maxCalls) return Promise.reject(new Error("Native provider queue is full"));
     const method = String(init.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-    if (!Object.hasOwn(PROVIDER_OPERATIONS, provider) && provider !== "gemini" && provider !== "ollama") return Promise.reject(new Error("Unsupported native provider"));
+    if (!Object.hasOwn(PROVIDER_OPERATIONS, provider) && provider !== "gemini" && provider !== "ollama" && provider !== "lmstudio") return Promise.reject(new Error("Unsupported native provider"));
     let url: URL;
     try { url = new URL(input instanceof Request ? input.url : String(input)); }
     catch { return Promise.reject(new Error("Invalid provider URL")); }
@@ -78,19 +122,61 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
     let operation: string | undefined;
     let routeModel: string | undefined;
     if (provider === "ollama") {
-      if (method !== "POST" || url.protocol !== "http:" || (url.hostname !== "127.0.0.1" && url.hostname !== "localhost") || url.port !== "11434" || url.pathname !== "/api/chat" || url.searchParams.size) return Promise.reject(new Error("Unsupported local model operation"));
-      operation = "ollama_chat";
+      if (url.protocol !== "http:" || (url.hostname !== "127.0.0.1" && url.hostname !== "localhost") || url.port !== "11434" || url.searchParams.size) return Promise.reject(new Error("Unsupported local model operation"));
+      if (method === "GET" && url.pathname === "/api/tags") {
+        operation = "ollama_tags";
+      } else if (method === "POST" && url.pathname === "/api/show") {
+        operation = "ollama_show";
+      } else if (method === "POST" && url.pathname === "/api/chat") {
+        operation = "ollama_chat";
+      } else {
+        return Promise.reject(new Error("Unsupported local model operation"));
+      }
+    } else if (provider === "lmstudio") {
+      if (url.protocol !== "http:" || (url.hostname !== "127.0.0.1" && url.hostname !== "localhost") || url.port !== "1234" || url.searchParams.size) return Promise.reject(new Error("Unsupported local model operation"));
+      if (method === "GET" && url.pathname === "/v1/models") {
+        operation = "models";
+      } else if (method === "POST" && url.pathname === "/v1/chat/completions") {
+        operation = "chat_completions";
+      } else {
+        return Promise.reject(new Error("Unsupported local model operation"));
+      }
     } else if (provider === "gemini") {
-      const match = url.pathname.match(/^\/v1beta\/models\/([A-Za-z0-9._:-]{1,128}):streamGenerateContent$/);
-      if (method !== "POST" || url.protocol !== "https:" || url.hostname !== "generativelanguage.googleapis.com" || url.port && url.port !== "443" || url.search !== "?alt=sse" || !match) return Promise.reject(new Error("Unsupported native provider operation"));
-      operation = "stream_generate_content";
-      routeModel = match[1];
+      if (url.protocol !== "https:" || url.hostname !== "generativelanguage.googleapis.com" || (url.port && url.port !== "443")) return Promise.reject(new Error("Unsupported native provider operation"));
+      const streamMatch = url.pathname.match(/^\/v1beta\/models\/([A-Za-z0-9._:-]{1,128}):streamGenerateContent$/);
+      const modelMatch = url.pathname.match(/^\/v1beta\/models\/([A-Za-z0-9._:-]{1,128})$/);
+      if (method === "POST" && url.search === "?alt=sse" && streamMatch) {
+        operation = "stream_generate_content";
+        routeModel = streamMatch[1];
+      } else if (method === "GET" && url.pathname === "/v1beta/models" && (url.search === "" || url.search === "?pageSize=200")) {
+        operation = "models";
+      } else if (method === "GET" && modelMatch && url.search === "") {
+        operation = "models";
+        routeModel = modelMatch[1];
+      } else {
+        return Promise.reject(new Error("Unsupported native provider operation"));
+      }
     } else {
-      if (method !== "POST" || url.protocol !== "https:" || url.port && url.port !== "443" || url.search) return Promise.reject(new Error("Unsupported native provider operation"));
-      operation = PROVIDER_OPERATIONS[provider]?.get(`${url.hostname}|${url.pathname}`);
-      if (!operation) return Promise.reject(new Error("Unsupported native provider operation"));
+      if (url.protocol !== "https:" || (url.port && url.port !== "443")) return Promise.reject(new Error("Unsupported native provider operation"));
+      if ((provider === "anthropic" || provider === "openai") && method === "GET") {
+        const modelMatch = url.pathname.match(/^\/v1\/models\/([A-Za-z0-9._:-]{1,128})$/);
+        if (url.pathname === "/v1/models" && (url.search === "" || url.search === "?limit=100")) {
+          operation = "models";
+        } else if (modelMatch && url.search === "") {
+          operation = "models";
+          routeModel = modelMatch[1];
+        } else {
+          return Promise.reject(new Error("Unsupported native provider operation"));
+        }
+      } else {
+        if (url.search) return Promise.reject(new Error("Unsupported native provider operation"));
+        operation = PROVIDER_OPERATIONS[provider]?.get(`${url.hostname}|${url.pathname}`);
+        if (!operation) return Promise.reject(new Error("Unsupported native provider operation"));
+        if (method === "GET" && operation !== "models") return Promise.reject(new Error("Unsupported native provider operation"));
+        if (method === "POST" && operation === "models") return Promise.reject(new Error("Unsupported native provider operation"));
+      }
     }
-    if (typeof body !== "string") return Promise.reject(new Error("Native provider requests require a bounded JSON body"));
+    if (method === "POST" && typeof body !== "string") return Promise.reject(new Error("Native provider requests require a bounded JSON body"));
     const headers: Record<string, string> = {};
     try {
       new Headers(input instanceof Request ? input.headers : init.headers).forEach((value, name) => {
@@ -103,8 +189,20 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
     if (signal?.aborted) return Promise.reject(new Error("Provider request was cancelled"));
     const id = `gen-${randomUUID()}`;
     if (!context || !/^[A-Za-z0-9_-]{1,128}$/.test(context.operationId)) return Promise.reject(new Error("Missing provider operation identity"));
-    if (!context.sessionId || !/^[A-Za-z0-9_-]{1,128}$/.test(context.sessionId)
-      || !context.runId || !/^[A-Za-z0-9_-]{1,128}$/.test(context.runId)) return Promise.reject(new Error("Missing provider execution identity"));
+    const isDiscovery = operation === "models" || operation === "ollama_tags" || operation === "ollama_show";
+    if (!isDiscovery) {
+      if (!context.sessionId || !/^[A-Za-z0-9_-]{1,128}$/.test(context.sessionId)
+        || !context.runId || !/^[A-Za-z0-9_-]{1,128}$/.test(context.runId)) {
+        return Promise.reject(new Error("Missing provider execution identity"));
+      }
+    } else {
+      if (context.sessionId !== undefined && !/^[A-Za-z0-9_-]{1,128}$/.test(context.sessionId)) {
+        return Promise.reject(new Error("Invalid provider execution identity"));
+      }
+      if (context.runId !== undefined && !/^[A-Za-z0-9_-]{1,128}$/.test(context.runId)) {
+        return Promise.reject(new Error("Invalid provider execution identity"));
+      }
+    }
     const operationId = context.operationId;
     const attempt = context.attempt;
     if (!Number.isSafeInteger(attempt) || attempt < 0 || attempt > 16) return Promise.reject(new Error("Invalid provider attempt identity"));
@@ -116,12 +214,12 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
         providerPending.delete(id);
         retireProvider(id);
         signal?.removeEventListener("abort", abort!);
-        void send({ id, type: "provider_cancel" }).catch(() => {});
+        void send({ v: DESKTOP_PROTOCOL, id, type: "provider_cancel" }).catch(() => {});
         if (pending.controller) pending.controller.error(error);
         else reject(error);
       }, 125_000 + consentWaitMs);
       timer.unref();
-      const pending: ProviderPending = { resolve, reject, timer, ended: false, settled: false, signal };
+      const pending: ProviderPending = { resolve, reject, timer, queue: [], nextExpectedSeq: 0, lastDelivered: -1, ended: false, settled: false, signal };
       providerPending.set(id, pending);
       abort = () => {
         if (pending.settled) return;
@@ -131,22 +229,23 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
         retireProvider(id);
         signal?.removeEventListener("abort", abort!);
         pending.controller?.error(new Error("Provider request was cancelled"));
-        void send({ id, type: "provider_cancel" }).catch(() => {});
+        void send({ v: DESKTOP_PROTOCOL, id, type: "provider_cancel" }).catch(() => {});
         if (!pending.controller) reject(new Error("Provider request was cancelled"));
       };
       pending.abort = abort;
       signal?.addEventListener("abort", abort, { once: true });
       const message = {
+        v: DESKTOP_PROTOCOL,
         id,
         type: "provider_request",
         provider,
         operation,
         ...(routeModel === undefined ? {} : { routeModel }),
-        body,
+        body: typeof body === "string" ? body : "",
         operationId,
         attempt,
-        sessionId: context.sessionId,
-        runId: context.runId,
+        ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
+        ...(context?.runId ? { runId: context.runId } : {}),
       };
       void send(message).catch((error: unknown) => {
         if (providerPending.delete(id)) {
@@ -174,19 +273,22 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
       const stream = new ReadableStream<Uint8Array>({
         start(controller) { pending.controller = controller; },
         pull() {
-          if (pending.queued) {
-            const { seq, bytes } = pending.queued;
-            pending.queued = undefined;
+          if (pending.queue.length > 0) {
+            const { seq, bytes } = pending.queue.shift()!;
             pending.lastDelivered = seq;
             pending.controller?.enqueue(bytes);
-            void send({ id, type: "provider_ack", seq }).catch(() => {});
-            if (pending.ended) {
+            void send({ v: DESKTOP_PROTOCOL, id, type: "provider_ack", seq }).catch(() => {});
+            if (pending.ended && pending.queue.length === 0) {
               pending.controller?.close();
               finishProvider(id, pending);
             }
             return;
           }
-          if (pending.ended) { pending.controller?.close(); return; }
+          if (pending.ended) {
+            pending.controller?.close();
+            finishProvider(id, pending);
+            return;
+          }
           return new Promise<void>((resolve) => { pending.waitingPull = resolve; });
         },
         cancel() {
@@ -196,7 +298,7 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
             providerPending.delete(id);
             retireProvider(id);
             pending.signal?.removeEventListener("abort", pending.abort!);
-            void send({ id, type: "provider_cancel" }).catch(() => {});
+            void send({ v: DESKTOP_PROTOCOL, id, type: "provider_cancel" }).catch(() => {});
           }
         },
       });
@@ -207,23 +309,24 @@ export function providerChannel(send: (message: Record<string, unknown>) => Prom
       if (Object.keys(f).some((key) => !["v", "id", "type", "seq", "data"].includes(key)) || !id.startsWith("gen-") || !Number.isSafeInteger(f.seq) || typeof f.data !== "string" || f.data.length > 88_000) throw new Error("Invalid provider response data");
       if (lateProviderFrame(id)) return true;
       const pending = providerPending.get(id);
-      if (!pending?.controller || pending.settled || pending.queued || Number(f.seq) !== (pending.lastDelivered ?? -1) + 1) throw new Error("Unexpected provider response data");
+      if (!pending?.controller || pending.settled || Number(f.seq) !== pending.nextExpectedSeq) throw new Error("Unexpected provider response data");
       const bytes = Buffer.from(f.data, "base64");
       if (bytes.byteLength > 64 * 1024 || bytes.toString("base64") !== f.data) throw new Error("Invalid provider response chunk");
-      pending.queued = { seq: Number(f.seq), bytes };
+      pending.nextExpectedSeq++;
+      pending.queue.push({ seq: Number(f.seq), bytes });
       pending.waitingPull?.();
       pending.waitingPull = undefined;
       return true;
     }
     if (f.type === "provider_end") {
-      if (Object.keys(f).length !== 3 || !id.startsWith("gen-")) throw new Error("Invalid provider response end");
+      if (Object.keys(f).some((key) => !["v", "id", "type"].includes(key)) || !id.startsWith("gen-")) throw new Error("Invalid provider response end");
       if (lateProviderFrame(id)) return true;
       const pending = providerPending.get(id);
       if (!pending?.controller || pending.settled || pending.ended) throw new Error("Unexpected provider response end");
       pending.ended = true;
       pending.waitingPull?.();
       pending.waitingPull = undefined;
-      if (!pending.queued) {
+      if (pending.queue.length === 0) {
         pending.controller.close();
         finishProvider(id, pending);
       }

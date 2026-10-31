@@ -818,6 +818,35 @@ fn tray(app: &tauri::App) -> tauri::Result<()> {
 
 fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
     let data = app_data_dir(app);
+    let service = default_service(app);
+    let known_accounts = [
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+        "MISTRAL_API_KEY",
+        "XAI_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "GROQ_API_KEY",
+        "CEREBRAS_API_KEY",
+        "OPENROUTER_API_KEY",
+        "TOGETHER_API_KEY",
+        "FIREWORKS_API_KEY",
+        "MOONSHOT_API_KEY",
+        "DASHSCOPE_API_KEY",
+        "TYPESAFE_API_KEY",
+    ];
+    let present: Vec<&str> = known_accounts
+        .iter()
+        .copied()
+        .filter(|name| crate::vault::get(&service, name, &data).is_ok_and(|v| v.is_some()))
+        .collect();
+    let accounts_csv = present.join(",");
+    let vault_presence_param = if accounts_csv.is_empty() {
+        None
+    } else {
+        Some(accounts_csv.as_str())
+    };
+
     if cfg!(debug_assertions) {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let suffix = if cfg!(windows) { ".exe" } else { "" };
@@ -827,6 +856,7 @@ fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
             &root.join(format!("binaries/node-{triple}{suffix}")),
             &root.join("resources"),
             &data,
+            vault_presence_param,
         )
     } else {
         let exe = std::env::current_exe().map_err(|_| "Cannot resolve desktop executable")?;
@@ -837,6 +867,7 @@ fn sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
             &dir.join(if cfg!(windows) { "node.exe" } else { "node" }),
             &resources,
             &data,
+            vault_presence_param,
         )
     }
 }
@@ -846,7 +877,12 @@ fn start(app: &tauri::AppHandle) -> Sidecar {
     let control = app.try_state::<ControlActor>().map(|actor| actor.handle());
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     let control = None;
-    match sidecar_command(app) { Ok(cmd) => engine::start(cmd, control), Err(error) => Sidecar::failed(error) }
+    let service = default_service(app);
+    let data_dir = app_data_dir(app);
+    match sidecar_command(app) {
+        Ok(cmd) => engine::start_with_dispatch(cmd, control, Some((service, data_dir))),
+        Err(error) => Sidecar::failed(error),
+    }
 }
 
 pub fn run() {

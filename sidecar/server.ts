@@ -116,10 +116,22 @@ export function typesafeProviderEntry(env: Record<string, string | undefined>): 
       return {
         ...p,
         async listModels(signal) {
-          // Metadata follows the same native boundary as generation.
-          if (options?.transport) return p.listModels?.(signal) ?? [];
-          if (!key) return [];
           try {
+            const transport = options?.transport;
+            if (transport) {
+              const res = await transport("typesafe", `${baseUrl}/models`, {
+                headers: key ? { Authorization: `Bearer ${key}` } : {},
+                signal: signal ?? AbortSignal.timeout(8000),
+              }, { operationId: randomUUID(), attempt: 0 });
+              if (!res.ok) {
+                const err = await res.text().catch(() => "");
+                throw new Error(`TypeSafe AI returned HTTP ${res.status}: ${err || res.statusText}`);
+              }
+              const body = (await res.json()) as { models?: Array<{ name?: string; id?: string } | string>; data?: Array<{ name?: string; id?: string } | string> } | Array<{ name?: string; id?: string } | string>;
+              const list = Array.isArray(body) ? body : (body.models ?? body.data ?? []);
+              return list.map((m) => (typeof m === "string" ? m : (m.name ?? m.id))).filter((v): v is string => Boolean(v)).sort();
+            }
+            if (!key) return [];
             const res = await fetch(`${baseUrl}/models`, {
               headers: { Authorization: `Bearer ${key}` },
               signal: signal ?? AbortSignal.timeout(8000),
@@ -128,9 +140,9 @@ export function typesafeProviderEntry(env: Record<string, string | undefined>): 
               const err = await res.text().catch(() => "");
               throw new Error(`TypeSafe AI returned HTTP ${res.status}: ${err || res.statusText}`);
             }
-            const body = (await res.json()) as { data?: Array<{ id: string } | string> } | Array<{ id: string } | string>;
-            const list = Array.isArray(body) ? body : (body.data ?? []);
-            return list.map((m) => (typeof m === "string" ? m : m.id)).filter(Boolean).sort();
+            const body = (await res.json()) as { models?: Array<{ name?: string; id?: string } | string>; data?: Array<{ name?: string; id?: string } | string> } | Array<{ name?: string; id?: string } | string>;
+            const list = Array.isArray(body) ? body : (body.models ?? body.data ?? []);
+            return list.map((m) => (typeof m === "string" ? m : (m.name ?? m.id))).filter((v): v is string => Boolean(v)).sort();
           } catch {
             return p.listModels?.(signal) ?? [];
           }
@@ -198,6 +210,9 @@ export async function startAppServer(opts: AppServerOptions): Promise<AppServer>
     if (req.method === "PUT") {
       const body = await readJson(req);
       try {
+        if (body.presence && typeof body.presence === "object") {
+          settings.updatePresence(body.presence as Record<string, boolean>);
+        }
         if (body.values && typeof body.values === "object") {
           const changed = settings.save(body.values);
           // A channel restarts when its own token changed (a provider key change applies on its next turn).
@@ -284,7 +299,11 @@ Prose style: Respond in fluid, elegant, human conversational prose. In dialogue,
 ${skills.index()}`;
   };
 
-  function allProviders(env: Record<string, string | undefined> = process.env): ProviderEntry[] {
+  function effectiveEnv(): Record<string, string | undefined> {
+    return { ...process.env, ...settings.env };
+  }
+
+  function allProviders(env: Record<string, string | undefined> = effectiveEnv()): ProviderEntry[] {
     return [...providersFromEnv(env), typesafeProviderEntry(env)];
   }
 
@@ -325,7 +344,7 @@ ${skills.index()}`;
   /** Model providers for turns and voice answers alike: task spending checks and FinOps see every request. */
   function modelProviders(wrapSkills = true): ProviderEntry[] {
     // Bind admission checks and provider construction to the same configuration.
-    const env = { ...process.env };
+    const env = effectiveEnv();
     const entries = withProviderTransport(allProviders(env), opts.providerTransport).map((entry) => ({ ...entry, make: (options: Parameters<typeof entry.make>[0]) => {
       const spending = tasks?.providerSpending(entry.id);
       if (spending) checkTaskSpending(entry, spending, env);

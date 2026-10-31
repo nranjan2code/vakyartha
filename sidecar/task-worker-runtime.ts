@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
 import { createHost, type HostCandidateResult } from "@vak/host";
 import type { SurfaceSnapshot } from "@vak/core";
-import { ollama, openai, anthropic, gemini, ProfileCache, type ProviderTransport } from "@vak/providers";
+import { ollama, openai, anthropic, gemini, COMPATIBLE_PRESETS, ProfileCache, type ProviderTransport } from "@vak/providers";
 import path from "node:path";
 import { DESKTOP_PROTOCOL } from "../shared/desktop-protocol.ts";
 import { inputInstructions, parseTaskFiles, type TaskFileInput } from "../shared/task-files.ts";
@@ -13,7 +13,7 @@ import { providerChannel } from "./provider-channel.ts";
 export const MAX_TASK_FRAME = 20 * 1024 * 1024;
 const MAX_CONTEXT = 8 * 1024 * 1024;
 export interface TaskWorkerJob {
-  runId: string; session: string; provider: "ollama" | "openai" | "anthropic" | "gemini"; model: string;
+  runId: string; session: string; provider: string; model: string;
   goal: string; criteria: string; instructions: string;
   inputs: TaskFileInput[]; initialSurfaces: SurfaceSnapshot[];
   maxSteps: number; maxTokens: number; activeMs: number;
@@ -59,16 +59,34 @@ export async function generateTaskCandidate(job: TaskWorkerJob, scratch: string,
   };
   const makeProvider = (prov: string, options?: { think?: boolean }) => {
     switch (prov) {
-      case "ollama":
-        return ollama({ think: options?.think, transport: boundTransport });
-      case "openai":
-        return openai({ transport: boundTransport });
-      case "anthropic":
-        return anthropic({ apiKey: "", transport: boundTransport });
-      case "gemini":
-        return gemini({ apiKey: "", transport: boundTransport });
-      default:
+      case "ollama": {
+        const p = ollama({ think: options?.think, transport: boundTransport });
+        return { ...p, describeModel: undefined };
+      }
+      case "openai": {
+        const p = openai({ transport: boundTransport });
+        return { ...p, describeModel: undefined };
+      }
+      case "anthropic": {
+        const p = anthropic({ apiKey: "", transport: boundTransport });
+        return { ...p, describeModel: undefined };
+      }
+      case "gemini": {
+        const p = gemini({ apiKey: "", transport: boundTransport });
+        return { ...p, describeModel: undefined };
+      }
+      case "typesafe": {
+        const p = openai({ id: "typesafe", baseUrl: "https://api.typesafe.ai/v1", maxTokensParam: "max_tokens", transport: boundTransport });
+        return { ...p, describeModel: undefined };
+      }
+      default: {
+        const preset = COMPATIBLE_PRESETS.find((c) => c.id === prov || (c.id === "qwen" && prov === "dashscope") || (c.id === "dashscope" && prov === "qwen"));
+        if (preset) {
+          const p = openai({ id: preset.id, baseUrl: preset.baseUrl, maxTokensParam: preset.maxTokensParam, streamUsage: preset.streamUsage, transport: boundTransport });
+          return { ...p, describeModel: undefined };
+        }
         throw new Error(`Unsupported task provider: ${prov}`);
+      }
     }
   };
   const host = createHost({

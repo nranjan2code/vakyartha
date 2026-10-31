@@ -27,7 +27,7 @@ fn native_store_root(data_dir: &Path) -> PathBuf {
 
 pub mod bridge;
 mod approval;
-mod broker;
+pub(crate) mod broker;
 pub mod generation;
 pub mod provider_io;
 pub mod canonical;

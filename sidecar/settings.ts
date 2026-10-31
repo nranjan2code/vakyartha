@@ -163,6 +163,22 @@ export class Settings {
       const v = s.secret ? this.secrets.get(s.name) : file.get(s.name);
       if (v) this.env[s.name] = v;
     }
+    if (process.env.VAK_VAULT_ACCOUNTS) {
+      for (const account of process.env.VAK_VAULT_ACCOUNTS.split(",")) {
+        const trimmed = account.trim();
+        if (trimmed) this.env[trimmed] = "native-vault";
+      }
+    }
+  }
+
+  updatePresence(presence: Record<string, boolean>): void {
+    for (const [name, isPresent] of Object.entries(presence)) {
+      if (isPresent) {
+        this.env[name] = "native-vault";
+      } else {
+        delete this.env[name];
+      }
+    }
   }
 
   view(): SettingView[] {

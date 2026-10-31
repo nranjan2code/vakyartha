@@ -42,6 +42,7 @@ pub const MODEL_API_HOSTS: &[&str] = &[
     "api.fireworks.ai",
     "api.moonshot.ai",
     "dashscope-intl.aliyuncs.com",
+    "api.typesafe.ai",
 ];
 
 /// Permitted vendor workspace cloud suffixes.

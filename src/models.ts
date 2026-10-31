@@ -39,18 +39,28 @@ export function choose(provider: string, model: string): void {
   window.dispatchEvent(new Event("vak:model"));
 }
 
+const inFlightModels = new Map<string, Promise<{ models: string[]; error?: string }>>();
+
 /** Ask a provider for its models with its current key (fresh every call). */
 export async function listModels(p: ProviderInfo): Promise<{ models: string[]; error?: string }> {
-  try {
-    const res = await api<{ models: string[]; default?: string; error?: string }>(`/api/models?provider=${encodeURIComponent(p.id)}`);
-    modelsOf.set(p.id, res.models);
-    if (res.error) modelErrors.set(p.id, res.error);
-    else modelErrors.delete(p.id);
-    return res;
-  } catch (err) {
-    modelErrors.set(p.id, (err as Error).message);
-    return { models: [], error: (err as Error).message };
-  }
+  const inFlight = inFlightModels.get(p.id);
+  if (inFlight) return inFlight;
+  const promise = (async () => {
+    try {
+      const res = await api<{ models: string[]; default?: string; error?: string }>(`/api/models?provider=${encodeURIComponent(p.id)}`);
+      modelsOf.set(p.id, res.models);
+      if (res.error) modelErrors.set(p.id, res.error);
+      else modelErrors.delete(p.id);
+      return res;
+    } catch (err) {
+      modelErrors.set(p.id, (err as Error).message);
+      return { models: [], error: (err as Error).message };
+    } finally {
+      inFlightModels.delete(p.id);
+    }
+  })();
+  inFlightModels.set(p.id, promise);
+  return promise;
 }
 
 /** Local servers are listed up front; a hosted provider only when it is the current one. */

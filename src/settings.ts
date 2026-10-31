@@ -110,6 +110,7 @@ async function show(to: Section, arg?: string): Promise<void> {
     if (inTauri) {
       const presence = await vaultPresence(settings.filter((setting) => setting.secret).map((setting) => setting.name));
       settings = settings.map((setting) => setting.secret ? { ...setting, set: presence[setting.name] === true } : setting);
+      await api("/api/settings", { method: "PUT", body: JSON.stringify({ presence }) }).catch(() => {});
     }
     const integration = to.startsWith("integration:") ? to.slice("integration:".length) : undefined;
     const render: Record<string, () => Promise<HTMLElement[]>> = {
@@ -212,7 +213,12 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
     modelSel.disabled = true;
     status.className = "row-hint";
     status.textContent = "";
-    const res = p?.available ? await listModels(p) : { models: [] as string[], error: "add its key in Providers" };
+    const cached = p ? modelsOf.get(p.id) : undefined;
+    const res = cached && cached.length > 0
+      ? { models: cached }
+      : p?.available
+        ? await listModels(p)
+        : { models: [] as string[], error: "add its key in Providers" };
     if (p?.id !== provider) return;
     // No pre-selection from the list: it is alphabetical and often starts with
     // models that cannot chat (OpenAI lists babbage-002 first).
@@ -280,36 +286,15 @@ async function modelsPage(focus?: string): Promise<HTMLElement[]> {
   function updateDecisionUi(): void {
     const cfg = getDecisionConfig();
     const providerOptions: [string, string][] = [
-      ["ollama", "Local Ollama (d1-omni / laya)"],
-      ["typesafe", "TypeSafe AI (Jev SystemOne)"],
-      ["openai", "OpenAI (GPT-4o-mini Structured Outputs)"],
-      ["openrouter", "OpenRouter (Microsoft-Decision-1)"],
+      ["ollama", "Local Ollama"],
+      ["typesafe", "TypeSafe AI"],
+      ["openai", "OpenAI"],
+      ["openrouter", "OpenRouter"],
       ["heuristic", "Built-in Fast Heuristics (0ms)"],
     ];
 
     const detected = modelsOf.get(cfg.providerId) ?? [];
     let modelOptionsList: [string, string][] = detected.map((m) => [m, m]);
-
-    if (modelOptionsList.length === 0) {
-      if (cfg.providerId === "openrouter") {
-        modelOptionsList = [
-          ["microsoft/decision-1", "microsoft/decision-1 (9B calibrated decider)"],
-          ["meta-llama/llama-3.2-3b-instruct", "meta-llama/llama-3.2-3b-instruct"],
-        ];
-      } else if (cfg.providerId === "openai") {
-        modelOptionsList = [
-          ["gpt-4o-mini", "gpt-4o-mini (fast strict JSON schema)"],
-          ["gpt-4o", "gpt-4o (standard)"],
-        ];
-      } else if (cfg.providerId === "ollama") {
-        modelOptionsList = [
-          ["d1-omni:latest", "d1-omni:latest (380M decision+vision)"],
-          ["laya:latest", "laya:latest (420M decision)"],
-          ["qwen2.5:3b", "qwen2.5:3b"],
-          ["qwen3.5:4b-mlx", "qwen3.5:4b-mlx"],
-        ];
-      }
-    }
 
     if (cfg.modelId && !modelOptionsList.some(([v]) => v === cfg.modelId)) {
       modelOptionsList.unshift([cfg.modelId, cfg.modelId]);

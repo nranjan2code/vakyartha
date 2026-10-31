@@ -61,6 +61,7 @@ export function secretField(s: Setting, onSaved: () => void | Promise<void>): HT
       if (inTauri) {
         if (value) await vaultSet(s.name, value);
         else await vaultDelete(s.name);
+        await api("/api/settings", { method: "PUT", body: JSON.stringify({ presence: { [s.name]: Boolean(value) } }) }).catch(() => {});
       } else await api("/api/settings", { method: "PUT", body: JSON.stringify({ values: { [s.name]: value } }) });
       await onSaved();
     } catch (err) {

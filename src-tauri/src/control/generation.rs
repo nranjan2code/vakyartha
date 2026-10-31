@@ -247,7 +247,9 @@ fn resolve_task_provider(
             "together" => ("together", "chat_completions", ModelApi::Together, ModelOperation::ChatCompletions),
             "fireworks" => ("fireworks", "chat_completions", ModelApi::Fireworks, ModelOperation::ChatCompletions),
             "moonshot" => ("moonshot", "chat_completions", ModelApi::Moonshot, ModelOperation::ChatCompletions),
-            "dashscope" => ("dashscope", "chat_completions", ModelApi::DashScope, ModelOperation::ChatCompletions),
+            "dashscope" | "qwen" => ("dashscope", "chat_completions", ModelApi::DashScope, ModelOperation::ChatCompletions),
+            "typesafe" => ("typesafe", "chat_completions", ModelApi::TypeSafe, ModelOperation::ChatCompletions),
+            "lmstudio" => ("lmstudio", "chat_completions", ModelApi::LmStudio, ModelOperation::ChatCompletions),
             _ => return Err(refused()),
         };
         Ok((prov_name, op_name, api, op))
